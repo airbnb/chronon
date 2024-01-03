@@ -300,7 +300,7 @@ run.py --mode log-flattener --conf production/joins/quickstart/training_set.v2 -
 
 This creates a `default.quickstart_training_set_v2_logged` table that contains the results of each of the fetch requests that you previously made, along with the timestamp at which you made them and the `user` that you requested.
 
-**Note:** Once you run the above command, it will create and "close" the log partitions, meaning that if you make additional fetches it will not append. If you want to go back and generate more requests for online/offline consistency, you can drop the table (run `DROP TABLE default.quickstart_training_set_v2_logged` in a `spark-sql` shell) before rerunning the above command. 
+**Note:** Once you run the above command, it will create and "close" the log partitions, meaning that if you make additional fetches on the same day (UTC time) it will not append. If you want to go back and generate more requests for online/offline consistency, you can drop the table (run `DROP TABLE default.quickstart_training_set_v2_logged` in a `spark-sql` shell) before rerunning the above command. 
 
 Now you can compute consistency metrics with this command:
 
@@ -308,7 +308,7 @@ Now you can compute consistency metrics with this command:
 run.py --mode consistency-metrics-compute --conf production/joins/quickstart/training_set.v2
 ```
 
-This job takes will take the primary key(s) and timestamps from the logg table  (`default.quickstart_training_set_v2_logged` in this case), and uses those to create and run a join backfill. It then compares the backfilled results to the actual logged values that were fetched online
+This job takes will take the primary key(s) and timestamps from the log table (`default.quickstart_training_set_v2_logged` in this case), and uses those to create and run a join backfill. It then compares the backfilled results to the actual logged values that were fetched online
 
 It produces two output tables:
 
