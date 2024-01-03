@@ -10,11 +10,11 @@ This integration gives Chronon the ability to:
 
 ## Example
 
-If you'd to start with an example, please refer to the [MongoDB Implementation in the Quickstart Guide](../../../quickstart/mongo-online-impl/). This provides a complete working example of how to integrate Chronon with MongoDB. 
+If you'd to start with an example, please refer to the [MongoDB Implementation in the Quickstart Guide](https://github.com/airbnb/chronon/blob/master/quickstart/mongo-online-impl/). This provides a complete working example of how to integrate Chronon with MongoDB. 
 
 ## Components
 
-**KVStore**: The biggest part of the API implementation is the [KVStore](../../../online/src/main/scala/ai/chronon/online/Api.scala#L43).
+**KVStore**: The biggest part of the API implementation is the [KVStore](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/Api.scala#L43).
 
 ```scala
 object KVStore {

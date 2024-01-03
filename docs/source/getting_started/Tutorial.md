@@ -17,7 +17,7 @@ Does not include:
 
 ## Setup
 
-To get started with the Chronon, all you need to do is download the [docker-compose.yml](docker-compose.yml) file and run it locally:
+To get started with the Chronon, all you need to do is download the [docker-compose.yml](https://github.com/airbnb/chronon/blob/master/docker-compose.yml) file and run it locally:
 
 ```bash
 curl -o docker-compose.yml https://chronon.ai/docker-compose.yml
@@ -32,7 +32,7 @@ In this example, let's assume that we're a large online retailer, and we've dete
 
 ## Raw data sources
 
-Fabricated raw data is included in the [data](api/py/test/sample/data) directory. It includes four tables:
+Fabricated raw data is included in the [data](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/data) directory. It includes four tables:
 
 1. Users - includes basic information about users such as account created date; modeled as a batch data source that updates daily
 2. Purchases - a log of all purchases by users; modeled as a log table with a streaming (i.e. Kafka) event-bus counterpart
@@ -264,7 +264,9 @@ For production, the Java client is usually embedded directly into services.
 Map<String, String> keyMap = new HashMap<>();
 keyMap.put("user_id", "123");
 Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
-// sample response 
+```
+sample response 
+```
 > '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
 ```
 
