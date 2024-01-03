@@ -148,7 +148,7 @@ We start by caching the conversion from `batchBytes` to `FinalBatchIr` (the [toB
 
 To make testing easier, we'll disable this feature by default and enable it via Java Args.
 
-Results: I tested this in our QA environment. The QA environment has an end-to-end test that uses a small keyspace and the cache was able to store all possible batch IRs. CPU usage for `toBatchIr` went from 10-14% to 0% and latency decreased by around 12%.
+Results: I tested this in production and saw a 22-35% decrease in serving latency depending on configuration. I used a realistic load test, served 10-15 GroupBys which used 4 different entity key types (some had skewed a access pattern, some didn't), a 20K-element cache shared across all GroupBys.
 
 ### Step 2: Batch GetRequest Caching
 
@@ -162,19 +162,21 @@ For the first point, in code, we will 1) check if the `GetRequest` is cached 2) 
 
 We won't worry add about edge case invalidation just yet (the aforementioned "latest batch data landing time" stuff).
 
+Results: will add
+
 ### Step 3: `TiledIr` Caching
 
 The second step is caching [tile bytes to TiledIr](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/TileCodec.scala#L77C67-L77C67). This is only possible if the tile bytes contain information about whether a tile is complete (i.e. it won’t be updated anymore). The Flink side marks tiles as complete.
 
 This cache can be "monoid-aware". Instead of storing multiple consecutive tiles for a given time range, we combine the tiles and store a single, larger tile in memory. For example, we combine two tiles, [0, 1) and [1, 2), into one, [0, 2).
 
-Results: <will add>
+Results: will add
 
 ### Step 4: Streaming GetRequest Caching.
 
 Add the rest of the logic described in "Streaming Caching Details" so that the `batchEndTsMillis` in the outgoing GetRequest is modified and the KV store ends up fetching fewer tiles.
 
-Results: <will add>
+Results: will add
 
 ### Step 5: Final Polishing
 The final step is to
