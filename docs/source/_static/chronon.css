@@ -17,6 +17,7 @@
 @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600;1,700&family=Inconsolata&display=swap');
 
 
+
 /* FIX-FOR: doc readability with default font is sub-par */
 body {
     font-family: 'IBM Plex Sans', sans-serif;
@@ -54,6 +55,19 @@ h3 {
 /* FIX-FOR: the inner and outer boxes of the search bar have inconsistent radii*/
 .bd-search {
     border-radius: 0.2rem;
+}
+
+/* use colors from the chronon theme for highlighting logo's / search bars  */
+html[data-theme=light] {
+    --pst-color-accent: rgb(230, 145, 56);
+    /*--pst-color-primary: rgb(196, 118, 12);*/
+    /*--pst-color-secondary: rgb(196, 118, 12);*/
+    /*--pst-color-attention: rgb(196, 118, 12);*/
+}
+
+html[data-theme=dark] {
+    --pst-color-accent: rgb(230, 145, 56);
+    /*--pst-color-primary: rgb(230, 145, 56);*/
 }
 
 /* FIX-FOR: the inner and outer boxes of the search bar have inconsistent radii*/
