@@ -9,7 +9,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.util.ScalaVersionSpecificCollectionsConverter
 
-class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: BaseTableUtils) {
+class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tableUtils: BaseTableUtils, skipFirstHole: Boolean = true) {
   assert(Option(stagingQueryConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = stagingQueryConf.metaData.outputTable
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
@@ -30,7 +30,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       return
     }
     val unfilledRanges =
-      tableUtils.unfilledRanges(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition)(tableUtils))
+      tableUtils.unfilledRanges(outputTable, PartitionRange(stagingQueryConf.startPartition, endPartition)(tableUtils), skipFirstHole = skipFirstHole)
 
     if (unfilledRanges.isEmpty) {
       println(s"""No unfilled range for $outputTable given
