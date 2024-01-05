@@ -1,6 +1,6 @@
 # Sources
 
-Sources in Chronon define data inputs to feature computation pipelines. It's often the first thing that users will write when defining a new entity in Chronon, and getting it right is one of the most important steps in the the authoring process. Defining it correctly will make everything fall into place correctly.
+Sources in Chronon define data inputs to feature computation pipelines. It's often the first thing that users will write when defining a new entity in Chronon, and getting it right is one of the most important steps in the authoring process. Defining it correctly will make everything fall into place correctly.
 
 There are five base source types in Chronon that can be used as inputs to feature pipelines. They differ primarily in the shape of data that they ingest, and where they ingest it from.
 
@@ -11,7 +11,7 @@ All features are created with one of these sources as input, except for `Chained
 All sources are basically composed of the following pieces*:
 
 1. Table that represents an offline warehouse such as hive or a topic that represents an event stream in a messaging system such as kafka
-2. A `Query` component, which tells Chronon which fields to extract for the computation pipeline
+2. A `Query` component, which tells chronon which fields to extract for the computation pipeline
 
 *External sources are the exception to the above, those are explained more below.
 

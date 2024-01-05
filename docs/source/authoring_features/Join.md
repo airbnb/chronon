@@ -67,7 +67,7 @@ The first two columns, `user_id` and `ts` are provided by the `left` side of the
 Once the join is merged, Chronon runs the following jobs:
 
 * Daily front-fill of new feature values as upstream data lands in the source tables.
-* If online serving is enabled, then Chronon runs pipelines that measure consistency between an offline join, and an online joins. These output metrics can be used to ensure are no consistency issues between the data a model is trained on and the data used to serve the model. 
+* If online serving is enabled, then Chronon runs pipelines that measure consistency between an offline join, and an online joins. These output metrics can be used to ensure there are no consistency issues between the data a model is trained on and the data used to serve the model. 
 
 These jobs are managed by airflow pipelines (see [Orchestration](../setup/Orchestration.md) documentation).
 

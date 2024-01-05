@@ -99,7 +99,7 @@ bucketed by `credit_card_type`. So instead of producing a single double value, b
 
 Chronon can accept multiple `bucket` columns at once and Bucketing is specified as `GroupBy.aggregations[i].buckets`.
 Bucketing always produces a map, and for online use-cases we require the bucket column to be a string. This requirement
-comes from Chronon's usage of avro in the serving environment. We plan to relax this requirement at a later time.
+comes from Chronon's usage of avro in the serving environment. We plan to remove this requirement at a later time.
 
 Here's what the above example looks like modified to include buckets. Note that there are two primary changes:
 1. Include the selection of the `credit_card_type` field on the source (so that we have access to the field by which we want to bucket).
