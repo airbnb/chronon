@@ -1,19 +1,25 @@
 
 # Tiled Architecture
 
-**Disclaimer**: Tiling is an experimental feature. It is used in production in some companies, but still in the process of being open-sourced.
+**Warning**: Tiling is an experimental feature that is still in the process of being open-sourced.
 
 ## What is tiling?
 
+The tiled architecture is a 
+
 Short summary. Intended for companies operating at significant scale.
 
-Requires Flink
+Requires [Flink](https://flink.apache.org/)
 
 The regular, untiled version
 - Architecture, image
 
+![Architecture](../images/Tiled_Architecture.png)
+
 The tiled version
 - Architecture, image
+
+![Architecture](../images/Untiled_Architecture.png)
 
 ## When should you use tiling?
 
