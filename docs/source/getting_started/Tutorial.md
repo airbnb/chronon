@@ -180,9 +180,9 @@ run.py --conf production/joins/quickstart/training_set.v1
 ```
 
 
-The output of the backfill would contain the `user_id`` and `ts`` columns from the left source, as well as the 11 feature columns from the three GroupBys that we created.
+The output of the backfill would contain the user_id and ts columns from the left source, as well as the 11 feature columns from the three GroupBys that we created.
 
-Feature values would be computed for each `user_id` and `ts` on the left side, with guaranteed temporal accuracy. So, for example, if one of the rows on the left was for `user_id = 123` and `ts = 2023-10-01 10:11:23.195`, then the `purchase_price_avg_30d` feature would be computed for that user with a precise 30 day window ending on that timestamp.
+Feature values would be computed for each user_id and ts on the left side, with guaranteed temporal accuracy. So, for example, if one of the rows on the left was for `user_id = 123` and `ts = 2023-10-01 10:11:23.195`, then the `purchase_price_avg_30d` feature would be computed for that user with a precise 30 day window ending on that timestamp.
 
 You can now query the backfilled data using the spark sql shell:
 

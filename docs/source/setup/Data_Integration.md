@@ -6,11 +6,11 @@ This is different than integrating with your online datastore for feature servin
 
 ## Requirements
 
-Chronon jobs require Spark to run. If you already have a Spark environment up and running that is connected to your Data Warehouse, then integration should be very simple.
+Chronon jobs require Spark to run. If you already have a spark environment up and running that is connected to your Data Warehouse, then integration should be very simple.
 
 ## Configuring Spark
 
-To configure Chronon to run on Spark, you just need a `spark_submit.sh` script that can be used in Chronon's [`run.py`](https://github.com/airbnb/chronon/blob/master/api/py/ai/chronon/repo/run.py) Python script (this is the python-based CLI entry point for all jobs).
+To configure Chronon to run on spark, you just need a `spark_submit.sh` script that can be used in Chronon's [`run.py`](https://github.com/airbnb/chronon/blob/master/api/py/ai/chronon/repo/run.py) Python script (this is the python-based CLI entry point for all jobs).
 
 We recommend putting your `spark_submit.sh` within a `scripts/` subdirectory of your main `chronon` directory (see [Developer Setup docs](./Developer_Setup.md) for how to setup the main `chronon` directory.). If you do that, then you can use `run.py` as-is, as that is the [default location](https://github.com/airbnb/chronon/blob/master/api/py/ai/chronon/repo/run.py#L483) for `spark_submit.sh`.
 
