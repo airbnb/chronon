@@ -1,6 +1,6 @@
 # Join
 
-As the name suggests `Join`, it is primarily responsible for joining together many `GroupBy`s, possibly with different keys. However, it is also responsible for another very important function: defining the timeline along which features will be computed in the backfill.
+As the name suggests, `Join` is primarily responsible for joining together many `GroupBy`s, possibly with different keys. However, it is also responsible for another very important function: defining the timeline along which features will be computed in the backfill.
 
 Let's use an example to explain this further. In the [Quickstart](../getting_started/Tutorial.md) tutorial, we define some features as aggregations of user's purchases and returns, as well as some other user dimensions like whether their accounts are verified. We intend to use these features in an online fraud model that runs at **checkout time**.
 
@@ -67,15 +67,15 @@ The first two columns, `user_id` and `ts` are provided by the `left` side of the
 Once the join is merged, Chronon runs the following jobs:
 
 * Daily front-fill of new feature values as upstream data lands in the source tables.
-* If online serving is enabled, then Chronon runs pipelines that measure consistency between an offline join, and an online joins. These output metrics can be used to 
+* If online serving is enabled, then Chronon runs pipelines that measure consistency between an offline join, and an online joins. These output metrics can be used to ensure are no consistency issues between the data a model is trained on and the data used to serve the model. 
 
 These jobs are managed by airflow pipelines (see [Orchestration](../setup/Orchestration.md) documentation).
 
 ## Source in Join
 
-`left` source is the driver for feature backfills. **It only matter for offline backfilling and not used in serving.** In online serving the fetcher takes a list of primary keys to fetch feature values for, which resembles the `left` source, however, it does not require a timestamp (becasue the online Fetcher always assumes that you want the most up to date feature values, i.e. timestamp=now).
+`left` source is the driver for feature backfills. **It only matters for offline backfilling and is not used in serving.** In online serving the fetcher takes a list of primary keys to fetch feature values for, which resembles the `left` source, however, it does not require a timestamp (becasue the online Fetcher always assumes that you want the most up to date feature values, i.e. timestamp=now).
 
-In the above example, the left source is an `EventSource`, however, in some cases it can also be an `EntitySource`. In both cases, however, it will never be streaming. This is because streaming is a strictly online concepts (realtime updates to the KV store), whereas the `left` source is only ever used to drive offline backfills.
+In the above example, the left source is an `EventSource`, however, in some cases it can also be an `EntitySource`. In both cases, however, it will never be streaming. This is because streaming is a strictly online concept (realtime updates to the KV store), whereas the `left` source is only ever used to drive offline backfills.
 
 Using an `EntitySource` will result in meaningfully different results for feature computation, primarily because `EntitySource`s do not have a `time` column. Rather, `EntitySources` have daily snapshots, so feature values are computed as of midnight boundaries on those days.
 

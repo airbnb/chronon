@@ -65,7 +65,7 @@ You can run the compiled configs (either `Join`/`GroupBy`/`StagingQuery`) with `
 run.py --mode=backfill --conf=production/joins/team/join.v1 --ds=2022-07-02
 ```
 
-This runs a spark job which will compute the data.
+This runs a Spark job which will compute the data.
 
 Most of the time, backfilling a `Join` is what you want because this backfills any `GroupBy`s used in the join as well.
 
@@ -75,14 +75,14 @@ If you want to produce a snapshot accurate table for the aggregations in a group
 
 You can either serve a `GroupBy` on its own, or a `Join` if you wish to fetch results for many `GroupBy`s together in one request.
 
-Manually running the test workflow for serving is optional. If you've validated that your Chronon config generates the correct results in backfill runs, then most of the time you can simply merge your config and let the scheduled airflow runs orchestrate the necesarry steps to enable serving.
+Manually running the test workflow for serving is optional. If you've validated that your Chronon config generates the correct results in backfill runs, then most of the time you can simply merge your config and let the scheduled Airflow runs orchestrate the necessary steps to enable serving.
 
 ## GroupBy Upload
 
-You need to upload some data into a kv store (mussel) to be able to fetch your data. For a join, this means:
+You need to upload some data into a KV store to be able to fetch your data. For a join, this means:
 
-1. All the relevant `GroupBy`'s data should be uploaded to mussel.
-2. The `Join`'s metadata should be uploaded to mussel (this allows Chronon to know which `GroupBy`s to fetch when the request comes in).
+1. All the relevant `GroupBy`'s data should be uploaded to the KV store.
+2. The `Join`'s metadata should be uploaded to the KV store (this allows Chronon to know which `GroupBy`s to fetch when the request comes in).
 
 For a `GroupBy`, you just need to run one upload.
 
@@ -102,7 +102,7 @@ your_group_by = GroupBy(
 )
 ```
 
-Once you have marked a particular zipline definition as online and compiled it, you need to upload the relevant `GroupBy`'s data into your KV store. 
+Once you have marked a particular Chronon definition as online and compiled it, you need to upload the relevant `GroupBy`'s data into your KV store. 
 
 The following command will generate a table with key-value bytes that's ready for upload to your KV store:
 
@@ -150,9 +150,9 @@ my_join = Join(
 )
 ```
 
-The `sample_percent` param will enable logging during fetching phase, and the `check_consistency` param will enable the online offline consistency check DAG to trigger a spark job to compare the logged events with offline join job after data landing in the warehouse. The DAG will be named: `online_offline_comparison_<team_name>_<join_name>`.
+The `sample_percent` param will enable logging during fetching phase, and the `check_consistency` param will enable the online offline consistency check DAG to trigger a Spark job to compare the logged events with offline join job after data landing in the warehouse. The DAG will be named: `online_offline_comparison_<team_name>_<join_name>`.
 
-The spark job will write the result to a flat Hive table in the pattern of `<output_namespace>.<team_name>_<join_name>_consistency`.
+The Spark job will write the result to a flat Hive table in the pattern of `<output_namespace>.<team_name>_<join_name>_consistency`.
 
 See more details of what it computes [here](https://sourcegraph.d.musta.ch/github.com/airbnb/chronon/-/blob/docs/source/Online_Offline_Consistency.md).
 

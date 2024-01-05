@@ -13,7 +13,7 @@ These aggregate and non-aggregated features can be used in various ways:
 - **served online**, updated at **midnight** - you can utilize the client to query for the aggregate values as of **today's midnight**. The values are only refreshed every midnight. This would require just the warehouse (hive) table of historical user purchases that receives a new partition every midnight.
   - *Note: Users can configure accuracy to be midnight or realtime*
 
-- **standalone backfilled** - daily snapshots of aggregate values. The result is a date partitioned Hive Table where each partition contains aggregates as of that day, for each user that has row in the largest window ending that day.
+- **standalone backfilled** - daily snapshots of aggregate values. The result is a date partitioned Hive Table where each partition contains aggregates as of that day, for each user that has a row in the largest window ending that day.
 
 - **backfilled against another source** - see [Join](./Join.md) documentation. Most commonly used to enrich labelled data with aggregates coming from many different sources & GroupBy's at once.
 
@@ -93,13 +93,13 @@ See the [Realtime Event GroupBy examples](#realtime-event-groupby-examples) for 
 
 ## Bucketing
 
-Expanding on the previous example - if we wanted to compute `average` `purchase_price` of a `user_purchase` source, but
-bucketed by `credit_card`. So instead of producing a single double value, bucketing produces a map of `credit_card` to
+Expanding on the previous example - we now want to compute `average` `purchase_price` of a `user_purchase` source, but
+bucketed by `credit_card_type`. So instead of producing a single double value, bucketing produces a map of `credit_card_type` to
 `average_purchase_price`.
 
 Chronon can accept multiple `bucket` columns at once and Bucketing is specified as `GroupBy.aggregations[i].buckets`.
 Bucketing always produces a map, and for online use-cases we require the bucket column to be a string. This requirement
-comes from Chronon's usage of avro in the serving environment. We plan to mitigate requirement at a later time.
+comes from Chronon's usage of avro in the serving environment. We plan to relax this requirement at a later time.
 
 Here's what the above example looks like modified to include buckets. Note that there are two primary changes:
 1. Include the selection of the `credit_card_type` field on the source (so that we have access to the field by which we want to bucket).
@@ -115,7 +115,7 @@ Chronon can extract values nested in containers and perform aggregations - over 
 
 Aggregations can also accept list columns as input. For example if we want `average` `item_price` from a `user_purchase`
 source, which contains `item_prices` as a `list` of values in each row - represented by a single credit card transaction.
-Simply put, `GroupBy.aggregations[i].input_column` can refer to a columnname which contains lists as values. In
+Simply put, `GroupBy.aggregations[i].input_column` can refer to a column name which contains lists as values. In
 traditional SQL this would require an expensive `explode` command and is supported natively in `Chronon`.
 
 ## Maps as inputs 
@@ -125,7 +125,7 @@ histograms using - min, max, avg, sum etc. You can merge maps of any scalar valu
 The output of aggregations with scala values on map types is another map with aggregates as values.
 
 Limitations:
-- Map key needs to be string - because avro doesn't like it any other way
+- Map key needs to be string - because avro doesn't like it any other way.
 - Map aggregations cannot be coupled with bucketing for now. We will add support later.
 - Aggregations need to be time independent for now - will add support for timed version later.
 

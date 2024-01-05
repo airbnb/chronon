@@ -107,7 +107,7 @@ We perform a similar set of aggregations on returns data in the [returns GroupBy
 
 **Feature set 3: User data features**
 
-Turning User data into features is a littler simpler, primarily because there are no aggregations to include. In this case, the primary key of the source data is the same as the primary key of the feature, so we're simple extracting column values rather than perform aggregations over rows:
+Turning User data into features is a littler simpler, primarily because there are no aggregations to include. In this case, the primary key of the source data is the same as the primary key of the feature, so we're simply extracting column values rather than performing aggregations over rows:
 
 ```python
 source = Source(
@@ -138,7 +138,7 @@ For our use case, it's very important that features are computed as of the corre
 
 1. Combines many features together into a wide view (hence the name Join).
 2. Defines the primary keys and timestamps for which feature backfills should be performed. Chronon can then guarantee that feature values are correct as of this timestamp.
-3. Performs scalabe backfills
+3. Performs scalable backfills
 
 Here is the definition that we would use.
 
@@ -180,9 +180,9 @@ run.py --conf production/joins/quickstart/training_set.v1
 ```
 
 
-The output of the backfill would contain the user_id and ts columns from the left source, as well as the 11 feature columns from the three GroupBys that we created.
+The output of the backfill would contain the `user_id`` and `ts`` columns from the left source, as well as the 11 feature columns from the three GroupBys that we created.
 
-Feature values would be computed for each user_id and ts on the left side, with guaranteed temporal accuracy. So, for example, if one of the rows on the left was for `user_id = 123` and `ts = 2023-10-01 10:11:23.195`, then the `purchase_price_avg_30d` feature would be computed for that user with a precise 30 day window ending on that timestamp.
+Feature values would be computed for each `user_id` and `ts` on the left side, with guaranteed temporal accuracy. So, for example, if one of the rows on the left was for `user_id = 123` and `ts = 2023-10-01 10:11:23.195`, then the `purchase_price_avg_30d` feature would be computed for that user with a precise 30 day window ending on that timestamp.
 
 You can now query the backfilled data using the spark sql shell:
 
@@ -240,7 +240,7 @@ If we want to use the `FetchJoin` api rather than `FetchGroupby`, then we also n
 run.py --mode metadata-upload --conf production/joins/quickstart/training_set.v2
 ```
 
-This makes it so that the online fetcher knows how to take a requests for this join and break it up into individual GroupBy requests, returning the unified vector, similar to how the Join backfill produces the wide view table with all features.
+This makes it so that the online fetcher knows how to take a request for this join and break it up into individual GroupBy requests, returning the unified vector, similar to how the Join backfill produces the wide view table with all features.
 
 ### Fetching Data
 

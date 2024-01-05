@@ -33,7 +33,7 @@ Chronon outputs data to the warehouse for a number of use cases, the main one be
 
 ## Online/Offline consistency
 
-This a core chronon guarantee that the data you train your model on is consistent with the data that you fetch at model inference time. See the [Source](../authoring_features/Source.md) and [Join](../authoring_features/Join.md) documentation in authoring features for more concrete examples of how this works in practice.
+This a core Chronon guarantee that the data you train your model on is consistent with the data that you fetch at model inference time. See the [Source](../authoring_features/Source.md) and [Join](../authoring_features/Join.md) documentation in authoring features for more concrete examples of how this works in practice.
 
 ## Airflow Orchestration
 
