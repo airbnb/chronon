@@ -90,6 +90,26 @@ See the [Computation examples](#computation-examples) for an explanation of how 
 a group_by on the right keyed by `user`. On the left you have chosen to call the user `user_id` or `vendor`. Then you
 can use the remapping facility to specify this relation for each group_by.
 
+## Label Join
+Label join job allows generation of offline labeled datasets with associated features. Once regular join backfilling
+processes are complete, you can initiate a Label Join job to incorporate available labels into the feature set,
+resulting in a comprehensive training dataset. This enables access to all labeled features, including a 'Labeled Latest'
+table that conveniently provides the most recent available label version for analysis purposes.
+
+We provide support for both non-aggregated labels and labels that require aggregation. Label aggregations function
+similarly to regular feature group-by aggregations, and existing operations can also be applied to labels.
+
+More details and use scenarios about label join job can be found in the [Label Join](../LabelJoin.md) and [Scenarios](../ODMScenarios.md) documentation.
+
+## Bootstrap
+Chronon supports feature **bootstrap** as a primitive as part of Join in order to support various kinds of feature 
+experimentation workflows that are manually done by clients previously outside of Chronon.
+
+Bootstrap is a preprocessing step in the **Join** job that enriches the left side with precomputed feature data, 
+before running the regular group by backfills if necessary.
+
+More details and scenarios about bootstrap can be found in the [Bootstrap](../Bootstrap.md) and [Scenarios](../ODMScenarios.md) documentation.
+
 # Computation examples
 
 The following explain the backfill accuracy for each possible combination of left-side source type and right-side/GroupBy source type.
