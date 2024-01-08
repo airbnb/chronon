@@ -1,6 +1,7 @@
-# ODM Scenarios Deep Dive
+# Offline Data Management Scenarios Deep Dive
 
-1. Scenarios Deep Dive
+1. Introduction
+2. Scenarios Deep Dive
    1. [A - Create a brand new feature set data](#A---Create-a-brand-new-feature-set)
    2. [B - Set up log-based data refresh for an online model](#B---Set-up-log-based-data-refresh-for-an-online-model)
    3. [C - Improve an existing feature set of an online model](#C---Improve-an-existing-feature-set-of-an-online-model)
@@ -11,7 +12,22 @@
    8. [H - Overwrite incorrect logged feature values](#H---Overwrite-incorrect-logged-feature-values)
    9. [I - Adding labels to training dataset](#I---Adding-labels-to-training-dataset)
    10. [J - Adding labels and apply aggregation on labels](#J---Adding-labels-and-apply-aggregation-on-labels)
-2. [FAQs](#FAQs)
+3. [FAQs](#FAQs)
+
+## Introduction
+
+ODM (offline data management) is a Chronon component that improves the overall experience of creating and managing offline datasets that are powering your ML workflows.
+
+It consists of 3 core building blocks:
+
+1. **Logging** - for capturing online production features
+   Feature keys & values are now automatically logged and processed into offline tables for all online Chronon requests. You can utilize the offline log table for many purposes, such as ML observability and auto-retraining.
+
+2. **Bootstrap** - for producing feature sets from across sources & environments  
+   You can now create a new training set table from multiple data sources. For example, you can utilize logging for production features and backfill for experimental features; you can reuse backfilled data across multiple runs; you can even share feature values produced by other folks. No more backfills if the data is already available somewhere!
+
+3. **Label computation** - for attaching labels to features to form the full training set
+   You can now add labels to your features! Chronon now supports a wide range of labeling computation patterns, including both pre-aggregated labels, or labels that require windowed aggregations
 
 ### A - Create a brand-new feature set
 Goal
@@ -436,7 +452,8 @@ Goal
 2. Make sure to run join feature backfill before running label-join job. This is a dependency for label join airflow job and label job will only kick off once join feature tables are ready.
 3. Create a new label group by and specify the aggregation details. The aggregation concept is the same as existing group by feature aggregation.
 4. Create label_part using label group by defined above and add label_part to the existing join model.
-5. Note that single window aggregation is allowed and the start_offset and end_offset should be the same as window size.
+5. Note that single window aggregation is allowed and the start_offset and end_offset is required to be the same as window size.
+   Given that we will refresh only the single-day label (as opposed to a range) once it has matured over the next window.  
 ```python
 label_part_group_by = GroupBy(
    name="sample_label_group_by",
@@ -500,10 +517,9 @@ In essence, the left source should contain the **list of (row ids, entity keys, 
 - **Row ids** are primary identifiers for a training row. Usually this is a request id for online requests. It should be passed as a contextual feature in the join to support log bootstrap
 - **Entity keys and timestamp** are the join keys for group bys and external parts
 ### How to set up log-based training data generation properly?
-Chronon supports logging of online requests data (keys and values) into a Jitney stream, and automatically converts that into a flattened log table Hive table where each field (key/value) is stored in a column.
+Chronon supports logging of online requests data (keys and values) into a data stream, and automatically converts that into a flattened log table Hive table where each field (key/value) is stored in a column.
 Log-based training data generation is the idea to leverage this workflow and the bootstrap functionality to stitch log data and backfill data together. To do that, you should:
-- Define the **row ids** for the join use case.
-   - Usually this is the online request id, such as kyoo_event_id for Kyoo models
+- Define the **row ids** for the join use case. Usually this is the online request id.
 - Pass **row ids** as a contextual feature, so that it can logged and attached to **flattened log table** to make it joinable
 - Include **row ids** on the left source
 - It is recommended to use flattened log table to construct the left source for this reason
@@ -525,7 +541,7 @@ Also, note that the log table always has the lowest priority (when bootstrap_fro
 External parts by definition do not have a built-in backfill mechanism in Chronon. There are two ways for clients to supply
 values for external parts:
 1. During online fetching, the Chronon fetcher will handle external parts fetching and will log the fetched external parts
-   into a flattened log table together with native group-bys (see [AFP Orchestrator](https://docs.google.com/document/d/16ycE0GFLfRHJEauuWyz-3VWnO5--AI56WXT5xudKfos/edit#heading=h.kwh85a6763id) design).
+   into a flattened log table together with native group-bys.
    These values can then be included in the join table through bootstrap_from_log.
 2. External parts can be bootstrapped from arbitrary tables built by clients. Clients are responsible for building the data pipeline to construct the table from scratch.
    - It is also possible to leverage Chronon to build these bootstrap source tables. In some edge-case scenarios in which

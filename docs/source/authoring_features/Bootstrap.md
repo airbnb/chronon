@@ -15,6 +15,37 @@ Bootstrap is a preprocessing step in the **Join** job that enriches the left sid
 5. Data recovery: fix broken log data during periods of serving outage using manual backfill
 6. Data migration: migrate training data from legacy system
 
+## API Example
+**Generate feature data from online logging and offline backfills**
+
+```python
+my_model = Join(
+    left=<my_driver_table>,
+    right_parts=<my_features>
+    # Define row-level identifiers for your offline dataset
+    row_ids=["my_event_id"],
+    # Send row_ids during online fetching to make the logs joinable offline
+    online_external_parts=[
+      ExternalPart(ContextualSource(
+         fields=[("my_event_id", DataType.STRING)]
+      )
+    ],
+    # Use log table as a bootstrap source to skip offline backfill
+    bootstrap_from_log=True
+)
+
+```
+
+## How does bootstrap work?
+
+When a join job is run, it backfills all features against the keys/timestamp of the left table. When bootstrap parts
+are defined in the join, before it runs the backfill step, it joins the left table with the bootstrap tables on the
+row_ids (a new param introduced by ODM) columns. Then for each following backfill, it checks whether the rows on the
+left are already covered by the bootstrap. If so, then a backfill is skipped; if not, then a backfill is scheduled.
+
+Bootstrap can happen both for a subset of rows and a subset of columns. Chronon will automatically backfill the rest
+of rows or columns that are not covered by bootstrap.
+
 ## Bootstrap Table
 
 Bootstrap table is a precomputed table which contains precomputed feature values for (subsets of) left table.
