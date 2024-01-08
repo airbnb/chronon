@@ -109,7 +109,7 @@ Keep track of the last ice cream flavor a person had in the last 6 hrs.
 
 The Source operator consumes from Kafka and deserializes the events into typed objects. For our Ice Cream shop example, we have this Proto:
 
-```json
+```Scala
 IceCreamEventProto(
      customer_id: _root_.scala.Predef.String = "",
      created: _root_.scala.Long = 0L,
