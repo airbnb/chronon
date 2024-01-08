@@ -1,6 +1,6 @@
 # Offline Data Management Scenarios Deep Dive
 
-1. Introduction
+1. [Introduction](##Introduction)
 2. Scenarios Deep Dive
    1. [A - Create a brand new feature set data](#A---Create-a-brand-new-feature-set)
    2. [B - Set up log-based data refresh for an online model](#B---Set-up-log-based-data-refresh-for-an-online-model)
