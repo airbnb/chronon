@@ -47,7 +47,7 @@ In particular, organizations operating a significant scale should consider using
 
 To use tiling, you need Flink to be available in your organization (or modify Chronon to work with other stream processing frameworks).
 
-To migrate to tiling, start with the write path. If you are not yet using Chronon on Flink, you can start by integrating **Flink without tiling** and then enable tiling. In the [FlinkJob](https://github.com/airbnb/chronon/blob/master/flink/src/main/scala/ai/chronon/flink/FlinkJob.scala) class there are two version of the app, one tiled and one untiled. 
+To migrate to tiling, start with the write path. If you are not yet using Chronon on Flink, you can start by integrating **Flink without tiling** and then enable tiling. In the [FlinkJob](https://github.com/airbnb/chronon/blob/master/flink/src/main/scala/ai/chronon/flink/FlinkJob.scala) class there are two versions of the app, one tiled and one untiled. 
 
 Once you have your Flink app set up and writing tiles to your datastore, it's time to modify the read path. This is simple: add `enable_tiling=true` to the [customJson](https://github.com/airbnb/chronon/blob/48b789dd2c216c62bbf1d74fbf4e779f23db541f/api/py/ai/chronon/group_by.py#L561) of any GroupBy definition.  
 
@@ -57,7 +57,7 @@ This example shows a **simplified version** of what happens to events as they mo
 
 Say we have a high-tech Ice Cream shop and we want to create an ML model. We want to define features for:
 - Counting the number of ice cream cones a person has bought in the last 6 hours.
-- Keeping track of the last ice cream flavour a person had in the last 6 hours.
+- Keeping track of the last ice cream flavor a person had in the last 6 hours.
 
 A GroupBy might looks like this:
 ```python
@@ -67,7 +67,7 @@ ice_cream_group_by = GroupBy(
             query=Query(
                 selects=select(
                     customer_id="customer_id",
-                    flavour="ice_cream_flavour",
+                    flavor="ice_cream_flavor",
                 ),
                 time_column="created",
                 …
@@ -82,7 +82,7 @@ ice_cream_group_by = GroupBy(
             windows=[Window(length=6, timeUnit=TimeUnit.HOURS)],
         ),
         Aggregation(
-            input_column="flavour",
+            input_column="flavor",
             operation=Operation.LAST,
             windows=[Window(length=6, timeUnit=TimeUnit.HOURS)],
         ),
@@ -98,12 +98,12 @@ ice_cream_group_by = GroupBy(
 The Flink job contains five main operators
  1. Source - Reads events of type `T` from a source, which is often a Kafka topic. The generic type `T` could be a Scala case class, [Thrift](https://thrift.apache.org/), [Proto](https://protobuf.dev/), etc. 
  2. Spark expression evaluation - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input data. This runs Spark inside the Flink app using CatalystUtil.
- 3. Window/tiling - This is main tiling operator. It uses a window to aggregate incoming events and keep track of the IRs. It outputs the pre-aggregates on every event so they are written out to the KV store and the fetcher has access to fresh values.
+ 3. Window/tiling - This is the main tiling operator. It uses a window to aggregate incoming events and keep track of the IRs. It outputs the pre-aggregates on every event so they are written out to the KV store and the fetcher has access to fresh values.
  4. Avro conversion - Finishes [Avro](https://avro.apache.org/)-converting the output of the window (the IRs) to a form that can be written out to the KV store (PutRequest object).
  5. KV store sink - Writes the `PutRequest` objects to the KV store using the `AsyncDataStream` API.
 
 Counting the number of ice cream cones a person has bought in the last 6 hrs.
-Keep track of the last ice cream flavour a person had in the last 6 hrs.
+Keep track of the last ice cream flavor a person had in the last 6 hrs.
 
 #### 1. Source
 
@@ -113,7 +113,7 @@ The Source operator consumes from Kafka and deserializes the events into typed o
 IceCreamEventProto(
      customer_id: _root_.scala.Predef.String = "",
      created: _root_.scala.Long = 0L,
-     ice_cream_flavour: _root_.scala.Predef.String = "",
+     ice_cream_flavor: _root_.scala.Predef.String = "",
      ice_cream_cone_size: _root_.scala.Predef.String = "",
 )
 ```
@@ -127,14 +127,14 @@ Here, the operator takes the object of type `T`, performs the selects and filter
 IceCreamEventProto(
     customer_id = "Alice",
     created = 1000L,
-    ice_cream_flavour = "chocolate",
+    ice_cream_flavor = "chocolate",
     ice_cream_cone_size =  "large" // Not used in GroupBy definition 
 )
 // Output
 Map(
     "customer_id" -> "Alice",
     "created" -> 1000L,
-    "flavour" -> "chocolate"
+    "flavor" -> "chocolate"
 )
 ```
 
@@ -143,13 +143,13 @@ Map(
 The window operator pre-aggregates the incoming `Map(String -> Any)` and outputs an array of IRs. Example:
 
 Event 1 comes in with `Map("Alice", 1000L, "chocolate")`. 
-- Pre-aggregates for key "Alice": `[count: 1, last_flavour: "chocolate"]`
+- Pre-aggregates for key "Alice": `[count: 1, last_flavor: "chocolate"]`
 
 Event 2 comes in for `Map("Bob", 1200L, "strawberry")`
-- Pre-aggregates for key "Bob": `[count: 1, last_flavour: "strawberry"]`
+- Pre-aggregates for key "Bob": `[count: 1, last_flavor: "strawberry"]`
 
 Event 3 comes in `Map("Alice", 1500L, "olive oil")`
-- Pre-aggregates for key "Alice": `[count: 2, last_flavour: "olive oil"]`
+- Pre-aggregates for key "Alice": `[count: 2, last_flavor: "olive oil"]`
 
 #### 4. Avro conversion
 
