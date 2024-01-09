@@ -5,11 +5,13 @@ This section walks you through the steps to create a training dataset with Chron
 Includes:
 - Example implementation of the main API components for defining features - `GroupBy` and `Join`.
 - The workflow for authoring these entities.
-- The workflow for back-filling training data.
+- The workflow for backfilling training data.
+- The workflows for uploading and serving this data.
+- The workflow for measuring consistency between backfilled training data and online inference data.
 
 Does not include:
-- A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon-ai.pages.dev/Introduction) documentation.
-- Running streaming jobs and online serving of data (this only covers offline training data).
+- A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon.ai/authoring_features/GroupBy.html) documentation.
+- Running streaming jobs.
 
 ## Requirements
 
@@ -24,11 +26,11 @@ curl -o docker-compose.yml https://chronon.ai/docker-compose.yml
 docker-compose up
 ```
 
-Once you see some data printed with a `only showing top 20 rows` notice, You're now ready to proceed with the tutorial.
+Once you see some data printed with a `only showing top 20 rows` notice, you're ready to proceed with the tutorial.
 
 ## Introduction
 
-In this example, let's assume that we're a large online retailer, and we've detected a fraud vector based on users making purchases and later returning items. We want to train a model that will be called when the **checkout** flow commences, that will predict whether this transaction is likely to result in a fraudulent return.
+In this example, let's assume that we're a large online retailer, and we've detected a fraud vector based on users making purchases and later returning items. We want to train a model that will be called when the **checkout** flow commences and predicts whether this transaction is likely to result in a fraudulent return.
 
 ## Raw data sources
 
@@ -39,7 +41,7 @@ Fabricated raw data is included in the [data](https://github.com/airbnb/chronon/
 3. Returns - a log of all returns made by users; modeled as a log table with a streaming (i.e. Kafka) event-bus counterpart
 4. Checkouts - a log of all checkout events; **this is the event that drives our model predictions**
 
-### 1. Setup the sample chronon repo and cd into the directory
+### Start a shell session in the Docker container
 
 In a new terminal window, run:
 
@@ -69,7 +71,7 @@ Becuase this feature is built upon a source that includes both a table and a top
 source = Source(
     events=EventSource(
         table="data.purchases", # This points to the log table with historical purchase events
-        topic="events/purchase_events", # The streaming source topic
+        topic=None, # Streaming is not currently part of quickstart, but this would be where you define the topic for realtime events
         query=Query(
             selects=select("user_id","purchase_price"), # Select the fields we care about
             time_column="ts") # The event time
@@ -99,7 +101,7 @@ v1 = GroupBy(
 )
 ```
 
-See the whole code file here: [purchases GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/purchases.py). This is also in your `chronon` directory downloaded by `init.sh`. We'll be running computation for it and the other GroupBys in [Step 3 - Backfilling Data](#step-3---backfilling-data). 
+See the whole code file here: [purchases GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/purchases.py). This is also in your docker image. We'll be running computation for it and the other GroupBys in [Step 3 - Backfilling Data](#step-3---backfilling-data). 
 
 **Feature set 2: Returns data features**
 
@@ -130,17 +132,17 @@ Taken from the [users GroupBy](https://github.com/airbnb/chronon/blob/master/api
 
 ### Step 2 - Join the features together
 
-Next, we need the features that we previously defined backfilled in a single table for model training. This can be achieved using the Join API.
+Next, we need the features that we previously defined backfilled in a single table for model training. This can be achieved using the `Join` API.
 
 For our use case, it's very important that features are computed as of the correct timestamp. Because our model runs when the checkout flow begins, we'll want to be sure to use the corresponding timestamp in our backfill, such that features values for model training logically match what the model will see in online inference.
 
 `Join` is the API that drives feature backfills for training data. It primarilly performs the following functions:
 
-1. Combines many features together into a wide view (hence the name Join).
+1. Combines many features together into a wide view (hence the name `Join`).
 2. Defines the primary keys and timestamps for which feature backfills should be performed. Chronon can then guarantee that feature values are correct as of this timestamp.
-3. Performs scalabe backfills
+3. Performs scalabe backfills.
 
-Here is the definition that we would use.
+Here is what our join looks like:
 
 ```python
 source = Source(
@@ -178,7 +180,6 @@ This converts it into a thrift definition that we can submit to spark with the f
 ```shell
 run.py --conf production/joins/quickstart/training_set.v1
 ```
-
 
 The output of the backfill would contain the user_id and ts columns from the left source, as well as the 11 feature columns from the three GroupBys that we created.
 

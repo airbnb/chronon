@@ -1,6 +1,6 @@
 # Data Integration
 
-This doc covers how to setup Chronon so that it can read the raw data in your warehouse for feature computation, and write out computed feature values for storage.
+This section covers how to setup Chronon so that it can read the raw data in your warehouse for feature computation, and write out computed feature values for storage.
 
 This is different than integrating with your online datastore for feature serving. For that, please refer to [Online Integration](./Online_Integration.md).
 

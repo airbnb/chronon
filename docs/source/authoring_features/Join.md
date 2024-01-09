@@ -4,7 +4,7 @@ As the name suggests `Join`, it is primarily responsible for joining together ma
 
 Let's use an example to explain this further. In the [Quickstart](../getting_started/Tutorial.md) tutorial, we define some features as aggregations of user's purchases and returns, as well as some other user dimensions like whether their accounts are verified. We intend to use these features in an online fraud model that runs at **checkout time**.
 
-This is important because it means that when we serve the model online, inference will be made at checkout time, and therefore when we backfill features for training data, we want every row to correspond to a historical checkout event, and features should be computed as of the timestamps that those events occurred. I.e. every row of training data for the model has identical feature values to what the model would have seen had that row been on a production inference request.
+This is important because it means that when we serve the model online, inference will be made at checkout time, and therefore backfilled features for training data should correspond to a historical checkout event, with features computed as of those checkout times. In other words, every row of training data for the model has identical feature values to what the model would have seen had it made a production inference request at that time.
 
 To see how we do this, let's take a look at the left side of the join definition (taken from [Quickstart Training Set Join](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/joins/quickstart/training_set.py)).
 
@@ -14,8 +14,8 @@ source = Source(
         table="data.checkouts", 
         query=Query(
             selects=select("user_id"), # The primary key used to join various GroupBys together
-            time_column="ts",
-            ) # The event time used to compute feature values as-of
+            time_column="ts", # The event time used to compute feature values as-of
+            ) 
     ))
 
 v1 = Join(  
@@ -27,6 +27,7 @@ v1 = Join(
 Key points:
 * The `left` source is built on top of the checkouts data source. This is driven by the use that we're modeling. In this case we're trying to predict whether checkout events are fraudulent or not, so we use checkouts as the left.
 * The `left` side selects only the user_id field, because all of our `GroupBy`s that we use in the right parts are based off user. If we also had a `GroupBy` keyed off of some different key, like `browser` or `ip_address`, then the left side would also need to provide those keys.
+* The `left` side specified a `time_column` which is used as the requested timeline for feature computation. In this case we use the `ts` column, which is the time at which the checkout flow commences, because this is the time that we want features computed as-of.
 * The `right_parts` specifies the `GroupBy`s that we wish to use.
 
 Here is what one row of sample output would look like after running this join:
