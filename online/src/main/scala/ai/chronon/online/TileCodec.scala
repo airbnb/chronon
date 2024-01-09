@@ -42,13 +42,6 @@ object TileCodec {
     val unpackedAggs = groupBy.aggregations.asScala.flatMap(_.unpack)
     new RowAggregator(inputSchema, unpackedAggs)
   }
-
-  // Check if tiling is enabled for a given GroupBy. Defaults to false if the 'enable_tiling' flag isn't set.
-  def isTilingEnabled(groupBy: GroupBy): Boolean =
-    groupBy.getMetaData.customJsonLookUp("enable_tiling") match {
-      case s: Boolean => s
-      case _          => false
-    }
 }
 
 /**

@@ -105,7 +105,7 @@ class FetcherBase(kvStore: KVStore,
 
           if (debug) {
             val gson = new Gson()
-            println(s"""
+            logger.info(s"""
                  |batch ir: ${gson.toJson(batchIr)}
                  |streamingIrs: ${gson.toJson(streamingIrs)}
                  |batchEnd in millis: ${servingInfo.batchEndTsMillis}
@@ -127,7 +127,7 @@ class FetcherBase(kvStore: KVStore,
 
           if (debug) {
             val gson = new Gson()
-            println(s"""
+            logger.info(s"""
                  |batch ir: ${gson.toJson(batchIr)}
                  |streamingRows: ${gson.toJson(streamingRows)}
                  |batchEnd in millis: ${servingInfo.batchEndTsMillis}

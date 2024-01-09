@@ -38,7 +38,7 @@ object OnlineUtils {
                    namespace: String,
                    debug: Boolean,
                    dropDsOnWrite: Boolean): Unit = {
-    val isTiled = TileCodec.isTilingEnabled(groupByConf)
+    val isTiled = groupByConf.isTilingEnabled
     val inputStreamDf = groupByConf.dataModel match {
       case DataModel.Entities =>
         assert(!isTiled, "Tiling is not supported for Entity groupBy's yet (Only Event groupBy are supported)")
@@ -66,7 +66,8 @@ object OnlineUtils {
     }
 
     if (isTiled) {
-      val memoryStream: Array[(Array[Any], Long, Array[Byte])] = inputStream.getInMemoryTiledStreamArray(session, inputModified, groupByConf)
+      val memoryStream: Array[(Array[Any], Long, Array[Byte])] =
+        inputStream.getInMemoryTiledStreamArray(session, inputModified, groupByConf)
       val inMemoryKvStore: KVStore = kvStore()
 
       val fetcher = mockApi.buildFetcher(false)
@@ -88,7 +89,11 @@ object OnlineUtils {
       inMemoryKvStore.multiPut(putRequests)
     } else {
       val groupByStreaming =
-        new GroupBy(inputStream.getInMemoryStreamDF(session, inputModified), session, groupByConf, mockApi, debug = debug)
+        new GroupBy(inputStream.getInMemoryStreamDF(session, inputModified),
+                    session,
+                    groupByConf,
+                    mockApi,
+                    debug = debug)
       // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
       val dataStream = groupByStreaming.buildDataStream()
       val query = dataStream.trigger(Trigger.Once()).start()

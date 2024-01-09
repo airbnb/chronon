@@ -21,7 +21,6 @@ import ai.chronon.api.{
   Aggregation,
   Builders,
   FloatType,
-  GroupBy,
   IntType,
   ListType,
   LongType,
@@ -31,7 +30,7 @@ import ai.chronon.api.{
   TimeUnit,
   Window
 }
-import org.junit.Assert.{assertEquals, assertTrue, assertFalse}
+import org.junit.Assert.assertEquals
 import org.junit.Test
 
 import scala.collection.JavaConverters._
@@ -168,34 +167,5 @@ class TileCodecTest {
         logger.info(s"Checking: $name")
         assertEquals(expected, actual)
     }
-  }
-
-  @Test
-  def correctlyDeterminesTilingIsEnabled(): Unit = {
-    def buildGroupByWithCustomJson(customJson: String = null): GroupBy =
-      Builders.GroupBy(
-        metaData = Builders.MetaData(name = "featureGroupName", customJson = customJson)
-      )
-
-    // customJson not set defaults to false
-    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson()))
-    assertFalse(TileCodec.isTilingEnabled(buildGroupByWithCustomJson("{}")))
-
-    assertTrue(
-      TileCodec
-        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": true}"))
-    )
-
-    assertFalse(
-      TileCodec
-        .isTilingEnabled(buildGroupByWithCustomJson("{\"enable_tiling\": false}"))
-    )
-
-    assertFalse(
-      TileCodec
-        .isTilingEnabled(
-          buildGroupByWithCustomJson("{\"enable_tiling\": \"string instead of bool\"}")
-        )
-    )
   }
 }
