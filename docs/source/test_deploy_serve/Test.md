@@ -79,10 +79,10 @@ Manually running the test workflow for serving is optional. If you've validated 
 
 ## GroupBy Upload
 
-You need to upload some data into a kv store to be able to fetch your data. For a join, this means:
+You need to upload some data into a KV store to be able to fetch your data. For a join, this means:
 
 1. All the relevant `GroupBy`'s data should be uploaded to the KV store.
-2. The `Join`'s metadata should be uploaded to the kv store (this allows Chronon to know which `GroupBy`s to fetch when the request comes in).
+2. The `Join`'s metadata should be uploaded to the KV store (this allows Chronon to know which `GroupBy`s to fetch when the request comes in).
 
 For a `GroupBy`, you just need to run one upload.
 
