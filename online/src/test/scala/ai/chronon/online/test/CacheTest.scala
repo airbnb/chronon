@@ -1,8 +1,12 @@
 package ai.chronon.online.test
 
+import ai.chronon.aggregator.windowing.FinalBatchIr
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import ai.chronon.api.{Aggregation, Builders, FloatType, GroupBy, IntType, ListType, LongType, Operation, Row, StringType, TimeUnit, Window}
 import org.junit.Test
 import com.github.benmanes.caffeine.cache.{Cache => CaffeineCache}
 import ai.chronon.online.Cache
+import ai.chronon.online.BaseFetcher.BatchIrCacheKey
 
 import scala.collection.JavaConverters._
 
