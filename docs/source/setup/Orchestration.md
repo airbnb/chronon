@@ -2,7 +2,7 @@
 
 Orchestration for Chronon involves running the various jobs to compute batch and streaming feature computation, as well on online/offline consistency measurement.
 
-Airflow is currently the best supported method for orchestration, however, other integrations would also certainly be possible.
+Airflow is currently the best supported method for orchestration, however, other integrations are also possible.
 
 ## Airflow Integration
 

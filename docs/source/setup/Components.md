@@ -4,14 +4,14 @@ This is a high level overview of the various components of Chronon and how they 
 
 ## Chronon directory
 
-This is a code directory where users come to create features and author various other Chronon entities. These entities are all python code, and also have a corollary thrift file that is created in the same directory as a result of the `compile` command. See the Test and Deploy documentation for more detaisl.
+This is a code directory where users come to create features and author various other Chronon entities. These entities are all python code, and also have a corollary thrift file that is created in the same directory as a result of the `compile` command. See the [Test](../test_deploy_serve/Test.md) and [Deploy](../test_deploy_serve/Deploy.md) documentation for more details.
 
 ## Batch compute jobs
 
 Compiled Chronon definitions can be used to run batch compute jobs using the Chronon engine. There are a number of purposes that these jobs can serve:
 
 1. Create training data, written out to materialized tables
-2. Compute feature values to upload to the online KV store (see section below)
+2. Compute feature values to upload to the [online KV store](#online-kv-store)
 3. Compute data quality and online/offline consistency metrics
 4. Analyze a feature definition to gather high level metadata about schemas and hotkeys in source data
 
