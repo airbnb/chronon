@@ -129,7 +129,7 @@ Limitations:
 - Map aggregations cannot be coupled with bucketing for now. We will add support later.
 - Aggregations need to be time independent for now - will add support for timed version later.
 
-### NOTE: Windowing, Bucketing and Flattening can be flexibly mixed and matched.
+**NOTE: Windowing, Bucketing and Flattening can be flexibly mixed and matched.**
 
 ## Table of properties for aggregations
 

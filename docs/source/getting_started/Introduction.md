@@ -33,8 +33,8 @@ source = Source(
         topic= "events/purchases", # The streaming source topic that can be listened to for realtime events
         query=Query(
             selects=select(
-                user = "user_id",
-                price = "purchase_price * (1 - merchant_fee_percent/100)"
+                user="user_id",
+                price="purchase_price * (1 - merchant_fee_percent/100)"
             ), # Select the fields we care about
             time_column="ts"  # The event time
         ) 
@@ -51,22 +51,22 @@ v1 = GroupBy(
             input_column="price",
             operation=Operation.SUM,
             windows=window_sizes
-        ), # The sum of purchases prices in various windows
+        ), # The sum of purchases prices
         Aggregation(
             input_column="price",
             operation=Operation.COUNT,
             windows=window_sizes
-        ), # The count of purchases in various windows
+        ), # The count of purchases
         Aggregation(
             input_column="price",
             operation=Operation.AVERAGE,
             windows=window_sizes
-        ), # The average purchases by user in various windows
+        ), # The average purchases
         Aggregation(
             input_column="price",
             operation=Operation.LAST_K(10),
-        ),
-    ],
+        ), # The last 10 purchase prices, collected into a list
+    ], # All aggregations are performed over the window_sizes defined above
 )
 ```
 
