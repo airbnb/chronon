@@ -3,7 +3,7 @@
 The Chronon developer experience consists of the following steps:
 
 1. Authoring Chronon files in python within a specific directory.
-2. Compiling the files using teh `compile.py` CLI tool
+2. Compiling the files using the `compile.py` CLI tool
 3. Running those files with the `run.py` CLI tool
 4. Inspecting the results and iterating
 5. Merging the file to productionize it
@@ -52,4 +52,4 @@ pip install chronon-ai
 
 The main directory and the python library is all that is required to run the developer steps mentioned at the top of this document.
 
-Note that depending on your preferred developer experience, users may be authoring Chronon objects locally then syncing them to a remote machine for execution on the spark cluster. There a number of ways to enable this, the simplest being a `sync` command that copies over files from local to remote. However, there could be better flows from a UX perspective, depending on your existing infrastructure for running jobs on the cluster. Feel free to reach out in the [community Slack channel](https://chrononworkspace.slack.com/archives/C04K2SLPZU7) if you wish to discuss ways to implement a better developer experience.
+Note that depending on your preferred developer experience, users may be authoring Chronon objects locally then syncing them to a remote machine for execution on the spark cluster. There a number of ways to enable this, the simplest being a `sync` command that copies over files from local to remote. However, there could be better flows from a UX perspective, depending on your existing infrastructure for running jobs on the cluster. Feel free to reach out in the [community Discord channel](https://discord.gg/GbmGATNqqP) if you wish to discuss ways to implement a better developer experience.

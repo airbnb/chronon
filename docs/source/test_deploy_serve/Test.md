@@ -75,14 +75,14 @@ If you want to produce a snapshot accurate table for the aggregations in a group
 
 You can either serve a `GroupBy` on its own, or a `Join` if you wish to fetch results for many `GroupBy`s together in one request.
 
-Manually running the test workflow for serving is optional. If you've validated that your Chronon config generates the correct results in backfill runs, then most of the time you can simply merge your config and let the scheduled airflow runs orchestrate the necesarry steps to enable serving.
+Manually running the test workflow for serving is optional. If you've validated that your Chronon config generates the correct results in backfill runs, then most of the time you can simply merge your config and let the scheduled airflow runs orchestrate the necessary steps to enable serving.
 
 ## GroupBy Upload
 
-You need to upload some data into a kv store (mussel) to be able to fetch your data. For a join, this means:
+You need to upload some data into a KV store to be able to fetch your data. For a join, this means:
 
-1. All the relevant `GroupBy`'s data should be uploaded to mussel.
-2. The `Join`'s metadata should be uploaded to mussel (this allows Chronon to know which `GroupBy`s to fetch when the request comes in).
+1. All the relevant `GroupBy`'s data should be uploaded to the KV store.
+2. The `Join`'s metadata should be uploaded to the KV store (this allows Chronon to know which `GroupBy`s to fetch when the request comes in).
 
 For a `GroupBy`, you just need to run one upload.
 
@@ -102,7 +102,7 @@ your_group_by = GroupBy(
 )
 ```
 
-Once you have marked a particular zipline definition as online and compiled it, you need to upload the relevant `GroupBy`'s data into your KV store. 
+Once you have marked a particular Chronon definition as online and compiled it, you need to upload the relevant `GroupBy`'s data into your KV store. 
 
 The following command will generate a table with key-value bytes that's ready for upload to your KV store:
 
