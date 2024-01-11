@@ -315,7 +315,7 @@ sample response
 
 ## Log fetches and measure online/offline consistency
 
-As discussed in the introductory sections of the main project [README](https://github.com/airbnb/chronon?tab=readme-ov-file#platform-features), one of Chronon's core guarantees is online/offline consistency. This means that the data that you use to train your model (offline) matches the data that the model sees for production inference (online).
+As discussed in the introductory sections of this [README](https://github.com/airbnb/chronon?tab=readme-ov-file#platform-features), one of Chronon's core guarantees is online/offline consistency. This means that the data that you use to train your model (offline) matches the data that the model sees for production inference (online).
 
 A key element of this is temporal accuracy. This can be phrased as: **when backfilling features, the value that is produced for any given `timestamp` provided by the left side of the join should be the same as what would have been returned online if that feature was fetched at that particular `timestamp`**.
 
