@@ -413,7 +413,7 @@ With Chronon you can use any data available in your organization, including ever
 
 # Contributing
 
-We welcome contributions to the Chronon project! Please read our (CONTRIBUTING.md)[CONTRIBUTING.md] for details.
+We welcome contributions to the Chronon project! Please read our [CONTRIBUTING.md](CONTRIBUTING.md) for details.
 
 # Support
 
