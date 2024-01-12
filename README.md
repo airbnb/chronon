@@ -46,11 +46,12 @@ Includes:
 - Example implementation of the main API components for defining features - `GroupBy` and `Join`.
 - The workflow for authoring these entities.
 - The workflow for backfilling training data.
-- 
+- The workflows for uploading and serving this data.
+- The workflow for measuring consistency between backfilled training data and online inference data.
 
 Does not include:
-- A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon-ai.pages.dev/Introduction) documentation.
-- Running streaming jobs and online serving of data (this only covers offline training data).
+- A deep dive on the various concepts and terminologies in Chronon. For that, please see the [Introductory](https://chronon.ai/authoring_features/GroupBy.html) documentation.
+- Running streaming jobs.
 
 ## Requirements
 
@@ -58,29 +59,29 @@ Does not include:
 
 ## Setup
 
-To get started with the Chronon, all you need to do is download the [docker-compose.yml](docker-compose.yml) file and run it locally:
+To get started with the Chronon, all you need to do is download the [docker-compose.yml](https://github.com/airbnb/chronon/blob/master/docker-compose.yml) file and run it locally:
 
 ```bash
-curl -o docker-compose.yml https://github.com/airbnb/chronon/blob/master/docker-compose.yml
+curl -o docker-compose.yml https://chronon.ai/docker-compose.yml
 docker-compose up
 ```
 
-Once you see some data printed with a `only showing top 20 rows` notice, You're now ready to proceed with the tutorial.
+Once you see some data printed with a `only showing top 20 rows` notice, you're ready to proceed with the tutorial.
 
 ## Introduction
 
-In this example, let's assume that we're a large online retailer, and we've detected a fraud vector based on users making purchases and later returning items. We want to train a model that will be called when the **checkout** flow commences, that will predict whether this transaction is likely to result in a fraudulent return.
+In this example, let's assume that we're a large online retailer, and we've detected a fraud vector based on users making purchases and later returning items. We want to train a model that will be called when the **checkout** flow commences and predicts whether this transaction is likely to result in a fraudulent return.
 
 ## Raw data sources
 
-Fabricated raw data is included in the [data](api/py/test/sample/data) directory. It includes four tables:
+Fabricated raw data is included in the [data](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/data) directory. It includes four tables:
 
 1. Users - includes basic information about users such as account created date; modeled as a batch data source that updates daily
 2. Purchases - a log of all purchases by users; modeled as a log table with a streaming (i.e. Kafka) event-bus counterpart
 3. Returns - a log of all returns made by users; modeled as a log table with a streaming (i.e. Kafka) event-bus counterpart
 4. Checkouts - a log of all checkout events; **this is the event that drives our model predictions**
 
-### 1. Setup the sample chronon repo and cd into the directory
+### Start a shell session in the Docker container
 
 In a new terminal window, run:
 
@@ -110,7 +111,7 @@ Becuase this feature is built upon a source that includes both a table and a top
 source = Source(
     events=EventSource(
         table="data.purchases", # This points to the log table with historical purchase events
-        topic="events/purchase_events", # The streaming source topic
+        topic=None, # Streaming is not currently part of quickstart, but this would be where you define the topic for realtime events
         query=Query(
             selects=select("user_id","purchase_price"), # Select the fields we care about
             time_column="ts") # The event time
@@ -140,15 +141,15 @@ v1 = GroupBy(
 )
 ```
 
-See the whole code file here: [purchases GroupBy](api/py/test/sample/group_bys/quickstart/purchases.py). This is also in your `chronon` directory downloaded by `init.sh`. We'll be running computation for it and the other GroupBys in [Step 3 - Backfilling Data](#step-3---backfilling-data). 
+See the whole code file here: [purchases GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/purchases.py). This is also in your docker image. We'll be running computation for it and the other GroupBys in [Step 3 - Backfilling Data](#step-3---backfilling-data). 
 
 **Feature set 2: Returns data features**
 
-We perform a similar set of aggregations on returns data in the [returns GroupBy](api/py/test/sample/group_bys/returns.py). The code is not included here because it looks similar to the above example.
+We perform a similar set of aggregations on returns data in the [returns GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/returns.py). The code is not included here because it looks similar to the above example.
 
 **Feature set 3: User data features**
 
-Turning User data into features is a littler simpler, primarily because there are no aggregations to include. In this case, the primary key of the source data is the same as the primary key of the feature, so we're simple extracting column values rather than perform aggregations over rows:
+Turning User data into features is a littler simpler, primarily because there are no aggregations to include. In this case, the primary key of the source data is the same as the primary key of the feature, so we're simply extracting column values rather than performing aggregations over rows:
 
 ```python
 source = Source(
@@ -166,22 +167,22 @@ v1 = GroupBy(
 ) 
 ```
 
-Taken from the [users GroupBy](api/py/test/sample/group_bys/quickstart/users.py).
+Taken from the [users GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/users.py).
 
 
 ### Step 2 - Join the features together
 
-Next, we need the features that we previously defined backfilled in a single table for model training. This can be achieved using the Join API.
+Next, we need the features that we previously defined backfilled in a single table for model training. This can be achieved using the `Join` API.
 
 For our use case, it's very important that features are computed as of the correct timestamp. Because our model runs when the checkout flow begins, we'll want to be sure to use the corresponding timestamp in our backfill, such that features values for model training logically match what the model will see in online inference.
 
 `Join` is the API that drives feature backfills for training data. It primarilly performs the following functions:
 
-1. Combines many features together into a wide view (hence the name Join).
+1. Combines many features together into a wide view (hence the name `Join`).
 2. Defines the primary keys and timestamps for which feature backfills should be performed. Chronon can then guarantee that feature values are correct as of this timestamp.
-3. Performs scalabe backfills
+3. Performs scalable backfills.
 
-Here is the definition that we would use.
+Here is what our join looks like:
 
 ```python
 source = Source(
@@ -199,7 +200,7 @@ v1 = Join(
 )
 ```
 
-Taken from the [training_set Join](api/py/test/sample/joins/quickstart/training_set.py). 
+Taken from the [training_set Join](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/joins/quickstart/training_set.py). 
 
 The `left` side of the join is what defines the timestamps and primary keys for the backfill (notice that it is built on top of the `checkout` event, as dictated by our use case).
 
@@ -219,7 +220,6 @@ This converts it into a thrift definition that we can submit to spark with the f
 ```shell
 run.py --conf production/joins/quickstart/training_set.v1
 ```
-
 
 The output of the backfill would contain the user_id and ts columns from the left source, as well as the 11 feature columns from the three GroupBys that we created.
 
@@ -281,7 +281,7 @@ If we want to use the `FetchJoin` api rather than `FetchGroupby`, then we also n
 run.py --mode metadata-upload --conf production/joins/quickstart/training_set.v2
 ```
 
-This makes it so that the online fetcher knows how to take a requests for this join and break it up into individual GroupBy requests, returning the unified vector, similar to how the Join backfill produces the wide view table with all features.
+This makes it so that the online fetcher knows how to take a request for this join and break it up into individual GroupBy requests, returning the unified vector, similar to how the Join backfill produces the wide view table with all features.
 
 ### Fetching Data
 
@@ -305,7 +305,9 @@ For production, the Java client is usually embedded directly into services.
 Map<String, String> keyMap = new HashMap<>();
 keyMap.put("user_id", "123");
 Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
-// sample response 
+```
+sample response 
+```
 > '{"purchase_price_avg_3d":14.3241, "purchase_price_avg_14d":11.89352, ...}'
 ```
 
@@ -313,7 +315,7 @@ Fetcher.fetch_join(new Request("quickstart/training_set_v1", keyMap))
 
 ## Log fetches and measure online/offline consistency
 
-As discussed in the introductory sections of this [README](#platform-features), one of Chronon's core guarantees is online/offline consistency. This means that the data that you use to train your model (offline) matches the data that the model sees for production inference (online).
+As discussed in the introductory sections of this [README](https://github.com/airbnb/chronon?tab=readme-ov-file#platform-features), one of Chronon's core guarantees is online/offline consistency. This means that the data that you use to train your model (offline) matches the data that the model sees for production inference (online).
 
 A key element of this is temporal accuracy. This can be phrased as: **when backfilling features, the value that is produced for any given `timestamp` provided by the left side of the join should be the same as what would have been returned online if that feature was fetched at that particular `timestamp`**.
 
@@ -357,6 +359,7 @@ It produces two output tables:
    2.  Note that it has many columns (multiple metrics per feature), so you might want to run a `DESC default.quickstart_training_set_v2_consistency` first, then select a few columns that you care about to query.
 2. `default.quickstart_training_set_v2_consistency_upload`: A list of KV bytes that is uploaded to the online KV store, that can be used to power online data quality monitoring flows. Not meant to be human readable.
 
+
 ## Conclusion
 
 Using chronon for your feature engineering work simplifies and improves your ML Workflow in a number of ways:
@@ -367,7 +370,8 @@ Using chronon for your feature engineering work simplifies and improves your ML 
 4. Chronon exposes easy endpoints for feature fetching.
 5. Consistency is guaranteed and measurable.
 
-For a more detailed view into the benefits of using Chronon, see [Benefits of Chronon section](#benefits-of-chronon-over-other-approaches) below.
+For a more detailed view into the benefits of using Chronon, see [Benefits of Chronon documentation](https://github.com/airbnb/chronon/tree/master?tab=readme-ov-file#benefits-of-chronon-over-other-approaches).
+
 
 # Benefits of Chronon over other approaches
 
