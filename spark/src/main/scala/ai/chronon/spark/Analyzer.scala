@@ -28,7 +28,6 @@ import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, Row, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit}
 import org.apache.spark.sql.types.{StringType, StructType}
-import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 
 import scala.collection.{Seq, immutable, mutable}
@@ -251,7 +250,7 @@ class Analyzer(tableUtils: TableUtils,
   }
 
   def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false, validationAssert: Boolean = false)
-      : (Map[String, DataType], ListBuffer[AggregationMetadata], Map[String, DataType]) = {
+      : (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
@@ -302,7 +301,6 @@ class Analyzer(tableUtils: TableUtils,
 
     val rightSchema: Map[String, DataType] =
       aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
-    val statsSchema = StatsGenerator.statsIrSchema(api.StructType.from("Stats", rightSchema.toArray))
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
@@ -315,8 +313,6 @@ class Analyzer(tableUtils: TableUtils,
            |${leftSchema.mkString("\n")}
            |------ RIGHT SIDE SCHEMA ----
            |${rightSchema.mkString("\n")}
-           |------ STATS SCHEMA ---------
-           |${statsSchema.unpack.toMap.mkString("\n")}
            |------ END ------------------
            |""".stripMargin)
     }
@@ -351,7 +347,7 @@ class Analyzer(tableUtils: TableUtils,
       )
     }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
-    (leftSchema ++ rightSchema, aggregationsMetadata, statsSchema.unpack.toMap)
+    (leftSchema ++ rightSchema, aggregationsMetadata)
   }
 
   // validate the schema of the left and right side of the join and make sure the types match

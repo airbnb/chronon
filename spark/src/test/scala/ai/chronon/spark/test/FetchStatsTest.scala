@@ -101,6 +101,7 @@ class FetchStatsTest extends TestCase {
       accuracy = Accuracy.SNAPSHOT
     )
 
+    // Left contains values that are going to be available in backfill table stats but not logged stats.
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = gb, prefix = "user")),
