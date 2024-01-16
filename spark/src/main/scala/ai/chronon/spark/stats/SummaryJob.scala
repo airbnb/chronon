@@ -93,6 +93,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
   /**
     * Daily stats job for backfill output tables.
     * Filters contextual and external features.
+    * Computes stats for values on the "left" since they are a part of backfill table.
     */
   def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
     val outputSchema = tableUtils.getSchemaFromTable(joinConf.metaData.outputTable)
@@ -102,12 +103,13 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     } else {
       baseColumns
     }
-    basicStatsJob(joinConf.metaData.outputTable, dailyStatsTable, Some(columns), stepDays, sample)
+    basicStatsJob(joinConf.metaData.outputTable, dailyStatsTable, None, stepDays, sample)
   }
 
   /**
     * Batch stats compute and upload for the logs
     * Does not filter contextual or external features.
+    * Filters values on the "left" since they are not available on fetch.
     */
   def loggingRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit =
     basicStatsJob(joinConf.metaData.loggedTable, loggingStatsTable, None, stepDays, sample)
