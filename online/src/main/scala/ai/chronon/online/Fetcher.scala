@@ -63,7 +63,12 @@ class Fetcher(val kvStore: KVStore,
   // key and value schemas
   lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]]({ joinName: String =>
     val joinConfTry = getJoinConf(joinName)
+    // contains the schema of all keys input to the join, both entityKeyFields and externalKeyFields
     val keyFields = new mutable.LinkedHashSet[StructField]
+    // contains the schema for only entity keys input to the join
+    val entityKeyFields = new mutable.LinkedHashSet[StructField]
+    // contains the schema for only external keys input to the join
+    val externalKeyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
     joinConfTry.map { joinConf =>
       // collect schema from
@@ -80,6 +85,7 @@ class Fetcher(val kvStore: KVStore,
                     case (name, dType) =>
                       val keyField = StructField(name, dType)
                       keyFields.add(keyField)
+                      entityKeyFields.add(keyField)
                   }
                 val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
                   servingInfo.selectedChrononSchema
@@ -108,17 +114,22 @@ class Fetcher(val kvStore: KVStore,
                   .fields
                   .map(f => StructField(prefix + f.name, f.fieldType))
 
-              buildFields(source.getKeySchema).foreach(f =>
-                keyFields.add(f.copy(name = part.rightToLeft.getOrElse(f.name, f.name))))
+              buildFields(source.getKeySchema).foreach(f => {
+                val updatedField = f.copy(name = part.rightToLeft.getOrElse(f.name, f.name))
+                keyFields.add(updatedField)
+                externalKeyFields.add(updatedField)
+              })
               buildFields(source.getValueSchema, part.fullName + "_").foreach(f => valueFields.append(f))
             }
       }
 
       val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
+      val entityKeySchema = StructType(s"${joinName}_entity_key", entityKeyFields.toArray)
+      val externalKeySchema = StructType(s"${joinName}_external_key", externalKeyFields.toArray)
       val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
       val baseValueSchema = StructType(s"${joinName}_value", valueFields.toArray)
       val baseValueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
-      val joinCodec = JoinCodec(joinConf, keySchema, baseValueSchema, keyCodec, baseValueCodec)
+      val joinCodec = JoinCodec(joinConf, keySchema, entityKeySchema, externalKeySchema, baseValueSchema, keyCodec, baseValueCodec)
       logControlEvent(joinCodec)
       joinCodec
     }
@@ -504,13 +515,37 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
-   * Retrieve the set of keys for a given join and what the data type is for each key.
+   * Retrieve the set of all keys for a given join and what the data type is for each key.
+   * This includes both entity keys defined on the join's groupBys and contextual features
+   * defined in online external parts on the join.
    *
    * @param joinName - name of the join
    * @return - mapping of key name to data type
    */
   def retrieveJoinKeys(joinName: String): Map[String, DataType] = {
     getJoinCodecs(joinName).get.keyFields.map(sf => (sf.name, sf.fieldType)).toMap
+  }
+
+  /**
+   * Retrieve the set of entity keys for a given join and what the data type is for each key.
+   * This includes only entity keys defined on the join's groupBys.
+   *
+   * @param joinName - name of the join
+   * @return - mapping of key name to data type
+   */
+  def retrieveEntityJoinKeys(joinName: String): Map[String, DataType] = {
+    getJoinCodecs(joinName).get.entityKeyFields.map(sf => (sf.name, sf.fieldType)).toMap
+  }
+
+  /**
+   * Retrieve the set of external keys for a given join and what the data type is for each key.
+   * These are the contextual features defined in online external parts on the join.
+   *
+   * @param joinName - name of the join
+   * @return - mapping of key name to data type
+   */
+  def retrieveExternalJoinKeys(joinName: String): Map[String, DataType] = {
+    getJoinCodecs(joinName).get.externalKeyFields.map(sf => (sf.name, sf.fieldType)).toMap
   }
 
   /**

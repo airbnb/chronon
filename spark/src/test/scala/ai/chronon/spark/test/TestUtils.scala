@@ -401,6 +401,33 @@ object TestUtils {
       "a_unit_test_vendor_credit_credit_sum_30d" -> LongType
     )
 
+  val expectedSchemaForTestPaymentsJoinWithCtxFeats: Map[String, DataType] =
+    expectedSchemaForTestPaymentsJoin ++
+    Map(
+      "ext_contextual_feature1" -> IntType,
+      "ext_contextual_feature2" -> DoubleType
+    )
+
+  val expectedJoinKeySchema: Map[String, DataType] =
+    Map(
+      "user_id" -> StringType,
+      "vendor_id" -> StringType,
+      "feature1" -> IntType,
+      "feature2" -> DoubleType
+    )
+
+  val expectedEntityJoinKeySchema: Map[String, DataType] =
+    Map(
+      "user_id" -> StringType,
+      "vendor_id" -> StringType
+    )
+
+  val expectedExternalJoinKeySchema: Map[String, DataType] =
+    Map(
+      "feature1" -> IntType,
+      "feature2" -> DoubleType
+    )
+
   val vendorRatingsGroupByName: String = "unit_test/vendor_ratings";
   val expectedSchemaForVendorRatingsGroupBy: Map[String, DataType] =
     Map("rating_average_2d_by_bucket" -> MapType(StringType, DoubleType),
@@ -571,6 +598,22 @@ object TestUtils {
         Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2")
       )
     )
+    if (namespace.equals("test_retrieve_schema")) {
+      joinConf.setOnlineExternalParts(
+        List(
+          Builders.ExternalPart(
+            Builders.ContextualSource(
+              fields = Array(StructField("feature1", IntType))
+            )
+          ),
+          Builders.ExternalPart(
+            Builders.ContextualSource(
+              fields = Array(StructField("feature2", DoubleType))
+            )
+          )
+        ).asJava
+      )
+    }
     joinConf
   }
 

@@ -582,10 +582,24 @@ class FetcherTest extends TestCase {
     val generatedJoin: Join = TestUtils.generateRandomData(spark=spark, namespace=namespace, keyCount=10, cardinality=10)
     val mockApi: Api = TestUtils.setupFetcherWithJoin(spark, generatedJoin, namespace)
 
+    // validates the schema for all features in the join
     val joinResult: Map[String, DataType] = mockApi.fetcher.retrieveJoinSchema(generatedJoin.metaData.getName)
-    assertEquals(joinResult, TestUtils.expectedSchemaForTestPaymentsJoin)
+    assertEquals(TestUtils.expectedSchemaForTestPaymentsJoinWithCtxFeats, joinResult)
 
+    // validates the keys (both entity and external) schema for the join
+    val keySchemaJoinResult: Map[String, DataType] = mockApi.fetcher.retrieveJoinKeys(generatedJoin.metaData.getName)
+    assertEquals(TestUtils.expectedJoinKeySchema, keySchemaJoinResult)
+
+    // validates the entity keys schema for the join
+    val entityKeysJoinResult: Map[String, DataType] = mockApi.fetcher.retrieveEntityJoinKeys(generatedJoin.metaData.getName)
+    assertEquals(TestUtils.expectedEntityJoinKeySchema, entityKeysJoinResult)
+
+    // validates the external keys schema for the join
+    val externalKeysJoinResult: Map[String, DataType] = mockApi.fetcher.retrieveExternalJoinKeys(generatedJoin.metaData.getName)
+    assertEquals(TestUtils.expectedExternalJoinKeySchema, externalKeysJoinResult)
+
+    // validates the schema for all features in the given GroupBy
     val groupByResult: Map[String, DataType] = mockApi.fetcher.retrieveGroupBySchema(TestUtils.vendorRatingsGroupByName)
-    assertEquals(groupByResult, TestUtils.expectedSchemaForVendorRatingsGroupBy)
+    assertEquals(TestUtils.expectedSchemaForVendorRatingsGroupBy, groupByResult)
   }
 }

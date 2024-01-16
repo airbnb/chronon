@@ -10,6 +10,8 @@ import scala.util.ScalaJavaConversions.JMapOps
 
 case class JoinCodec(conf: JoinOps,
                      keySchema: StructType,
+                     entityKeySchema: StructType,
+                     externalKeySchema: StructType,
                      baseValueSchema: StructType,
                      keyCodec: AvroCodec,
                      baseValueCodec: AvroCodec)
@@ -96,7 +98,12 @@ case class JoinCodec(conf: JoinOps,
   val keys: Array[String] = keySchema.fields.iterator.map(_.name).toArray
   val values: Array[String] = valueSchema.fields.iterator.map(_.name).toArray
 
+  // contains a list of all key inputs to the join, an aggregation of entityKeyFields and externalKeyFields
   val keyFields: Array[StructField] = keySchema.fields
+  // contains a list of all entity key inputs to the join, derived from the underlying GroupBys
+  val entityKeyFields: Array[StructField] = entityKeySchema.fields
+  // contains a list of all external key inputs to the join, derived from external parts
+  val externalKeyFields: Array[StructField] = externalKeySchema.fields
   val valueFields: Array[StructField] = valueSchema.fields
   lazy val keyIndices: Map[StructField, Int] = keySchema.zipWithIndex.toMap
   lazy val valueIndices: Map[StructField, Int] = valueSchema.zipWithIndex.toMap

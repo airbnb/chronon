@@ -162,6 +162,14 @@ public class JavaFetcher {
     return JavaConverters.mapAsJavaMap(this.fetcher.retrieveJoinKeys(joinName));
   }
 
+  public Map<String, DataType> retrieveEntityJoinKeys(String joinName) {
+    return JavaConverters.mapAsJavaMap(this.fetcher.retrieveEntityJoinKeys(joinName));
+  }
+
+  public Map<String, DataType> retrieveExternalJoinKeys(String joinName) {
+    return JavaConverters.mapAsJavaMap(this.fetcher.retrieveExternalJoinKeys(joinName));
+  }
+
   public Map<String, DataType> retrieveGroupByKeys(String groupByName) {
     return JavaConverters.mapAsJavaMap(this.fetcher.retrieveGroupByKeys(groupByName));
   }
