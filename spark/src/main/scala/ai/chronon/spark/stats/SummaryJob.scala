@@ -41,7 +41,6 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
 
   def basicStatsJob(inputTable: String,
                     outputTable: String,
-                    columns: Option[Seq[String]],
                     stepDays: Option[Int] = None,
                     sample: Double = 0.1): Unit = {
     val uploadTable = joinConf.metaData.toUploadTable(outputTable)
@@ -63,15 +62,11 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
       stepRanges.zipWithIndex.foreach {
         case (range, index) =>
           logger.info(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
-          val joinOutputDf = tableUtils.sql(s"""
+          val inputDf = tableUtils.sql(s"""
                |SELECT *
                |FROM $inputTable
                |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
-          val inputDf = if (columns.isDefined) {
-            val toSelect = columns.get
-            joinOutputDf.select(toSelect.head, toSelect.tail: _*)
-          } else joinOutputDf
           val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
           val aggregator = StatsGenerator.buildAggregator(
             stats.metrics,
@@ -95,16 +90,8 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     * Filters contextual and external features.
     * Computes stats for values on the "left" since they are a part of backfill table.
     */
-  def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
-    val outputSchema = tableUtils.getSchemaFromTable(joinConf.metaData.outputTable)
-    val baseColumns = joinConf.leftKeyCols ++ joinConf.computedFeatureCols :+ tableUtils.partitionColumn
-    val columns = if (outputSchema.map(_.name).contains(Constants.TimeColumn)) {
-      baseColumns :+ Constants.TimeColumn
-    } else {
-      baseColumns
-    }
-    basicStatsJob(joinConf.metaData.outputTable, dailyStatsTable, None, stepDays, sample)
-  }
+  def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit =
+    basicStatsJob(joinConf.metaData.outputTable, dailyStatsTable, stepDays, sample)
 
   /**
     * Batch stats compute and upload for the logs
@@ -112,5 +99,5 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     * Filters values on the "left" since they are not available on fetch.
     */
   def loggingRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit =
-    basicStatsJob(joinConf.metaData.loggedTable, loggingStatsTable, None, stepDays, sample)
+    basicStatsJob(joinConf.metaData.loggedTable, loggingStatsTable, stepDays, sample)
 }
