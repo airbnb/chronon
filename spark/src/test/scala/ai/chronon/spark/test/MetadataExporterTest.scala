@@ -24,9 +24,10 @@ import ai.chronon.spark.{MetadataExporter, SparkSessionBuilder, TableUtils}
 import com.google.common.io.Files
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
-
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import org.junit.Assert.assertEquals
+
 import scala.io.Source
 import java.io.File
 
@@ -86,6 +87,6 @@ class MetadataExporterTest extends TestCase {
     val objectMapper = new ObjectMapper()
     objectMapper.registerModule(DefaultScalaModule)
     val jsonNode = objectMapper.readTree(jsonString)
-    assert(jsonNode.isEmpty == false)
+    assertEquals(jsonNode.get("metaData").get("name").asText(), "team.example_join.v1")
   }
 }
