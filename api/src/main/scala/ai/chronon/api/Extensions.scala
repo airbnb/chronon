@@ -19,6 +19,7 @@ package ai.chronon.api
 import org.slf4j.LoggerFactory
 import ai.chronon.api.DataModel._
 import ai.chronon.api.Operation._
+import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.spark.sql.Column
@@ -29,6 +30,7 @@ import java.util
 import java.util.regex.Pattern
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
+import scala.util.ScalaVersionSpecificCollectionsConverter.convertJavaListToScala
 import scala.util.{Failure, Success, Try}
 
 object Extensions {
@@ -609,6 +611,19 @@ object Extensions {
         case DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
       }
     }
+
+    /**
+      * Find the smallest tail window resolution in a GroupBy. Returns None if the GroupBy does not define any windows.
+      * The window resolutions are: 5 min for a GroupBy a window < 12 hrs, 1 hr for < 12 days, 1 day for > 12 days.
+      * */
+    def getSmallestWindowResolutionInMillis(groupBy: GroupBy): Option[Long] =
+      Option(
+        convertJavaListToScala(groupBy.aggregations).toArray
+          .flatMap(aggregation =>
+            if (aggregation.windows != null) convertJavaListToScala(aggregation.windows)
+            else None)
+          .map(FiveMinuteResolution.calculateTailHop)
+      ).filter(_.nonEmpty).map(_.min)
 
   }
 
