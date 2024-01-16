@@ -616,7 +616,7 @@ object Extensions {
       * Find the smallest tail window resolution in a GroupBy. Returns None if the GroupBy does not define any windows.
       * The window resolutions are: 5 min for a GroupBy a window < 12 hrs, 1 hr for < 12 days, 1 day for > 12 days.
       * */
-    def getSmallestWindowResolutionInMillis(groupBy: GroupBy): Option[Long] =
+    def getSmallestWindowResolutionInMillis: Option[Long] =
       Option(
         convertJavaListToScala(groupBy.aggregations).toArray
           .flatMap(aggregation =>
