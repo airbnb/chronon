@@ -426,13 +426,17 @@ object Driver {
         opt[Double](required = false,
                     descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
                     default = Option(0.1))
+      val forceBackfill: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     descr = "Force backfill even if the table is already populated",
+                     default = Option(false))
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"daily_stats_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
       new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
-        .dailyRun(Some(args.stepDays()), args.sample())
+        .dailyRun(Some(args.stepDays()), args.sample(), args.forceBackfill())
     }
   }
 
@@ -442,8 +446,13 @@ object Driver {
         opt[Int](required = false,
                  descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
                  default = Option(30))
-      val sample: ScallopOption[Double] =
+      val sample: ScallopOption[Double] = {
         opt[Double](required = false, descr = "Sampling ratio", default = Option(0.1))
+      }
+      val forceBackfill: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+          descr = "Force backfill even if the table is already populated",
+          default = Option(false))
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
 
       override def subcommandName() = s"log_stats_${joinConf.metaData.name}"
@@ -451,7 +460,7 @@ object Driver {
 
     def run(args: Args): Unit = {
       new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
-        .loggingRun(Some(args.stepDays()), args.sample())
+        .loggingRun(Some(args.stepDays()), args.sample(), args.forceBackfill())
     }
   }
 

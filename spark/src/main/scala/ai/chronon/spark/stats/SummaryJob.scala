@@ -42,9 +42,10 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
   def basicStatsJob(inputTable: String,
                     outputTable: String,
                     stepDays: Option[Int] = None,
-                    sample: Double = 0.1): Unit = {
+                    sample: Double = 0.1,
+                    forceBackfill: Boolean = false): Unit = {
     val uploadTable = joinConf.metaData.toUploadTable(outputTable)
-    val backfillRequired = !JoinUtils.tablesToRecompute(joinConf, outputTable, tableUtils).isEmpty
+    val backfillRequired = (!JoinUtils.tablesToRecompute(joinConf, outputTable, tableUtils).isEmpty) || forceBackfill
     if (backfillRequired)
       Seq(outputTable, uploadTable).foreach(tableUtils.dropTableIfExists(_))
     val unfilledRanges = tableUtils
@@ -90,14 +91,14 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
     * Filters contextual and external features.
     * Computes stats for values on the "left" since they are a part of backfill table.
     */
-  def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit =
-    basicStatsJob(joinConf.metaData.outputTable, dailyStatsTable, stepDays, sample)
+  def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1, forceBackfill: Boolean = false): Unit =
+    basicStatsJob(joinConf.metaData.outputTable, dailyStatsTable, stepDays, sample, forceBackfill)
 
   /**
     * Batch stats compute and upload for the logs
     * Does not filter contextual or external features.
     * Filters values on the "left" since they are not available on fetch.
     */
-  def loggingRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit =
-    basicStatsJob(joinConf.metaData.loggedTable, loggingStatsTable, stepDays, sample)
+  def loggingRun(stepDays: Option[Int] = None, sample: Double = 0.1, forceBackfill: Boolean = false): Unit =
+    basicStatsJob(joinConf.metaData.loggedTable, loggingStatsTable, stepDays, sample, forceBackfill)
 }
