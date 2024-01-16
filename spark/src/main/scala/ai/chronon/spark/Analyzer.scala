@@ -249,8 +249,9 @@ class Analyzer(tableUtils: TableUtils,
     (aggMetadata, keySchemaMap)
   }
 
-  def analyzeJoin(joinConf: api.Join, enableHitter: Boolean = false, validationAssert: Boolean = false)
-      : (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+  def analyzeJoin(joinConf: api.Join,
+                  enableHitter: Boolean = false,
+                  validationAssert: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs

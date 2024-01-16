@@ -69,7 +69,6 @@ object StatsGenerator {
                              suffix: String = "",
                              argMap: util.Map[String, String] = null)
 
-
   /**
     * Post processing for finalized values or IRs when generating a time series of stats.
     * In the case of percentiles for examples we reduce to 5 values in order to generate candlesticks.
