@@ -80,7 +80,7 @@ v1 = StagingQuery(
 
 This argument can also be passed in at the `CLI` when manually running your `StagingQuery`.
 
-Because of this, you often want to write your `StagingQuery` using various templated parameters for dates, for example `'{{ start_date }}'` and `'{{ end_date }}'`, as you can see in the example above. The full list of parameters are:
+Because of this, you often want to write your `StagingQuery` using various templated parameters for dates, for example `'{{ start_date }}'` and `'{{ end_date }}'`, as you can see in the example above. The parameters can be easily extended. The current full list of parameters are:
 
 - `'{{ start_date }}'`: the `Earliest Missing Partition`, as defined above.
 - `'{{ end_date }}'`: The end ds of the chunk that is currently being run. Chunking is determined based on the entire range that is requested for computation, broken into pieces of maximum size `step-days` (see documentation on `step-days` above). If `step-days` is equal to or greater than the number of days in the entire requested range, then `end_date` is the same as `latest_date`. `end_date` can never exceed `latest_date`.
