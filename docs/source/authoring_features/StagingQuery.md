@@ -61,13 +61,9 @@ metadata is extracted from [teams.json](https://github.com/airbnb/chronon/blob/m
 
 **[See more configuration examples here](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/staging_queries)**
 
-## Date Logic
+## Date Logic and Template Parameters
 
 **IMPORTANT: Running a `StagingQuery` for a particular day (`ds`) does not only produce data for that `ds`, but rather everything from the `Earliest Missing Partition` up to the `ds`, where the `Earliest Missing Partition` is defined as the `earliest existing partition + 1` if any partitions exist, else the `startPartition` defined on the `StagingQuery`.**
-
-Because of this, you often want to write your `StagingQuery` using the templated parameters for `'{{ start_date }}'` and `'{{ end_date }}'`, as you can see in the example above.
-
-When staging query runs, it will render `'{{ start_date }}'` as the `Earliest Missing Partition` and `'{{ end_date }}'` as the `ds` that is being run.
 
 Usually this results in one big job for the first backfill, then smaller jobs for incremental frontfill.
 
@@ -83,6 +79,13 @@ v1 = StagingQuery(
 ```
 
 This argument can also be passed in at the `CLI` when manually running your `StagingQuery`.
+
+Because of this, you often want to write your `StagingQuery` using various templated parameters for dates, for example `'{{ start_date }}'` and `'{{ end_date }}'`, as you can see in the example above. The full list of parameters are:
+
+- `'{{ start_date }}'`: the `Earliest Missing Partition`, as defined above.
+- `'{{ end_date }}'`: The end ds of the chunk that is currently being run. Chunking is determined based on the entire range that is requested for computation, broken into pieces of maximum size `step-days` (see documentation on `step-days` above). If `step-days` is equal to or greater than the number of days in the entire requested range, then `end_date` is the same as `latest_date`. `end_date` can never exceed `latest_date`.
+- `'{{ latest_date }}'`: the ds for which computation was requested. If running from the CLI, it defaults to the day before yesterday UTC. If the job gets broken up into smaller chunks due the to `step_days` argument, `latest_date` will be the same in all the runs, and will equal the `end_date` of the last chunk.
+- `'{{ max_date }}'`: the latest existing partition in the table, does not depend on input parameters to the job, but only on available partitions in the source table. It requires the source table as an argument, for example: `'{{ max_date(table=data.some_table) }}'`
 
 ## `StagingQuery` in Production
 
