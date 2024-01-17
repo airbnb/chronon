@@ -7,7 +7,7 @@
 
 Tiling or the tiled architecture is a modification to Chronon's online architecture to store pre-aggregates (also known as "IRs" or Intermediate Representations) in the Key-Value store instead of individual events. 
 
-The primary purpose of tiling is to increase scalability and decrease feature serving latency. 
+The primary purpose of tiling is to improve handling of hot keys, increase scalability, decrease feature serving latency. 
 
 The tiled architecture, as it is now, requires [Flink](https://flink.apache.org/).
 
@@ -29,17 +29,18 @@ The tiled architecture, depicted in Figure 2, works differently:
 ![Architecture](../images/Tiled_Architecture.png)
 _Figure 2: The tiled architecture_
 
-Tiling shifts a significant part of the aggregation work to the write path. Instead of 
+Tiling shifts a significant part of the aggregation work to the write path, which allows for faster feature serving.
 
 Using the same example as above (an event stream producing 10 events/sec for a certain key, and a GroupBy with a 12-hour window), a request for feature values would fetch and merge 12 or 13 1-hour tiles. For a simple GroupBy that counts the number of events for a key, Chronon would iterate over 13 numbers and add them together. That's significantly less work.
 
 ## Should I use tiling?
 
 In general, tiling improves scalability and decreases feature serving latency. Some use cases are:
-- You want to decrease feature serving latency
+- You want to decrease feature serving latency.
 - You don't have access to Spark Streaming
 - You don't have access to a datastore with range queries
 - You want to reduce fanout to your datastore.
+- You need to support aggregating over hot key entities
 
 In particular, organizations operating a significant scale should consider using the tiled architecture.
 
