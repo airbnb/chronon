@@ -45,7 +45,7 @@ Then, it would combine the IRs to get the final feature values: `[14, "C"]`.
 ## When to use tiling
 
 In general, tiling improves scalability and decreases feature serving latency. Some use cases are:
-- You want to decrease feature serving latency.
+- You want to decrease feature serving latency. At Stripe, migrating to tiling decreased serving latency by 33% at 4K rps.
 - You don't have access to Spark Streaming
 - You don't have access to a datastore with range queries
 - You want to reduce fanout to your datastore.
