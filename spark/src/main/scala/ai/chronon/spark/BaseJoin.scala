@@ -1,7 +1,8 @@
 package ai.chronon.spark
 
+import ai.chronon.aggregator.windowing.{DailyResolution, HourlyResolution}
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, JoinPart}
+import ai.chronon.api.{Accuracy, Constants, JoinPart, PartitionSpec}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.online.Metrics
@@ -67,11 +68,12 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
 
     // adjust join keys
     val joinableRightDf = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
-      // increment one day to align with left side ts_ds
-      // because one day was decremented from the partition range for snapshot accuracy
+      // increment one partition span to align with left side ts_ds
+      // because one partition span was decremented from the partition range for snapshot accuracy
       prefixedRightDf
         .withColumn(Constants.TimePartitionColumn,
-                    date_format(date_add(to_date(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), 1), tableUtils.partitionSpec.format))
+          from_unixtime(((unix_timestamp(to_timestamp(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format)) * 1000) + tableUtils.partitionSpec.spanMillis) / 1000, tableUtils.partitionSpec.format)
+        )
         .drop(tableUtils.partitionColumn)
     } else {
       prefixedRightDf
@@ -92,7 +94,6 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
   }
 
   def computeRightTable(leftDf: DataFrame, joinPart: JoinPart, leftRange: PartitionRange): Option[DataFrame] = {
-
     val partTable = joinConf.partOutputTable(joinPart)
     val partMetrics = Metrics.Context(metrics, joinPart)
     if (joinPart.groupBy.aggregations == null) {
@@ -202,14 +203,13 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
     assert(joinPart.groupBy.sources.toScala.map(_.lag).toSet.size == 1, "All sources for a GroupBy must have the same lag")
     assert(joinPart.groupBy.sources.toScala.filter(s => s.lag > 0 && s.isSetEntities && (s.getEntities.isSetMutationTable || s.getEntities.isSetMutationTopic)).isEmpty, "lag is not supported for entity sources that have mutations")
     val lag = joinPart.groupBy.sources.get(0).lag
-    def genGroupBy(partitionRange: PartitionRange) =
+    def genGroupBy(partitionRange: PartitionRange) = {
       GroupBy.from(joinPart.groupBy, partitionRange, tableUtils, Option(rightBloomMap), rightSkewFilter, lag = lag)
-
+    }
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)
-
     lazy val unfilledTimeRange = {
-      val timeRange = leftDf.timeRange
+      val timeRange = leftDf.timeRange(tableUtils)
       println(s"left unfilled time range: $timeRange")
       timeRange
     }
@@ -251,7 +251,14 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
       case (Entities, Events, _)   => partitionRangeGroupBy.snapshotEvents(unfilledRange)
       case (Entities, Entities, _) => partitionRangeGroupBy.snapshotEntities
       case (Events, Events, Accuracy.SNAPSHOT) =>
-        genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange)
+        // TODO(FCOMP-2754) Should this be set by GroupBy or threaded in explicitly
+        //  from outside?
+        val snapshotResolution = tableUtils.partitionSpec match {
+          case PartitionSpec(_, spanMillis) if spanMillis == WindowUtils.Hour.millis => HourlyResolution
+          case PartitionSpec(_, spanMillis) if spanMillis == WindowUtils.Day.millis => DailyResolution
+          case PartitionSpec(_, spanMillis) => throw new Exception(s"No resolution yet supported for partition span length = $spanMillis ms")
+        }
+        genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange, snapshotResolution)
       case (Events, Events, Accuracy.TEMPORAL) =>
         val groupBy = genGroupBy(unfilledTimeRange.toPartitionRange)
         if (useTwoStack) groupBy.temporalEventsTwoStack(renamedLeftDf, Some(unfilledTimeRange), sparkUtils = sparkUtils)

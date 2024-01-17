@@ -147,7 +147,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
 
   override def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
-      leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
+      leftDf.withTimeBasedColumn(Constants.TimePartitionColumn, format = tableUtils.partitionSpec.format)
     } else {
       leftDf
     }

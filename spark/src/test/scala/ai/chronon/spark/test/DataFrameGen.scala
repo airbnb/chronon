@@ -3,7 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, RowsWithSchema}
 import ai.chronon.api.{Constants, LongType, StringType}
 import ai.chronon.online.SparkConversions
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.{BaseTableUtils, TableUtils}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions._
@@ -26,11 +26,12 @@ object DataFrameGen {
   }
 
   //  The main api: that generates dataframes given certain properties of data
-  def events(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int): DataFrame = {
+  def events(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int, optTableUtils: Option[BaseTableUtils] = None): DataFrame = {
+    val tableUtils = optTableUtils.getOrElse(TableUtils(spark))
     val generated = gen(spark, columns :+ Column(Constants.TimeColumn, LongType, partitions), count)
     generated.withColumn(
-      TableUtils(spark).partitionColumn,
-      from_unixtime(generated.col(Constants.TimeColumn) / 1000, TableUtils(spark).partitionSpec.format))
+      tableUtils.partitionColumn,
+      from_unixtime(generated.col(Constants.TimeColumn) / 1000, tableUtils.partitionSpec.format))
   }
 
   def unpartitionedEvents(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {

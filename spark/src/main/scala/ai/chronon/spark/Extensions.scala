@@ -39,13 +39,19 @@ object Extensions {
 
   implicit class DataframeOps(df: DataFrame) {
     private implicit val tableUtils = TableUtils(df.sparkSession)
-    def timeRange: TimeRange = {
+    // TODO(andrewlee) Many of these methods rely on the PartitionSpec in an
+    //  implicitly-created TableUtils for date/partition-related calculations.
+    //  This may differ from the PartitionSpec/TableUtils used to produce the
+    //  data in the attached DataFrame (say from a GroupBy's data source query).
+    //  We should consider refactoring this to support passing in a single TableUtils
+    //  to be used for all methods.
+    def timeRange(tblutils: BaseTableUtils = tableUtils): TimeRange = {
       assert(
         df.schema(Constants.TimeColumn).dataType == LongType,
         s"Timestamp must be a Long type in milliseconds but found ${df.schema(Constants.TimeColumn).dataType}, if you are using a ts string, consider casting it with the UNIX_TIMESTAMP(ts)*1000 function."
       )
       val (start, end) = df.range[Long](Constants.TimeColumn)
-      TimeRange(start, end)
+      TimeRange(start, end)(tblutils)
     }
 
     def prunePartition(partitionRange: PartitionRange): DataFrame = {

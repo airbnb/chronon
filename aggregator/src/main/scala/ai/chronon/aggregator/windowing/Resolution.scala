@@ -29,6 +29,25 @@ object FiveMinuteResolution extends Resolution {
     Array(WindowUtils.Day.millis, WindowUtils.Hour.millis, WindowUtils.FiveMinutes)
 }
 
+/**
+ * For hourly batch features, we use hourly resolution irrespective of the
+ * window length.
+ */
+object HourlyResolution extends Resolution {
+  def calculateTailHop(window: Window): Long =
+    window.timeUnit match {
+      case TimeUnit.DAYS => WindowUtils.Hour.millis
+      case TimeUnit.HOURS => WindowUtils.Hour.millis
+      case _ =>
+        throw new IllegalArgumentException(
+          s"Invalid request for window $window for hourly aggregation. " +
+            s"Window can only be multiples of 1hr or the operation needs to be un-windowed."
+        )
+    }
+
+  val hopSizes: Array[Long] = Array(WindowUtils.Hour.millis)
+}
+
 object DailyResolution extends Resolution {
 
   def calculateTailHop(window: Window): Long =

@@ -17,7 +17,13 @@ trait BaseTableUtils {
   def sparkSession: SparkSession
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
-  private lazy val archiveTimestampFormatter = DateTimeFormatter
+  // TODO(andrewlee): Some logic change in my PR is causing this to be initialized
+  //  early in some tests, causing serialization errors. See
+  //  https://git.corp.stripe.com/gist/andrewlee/eb950d086b04bf793d7d0f2142d8f90b
+  //  @transient seems to work for now but will reconstruct the DateTimeFormatter
+  //  on executors which may be expensive.
+  //  See https://nathankleyn.com/2017/12/29/using-transient-and-lazy-vals-to-avoid-spark-serialisation-issues/
+  @transient private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
   val partitionColumn: String = Constants.PartitionColumn
@@ -660,6 +666,10 @@ trait BaseTableUtils {
 }
 
 case class TableUtils(sparkSession: SparkSession) extends BaseTableUtils
+
+case class TestHourlyTableUtils(sparkSession: SparkSession) extends BaseTableUtils {
+  override val partitionSpec: PartitionSpec = PartitionSpec(format = "yyyyMMddHH", spanMillis = WindowUtils.Hour.millis)
+}
 
 sealed case class IncompatibleSchemaException(inconsistencies: Seq[(String, DataType, DataType)]) extends Exception {
   override def getMessage: String = {

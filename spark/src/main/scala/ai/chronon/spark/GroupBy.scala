@@ -27,14 +27,20 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               val inputDf: DataFrame,
               val mutationDf: DataFrame = null,
               skewFilter: Option[String] = None,
-              finalize: Boolean = true)
+              finalize: Boolean = true,
+              optTableUtils: Option[BaseTableUtils] = None)
     extends Serializable {
 
   import GroupBy.logger
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
   protected val selectedSchema: Array[(String, api.DataType)] = SparkConversions.toChrononSchema(inputDf.schema)
-  implicit private val tableUtils = TableUtils(inputDf.sparkSession)
+
+  // TODO(andrewlee) Consider eliminating this altogether and requiring that TableUtils be passed
+  //  in externally. This has caused issues where GroupBys perform logic using a different
+  //  TableUtils/PartitionSpec than what was used to generate the input data (i.e. GroupBy.from and
+  //  GroupBy.renderDataSourceQuery).
+  implicit private val tableUtils = optTableUtils.getOrElse(TableUtils(inputDf.sparkSession))
   val keySchema: StructType = StructType(keyColumns.map(inputDf.schema.apply).toArray)
   implicit val sparkSession: SparkSession = inputDf.sparkSession
   // distinct inputs to aggregations - post projection types that needs to match with
@@ -125,7 +131,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
-    // add 1 day to the end times to include data [ds 00:00:00.000, ds + 1 00:00:00.000)
+    // add 1 partition span to the end times to include data [start of partition, start of partition + partition span).
+    // For example, when computing daily features this will include data ds [00:00:00.000, ds + 1 00:00:00.000).
     val shiftedEndTimes = endTimes.map(_ + tableUtils.partitionSpec.spanMillis)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
     val hops = hopsAggregate(endTimes.min, resolution)
@@ -139,10 +146,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       }
   }
   // Calculate snapshot accurate windows for ALL keys at pre-defined "endTimes"
-  // At this time, we hardcode the resolution to Daily, but it is straight forward to support
-  // hourly resolution.
-  def snapshotEvents(partitionRange: PartitionRange): DataFrame =
-    toDf(snapshotEventsBase(partitionRange), Seq((tableUtils.partitionColumn, StringType)))
+  def snapshotEvents(partitionRange: PartitionRange, resolution: Resolution = DailyResolution): DataFrame =
+    toDf(snapshotEventsBase(partitionRange, resolution), Seq((tableUtils.partitionColumn, StringType)))
 
   /**
     * Support for entities with mutations.
@@ -349,7 +354,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       .map { queriesUnfilteredDf.filter }
       .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
 
-    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
+    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange(tableUtils))
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
@@ -579,7 +584,9 @@ object GroupBy {
                 keyColumns,
                 nullFiltered,
                 Option(mutationDf).orNull,
-                finalize = finalize)
+                finalize = finalize,
+                optTableUtils = Some(tableUtils)
+              )
   }
 
   def getIntersectedRange(source: api.Source,
@@ -660,8 +667,8 @@ object GroupBy {
       if (accuracy == api.Accuracy.TEMPORAL) {
         Some(Constants.TimeColumn -> source.query.timeColumn)
       } else {
-        val dsBasedTimestamp = // 1 millisecond before ds + 1
-          s"(((UNIX_TIMESTAMP(${tableUtils.partitionColumn}, '${tableUtils.partitionSpec.format}') + 86400) * 1000) - 1)"
+        val dsBasedTimestamp = // 1 millisecond before start of next partition
+          s"((UNIX_TIMESTAMP(${tableUtils.partitionColumn}, '${tableUtils.partitionSpec.format}') * 1000) + ${tableUtils.partitionSpec.spanMillis} - 1)"
 
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
@@ -707,7 +714,7 @@ object GroupBy {
     val timeMapping = accuracy match {
       case api.Accuracy.TEMPORAL => Some(Constants.TimeColumn -> source.query.timeColumn)
       case api.Accuracy.SNAPSHOT => {
-        val dsBasedTimestamp = // 1 millisecond before ds + 1
+        val dsBasedTimestamp = // TODO(FCOMP-2773) this will need to be fixed for hourly support on unpartitioned data
           s"(((UNIX_TIMESTAMP(${Constants.PartitionColumn}, '${Constants.Partition.format}') + 86400) * 1000) - 1)"
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
