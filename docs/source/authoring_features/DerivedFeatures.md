@@ -6,16 +6,13 @@ Chronon supports this use case by allowing users to define derived features. Der
 
 ## API
 
-Scenario:
-- Computing the "z-score" of column x with formula `(x - x_mean) / x_std`
-- Here, `x`, `x_mean` and `x_std` are all **raw features** already defined in the join. Raw features can be feature columns from any `join_parts` or `external_parts` 
-
-
-API:
-
 We add a **derivations** parameter to Chronon **Joins**. This is of type `List[Derivation]` where `Derivation` contains two fields: 
 - `name`: the name of the derived feature. This is also the output column name in offline, and feature key in the feature map response in online. 
 - `expression`: the spark-sql expression that computes the derived feature from raw features. raw feature names **must** match one of the raw features defined in `join_parts` or `external_parts` of the join.  
+
+Scenario:
+- Computing the "z-score" of column x with formula `(x - x_mean) / x_std`
+- Here, `x`, `x_mean` and `x_std` are all **raw features** already defined in the join. Raw features can be feature columns from any `join_parts` or `external_parts`
 
 ```python
 from ai.chronon.join import Join, Derivation
@@ -198,4 +195,16 @@ v1 = Join(
 
 ## Internals
 
+Since there is no direct API into Spark SQL, we create the scaffolding within Chronon runtime to pull out and manage essential pieces of Spark SQL runtime and re-assemble them to be micro service friendly.
 
+The steps involved are
+- Catalyst invoker: Take user sql fragments and convert to a sql statement and then invoke catalyst planner with the sql statement to generate an execution plan
+- Closure adaptor: Clean up this execution plan and invoke the right closure generator based on the plan.
+- Closure thread pool: Take the generated closure (done lazily) and cache it via a thread pool for efficient execution
+- Closure executor orchestrates the input data consumptions, closure application and output data generation
+  - Serialize incoming data into spark’s internal representation
+  - Store the serialized input in a pre-created input buffer
+  - The closure automatically is polling this buffer and write out to output buffer when transformation is done
+  - We poll the output buffer and deserialize it into Chronon’s type system (we are turning the async process into a sync function execution)
+
+![Overview](../../images/Derived_Features.png)
