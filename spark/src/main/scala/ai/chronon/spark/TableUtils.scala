@@ -90,7 +90,9 @@ trait BaseTableUtils {
   // Which will result in us performing a `SELECT DISTINCT from_unixtime(unix_timestamp(ds, 'yyyyMMdd'), 'yyyy-MM-dd') as ds FROM table` instead of a `SHOW PARTITIONS`
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty, partitionColumnOverride: String = partitionColumn): Seq[String] = {
     if (!tableExists(tableName)) return Seq.empty[String]
-    if (isIcebergTable(tableName)) {
+    // We can only use the Iceberg-specific logic for getting partitions for Iceberg tables
+    // if partitionColumnOverride == partitionColumn.
+    if (isIcebergTable(tableName) && partitionColumnOverride == partitionColumn) {
       if (subPartitionsFilter.nonEmpty) {
         throw new NotImplementedError("subPartitionsFilter is not supported on Iceberg tables yet.")
       }
