@@ -102,18 +102,16 @@ def _validResourceLimit(resourceLimit):
         fail("memory must be specified for ResourceLimit")
 
 def attempt_to_get_pod_sizing_from_compute_config(ctx, compute_config):
-    if not compute_config:
-        return None
-    if not hasattr(compute_config, "resources"):
-        return None
-    if not hasattr(compute_config.resources, "pod_requirements"):
-        return None
-    if compute_config.resources.pod_requirements == None:
+    pod_sizing = _extract_sizing_from_compute_config(compute_config)
+    if pod_sizing == None:
         return None
 
+    cpu_millicores = pod_sizing[0]
+    memory_mebibytes = pod_sizing[1]
+
     spec_val = ResourceRequirementSpec(
-        cpu = millicores(ctx, compute_config.resources.pod_requirements.cpu_millicores),
-        memory = mebibytes(ctx, compute_config.resources.pod_requirements.memory_mebibytes),
+        cpu = millicores(ctx, cpu_millicores),
+        memory = mebibytes(ctx, memory_mebibytes),
     )
 
     current_env = get_env(ctx)
@@ -126,3 +124,33 @@ def attempt_to_get_pod_sizing_from_compute_config(ctx, compute_config):
 
     # this should never happen, fail if it does.
     fail("no mapping for environment={} in attempt_to_get_workload_sizing_from_ctx".format(current_env))
+
+def _extract_sizing_from_compute_config(compute_config):
+    if not compute_config:
+        return None
+
+    if type(compute_config) == "dict":
+        return _extract_sizing_from_compute_config_dict(compute_config)
+
+    return _extract_sizing_from_compute_config_struct(compute_config)
+
+def _extract_sizing_from_compute_config_struct(compute_config):
+    if not hasattr(compute_config, "resources"):
+        return None
+    if not hasattr(compute_config.resources, "pod_requirements"):
+        return None
+    if compute_config.resources.pod_requirements == None:
+        return None
+
+    return compute_config.resources.pod_requirements.cpu_millicores, compute_config.resources.pod_requirements.memory_mebibytes
+
+def _extract_sizing_from_compute_config_dict(compute_config):
+    pod_reqs = compute_config.get("resources", {}).get("pod_requirements", {})
+
+    if pod_reqs == None:
+        return None
+
+    cpu = pod_reqs.get("cpu_millicores", None)
+    mem = pod_reqs.get("memory_mebibytes", None)
+
+    return int(cpu), int(mem)

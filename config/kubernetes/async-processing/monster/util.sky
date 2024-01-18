@@ -176,3 +176,40 @@ def worker_type(monster_service):
         "fanout-workers": "fanout",
         "config-workers": "config",
     }.get(monster_service, monster_service)
+
+def get_gc_args(ctx, runtime_jdk, is_in_jdk17_migration):
+    if get_env(ctx) in ("preprod", "qa"):
+        return _get_shenandoah_args(runtime_jdk, is_in_jdk17_migration)
+
+    return ["-XX:+UseShenandoahGC",
+            "-XX:+AlwaysPreTouch",
+            "-XX:-UseBiasedLocking"]
+
+
+def _get_shenandoah_args(runtime_jdk, is_in_jdk17_migration):
+    """
+    Get the Shenandoah GC arguments based on the runtime JDK and migration status. This function is a copy of the function at: https://livegrep.corp.stripe.com/view/stripe-internal/zoolander/config/java-base.sky#L44-60 Since we dont have a way of importing the java-base in pay-server, this is a workad
+
+    Args:
+        runtime_jdk (int): The version of the runtime JDK.
+        is_in_jdk17_migration (bool): Indicates if the code is in JDK 17 migration.
+
+    Returns:
+        list: The Shenandoah GC arguments.
+    """
+    # Include recommended options from https://wiki.openjdk.org/display/shenandoah/Main#Main-Basicconfiguration
+    args = [
+        "-XX:+AlwaysPreTouch",
+        "-XX:+UseNUMA",
+        "-XX:+UseShenandoahGC",
+    ]
+    if is_in_jdk17_migration:
+        args += [
+            "--jdk11-arg=-XX:-UseBiasedLocking",
+        ]
+    elif runtime_jdk < 15:
+        # JDK 15 removed biased locking anyway. https://openjdk.org/jeps/374
+        args += [
+            "-XX:-UseBiasedLocking",
+        ]
+    return args

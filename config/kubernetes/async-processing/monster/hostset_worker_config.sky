@@ -247,16 +247,16 @@ A200_HOST_SETS = struct(
                     "cmh":          cluster(graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=True),
                 },
                 prod={
-                    "northwest":    cluster(consume_replicas=12,
-                                            fanout_replicas=3,
+                    "northwest":    cluster(consume_replicas=18,
+                                            fanout_replicas=4,
                                             graviton_migration_enabled=True,
                                             graviton_migration_size="100%",
                                             graviton_migration_target_6g=True),
                     "bom":          cluster(graviton_migration_enabled=True,
                                             graviton_migration_size="100%",
                                             graviton_migration_target_6g=True),
-                    "cmh":          cluster(consume_replicas=5,
-                                            fanout_replicas=3,
+                    "cmh":          cluster(consume_replicas=18,
+                                            fanout_replicas=4,
                                             graviton_migration_enabled=True,
                                             graviton_migration_size="100%",
                                             graviton_migration_target_6g=True),
@@ -368,7 +368,7 @@ A200_HOST_SETS = struct(
                                             graviton_migration_target_6g=False),
                 },
                 prod={
-                    "northwest":    cluster(mb_per_worker=2650,
+                    "northwest":    cluster(mb_per_worker=2800,
                                             consume_replicas=9,
                                             fanout_replicas=4, graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=False),
                     "bom":          cluster(consume_replicas=6, graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=True),
@@ -393,7 +393,7 @@ A200_HOST_SETS = struct(
                 }),
         hostset("frontline_experience",
                 suffix="low-cpu",
-                default=            cluster(mb_per_worker=2500),
+                default=            cluster(mb_per_worker=2875),
                 qa={
                     "northwest":    cluster(graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=True),
                     "bom":          cluster(graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=True),
@@ -407,14 +407,15 @@ A200_HOST_SETS = struct(
                                             graviton_migration_target_6g=True),
                 },
                 prod={
-                    "northwest":    cluster(consume_replicas=3,
+                    "northwest":    cluster(consume_replicas=4,
                                             graviton_migration_enabled=True,
                                             graviton_migration_size="100%",
                                             graviton_migration_target_6g=True),
-                    "bom":          cluster(graviton_migration_enabled=True,
+                    "bom":          cluster(consume_replicas=3,
+                                            graviton_migration_enabled=True,
                                             graviton_migration_size="100%",
                                             graviton_migration_target_6g=True),
-                    "cmh":          cluster(consume_replicas=3,
+                    "cmh":          cluster(consume_replicas=4,
                                             graviton_migration_enabled=True,
                                             graviton_migration_size="100%",
                                             graviton_migration_target_6g=True),
@@ -433,9 +434,9 @@ A200_HOST_SETS = struct(
                     "cmh":          cluster(graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=False),
                 },
                 prod={
-                    "northwest":    cluster(mb_per_worker=3250,
-                                            consume_replicas=16,
-                                            fanout_replicas=4,
+                    "northwest":    cluster(mb_per_worker=3650,
+                                            consume_replicas=18,
+                                            fanout_replicas=5,
                                             graviton_migration_enabled=True,
                                             graviton_migration_size="100%",
                                             graviton_migration_target_6g=False),
@@ -462,6 +463,7 @@ A200_HOST_SETS = struct(
                 },
                 prod={
                     "northwest":    cluster(
+                        mb_per_worker=2600,
                         consume_replicas=8,
                         graviton_migration_enabled=True,
                         graviton_migration_size="100%",
@@ -543,7 +545,7 @@ A200_HOST_SETS = struct(
                 suffix="low-cpu",
                 # pre-loading disabled for fanout workers through environment variables
                 prod={
-                    "northwest":    cluster(consume_replicas=dynamic_replicas(18, 42, 4),
+                    "northwest":    cluster(consume_replicas=dynamic_replicas(18, 60, 4),
                                             fanout_replicas=18,
                                             mb_per_worker=2600,
                                             instance_type=r6g_8xlarge),
@@ -697,7 +699,7 @@ A200_HOST_SETS = struct(
                     "cmh":          cluster(consume_replicas=3, graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=True),
                 },
                 prod={
-                    "northwest":    cluster(consume_replicas=34,
+                    "northwest":    cluster(consume_replicas=40,
                                             fanout_replicas=2,
                                             mb_per_worker=2600,
                                             instance_type=r6g_8xlarge),
@@ -929,8 +931,8 @@ A400_HOST_SETS = struct(
                 },
                 prod={
                     "cmh":          empty_worker_cluster(),
-                    "northwest":    cluster(mb_per_worker=3800, # Increasing mb_per_worker slightly to see impact on memory usage
-                                            consume_replicas=250,
+                    "northwest":    cluster(mb_per_worker=4000, # Increasing since memory utilization is hovering around ~90%
+                                            consume_replicas=260,
                                             fanout_replicas=0,
                                             instance_type=m5_16xlarge,
                                             graviton_migration_enabled=True,
@@ -970,7 +972,7 @@ A400_HOST_SETS = struct(
                     # pre-loading disabled for fanout workers through environment variables
                     # general workers need a little bit more cpu, so we're increasing the
                     # mb_per_worker to reduce the number of workers per pod
-                    "northwest":    cluster(mb_per_worker=3400, # Increasing because of high memory utilization
+                    "northwest":    cluster(mb_per_worker=3800, # # Increasing since memory utilization is hovering > ~90% and worker utilizatio is still low.
                                             consume_replicas=0,
                                             fanout_replicas=40,
                                             graviton_migration_enabled=True,

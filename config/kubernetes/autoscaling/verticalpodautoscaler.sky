@@ -5,6 +5,8 @@ load("config/kubernetes/meta/metadata.sky", "render_metadata")
 load("config/kubernetes/helpers/context.sky", "get_env", "get_blue_green_color", "is_isolated_deploy")
 load("config/kubernetes/helpers/warning.sky", "warn")
 
+NUM_RECOMMENDATION_BUCKETS = 3
+
 def vertical_pod_autoscaler():
     """
     Returns a plugin that creates an VPA to be deployed with a deployment.
@@ -56,11 +58,15 @@ def _render_verticalpodautoscaler(ctx, vpa_def, shared_msp, main_container):
     # Grab the platform if it exists
     recommenders = [] # Use the default recommender
     stripe_platform = metadata_obj.get("labels", {}).get("stripe.io/platform", "")
-    if get_env(ctx) == "qa" and stripe_platform == "workflow":
+    if stripe_platform == "workflow":
         recommenders = [{
             "name": "workflow-services"
         }]
-
+    else:
+        # Since Stripe has a large number of Kubernetes services, we need to 
+        # use consistent hashing to split the services into separate determinisitic
+        # buckets. 
+        recommenders = get_recommender_bucket(deployment_name)
 
     return VerticalPodAutoscaler(
         ctx,
@@ -86,3 +92,15 @@ def _render_verticalpodautoscaler(ctx, vpa_def, shared_msp, main_container):
             }
         ),
     )
+
+def get_recommender_bucket(deployment_name):
+    bucket = ord(hash.md5(deployment_name)[0]) % NUM_RECOMMENDATION_BUCKETS
+
+    # Bucket = 0 is considered the 'default' bucket. 
+    # As such we don't override the recommender here. 
+    if bucket > 0:
+        return [{
+            "name": "default-" + str(bucket)
+        }]
+
+    return [] # default recommender

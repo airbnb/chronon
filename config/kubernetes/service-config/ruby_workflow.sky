@@ -1,6 +1,4 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("henson/kube/_ruby-common.sky", "ruby_canary_suffix")
-
 load("config/kubernetes/helpers/context.sky",
     "get_availability_tier",
     "get_identity",
@@ -9,6 +7,7 @@ load("config/kubernetes/helpers/context.sky",
     "get_container_images"
 )
 load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
+load("config/kubernetes/service-config/ruby_common.sky", "get_egress_proxy_tier", "has_egress_proxy_tier")
 load("config/kubernetes/public/workflow_engine/workflow_worker.sky", "ruby_workflow_worker_shared_msp")
 load("config/kubernetes/helpers/availability_tiers.sky", "get_pod_availability_tier_by_name")
 load("config/kubernetes/helpers/aws_instance_sizes.sky", "get_instance_type_by_name")
@@ -22,6 +21,7 @@ load("config/kubernetes/sidecars/confidant_migration.sky", migration_raw_secret=
 load("config/kubernetes/sidecars/pandora.sky", pandora_raw_secret="raw_secret", pandora_yaml_secret="yaml_secret")
 load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
 load("config/kubernetes/networking/public/config.sky", "networking_config", "global_ratelimit")
+load("config/kubernetes/networking/internal/config/override.sky", "NOT_PROVIDED")
 load("config/kubernetes/helpers/resource_requirements.sky", "attempt_to_get_pod_sizing_from_compute_config")
 load("config/kubernetes/helpers/images.sky", "image_defaults")
 
@@ -40,7 +40,7 @@ def get_manage_workers(compute_config):
     return manage_workers
 
 def _platform_options(compute_config):
-    if compute_config["platform_options"]:
+    if "platform_options" in compute_config:
         return compute_config["platform_options"]
     else:
         return None
@@ -97,11 +97,25 @@ def deployment_strategy_func(ctx):
         **args,
     )
 
-def _networking_config(ctx, compute_config):
+def get_networking_config(ctx, compute_config):
     plugins = []
+    global_ratelimit_val = NOT_PROVIDED
     platform_options = _platform_options(compute_config)
-    if platform_options and platform_options["enable_envoy_global_ratelimit"]:
-        plugins.append(networking_config(global_ratelimit = global_ratelimit(enable=True)))
+    # The trick here is that if not present, as a protobuf bool
+    # enable_envoy_global_ratelimit defaults to False;
+    # check for presence, then verify that it is actually True
+    has_global_ratelimit = platform_options and "enable_envoy_global_ratelimit" in platform_options and platform_options["enable_envoy_global_ratelimit"]
+
+    if has_global_ratelimit:
+        global_ratelimit_val = global_ratelimit(enable=True)
+
+    if has_egress_proxy_tier(platform_options) or has_global_ratelimit:
+        plugins.append(
+            networking_config(
+                global_ratelimit = global_ratelimit_val,
+                egress_proxy_tier = get_egress_proxy_tier(platform_options),
+            )
+        )
 
     return plugins
 
@@ -115,9 +129,20 @@ def _hack_kick_interval(compute_config):
     else:
         return None
 
+def requires_consul_in_computev2_config(compute_config):
+    if (
+        compute_config != None and
+        "platform_options" in compute_config and
+        compute_config["platform_options"] != None and
+        "disable_consul" in compute_config["platform_options"]
+    ):
+        return not bool(compute_config["platform_options"]["disable_consul"])
+    else:
+        return None
+
 def _build_args(ctx, compute_config):
     args = {}
-    plugins = _networking_config(ctx, compute_config)
+    plugins = get_networking_config(ctx, compute_config)
 
     platform_options = _platform_options(compute_config)
 
@@ -188,6 +213,7 @@ def deployments(ctx):
     manage_workers = get_manage_workers(compute_config)
     separate_canary_by_name = get_separate_canary_by_name(compute_config)
     hack_kick_interval = _hack_kick_interval(compute_config)
+    requires_consul = requires_consul_in_computev2_config(compute_config)
 
     # Get the pod resource sizing
     pod_resources = attempt_to_get_pod_sizing_from_compute_config(ctx, compute_config)
@@ -221,6 +247,7 @@ def deployments(ctx):
           name = None,
           artifact = pay_server_artifact_name,
         ),
+        requires_consul = requires_consul,
     )
 
 def _strict_packaging(compute_config):

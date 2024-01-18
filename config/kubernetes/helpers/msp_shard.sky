@@ -21,7 +21,7 @@ ENV_CLUSTER_SHARDS = {
     "qa": {
         "bom": [_shard("kubemaster", cron=True)],
         "cmh": [_shard("kubemaster", cron=True)],
-        "east": [_shard("kubemaster", cron=True), _shard("kubeapitest", account="mainland2")],
+        "east": [_shard("kubemaster", cron=True)],
         "northwest": [_shard("kubemaster", shared_msp=False, cron=True), _shard("kubeapiaa"), _shard("kubeapibb"), _shard("kubeapicc"), _shard("kubeapidd", cron=True), _shard("kubeapitest", cron=True), _shard("kubeapisktest")],
     },
     "preprod": {

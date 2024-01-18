@@ -15,7 +15,6 @@ cluster, you can generate that in Skycfg using `config_file`.
 load("config/kubernetes/core/volume.sky", "render_volume_mount", "volume_mount")
 load("config/kubernetes/helpers/images.sky", "image")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
-load("config/kubernetes/sidecars/variables.sky", "FILE_WRITER_ALPINE_CONTAINER_SHA")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
 load("config/kubernetes/core/container.sky", "resource_requirements")
 
@@ -101,7 +100,9 @@ def _render_container(ctx, container_def, pod):
     return Container(
         ctx,
         name = container.name,
-        image = image(ctx, "stripe/build/alpine-3.7", label = "git-%s" % FILE_WRITER_ALPINE_CONTAINER_SHA),
+        # Static SHA corresponding to the multi-arch version of the alpine 3.10 container image.
+        # https://amp.corp.stripe.com/containers/northwest/stripe/orchestration/alpine-multiarch
+        image = image(ctx, "stripe/orchestration/alpine-multiarch", label = "sha256:bf2ae7cd94dd0ee92b1b4993404e68646c1ba6658be405ed6d126d4235258d6e"),
         command = command,
         volumeMounts = [render_volume_mount(ctx, mount) for mount in volume_mounts],
         resources = resource_requirements(ctx),

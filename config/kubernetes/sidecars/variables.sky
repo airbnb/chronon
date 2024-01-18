@@ -9,9 +9,6 @@ FEATURE_FLAGS_CONTAINER_ENV = DEFUALT_CONTAINER_ENV
 GEOIP_CONTAINER_DIGEST = "sha256:6cac4f7b86de0aa89d6399c8735ad11b9caaf738c2f5df6d2b49e7d654b3f1f6"
 GEOIP_CONTAINER_ENV = DEFUALT_CONTAINER_ENV
 
-# gets env from the context
-FILE_WRITER_ALPINE_CONTAINER_SHA = "3e3fcf4be3e2260ab21f149f4065ce312f72f1c0"
-
 # To update, get the latest container digest from
 # https://amp.corp.stripe.com/containers/northwest/stripe/deploy-and-staging/config-srv-sidecar.
 # You can get the gocode commit by looking at recent gocode builds - see

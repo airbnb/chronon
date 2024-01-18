@@ -225,9 +225,7 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
             # Feature flag opt in is only available for services with 3 or more replicas.
             _apply_plugin(ctx, compose_plugins(horizontal_pod_autoscaler()), deployment)
 
-        # We will eventually be supporting VPA for non BinPacked workloads, as a result we
-        # are not including it in the above if statement. Eventually we will remove this
-        # 'is_bin_packing_enabled' condition of this if statement.
+        # We want to get a recommendation for any MSP workload
         if is_vertical_pod_autoscaling_enabled(ctx) and is_bin_packing_enabled(ctx) == True:
             _apply_plugin(ctx, compose_plugins(vertical_pod_autoscaler()), deployment)
 

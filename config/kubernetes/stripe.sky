@@ -8,6 +8,7 @@ load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
 load("config/kubernetes/core/container.sky", "container", "container_resources", "resource_requirements")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/core/feature_flags.sky", "use_feature_flags")
 load("config/kubernetes/core/pod.sky", "pod", "pod_host_network", "pod_scheduler_name")
 load("config/kubernetes/core/volume.sky", "mount_host_volume", "mount_pod_volume", "host_volume")
 load("config/kubernetes/helpers/availability_tiers.sky", "A400")
@@ -20,8 +21,7 @@ load("config/kubernetes/helpers/security.sky", "run_as_unprivileged")
 load("config/kubernetes/meta/metadata.sky", "annotations", "labels", "metadata")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/sidecars/confidant.sky", "secret_options")
-load("config/kubernetes/sidecars/feature_flags.sky", "use_feature_flags")
-load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "is_msp_consul_deprecation_enabled", "is_bin_packing_scheduler_enabled", "get_name", "get_henson_config", "is_isolated_deploy", "get_service_variant")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "is_msp_consul_deprecation_enabled", "get_name", "get_henson_config", "is_isolated_deploy", "get_service_variant")
 load("config/kubernetes/sidecars/consul_agent_init.sky", "consul_agent_init")
 load("config/kubernetes/helpers/tolerations.sky", "add_toleration")
 load("config/kubernetes/networking/internal/envoy-config-srv.sky", "henson_listener_config")
@@ -155,7 +155,7 @@ def stripe_pod(
 
     plugins = [
         pod(share_pid_namespace = share_pid_namespace),
-        use_feature_flags(ctx, use_legacy_host_mounts = True),
+        use_feature_flags(ctx),
         container(
             name = container_name if container_name != None else name,
             is_main_container = True,
@@ -251,6 +251,8 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
     cpu = millicores(ctx, total_resources.cpu_millicores - instance_type.slack_cpu_millicores)
     memory = mebibytes(ctx, total_resources.memory_mib)
     shard_plugin = autoset_shard_shared_msp()
+    # If bin packing is enabled, we want to use the bin packing scheduler, otherwise we want to use the default scheduler.
+    scheduler_name = "default-scheduler"
     bin_pack = is_bin_packing_enabled(ctx)
     node_selectors_map = {"stripe.io/availability-tier": availability_tier.node_tier}
     annotations_map = {
@@ -262,6 +264,7 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         annotations_map["stripe.io/requested-instance-type"] = instance_type.name
         annotations_map["stripe.io/bin-packing"] = "enabled"
         bin_packing_label["stripe.io/bin-packing"] = "enabled"
+        scheduler_name = "bin-packing-scheduler"
 
         node_selectors_map["stripe.io/bin-packing"]= "enabled"
         if is_graviton_instance(instance_type):
@@ -276,11 +279,6 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         node_selectors_map["stripe.io/aws-instance-type"]= instance_type.name
         # if not binpacked, do not allow services to set custom resources
         container_resource_spec = None
-
-    # If bin packing is enabled, we want to use the bin packing scheduler, otherwise we want to use the default scheduler.
-    scheduler_name = "default-scheduler"
-    if is_bin_packing_scheduler_enabled(ctx):
-        scheduler_name = "bin-packing-scheduler"
 
     return compose_plugins(
         pod_plugin(_set_shared_msp),

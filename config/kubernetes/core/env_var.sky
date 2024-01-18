@@ -129,6 +129,11 @@ def _default_env_vars(ctx, container):
     if hasattr(container, 'name'):
         env_var_dict["STRIPE_CONTAINER_NAME"] = container.name
     env_var_dict["STRIPE_AVAILABILITY_TIER"] = get_availability_tier(ctx)
+
+    # this ensures compatibility in tracing headers between various versions of opentelemetry
+    # https://jira.corp.stripe.com/browse/OBSD-1092
+    env_var_dict["OTEL_SEMCONV_STABILITY_OPT_IN"] = "http/dup"
+
     return env_var_dict
 
 def _default_env_vars_from_fields(ctx):

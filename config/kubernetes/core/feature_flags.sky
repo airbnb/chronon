@@ -1,0 +1,12 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/volume.sky", "mount_host_volume")
+
+# Mounts the feature flags volume into the pod, under the path /pay/cache.
+def use_feature_flags(_ctx):
+    return mount_host_volume(
+        "/pay/cache",
+        volume_args = {
+            "type": "Directory",
+            "reason": "Provides cached feature flag and Mongo sharding data.",
+        },
+    )

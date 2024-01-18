@@ -567,20 +567,6 @@ def is_bin_packing_enabled(ctx):
     """
     return ctx.vars.get("msp.binpacking", False) and get_render_yaml(ctx)
 
-def is_bin_packing_scheduler_enabled(ctx):
-    """
-    Gets whether binpacking scheduler is set to true or not
-
-        Args:
-        ctx: The context containing Henson and the Centralized Service Configurations.
-    Returns:
-        Bin packing scheduler enabled or not
-    """
-    # If bin-packing is not enabled, then bin-packing scheduler cannot be enabled
-    if not is_bin_packing_enabled(ctx):
-        return False
-    return ctx.vars.get("msp.binpacking_custom_scheduler", False) and get_render_yaml(ctx)
-
 def is_horizontal_pod_autoscaling_enabled(ctx):
     """
     Gets whether hpa is set to true or not

@@ -4,6 +4,7 @@ Functions for creating and configuring Workflow engine workers to run on MSP.
 """
 
 load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
+load("config/kubernetes/service-config/ruby_common.sky", "ruby_canary_suffix")
 load("config/kubernetes/apps/deployment.sky", "deployment")
 load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
@@ -15,7 +16,6 @@ load("config/kubernetes/helpers/context.sky", "get_env")
 load("config/kubernetes/pay-server.sky", "einhorn_service", "pay_server_pod")
 load("config/kubernetes/helpers/images.sky", "image_defaults")
 load("config/kubernetes/helpers/external_scaling_control.sky", "external_scaling_control")
-load("henson/kube/_ruby-common.sky", "ruby_canary_suffix")
 load("config/kubernetes/meta/metadata.sky", "labels")
 
 # Can't be overriden because the canary is always one node.

@@ -1,0 +1,36 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
+load("config/kubernetes/networking/internal/config/override.sky", "NOT_PROVIDED")
+
+def ruby_canary_suffix(ctx, default="-canary"):
+    # Has ComputeV2?
+    compute_config = ctx.vars.get("service.config.compute_v2")
+
+    if compute_config == None:
+        return default
+
+    compute_config = get_merged_compute_v2_config(ctx)
+
+    ruby_process = compute_config["ruby_process"]
+
+    # Try to read from the StringValue suffix field
+    if (
+        ruby_process != None and
+        ruby_process["canary_config"] != None and
+        ruby_process["canary_config"]["suffix"] != None
+    ):
+        return str(ruby_process["canary_config"]["suffix"])
+
+    return default
+
+def has_egress_proxy_tier(platform_options):
+    if platform_options and "egress_proxy_tier" in platform_options and platform_options["egress_proxy_tier"] != None:
+        return True
+
+    return False
+
+def get_egress_proxy_tier(platform_options):
+    if has_egress_proxy_tier(platform_options):
+        return platform_options["egress_proxy_tier"]
+
+    return NOT_PROVIDED

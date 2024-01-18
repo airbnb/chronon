@@ -21,8 +21,11 @@ load(
     "get_jmx_java_options",
     "get_monster_env_cmd_arguments",
     "get_worker_envoy_address_from_consul",
+    "get_gc_args",
     "monster_deployment_labels",
 )
+
+DEFAULT_JDK = 11
 
 def generate_fqe_lock_preemption(config):
     ig = format_isolation_group(config.monster_isolation_group)
@@ -106,11 +109,9 @@ def monster_express_deployment(ctx, unformatted_host_set, config):
                     "-Xlog:all=warning:stdout:utc,level,tags",
                     "-Xlog:gc*=info:stdout:utc,level,tags:filesize=20M,filecount=5",
                     "-Xmx{}m".format(config.raw_memory_mb),
-                    "-XX:-UseBiasedLocking",
-                    "-XX:+AlwaysPreTouch",
                     "-XX:+ExitOnOutOfMemoryError",
-                    "-XX:+UseShenandoahGC",
-                ] + get_jmx_java_options(jmx_port)),
+                ] + get_gc_args(ctx, DEFAULT_JDK, is_in_jdk17_migration = False)
+                  + get_jmx_java_options(jmx_port)),
             },
         ),
         container_port(jmx_port),
