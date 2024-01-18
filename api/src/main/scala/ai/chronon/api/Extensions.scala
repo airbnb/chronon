@@ -422,6 +422,13 @@ object Extensions {
       }
     }
 
+    // Check if tiling is enabled for a given GroupBy. Defaults to false if the 'enable_tiling' flag isn't set.
+    def isTilingEnabled: Boolean =
+      groupBy.getMetaData.customJsonLookUp("enable_tiling") match {
+        case s: Boolean => s
+        case _          => false
+      }
+
     def semanticHash: String = {
       val newGroupBy = groupBy.deepCopy()
       newGroupBy.unsetMetaData()

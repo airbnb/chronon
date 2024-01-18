@@ -399,6 +399,122 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
+  def generateEventOnlyData(namespace: String, groupByCustomJson: Option[String] = None): api.Join = {
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+
+    def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
+
+    val listingEventData = Seq(
+      Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
+      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10")
+    )
+    val ratingEventData = Seq(
+      // 1L listing id event data
+      Row(1L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
+      Row(1L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+      // 2L listing id event data
+      Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7
+      Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-07"), // excluded from avg agg
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-07"), // excluded from avg agg
+      Row(2L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
+      Row(2L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
+      Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+      Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
+      Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+      Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10") // dated 4/10 but excluded from avg agg based on ts
+    )
+    // Schemas
+    // {..., event (generic event column), ...}
+    val listingsSchema = StructType("listing_events_fetcher",
+                                    Array(
+                                      StructField("listing_id", LongType),
+                                      StructField("ts", LongType),
+                                      StructField("ds", StringType)
+                                    ))
+
+    val ratingsSchema = StructType(
+      "listing_ratings_fetcher",
+      Array(StructField("listing_id", LongType),
+            StructField("ts", LongType),
+            StructField("rating", IntType),
+            StructField("ds", StringType))
+    )
+
+    val sourceData: Map[StructType, Seq[Row]] = Map(
+      listingsSchema -> listingEventData,
+      ratingsSchema -> ratingEventData
+    )
+
+    sourceData.foreach {
+      case (schema, rows) =>
+        val tableName = s"$namespace.${schema.name}"
+
+        spark.sql(s"DROP TABLE IF EXISTS $tableName")
+
+        spark
+          .createDataFrame(rows.toJava, SparkConversions.fromChrononSchema(schema))
+          .save(tableName)
+    }
+    println("saved all data hand written for fetcher test")
+
+    val startPartition = "2021-04-07"
+    val endPartition = "2021-04-10"
+
+    val leftSource =
+      Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("listing_id", "ts"),
+          startPartition = startPartition
+        ),
+        table = s"$namespace.${listingsSchema.name}"
+      )
+
+    val rightSource =
+      Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("listing_id", "ts", "rating"),
+          startPartition = startPartition
+        ),
+        table = s"$namespace.${ratingsSchema.name}",
+        topic = "fake_topic2"
+      )
+
+    val groupBy = Builders.GroupBy(
+      sources = Seq(rightSource),
+      keyColumns = Seq("listing_id"),
+      aggregations = Seq(
+        Builders.Aggregation(
+          operation = Operation.SUM,
+          inputColumn = "rating",
+          windows = null
+        ),
+        Builders.Aggregation(
+          operation = Operation.AVERAGE,
+          inputColumn = "rating",
+          windows = Seq(new Window(2, TimeUnit.DAYS))
+        )
+      ),
+      accuracy = Accuracy.TEMPORAL,
+      metaData = Builders.MetaData(name = "unit_test/fetcher_tiled_gb",
+                                   namespace = namespace,
+                                   team = "chronon",
+                                   customJson = groupByCustomJson.orNull)
+    )
+
+    val joinConf = Builders.Join(
+      left = leftSource,
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = Builders.MetaData(name = "unit_test/fetcher_tiled_join", namespace = namespace, team = "chronon")
+    )
+    joinConf
+  }
+
   // Compute a join until endDs and compare the result of fetching the aggregations with the computed join values.
   def compareTemporalFetch(joinConf: api.Join,
                            endDs: String,
@@ -547,6 +663,12 @@ class FetcherTest extends TestCase {
                          namespace,
                          consistencyCheck = true,
                          dropDsOnWrite = false)
+  }
+
+  def testTemporalTiledFetchJoinDeterministic(): Unit = {
+    val namespace = "deterministic_tiled_fetch"
+    val joinConf = generateEventOnlyData(namespace, groupByCustomJson = Some("{\"enable_tiling\": true}"))
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
   }
 
   // test soft-fail on missing keys
