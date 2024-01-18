@@ -112,7 +112,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       val valuesTry = response.values
       valuesTry.map { values =>
         val series = values.map {
-          case TimedValue(bytes, millis) =>
+          case TimedValue(bytes, millis, _) =>
             val jsonString = new String(bytes, Constants.UTF8)
             val jMap = gson.fromJson(jsonString, classOf[java.util.Map[String, Object]])
             millis -> (SortedMap.empty[String, Any] ++ jMap.asScala)

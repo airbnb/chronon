@@ -5,7 +5,12 @@ import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api._
 
 // Wrapper class for handling Irs in the tiled chronon use case
-case class TiledIr(ts: Long, ir: Array[Any])
+// ts: timestamp in millis
+// ir: IR of the streaming data for the tile
+// size: size in millis of the time range for the IR
+// Based on the above, tile start = ts, tile end = ts + size
+// TODO(aarongreen): Make size non-optional once the KVStore is updated to include the tileSize
+case class TiledIr(ts: Long, ir: Array[Any], size: Option[Long])
 
 // batchEndTs = upload time of the batch data as derived from GroupByServingInfo & Cached
 // cache = Jul-22 / latest = Jul-23, streaming data = 22 - now (filter < jul 23)

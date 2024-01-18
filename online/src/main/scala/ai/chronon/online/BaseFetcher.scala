@@ -110,7 +110,7 @@ class BaseFetcher(kvStore: KVStore,
           .map { tVal =>
             try {
               val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
-              TiledIr(tVal.millis, tile)
+              TiledIr(tVal.millis, tile, tVal.tileSizeMillis)
             } catch {
               case e: Throwable =>
                 // capture additional info we need and rethrow so that we can log upstream
