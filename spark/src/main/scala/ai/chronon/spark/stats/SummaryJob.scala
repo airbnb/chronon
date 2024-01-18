@@ -41,11 +41,11 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
 
   def basicStatsJob(inputTable: String,
                     outputTable: String,
-                    columns: Option[Seq[String]],
                     stepDays: Option[Int] = None,
-                    sample: Double = 0.1): Unit = {
+                    sample: Double = 0.1,
+                    forceBackfill: Boolean = false): Unit = {
     val uploadTable = joinConf.metaData.toUploadTable(outputTable)
-    val backfillRequired = !JoinUtils.tablesToRecompute(joinConf, outputTable, tableUtils).isEmpty
+    val backfillRequired = (!JoinUtils.tablesToRecompute(joinConf, outputTable, tableUtils).isEmpty) || forceBackfill
     if (backfillRequired)
       Seq(outputTable, uploadTable).foreach(tableUtils.dropTableIfExists(_))
     val unfilledRanges = tableUtils
@@ -63,15 +63,11 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
       stepRanges.zipWithIndex.foreach {
         case (range, index) =>
           logger.info(s"Computing range [${index + 1}/${stepRanges.size}]: $range")
-          val joinOutputDf = tableUtils.sql(s"""
+          val inputDf = tableUtils.sql(s"""
                |SELECT *
                |FROM $inputTable
                |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
-          val inputDf = if (columns.isDefined) {
-            val toSelect = columns.get
-            joinOutputDf.select(toSelect.head, toSelect.tail: _*)
-          } else joinOutputDf
           val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
           val aggregator = StatsGenerator.buildAggregator(
             stats.metrics,
@@ -93,22 +89,16 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
   /**
     * Daily stats job for backfill output tables.
     * Filters contextual and external features.
+    * Computes stats for values on the "left" since they are a part of backfill table.
     */
-  def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit = {
-    val outputSchema = tableUtils.getSchemaFromTable(joinConf.metaData.outputTable)
-    val baseColumns = joinConf.leftKeyCols ++ joinConf.computedFeatureCols :+ tableUtils.partitionColumn
-    val columns = if (outputSchema.map(_.name).contains(Constants.TimeColumn)) {
-      baseColumns :+ Constants.TimeColumn
-    } else {
-      baseColumns
-    }
-    basicStatsJob(joinConf.metaData.outputTable, dailyStatsTable, Some(columns), stepDays, sample)
-  }
+  def dailyRun(stepDays: Option[Int] = None, sample: Double = 0.1, forceBackfill: Boolean = false): Unit =
+    basicStatsJob(joinConf.metaData.outputTable, dailyStatsTable, stepDays, sample, forceBackfill)
 
   /**
     * Batch stats compute and upload for the logs
     * Does not filter contextual or external features.
+    * Filters values on the "left" since they are not available on fetch.
     */
-  def loggingRun(stepDays: Option[Int] = None, sample: Double = 0.1): Unit =
-    basicStatsJob(joinConf.metaData.loggedTable, loggingStatsTable, None, stepDays, sample)
+  def loggingRun(stepDays: Option[Int] = None, sample: Double = 0.1, forceBackfill: Boolean = false): Unit =
+    basicStatsJob(joinConf.metaData.loggedTable, loggingStatsTable, stepDays, sample, forceBackfill)
 }
