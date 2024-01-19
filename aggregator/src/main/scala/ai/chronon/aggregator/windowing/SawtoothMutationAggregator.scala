@@ -126,6 +126,21 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
     }
   }
 
+  def updateIrTiled(ir: Array[Any], otherIr: TiledIr, queryTs: Long) = {
+    val otherIrTs = otherIr.ts
+    var i: Int = 0
+    while (i < windowedAggregator.length) {
+      val window = windowMappings(i).aggregationPart.window
+      val hopIndex = tailHopIndices(i)
+      val irInWindow =
+        (otherIrTs >= TsUtils.round(queryTs - window.millis, hopSizes(hopIndex)) && otherIrTs < queryTs)
+      if (window == null || irInWindow) {
+        ir(i) = windowedAggregator(i).merge(ir(i), otherIr.ir(i))
+      }
+      i += 1
+    }
+  }
+
   /**
     * Update the intermediate results with tail hops data from a FinalBatchIr.
     */

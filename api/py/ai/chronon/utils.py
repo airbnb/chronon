@@ -221,7 +221,7 @@ def get_staging_query_output_table_name(staging_query: api.StagingQuery, full_na
     return output_table_name(staging_query, full_name=full_name)
 
 
-def get_join_output_table_name(join: api.Join, full_name: bool):
+def get_join_output_table_name(join: api.Join, full_name: bool = False):
     """generate output table name for join backfill job"""
     __set_name(join, api.Join, "joins")
     return output_table_name(join, full_name=full_name)

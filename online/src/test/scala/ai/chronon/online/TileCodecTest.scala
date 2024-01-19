@@ -17,9 +17,22 @@
 package ai.chronon.online
 
 import org.slf4j.LoggerFactory
-import ai.chronon.api.{Aggregation, Builders, FloatType, IntType, ListType, LongType, Operation, Row, StringType, TimeUnit, Window}
+import ai.chronon.api.{
+  Aggregation,
+  Builders,
+  FloatType,
+  IntType,
+  ListType,
+  LongType,
+  Operation,
+  Row,
+  StringType,
+  TimeUnit,
+  Window
+}
 import org.junit.Assert.assertEquals
 import org.junit.Test
+
 import scala.collection.JavaConverters._
 
 class TileCodecTest {
@@ -29,22 +42,33 @@ class TileCodecTest {
   private val aggregationsAndExpected: Array[(Aggregation, Seq[Any])] = Array(
     Builders.Aggregation(Operation.AVERAGE, "views", Seq(new Window(1, TimeUnit.DAYS))) -> Seq(16.0),
     Builders.Aggregation(Operation.AVERAGE, "rating", Seq(new Window(1, TimeUnit.DAYS))) -> Seq(4.0),
-
-    Builders.Aggregation(Operation.SUM, "rating", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(12.0f, 12.0f),
-
-    Builders.Aggregation(Operation.UNIQUE_COUNT, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(3L, 3L),
-
-    Builders.Aggregation(Operation.LAST, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq("C", "C"),
-
-    Builders.Aggregation(Operation.LAST_K, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> Seq(List("C", "B").asJava, List("C", "B").asJava),
-
-    Builders.Aggregation(Operation.TOP_K, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "1")) -> Seq(List("C").asJava, List("C").asJava),
-
-    Builders.Aggregation(Operation.MIN, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq("A", "A"),
-
-    Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "title", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(3L, 3L),
-
-    Builders.Aggregation(Operation.HISTOGRAM, "hist_input", Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "2")) -> Seq(histogram, histogram)
+    Builders.Aggregation(Operation.SUM,
+                         "rating",
+                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(12.0f, 12.0f),
+    Builders.Aggregation(Operation.UNIQUE_COUNT,
+                         "title",
+                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(3L, 3L),
+    Builders.Aggregation(Operation.LAST,
+                         "title",
+                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq("C", "C"),
+    Builders.Aggregation(Operation.LAST_K,
+                         "title",
+                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)),
+                         argMap = Map("k" -> "2")) -> Seq(List("C", "B").asJava, List("C", "B").asJava),
+    Builders.Aggregation(Operation.TOP_K,
+                         "title",
+                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)),
+                         argMap = Map("k" -> "1")) -> Seq(List("C").asJava, List("C").asJava),
+    Builders.Aggregation(Operation.MIN,
+                         "title",
+                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq("A", "A"),
+    Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT,
+                         "title",
+                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(3L, 3L),
+    Builders.Aggregation(Operation.HISTOGRAM,
+                         "hist_input",
+                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)),
+                         argMap = Map("k" -> "2")) -> Seq(histogram, histogram)
   )
 
   private val bucketedAggregations: Array[Aggregation] = Array(

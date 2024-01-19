@@ -6,15 +6,52 @@
 .. toctree::
    :maxdepth: 2
    :hidden:
+   :caption: Introduction
 
-   Getting_Started
-   Concepts
-   Aggregations
-   Bootstrap
+   getting_started/Introduction
+   getting_started/Tutorial
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Creating Training data
+
+   authoring_features/GroupBy
+   authoring_features/Join
+   authoring_features/Source
+   authoring_features/StagingQuery
+   authoring_features/Bootstrap
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Setup
+
+   setup/Components
+   setup/Data_Integration
+   setup/Developer_Setup
+   setup/Online_Integration
+   setup/Orchestration
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: Test, Serve & Monitor
+
+   test_deploy_serve/Test
+   test_deploy_serve/Deploy
+   test_deploy_serve/Serve
+   test_deploy_serve/Online_Offline_Consistency
+
+.. toctree::
+   :maxdepth: 2
+   :hidden:
+   :caption: More References
+
    Python_API
-   Kaggle_Outbrain
-   Online_Offline_Consistency
    Code_Guidelines
+   Kaggle_Outbrain
+
 
 What is Chronon?
 =====================
@@ -25,7 +62,7 @@ features at scale very easy.
 With Chronon you can generate training data, serve features, monitor feature quality 
 and manage features with a unified feature definition.
 
-.. image:: ../images/chronon_high_level.png
+.. image:: ../images/intro.png
 
 * **Consume data from a variety of Sources** - event streams, DB table snapshots, change data streams, service endpoints and warehouse tables modeled as either slowly changing dimensions, fact or dimension tables
 * **Produce results both online and offline contexts** - Online, as scalable low-latency end-points for feature serving, or offline as hive tables, for generating training data.

@@ -422,6 +422,13 @@ object Extensions {
       }
     }
 
+    // Check if tiling is enabled for a given GroupBy. Defaults to false if the 'enable_tiling' flag isn't set.
+    def isTilingEnabled: Boolean =
+      groupBy.getMetaData.customJsonLookUp("enable_tiling") match {
+        case s: Boolean => s
+        case _          => false
+      }
+
     def semanticHash: String = {
       val newGroupBy = groupBy.deepCopy()
       newGroupBy.unsetMetaData()
@@ -803,7 +810,18 @@ object Extensions {
       }
     }
 
-    def computedFeatureCols: Seq[String] = joinPartOps.flatMap(_.valueColumns)
+    def computedFeatureCols: Array[String] =
+      if (Option(join.derivations).isDefined) {
+        val baseColumns = joinPartOps.flatMap(_.valueColumns).toArray
+        val baseExpressions = if (join.derivationsContainStar) baseColumns.filterNot {
+          join.derivationExpressionSet contains _
+        }
+        else Array.empty[String]
+        baseExpressions ++ join.derivationsWithoutStar.map { d =>
+          d.name
+        }
+      } else
+        joinPartOps.flatMap(_.valueColumns).toArray
 
     def partOutputTable(jp: JoinPart): String =
       (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+ jp.groupBy.metaData.cleanName).mkString("_")

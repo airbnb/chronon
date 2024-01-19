@@ -70,34 +70,6 @@ object StatsGenerator {
                              argMap: util.Map[String, String] = null)
 
   /**
-    * A valueSchema (for join) and Metric list define uniquely the IRSchema to be used for the statistics.
-    * In order to support custom storage for statistic percentiles this method would need to be modified.
-    * IR Schemas are used to decode streaming partial aggregations as well as KvStore partial stats.
-    */
-  def statsIrSchema(valueSchema: api.StructType): api.StructType = {
-    val metrics: Seq[MetricTransform] = buildMetrics(valueSchema.unpack)
-    val schemaMap = valueSchema.unpack.map { v =>
-      v._1 -> v._2
-    }.toMap
-    api.StructType.from(
-      "IrSchema",
-      metrics.map { m =>
-        m.expression match {
-          case InputTransform.IsNull =>
-            (s"${m.name}${m.suffix}_sum", api.LongType)
-          case InputTransform.One =>
-            (s"${m.name}${m.suffix}_count", api.LongType)
-          case InputTransform.Raw =>
-            val aggPart = buildAggPart(m)
-            val colAggregator = ColumnAggregator.construct(schemaMap(m.name), aggPart, ColumnIndices(1, 1), None)
-            (s"${m.name}_${aggPart.operation.name().toLowerCase()}", colAggregator.irType)
-        }
-
-      }.toArray
-    )
-  }
-
-  /**
     * Post processing for finalized values or IRs when generating a time series of stats.
     * In the case of percentiles for examples we reduce to 5 values in order to generate candlesticks.
     */
@@ -108,31 +80,6 @@ object StatsGenerator {
         sketch.getQuantiles(finalizedPercentilesSeries).asInstanceOf[AnyRef]
       case _ => value
     }
-  }
-
-  /**
-    * Input schema is the data required to update partial aggregations / stats.
-    *
-    * Given a valueSchema and a metric transform list, defines the schema expected by the Stats aggregator (online and offline)
-    */
-  def statsInputSchema(valueSchema: api.StructType): api.StructType = {
-    val metrics = buildMetrics(valueSchema.unpack)
-    val schemaMap = valueSchema.unpack.map { v =>
-      v._1 -> v._2
-    }.toMap
-    api.StructType.from(
-      "IrSchema",
-      metrics.map { m =>
-        m.expression match {
-          case InputTransform.IsNull =>
-            (s"${m.name}${m.suffix}", api.LongType)
-          case InputTransform.One =>
-            (s"${m.name}${m.suffix}", api.LongType)
-          case InputTransform.Raw =>
-            (m.name, schemaMap(m.name))
-        }
-      }.toArray
-    )
   }
 
   def buildAggPart(m: MetricTransform): api.AggregationPart = {

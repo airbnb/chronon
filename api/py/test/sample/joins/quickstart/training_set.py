@@ -18,7 +18,7 @@ from ai.chronon.api.ttypes import Source, EventSource
 from ai.chronon.query import Query, select
 
 from group_bys.quickstart.purchases import v1 as purchases_v1
-from group_bys.quickstart.returns import v1 as refunds_v1
+from group_bys.quickstart.returns import v1 as returns_v1
 from group_bys.quickstart.users import v1 as users
 
 """
@@ -36,5 +36,11 @@ source = Source(
 
 v1 = Join(  
     left=source,
-    right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, refunds_v1, users]] # Include the three GroupBys
+    right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, returns_v1, users]] # Include the three GroupBys
+)
+
+v2 = Join(
+    left=source,
+    right_parts=[JoinPart(group_by=group_by) for group_by in [purchases_v1, returns_v1]], # Include the two online GroupBys
+    online=True,
 )

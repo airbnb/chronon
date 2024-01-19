@@ -27,10 +27,11 @@ from ai.chronon.group_by import (
 This GroupBy aggregates metrics about a user's previous purchases in various windows.
 """
 
+# This source is raw purchase events. Every time a user makes a purchase, it will be one entry in this source.
 source = Source(
     events=EventSource(
-        table="data.purchases", # This points to the log table with historical purchase events
-        topic="events/purchase_events", # The streaming source topic (streaming jobs are not part of quickstart, so this won't effect anything yet)
+        table="data.purchases", # This points to the log table in the warehouse with historical purchase events, updated in batch daily
+        topic=None, # See the 'returns' GroupBy for an example that has a streaming source configured. In this case, this would be the streaming source topic that can be listened to for realtime events
         query=Query(
             selects=select("user_id","purchase_price"), # Select the fields we care about
             time_column="ts") # The event time
@@ -41,6 +42,7 @@ window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30
 v1 = GroupBy(
     sources=[source],
     keys=["user_id"], # We are aggregating by user
+    online=True,
     aggregations=[Aggregation(
             input_column="purchase_price",
             operation=Operation.SUM,
@@ -55,6 +57,10 @@ v1 = GroupBy(
             input_column="purchase_price",
             operation=Operation.AVERAGE,
             windows=window_sizes
-        ) # The average purchases by user in various windows
+        ), # The average purchases by user in various windows
+        Aggregation(
+            input_column="purchase_price",
+            operation=Operation.LAST_K(10),
+        ),
     ],
 )

@@ -276,8 +276,6 @@ object Driver {
         opt[String](
           required = false,
           descr = "Start date to compute group by backfill, this start date will override backfill start date in conf.")
-      val parallelism: ScallopOption[Int] =
-        opt[Int](required = false, descr = "Number of parallel jobs to run, default is 1", default = Option(1))
       lazy val groupByConf: api.GroupBy = parseConf[api.GroupBy](confPath())
       override def subcommandName() = s"groupBy_${groupByConf.metaData.name}_backfill"
     }
@@ -397,8 +395,6 @@ object Driver {
           required = false,
           descr =
             "Start date to compute staging query backfill, this start date will override start partition in conf.")
-      val parallelism: ScallopOption[Int] =
-        opt[Int](required = false, descr = "Number of parallel jobs to run, default is 1", default = Option(1))
       lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
       override def subcommandName() = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
@@ -430,13 +426,17 @@ object Driver {
         opt[Double](required = false,
                     descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
                     default = Option(0.1))
+      val forceBackfill: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     descr = "Force backfill even if the table is already populated",
+                     default = Option(false))
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"daily_stats_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
       new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
-        .dailyRun(Some(args.stepDays()), args.sample())
+        .dailyRun(Some(args.stepDays()), args.sample(), args.forceBackfill())
     }
   }
 
@@ -448,6 +448,10 @@ object Driver {
                  default = Option(30))
       val sample: ScallopOption[Double] =
         opt[Double](required = false, descr = "Sampling ratio", default = Option(0.1))
+      val forceBackfill: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     descr = "Force backfill even if the table is already populated",
+                     default = Option(false))
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
 
       override def subcommandName() = s"log_stats_${joinConf.metaData.name}"
@@ -455,7 +459,7 @@ object Driver {
 
     def run(args: Args): Unit = {
       new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
-        .loggingRun(Some(args.stepDays()), args.sample())
+        .loggingRun(Some(args.stepDays()), args.sample(), args.forceBackfill())
     }
   }
 

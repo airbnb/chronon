@@ -23,7 +23,6 @@ import ai.chronon.api.Extensions.{AggregationOps, MetadataOps, WindowUtils}
 
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.ListOps
-import scala.util.ScalaVersionSpecificCollectionsConverter
 
 object TileCodec {
   def buildRowAggregator(groupBy: GroupBy, inputSchema: Seq[(String, DataType)]): RowAggregator = {

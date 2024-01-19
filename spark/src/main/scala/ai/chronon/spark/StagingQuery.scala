@@ -59,7 +59,6 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
            |""".stripMargin)
       return
     }
-    System.exit(0)
     val stagingQueryUnfilledRanges = unfilledRanges.get
     logger.info(s"Staging Query unfilled ranges: $stagingQueryUnfilledRanges")
     val exceptions = mutable.Buffer.empty[String]

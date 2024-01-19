@@ -101,9 +101,19 @@ class FetchStatsTest extends TestCase {
       accuracy = Accuracy.SNAPSHOT
     )
 
+    // Left contains values that are going to be available in backfill table stats but not logged stats.
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = gb, prefix = "user")),
+      derivations = Seq(
+        Builders.Derivation(
+          name = "*"
+        ),
+        Builders.Derivation(
+          name = "last_copy",
+          expression = "COALESCE(user_ut_fetch_stats_item_views__fetch_stats_test_value_max, 0)"
+        )
+      ),
       metaData = Builders.MetaData(name = s"ut_fetch_stats.item_temporal_features.$nameSuffix",
                                    namespace = namespace,
                                    team = "item_team",
