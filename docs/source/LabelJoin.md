@@ -1,4 +1,8 @@
 # Label Join
+Label Join can be used to combine features and labels together into one view, which is useful for model training workflows.
+
+One of the main differences between how labels and features are handled in the backfill engine is the date logic. Labels 
+will come from the future relative to the left side ts of your join, whereas features will always come from the past.
 
 ## API Example
 **Generate training data by combining features & labels**
@@ -6,7 +10,7 @@
 ```python
 """
 :param labels: List of labels
-:param left_start_offset: Relative integer to define the earliest date label should be refreshed
+:param left_start_offset: Relative integer to define the earliest date(inclusive) label should be refreshed
 compared to label_ds date specified. For labels with aggregations,
     this param has to be same as aggregation window size.
 :param left_end_offset: Relative integer to define the most recent date(inclusive) label should be refreshed.
@@ -33,6 +37,8 @@ my_model = Join(
          aggregations=None,
          keys=["<entity_id>"]
       ))],
+      # For a label_ds of 09/30, you would get label data from 09/01 because of the 30 day start_offset. 
+      # If end_offset were set to 3, then label data range would be from 09/01 to 09/28.
       left_start_offset=30,
       left_end_offset=0,
    )
@@ -89,3 +95,4 @@ backfill and the other for label join job.
  label_col_2                               | integer |       |label
  label_col_3                               | integer |       |label
  label_ds                                  | varchar |       |label version
+```
