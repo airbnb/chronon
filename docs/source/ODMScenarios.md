@@ -499,7 +499,7 @@ Think about the data sources of your offline data:
 2. For production features: Where are they defined? Where and when are they logged?
 3. For experimental features: Which parts of the rows do I want to backfill (every row? subset?)
 ### Should I create a new join or modify an existing join?
-There are no hard rules on how many joins you can create for your ML use cases. ODM is designed to support creating
+There are no hard rules on how many joins you can create for your ML use cases. Chronon is designed to support creating
 and maintaining many joins in the most efficient way.
 It is recommended that each time you train and/or serve a new model version, you **define a new join** that contains the
 exact list of features for that new model version. The Bootstrap API allows you to copy data from old joins and skip
