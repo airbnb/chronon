@@ -1,5 +1,9 @@
 # Offline Data Management Scenarios Deep Dive
 
+This section goes over various common scenarios for how users might want to manage their offline data for ML worklows. "Offline data" means data that is materialized in the warehouse (often used for model training, evaluation and analysis workflows), as opposed to "Online data" which is in the production model serving path.
+
+It outlines how you can combine logging, bootstrapping, labels and joins together into cohesive workflows.
+
 1. [Introduction](##Introduction)
 2. Scenarios Deep Dive
    1. [A - Create a brand new feature set data](#A---Create-a-brand-new-feature-set)
