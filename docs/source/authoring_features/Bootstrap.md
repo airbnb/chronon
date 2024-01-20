@@ -40,7 +40,7 @@ my_model = Join(
 
 When a join job is run, it backfills all features against the keys/timestamp of the left table. When bootstrap parts
 are defined in the join, before it runs the backfill step, it joins the left table with the bootstrap tables on the
-row_ids (a new param introduced by ODM) columns. Then for each following backfill, it checks whether the rows on the
+`row_ids`. Then for each following backfill, it checks whether the rows on the
 left are already covered by the bootstrap. If so, then a backfill is skipped; if not, then a backfill is scheduled.
 
 Bootstrap can happen both for a subset of rows and a subset of columns. Chronon will automatically backfill the rest
