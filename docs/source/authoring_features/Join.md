@@ -201,9 +201,7 @@ experimentation workflows that are manually done by clients previously outside o
 Bootstrap is a preprocessing step in the **Join** job that enriches the left side with precomputed feature data, 
 before running the regular group by backfills if necessary.
 
-More details and scenarios about bootstrap can be found in the [Bootstrap](../Bootstrap.md) and "Scenarios Deep Dive" 
-sections below.
-
+More details and scenarios about bootstrap can be found in Bootstrap documentation.
 
 ##
 
