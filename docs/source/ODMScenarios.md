@@ -16,7 +16,7 @@
 
 ## Introduction
 
-ODM (offline data management) is a Chronon component that improves the overall experience of creating and managing offline datasets that are powering your ML workflows.
+Chronon improves the overall experience of creating and managing offline datasets that are powering your ML workflows, with three core building blocks:
 
 
 1. **Logging** - for capturing online production features
