@@ -21,7 +21,7 @@ my_model = Join(
    ...,
    # Define label table and add it to the training set 
    label_part=LabelPart(
-      labels=[JoinPart(group_by=GroupBy(
+      labels=[JoinPart(group_by=GroupBy( # A `GroupBy` is used as the source of label data, similar to features
          name="my_label",
          sources=[HiveEntitySource(
             namespace="db_name",
