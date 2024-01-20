@@ -2,7 +2,18 @@
 
 We support feature **bootstrap** as a primitive as part of Chronon Join in order to support various kinds of feature experimentation workflows that are manually done by clients previously outside of Chronon.
 
-Bootstrap is a preprocessing step in the **Join** job that enriches the left side with precomputed feature data, before running the regular group by backfills if necessary. 
+Bootstrap is a preprocessing step in the **Join** job that enriches the left side with precomputed feature data, before running the regular group by backfills if necessary.
+
+## How does bootstrap work?
+
+When a join job is run, it backfills all features against the keys/timestamp of the left table. When bootstrap parts
+are defined in the join, before it runs the backfill step, it joins the left table with the bootstrap tables on the
+`row_ids`. Then for each following backfill, it checks whether the rows on the
+left are already covered by the bootstrap. If so, then a backfill is skipped; if not, then a backfill is scheduled.
+
+Bootstrap can happen both for a subset of rows and a subset of columns. Chronon will automatically backfill the rest
+of rows or columns that are not covered by bootstrap.
+
 
 ## Scenarios
 1. Log stitching: Use online serving log as the source for production features instead of continuously recomputing it offline to ensure online/offline consistency and reduce computation cost
@@ -35,16 +46,6 @@ my_model = Join(
 )
 
 ```
-
-## How does bootstrap work?
-
-When a join job is run, it backfills all features against the keys/timestamp of the left table. When bootstrap parts
-are defined in the join, before it runs the backfill step, it joins the left table with the bootstrap tables on the
-`row_ids`. Then for each following backfill, it checks whether the rows on the
-left are already covered by the bootstrap. If so, then a backfill is skipped; if not, then a backfill is scheduled.
-
-Bootstrap can happen both for a subset of rows and a subset of columns. Chronon will automatically backfill the rest
-of rows or columns that are not covered by bootstrap.
 
 ## Bootstrap Table
 

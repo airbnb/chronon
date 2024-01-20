@@ -83,7 +83,7 @@ Steps
      from two periods before and after logging. You should ensure that column selection aligns between the two periods.
    - One of the main considerations behind this pattern is to ensure a perfect matching between left and log table.
      If you use your own driver table, there is a chance that some rows are not covered by bootstrap. In those cases,
-     AFP will run a regular backfill for those unfilled rows, which may not be what you want.
+     Chronon will run a regular backfill for those unfilled rows, which may not be what you want.
 3. Define row_ids & register them as a contextual feature
    - **row_ids** defines the primary keys for each training example. It is also the join keys that will be used during
      log-based bootstrap. For online models this is often based on the event_id of your inference request.
@@ -281,7 +281,6 @@ Goal:
   Steps
 1. Add online_external_parts to your join config, which includes defining the input and output schema of an external call
 2. In your online service, implement the actual external call logic in an ExternalSourceHandler and register it to Chronon.
-   See [AFP Orchestrator](https://docs.google.com/document/d/16ycE0GFLfRHJEauuWyz-3VWnO5--AI56WXT5xudKfos/edit#heading=h.kwh85a6763id) for more details
 3. Since Chronon has no way to backfill the external features natively, instead we expect users to leverage bootstrap to
    ingest externally backfilled data for these external fields, such that they can be concatenated with other features
 ```python
