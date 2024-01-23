@@ -20,6 +20,7 @@
    authoring_features/Join
    authoring_features/Source
    authoring_features/StagingQuery
+   authoring_features/DerivedFeatures
    authoring_features/Bootstrap
 
 .. toctree::
