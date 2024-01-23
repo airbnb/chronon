@@ -25,10 +25,13 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from typing import List, Union, cast, Optional
+from ai.chronon.repo import teams
+from ai.chronon.repo import TEAMS_FILE_PATH
 
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
+chronon_root_path = ''  # passed from compile.py
 
 def edit_distance(str1, str2):
     m = len(str1) + 1
@@ -224,6 +227,11 @@ def get_staging_query_output_table_name(staging_query: api.StagingQuery, full_na
 def get_join_output_table_name(join: api.Join, full_name: bool = False):
     """generate output table name for join backfill job"""
     __set_name(join, api.Join, "joins")
+    # set output namespace
+    if not join.metaData.outputNamespace:
+        team_name = join.metaData.name.split(".")[0]
+        namespace = teams.get_team_conf(os.path.join(chronon_root_path, TEAMS_FILE_PATH), team_name, "namespace")
+        join.metaData.outputNamespace = namespace
     return output_table_name(join, full_name=full_name)
 
 

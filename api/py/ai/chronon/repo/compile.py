@@ -80,6 +80,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         log_level = logging.INFO
     _print_highlighted("Using chronon root path", chronon_root)
     chronon_root_path = os.path.expanduser(chronon_root)
+    utils.chronon_root_path = chronon_root_path
     path_split = input_path.split('/')
     obj_folder_name = path_split[0]
     obj_class = FOLDER_NAME_TO_CLASS[obj_folder_name]
@@ -140,6 +141,12 @@ def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     obj.metaData.outputNamespace = obj.metaData.outputNamespace or namespace
     obj.metaData.tableProperties = obj.metaData.tableProperties or table_properties
     obj.metaData.team = team_name
+
+    # set metadata for JoinSource
+    if isinstance(obj, api.GroupBy):
+        for source in obj.sources:
+            if source.joinSource:
+                _set_team_level_metadata(source.joinSource.join, teams_path, team_name)
 
 
 def __fill_template(table, obj, namespace):
