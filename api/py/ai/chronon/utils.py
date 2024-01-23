@@ -33,6 +33,7 @@ ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
 chronon_root_path = ''  # passed from compile.py
 
+
 def edit_distance(str1, str2):
     m = len(str1) + 1
     n = len(str2) + 1
