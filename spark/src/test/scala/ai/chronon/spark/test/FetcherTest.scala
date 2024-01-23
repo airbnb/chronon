@@ -393,7 +393,9 @@ class FetcherTest extends TestCase {
       derivations = Seq(
         Builders.Derivation("*", "*"),
         Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"),
-        Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2")
+        Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2"),
+        Builders.Derivation("derived_ds", "from_unixtime(ts/1000, 'yyyy-MM-dd')"),
+        Builders.Derivation("direct_ds", "ds")
       )
     )
     joinConf
