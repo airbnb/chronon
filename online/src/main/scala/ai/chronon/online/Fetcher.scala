@@ -20,7 +20,6 @@ import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.PartitionSpec
 import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
@@ -186,9 +185,7 @@ class Fetcher(val kvStore: KVStore,
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
             ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
             val request_ts = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
-            val partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = 0)
-            val request_ds = partitionSpec.at(request_ts)
-            println(s"request time ${request_ts}, ds $request_ds")
+            val request_ds = Constants.ZeroSpanPartitionSpec.at(request_ts)
             val baseMap = internalMap ++ externalMap ++ Map("ts" -> (request_ts).asInstanceOf[AnyRef],
                                                             "ds" -> (request_ds).asInstanceOf[AnyRef])
             val derivedMap: Map[String, AnyRef] = Try(
