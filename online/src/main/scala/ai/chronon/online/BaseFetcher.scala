@@ -6,10 +6,10 @@ import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, 
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response}
+import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.ThrowableOps
-import com.github.benmanes.caffeine.cache.{Cache => CaffeineCache}
+import ai.chronon.api.Extensions.{MetadataOps, ThrowableOps}
 import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
@@ -27,15 +27,9 @@ class BaseFetcher(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
-    extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
+    extends MetadataStore(kvStore, metaDataSet, timeoutMillis)
+    with FetcherCache {
   import BaseFetcher._
-
-  // Caching is an optional optimization to reduce the amount of CPU time spent decoding batch data.
-  val maybeBatchIrCache: Option[BatchIrCache] =
-    Config
-      .getEnvConfig("ai.chronon.fetcher.batch_ir_cache_size")
-      .map(size => new BatchIrCache("batch_ir_cache", size.toInt))
-      .orElse(None)
 
   /**
     * A groupBy request is split into batchRequest and optionally a streamingRequest. This method decodes bytes
@@ -65,10 +59,13 @@ class BaseFetcher(kvStore: KVStore,
     val servingInfo = getServingInfo(oldServingInfo, batchResponses)
 
     // Batch metrics
-    batchResponses.response.left.map(
-      _.map(
-        reportKvResponse(context.withSuffix("batch"), _, queryTimeMs, overallLatency, totalResponseValueBytes)
-      ))
+    batchResponses match {
+      case kvStoreResponse: KvStoreBatchResponse =>
+        kvStoreResponse.response.map(
+          reportKvResponse(context.withSuffix("batch"), _, queryTimeMs, overallLatency, totalResponseValueBytes)
+        )
+      case _: CachedBatchResponse => // no-op;
+    }
 
     // The bulk upload may not have removed an older batch values. We manually discard all but the latest one.
     val batchBytes: Array[Byte] = batchResponses.getBatchBytes(servingInfo.batchEndTsMillis)
@@ -102,7 +99,7 @@ class BaseFetcher(kvStore: KVStore,
 
       // If caching is enabled, we try to fetch the batch IR from the cache so we avoid the work of decoding it.
       val batchIr: FinalBatchIr =
-        getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, keys)
+        getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
 
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
         val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
@@ -193,12 +190,12 @@ class BaseFetcher(kvStore: KVStore,
     */
   private[online] def getServingInfo(oldServingInfo: GroupByServingInfoParsed,
                                      batchResponses: BatchResponses): GroupByServingInfoParsed = {
-    batchResponses.response match {
-      case Left(batchTimedValuesTry: KvStoreBatchResponse) => {
-        val latestBatchValue: Try[TimedValue] = batchTimedValuesTry.map(_.maxBy(_.millis))
+    batchResponses match {
+      case batchTimedValuesTry: KvStoreBatchResponse => {
+        val latestBatchValue: Try[TimedValue] = batchTimedValuesTry.response.map(_.maxBy(_.millis))
         latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
       }
-      case Right(_: CachedBatchResponse) => {
+      case _: CachedBatchResponse => {
         // If there was cached batch data, there's no point try to update the serving info; it would be the same.
         // However, there's one edge case to be handled. If all batch requests are cached and we never hit the kv store,
         // we will never try to update the serving info. In that case, if new batch data were to land, we would never
@@ -307,10 +304,7 @@ class BaseFetcher(kvStore: KVStore,
 
     // If caching is enabled, we check if any of the GetRequests are already cached. If so, we store them in a Map
     // and avoid the work of re-fetching them.
-    val cachedRequests: Map[GetRequest, BatchIrCache.Value] =
-      maybeBatchIrCache
-        .map(cache => BatchIrCache.getCachedRequests(cache.cache, groupByRequestToKvRequest))
-        .getOrElse(Map.empty)
+    val cachedRequests: Map[GetRequest, CachedBatchResponse] = getCachedRequests(groupByRequestToKvRequest)
 
     val allRequests: Seq[GetRequest] = groupByRequestToKvRequest.flatMap {
       case (_, Success(GroupByRequestMeta(_, batchRequest, streamingRequestOpt, _, _))) => {
@@ -356,7 +350,7 @@ class BaseFetcher(kvStore: KVStore,
                   // Check if the get request was cached. If so, use the cache. Otherwise, try to get it from response.
                   cachedRequests.get(batchRequest) match {
                     case None =>
-                      new BatchResponses(
+                      BatchResponses(
                         responsesMap
                           .getOrElse(
                             batchRequest,
@@ -364,7 +358,7 @@ class BaseFetcher(kvStore: KVStore,
                             Failure(new IllegalStateException(
                               s"Couldn't find corresponding response for $batchRequest in responseMap or cache"))
                           ))
-                    case Some(cachedResponse: BatchIrCache.Value) => new BatchResponses(Right(cachedResponse))
+                    case Some(cachedResponse: CachedBatchResponse) => cachedResponse
                   }
 
                 val streamingResponsesOpt =
@@ -426,75 +420,6 @@ class BaseFetcher(kvStore: KVStore,
           .toArray)
       .toArray
     windowing.FinalBatchIr(collapsed, tailHops)
-  }
-
-  /**
-    * Obtain the Map[String, AnyRef] response from a batch response.
-    *
-    * If batch IR caching is enabled, this method will try to fetch the IR from the cache. If it's not in the cache,
-    * it will decode it from the batch bytes and store it.
-    *
-    * @param batchResponses the batch responses
-    * @param batchBytes the batch bytes corresponding to the batchResponses. Can be `null`.
-    * @param servingInfo the GroupByServingInfoParsed that contains the info to decode the bytes
-    * @param keys the keys used to fetch this particular batch response, for caching purposes
-    */
-  private[online] def getMapResponseFromBatchResponse(batchResponses: BatchResponses,
-                                                      batchBytes: Array[Byte],
-                                                      decodingFunction: Array[Byte] => Map[String, AnyRef],
-                                                      servingInfo: GroupByServingInfoParsed,
-                                                      keys: Map[String, Any]): Map[String, AnyRef] = {
-    maybeBatchIrCache match {
-      case Some(batchIrCache) =>
-        batchResponses.response match {
-          case Left(_: KvStoreBatchResponse) =>
-            val batchRequestCacheKey =
-              BatchIrCache.Key(servingInfo.groupByOps.batchDataset, keys, servingInfo.batchEndTsMillis)
-            val decodedBytes = decodingFunction(batchBytes)
-            if (decodedBytes != null) batchIrCache.cache.put(batchRequestCacheKey, Right(decodedBytes))
-            decodedBytes
-          case Right(cachedBatchResponse: CachedBatchResponse) =>
-            cachedBatchResponse match {
-              case Left(_: FinalBatchIr)                   => decodingFunction(batchBytes)
-              case Right(mapResponse: Map[String, AnyRef]) => mapResponse
-            }
-        }
-      case None => decodingFunction(batchBytes)
-    }
-  }
-
-  /**
-    * Obtain the FinalBatchIr from a batch response.
-    *
-    * If batch IR caching is enabled, this method will try to fetch the IR from the cache. If it's not in the cache,
-    * it will decode it from the batch bytes and store it.
-    *
-    * @param batchResponses the batch responses
-    * @param batchBytes the batch bytes corresponding to the batchResponses. Can be `null`.
-    * @param servingInfo the GroupByServingInfoParsed that contains the info to decode the bytes
-    * @param keys the keys used to fetch this particular batch response, for caching purposes
-    */
-  private[online] def getBatchIrFromBatchResponse(batchResponses: BatchResponses,
-                                                  batchBytes: Array[Byte],
-                                                  servingInfo: GroupByServingInfoParsed,
-                                                  keys: Map[String, Any]): FinalBatchIr = {
-    maybeBatchIrCache match {
-      case Some(batchIrCache) =>
-        batchResponses.response match {
-          case Left(_: KvStoreBatchResponse) =>
-            val batchRequestCacheKey =
-              BatchIrCache.Key(servingInfo.groupByOps.batchDataset, keys, servingInfo.batchEndTsMillis)
-            val decodedBytes = toBatchIr(batchBytes, servingInfo)
-            if (decodedBytes != null) batchIrCache.cache.put(batchRequestCacheKey, Left(decodedBytes))
-            decodedBytes
-          case Right(cachedBatchResponse: CachedBatchResponse) =>
-            cachedBatchResponse match {
-              case Left(finalBatchIr: FinalBatchIr) => finalBatchIr // the batch IR was cached. nice.
-              case Right(_: Map[String, AnyRef])    => toBatchIr(batchBytes, servingInfo)
-            }
-        }
-      case None => toBatchIr(batchBytes, servingInfo)
-    }
   }
 
   private case class PrefixedRequest(prefix: String, request: Request)
@@ -599,65 +524,4 @@ object BaseFetcher {
       context: Metrics.Context
   )
 
-  type CachedBatchResponse = BatchIrCache.Value
-  type KvStoreBatchResponse = Try[Seq[TimedValue]]
-  // BatchResponses encapsulates either a batch response from kv store or a cached batch response.
-  private[online] class BatchResponses(val response: Either[KvStoreBatchResponse, CachedBatchResponse]) {
-    def this(kvStoreResponse: Try[Seq[TimedValue]]) = this(Left(kvStoreResponse))
-    def this(cachedResponse: FinalBatchIr) = this(Right(Left(cachedResponse)))
-    def this(cachedResponse: Map[String, AnyRef]) = this(Right(Right(cachedResponse)))
-
-    def getBatchBytes(batchEndTsMillis: Long): Array[Byte] = {
-      response match {
-        case Left(batchTimedValuesTry) =>
-          batchTimedValuesTry
-            .map(_.maxBy(_.millis))
-            .filter(_.millis >= batchEndTsMillis)
-            .map(_.bytes)
-            .getOrElse(null)
-        // This is the case where we don't have bytes because the decoded IR was cached so we didn't hit the KV store again.
-        case Right(_) => null
-      }
-    }
-  }
-
-  private[online] class BatchIrCache(val cacheName: String, val maximumSize: Int = 10000) {
-    import BatchIrCache._
-
-    val cache: CaffeineCache[Key, Value] =
-      Cache[Key, Value](cacheName = cacheName, maximumSize = maximumSize)
-  }
-
-  // The Batch IR cache is an optimization to reduce the amount of CPU time spent decoding batch data.
-  // Its keys uniquely identify a batch request and its values are the decoded batch IRs or Map responses.
-  private[online] object BatchIrCache {
-    case class Key(dataset: String, keys: Map[String, Any], batchEndTsMillis: Long)
-    // FinalBatchir is for GroupBys using temporally accurate aggregation.
-    // Map[String, Any] is for GroupBys using snapshot accurate aggregation or no aggregation.
-    type Value = Either[FinalBatchIr, Map[String, AnyRef]]
-
-    /**
-      * Given a list of GetRequests, return a map of GetRequests to cached FinalBatchIrs.
-      */
-    def getCachedRequests(cache: CaffeineCache[Key, Value],
-                          groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])]): Map[GetRequest, Value] =
-      groupByRequestToKvRequest
-        .map {
-          case (request, Success(GroupByRequestMeta(servingInfo, batchRequest, _, _, _))) =>
-            val batchRequestCacheKey =
-              Key(batchRequest.dataset, request.keys, servingInfo.batchEndTsMillis)
-
-            cache.getIfPresent(batchRequestCacheKey) match {
-              case null =>
-                val emptyMap: Map[GetRequest, Value] = Map.empty
-                emptyMap
-              case cachedIr: Value =>
-                Map(batchRequest -> cachedIr)
-            }
-          case _ =>
-            val emptyMap: Map[GetRequest, Value] = Map.empty
-            emptyMap
-        }
-        .foldLeft(Map.empty[GetRequest, Value])(_ ++ _)
-  }
 }
