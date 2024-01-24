@@ -219,10 +219,9 @@ class FetcherBase(kvStore: KVStore,
               }.toMap
               try {
                 batchKeyBytes =
-                  kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
-                streamingKeyBytes = kvStore.createKeyBytes(request.keys,
-                                                           groupByServingInfo,
-                                                           groupByServingInfo.groupByOps.streamingDataset)
+                  kvStore.createKeyBytes(castedKeys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+                streamingKeyBytes =
+                  kvStore.createKeyBytes(castedKeys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)

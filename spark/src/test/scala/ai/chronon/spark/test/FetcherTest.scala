@@ -714,7 +714,13 @@ object FetcherTestUtil {
       val blockStart = System.currentTimeMillis()
       val result = requests.iterator
         .grouped(chunkSize)
-        .map { r =>
+        .map { oldReqs =>
+          // deliberately mis-type a few keys
+          val r = oldReqs
+            .map(r =>
+              r.copy(keys = r.keys.mapValues { v =>
+                if (v.isInstanceOf[java.lang.Long]) v.toString else v
+              }.toMap))
           val responses = if (useJavaFetcher) {
             // Converting to java request and using the toScalaRequest functionality to test conversion
             val convertedJavaRequests = r.map(new JavaRequest(_)).toJava
