@@ -736,7 +736,11 @@ object FetcherTestUtil {
           } else {
             fetcher.fetchJoin(r)
           }
-          System.currentTimeMillis() -> responses
+
+          // fix mis-typed keys in the request
+          val fixedResponses =
+            responses.map(resps => resps.zip(oldReqs).map { case (resp, req) => resp.copy(request = req) })
+          System.currentTimeMillis() -> fixedResponses
         }
         .flatMap {
           case (start, future) =>
