@@ -186,11 +186,13 @@ class Fetcher(val kvStore: KVStore,
             ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
             val request_ts = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
             val request_ds = Constants.ZeroSpanPartitionSpec.at(request_ts)
-            val baseMap = internalMap ++ externalMap ++ Map("ts" -> (request_ts).asInstanceOf[AnyRef],
-                                                            "ds" -> (request_ds).asInstanceOf[AnyRef])
+            val baseMap = internalMap ++ externalMap
+            // used for derivation based on ts/ds
+            val tsDsMap: Map[String, AnyRef] =
+              Map("ts" -> (request_ts).asInstanceOf[AnyRef], "ds" -> (request_ds).asInstanceOf[AnyRef])
             val derivedMap: Map[String, AnyRef] = Try(
               joinCodec
-                .deriveFunc(internalResponse.request.keys, baseMap)
+                .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
                 .mapValues(_.asInstanceOf[AnyRef])
                 .toMap) match {
               case Success(derivedMap) => derivedMap
@@ -199,10 +201,11 @@ class Fetcher(val kvStore: KVStore,
                 throw exception
               }
             }
+            val derivedMapCleaned = derivedMap -- tsDsMap.keys
             val requestEndTs = System.currentTimeMillis()
             ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
             ctx.distribution("overall.latency.millis", requestEndTs - ts)
-            ResponseWithContext(internalResponse.request, derivedMap, baseMap)
+            ResponseWithContext(internalResponse.request, derivedMapCleaned, baseMap)
         }
     }
 
