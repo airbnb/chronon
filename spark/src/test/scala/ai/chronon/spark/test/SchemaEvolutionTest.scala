@@ -314,7 +314,6 @@ class SchemaEvolutionTest extends TestCase {
     metadataStore.putJoinConf(joinSuiteV1.joinConf)
     val fetcher = mockApi.buildFetcher(true)
     val response1 = fetchJoin(fetcher, joinSuiteV1)
-//    assertError(classOf[java.lang.RuntimeException],  fetchJoin(fetcher, joinSuiteV1))
     assertTrue(response1.values.get.keys.exists(_.endsWith("_exception")))
     assertEquals(joinSuiteV1.groupBys.length, response1.values.get.keys.size)
 
