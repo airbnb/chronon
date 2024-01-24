@@ -376,6 +376,7 @@ def Join(left: api.Source,
          label_part: api.LabelPart = None,
          derivations: List[api.Derivation] = None,
          tags: Dict[str, str] = None,
+         batchPartitionCadence = api.BatchPartitionCadence.DAILY,
          **kwargs
          ) -> api.Join:
     """
@@ -461,6 +462,8 @@ def Join(left: api.Source,
     :param tags:
         Additional metadata about the Join that you wish to track. Does not effect computation.
     :type tags: Dict[str, str]
+    :param batchPartitionCadence:
+        Cadence & partitioning scheme for Join offline jobs (daily vs. hourly).
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -493,6 +496,11 @@ def Join(left: api.Source,
     right_info = [(source, meta_data) for (sources, meta_data) in right_info for source in sources]
     right_dependencies = [dep for (source, meta_data) in right_info for dep in
                           utils.get_dependencies(source, dependencies, meta_data, lag=lag)]
+
+    assert all(join_part.groupBy.metaData.batchPartitionCadence == batchPartitionCadence for join_part in right_parts), (
+        "All GroupBy batchPartitionCadences must match Join batchPartitionCadence which is " +
+        f"{api.BatchPartitionCadence._VALUES_TO_NAMES[batchPartitionCadence]}"
+    )
 
     if label_part:
         label_dependencies = utils.get_label_table_dependencies(label_part)
@@ -561,7 +569,8 @@ def Join(left: api.Source,
         modeToEnvMap=env,
         samplePercent=sample_percent,
         offlineSchedule=offline_schedule,
-        consistencySamplePercent=consistency_sample_percent
+        consistencySamplePercent=consistency_sample_percent,
+        batchPartitionCadence=batchPartitionCadence,
     )
 
     return api.Join(
@@ -573,5 +582,5 @@ def Join(left: api.Source,
         bootstrapParts=bootstrap_parts,
         rowIds=row_ids,
         labelPart=label_part,
-        derivations=derivations
+        derivations=derivations,
     )

@@ -238,23 +238,40 @@ Keys {unselected_keys}, are unselected in source
                         "example required: {'k': '128', 'percentiles': '[0.4,0.5,0.95]'},"
                         f" received: {agg.argMap}\n")
             if agg.windows:
-                assert not (
-                    # Snapshot accuracy.
-                    ((group_by.accuracy and group_by.accuracy == Accuracy.SNAPSHOT) or group_by.backfillStartDate) and
-                    # Hourly aggregation.
-                    any([window.timeUnit == TimeUnit.HOURS for window in agg.windows])
-                ), (
-                    "Detected a snapshot accuracy group by with an hourly aggregation. Resolution with snapshot "
-                    "accuracy is not fine enough to allow hourly group bys. Consider removing the `backfill start "
-                    "date` param if set or adjusting the aggregation window. "
-                    f"input_column: {agg.inputColumn}, windows: {agg.windows}"
-                )
-                assert not (
-                    any([window.timeUnit == TimeUnit.MINUTES and window.length % 5 != 0 for window in agg.windows])
-                ), (
-                    "Minute-length windows must be multiples of 5 minutes. Chronon uses 5 minute hops for sawtooth resolution. "
-                    f"input_column: {agg.inputColumn}, windows: {agg.windows}"
-                )
+                validate_agg_window_cadence_accuracy(agg, group_by.metaData.batchPartitionCadence, group_by.accuracy, group_by.backfillStartDate)
+
+def validate_agg_window_cadence_accuracy(agg, batchPartitionCadence, accuracy, backfillStartDate):
+    # If using snapshot accuracy, validate that windows are at least as long as the batch cadence.
+    # GroupBys with daily batch partition cadence must have daily windows.
+    # GroupBys with hourly batch partition cadence must have daily or hourly windows.
+    if accuracy and accuracy == Accuracy.SNAPSHOT or backfillStartDate:
+        if batchPartitionCadence == ttypes.BatchPartitionCadence.DAILY:
+            assert all([window.timeUnit == TimeUnit.DAYS for window in agg.windows]), (
+                "Detected a snapshot accuracy group by using daily batchPartitionCadence with an hourly aggregation. Daily batch partition cadence"
+                "is not frequent enough to allow hourly group bys. Consider removing the `backfill start "
+                "date` param if set or adjusting the aggregation window. "
+                f"input_column: {agg.inputColumn}, windows: {agg.windows}"
+            )
+        elif batchPartitionCadence == ttypes.BatchPartitionCadence.HOURLY:
+            assert all([window.timeUnit == TimeUnit.DAYS or window.timeUnit == TimeUnit.HOURS for window in agg.windows]), (
+                "Detected a snapshot accuracy group by using hourly batchPartitionCadence with a sub-hourly aggregation. Hourly batch partition cadence"
+                "is not frequent enough to allow sub-hourly group bys. Consider removing the `backfill start "
+                "date` param if set or adjusting the aggregation window. "
+                f"input_column: {agg.inputColumn}, windows: {agg.windows}"
+            )
+        else:
+            raise ValueError(
+                f"Unsupported argument for batchPartitionCadence: {batchPartitionCadence}. Must be either BatchPartitionCadence.DAILY or"
+                "BatchPartitionCadence.HOURLY. "
+            )
+
+    # Minute-length windows must be multiples of 5 minutes
+    assert not (
+        any([window.timeUnit == TimeUnit.MINUTES and window.length % 5 != 0 for window in agg.windows])
+    ), (
+        "Minute-length windows must be multiples of 5 minutes. Chronon uses 5 minute hops for sawtooth resolution. "
+        f"input_column: {agg.inputColumn}, windows: {agg.windows}"
+    )
 
 
 _ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource]
@@ -307,6 +324,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             offline_schedule: str = '@daily',
             name: str = None,
             tags: Dict[str, str] = None,
+            batchPartitionCadence = ttypes.BatchPartitionCadence.DAILY,
             **kwargs) -> ttypes.GroupBy:
     """
 
@@ -402,6 +420,9 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     :param tags:
         Additional metadata that does not directly affect feature computation, but is useful to
         track for management purposes.
+    :param batchPartitionCadence:
+        WARNING: BatchPartitionCadence.HOURLY is currently unsupported in the online setting.
+        This is only used to validate GroupBy window lengths (hourly batch cadence => hourly windows supported)
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
@@ -471,7 +492,9 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         modeToEnvMap=env,
         tableProperties=table_properties,
         team=team,
-        offlineSchedule=offline_schedule)
+        offlineSchedule=offline_schedule,
+        batchPartitionCadence=batchPartitionCadence,    
+    )
     
     # The module name of the GroupBy is found by finding the module that corresponds to the frame
     # before the frame that has the module name importlib._bootstrap

@@ -251,6 +251,13 @@ struct MetaData {
     12: optional string offlineSchedule
     // percentage of online serving requests used to compute consistency metrics
     13: optional double consistencySamplePercent
+    // In Joins: determines if batch jobs should produce daily-partitioned data 
+    // or hourly-partitioned data
+    // In GroupBys: used ONLY to validate GroupBy window lengths (i.e. hourly batch cadence 
+    // => hourly windows supported).
+    // AS OF NOW HOURLY CADENCE IS NOT SUPPORTED ONLINE. When it is, this will be used for
+    // GroupByUpload jobs
+    14: optional BatchPartitionCadence batchPartitionCadence
 }
 
 // Equivalent to a FeatureSet in chronon terms
@@ -323,6 +330,11 @@ struct Join {
     * columns.
     **/
     9: optional list<Derivation> derivations
+}
+
+enum BatchPartitionCadence {
+    DAILY = 0,
+    HOURLY = 1
 }
 
 struct BootstrapPart {
