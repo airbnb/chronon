@@ -1,0 +1,12 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>[%date] {%logger{0}} %level - %message%n</pattern>
+        </encoder>
+      </appender>
+    <logger name="ai.chronon" level="DEBUG" />
+
+    <root level="error">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

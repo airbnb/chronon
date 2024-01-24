@@ -85,6 +85,7 @@ def get_active_applications(
 
 
 if __name__ == "__main__":
+    """
     if len(sys.argv) < 2:
         # comes from teams.json
         cluster = os.environ.get("EMR_CLUSTER")
@@ -92,3 +93,5 @@ if __name__ == "__main__":
         cluster = sys.argv[1]
     assert cluster is not None, "cluster needs to be set either via $EMR_CLUSTER or via cli"
     get_active_applications(cluster)
+    """
+    []

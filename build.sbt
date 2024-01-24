@@ -15,7 +15,7 @@ lazy val tmp_warehouse = "/tmp/chronon/"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
-ThisBuild / scalaVersion := scala213
+ThisBuild / scalaVersion := scala212
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -359,6 +359,7 @@ lazy val spark_embedded = (project in file("spark"))
 lazy val flink = (project in file("flink"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
+    publishSettings,
     crossScalaVersions := List(scala212),
     libraryDependencies ++= fromMatrix(scalaVersion.value,
                                        "avro",

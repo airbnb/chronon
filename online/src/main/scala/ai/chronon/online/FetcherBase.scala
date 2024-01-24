@@ -17,9 +17,9 @@
 package ai.chronon.online
 
 import org.slf4j.LoggerFactory
-import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
-import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TsUtils}
+import ai.chronon.aggregator.row.ColumnAggregator
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
@@ -84,33 +84,58 @@ class FetcherBase(kvStore: KVStore,
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
-      val selectedCodec = servingInfo.groupByOps.dataModel match {
-        case DataModel.Events   => servingInfo.valueAvroCodec
-        case DataModel.Entities => servingInfo.mutationValueAvroCodec
-      }
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         if (debug) logger.info("Both batch and streaming data are null")
         null
       } else {
-        val streamingRows: Array[Row] = streamingResponses.iterator
-          .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-          .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
-          .toArray
         reportKvResponse(context.withSuffix("streaming"),
                          streamingResponses,
                          queryTimeMs,
                          overallLatency,
                          totalResponseValueBytes)
+
         val batchIr = toBatchIr(batchBytes, servingInfo)
-        val output = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
-        if (debug) {
-          val gson = new Gson()
-          logger.info(s"""
-                     |batch ir: ${gson.toJson(batchIr)}
-                     |streamingRows: ${gson.toJson(streamingRows)}
-                     |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-                     |queryTime in millis: $queryTimeMs
-                     |""".stripMargin)
+        val output: Array[Any] = if (servingInfo.isTilingEnabled) {
+          val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
+            .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
+            .map { tVal =>
+              val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
+              TiledIr(tVal.millis, tile)
+            }
+
+          if (debug) {
+            val gson = new Gson()
+            logger.info(s"""
+                 |batch ir: ${gson.toJson(batchIr)}
+                 |streamingIrs: ${gson.toJson(streamingIrs)}
+                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                 |queryTime in millis: $queryTimeMs
+                 |""".stripMargin)
+          }
+
+          aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
+        } else {
+          val selectedCodec = servingInfo.groupByOps.dataModel match {
+            case DataModel.Events   => servingInfo.valueAvroCodec
+            case DataModel.Entities => servingInfo.mutationValueAvroCodec
+          }
+
+          val streamingRows: Array[Row] = streamingResponses.iterator
+            .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
+            .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+            .toArray
+
+          if (debug) {
+            val gson = new Gson()
+            logger.info(s"""
+                 |batch ir: ${gson.toJson(batchIr)}
+                 |streamingRows: ${gson.toJson(streamingRows)}
+                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                 |queryTime in millis: $queryTimeMs
+                 |""".stripMargin)
+          }
+
+          aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
         }
         servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
       }
@@ -170,7 +195,8 @@ class FetcherBase(kvStore: KVStore,
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
           context.increment("group_by_request.count")
-          var keyBytes: Array[Byte] = null
+          var batchKeyBytes: Array[Byte] = null
+          var streamingKeyBytes: Array[Byte] = null
           // todo: update the logic here when we are ready to support groupby online derivations
           if (groupByServingInfo.groupBy.hasDerivations) {
             val ex = new IllegalArgumentException("GroupBy does not support for online derivations yet")
@@ -178,7 +204,12 @@ class FetcherBase(kvStore: KVStore,
             throw ex
           }
           try {
-            keyBytes = groupByServingInfo.keyCodec.encode(request.keys)
+            // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
+            // on the KVStore implementation, so we encode each distinctly.
+            batchKeyBytes =
+              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+            streamingKeyBytes =
+              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
           } catch {
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
@@ -187,19 +218,22 @@ class FetcherBase(kvStore: KVStore,
                 case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
               }.toMap
               try {
-                keyBytes = groupByServingInfo.keyCodec.encode(castedKeys)
+                batchKeyBytes =
+                  kvStore.createKeyBytes(castedKeys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+                streamingKeyBytes =
+                  kvStore.createKeyBytes(castedKeys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)
                   throw new RuntimeException("Couldn't encode request keys or casted keys", exInner)
               }
           }
-          val batchRequest = GetRequest(keyBytes, groupByServingInfo.groupByOps.batchDataset)
+          val batchRequest = GetRequest(batchKeyBytes, groupByServingInfo.groupByOps.batchDataset)
           val streamingRequestOpt = groupByServingInfo.groupByOps.inferredAccuracy match {
             // fetch batch(ir) and streaming(input) and aggregate
             case Accuracy.TEMPORAL =>
               Some(
-                GetRequest(keyBytes,
+                GetRequest(streamingKeyBytes,
                            groupByServingInfo.groupByOps.streamingDataset,
                            Some(groupByServingInfo.batchEndTsMillis)))
             // no further aggregation is required - the value in KvStore is good as is

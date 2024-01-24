@@ -1,0 +1,68 @@
+# Quickstart Docker containers to run chronon commands with MongoDB as the KV Store.
+version: '3.8'
+
+services:
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin
+    volumes:
+      - mongodb_data:/opt/mongo/data/db
+
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - 22181:2181
+
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - 9092:9092
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: INSIDE://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: INSIDE:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: INSIDE
+      KAFKA_CREATE_TOPICS: "events.returns:1:3"
+      KAFKA_MESSAGE_MAX_BYTES: 2147483647
+
+  main:
+    image: ezvz/chronon
+    command: bash -c "spark-shell -i scripts/data-loader.scala && tail -f /dev/null"
+    ports:
+      - "4040:4040"
+    environment:
+      - USER=root
+      - SPARK_SUBMIT_PATH=spark-submit
+      - PYTHONPATH=/srv/chronon
+      - SPARK_VERSION=3.1.1
+      - JOB_MODE=local[*]
+      - PARALLELISM=2
+      - EXECUTOR_MEMORY=2G
+      - EXECUTOR_CORES=4
+      - DRIVER_MEMORY=1G
+      - CHRONON_LOG_TABLE=default.chronon_log_table
+      - CHRONON_ONLINE_CLASS=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
+      - CHRONON_ONLINE_ARGS=-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin
+
+
+volumes:
+  mongodb_data:
+  spark_events:
+
+
+#    volumes:
+#      - ./api/py/test/sample:/srv/chronon                # Main working dir and repo for samples
+#      - ./quickstart/mongo-online-impl:/srv/onlineImpl   # KV Store implementation
+#      - ./quickstart/jars:/srv/jars                      # Driver connectors and other spark required jars
+#      - /Users/varant_zanoyan/repos/chronon:/srv/chronon_jar
+#      - spark_events:/opt/spark/spark-events

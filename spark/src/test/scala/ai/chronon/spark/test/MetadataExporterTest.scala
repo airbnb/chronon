@@ -24,9 +24,10 @@ import ai.chronon.spark.{MetadataExporter, SparkSessionBuilder, TableUtils}
 import com.google.common.io.Files
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
-
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
+import org.junit.Assert.assertEquals
+
 import scala.io.Source
 import java.io.File
 
@@ -81,11 +82,11 @@ class MetadataExporterTest extends TestCase {
     MetadataExporter.run(confResource.getPath, tmpDir.getAbsolutePath)
     printFilesInDirectory(s"${confResource.getPath}/joins/team")
     printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
-    // Check that the stats field is there.
+    // Read the files.
     val jsonString = Source.fromFile(s"${tmpDir.getAbsolutePath}/joins/example_join.v1").getLines().mkString("\n")
     val objectMapper = new ObjectMapper()
     objectMapper.registerModule(DefaultScalaModule)
     val jsonNode = objectMapper.readTree(jsonString)
-    assert(jsonNode.has("stats"), "Failed to find 'stats' field in exported metadata")
+    assertEquals(jsonNode.get("metaData").get("name").asText(), "team.example_join.v1")
   }
 }

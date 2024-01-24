@@ -38,4 +38,5 @@ def download():
 
 
 if __name__ == "__main__":
-    print(download())
+    # In the sample case we put this jar in a specific docker location else use print(download()):
+    print("/srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar")

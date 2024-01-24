@@ -56,6 +56,7 @@ mv "spark/target/scala-2.11/${SBT_JAR_11}" releases/jar_scala_11/
 mv "spark/target/scala-2.12/${SBT_JAR_12}" releases/jar_scala_12/
 mv "spark/target/scala-2.13/${SBT_JAR_13}" releases/jar_scala_13/
 cp init.sh releases/init.sh
+cp docker-compose.yml releases/docker-compose.yml
 
 echo "Wrote release artifacts into ./releases"
 tree -L 1 releases
