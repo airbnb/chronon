@@ -241,16 +241,16 @@ It outlines how you can combine logging, bootstrapping, labels and joins togethe
 
 1. [Introduction](##Introduction)
 2. Scenarios Deep Dive
-    1. [A - Create a brand new feature set data](#A---Create-a-brand-new-feature-set)
-    2. [B - Set up log-based data refresh for an online model](#B---Set-up-log-based-data-refresh-for-an-online-model)
-    3. [C - Improve an existing feature set of an online model](#C---Improve-an-existing-feature-set-of-an-online-model)
-    4. [D - Expand a model to a new set of drivers](#D---Expand-a-model-to-a-new-set-of-drivers)
-    5. [E - Reuse existing feature data from the same drivers](#E---Reuse-existing-feature-data-from-the-same-drivers)
-    6. [F - Utilize advanced features](#F---Utilize-advanced-features)
-    7. [G - Leverage feature data from legacy data pipelines](#G---Leverage-feature-data-from-legacy-data-pipelines)
-    8. [H - Overwrite incorrect logged feature values](#H---Overwrite-incorrect-logged-feature-values)
-    9. [I - Adding labels to training dataset](#I---Adding-labels-to-training-dataset)
-    10. [J - Adding labels and apply aggregation on labels](#J---Adding-labels-and-apply-aggregation-on-labels)
+    1. [Create a brand new feature set data](#Create-a-brand-new-feature-set)
+    2. [Set up log-based data refresh for an online model](#Set-up-log-based-data-refresh-for-an-online-model)
+    3. [Improve an existing feature set of an online model](#Improve-an-existing-feature-set-of-an-online-model)
+    4. [Expand a model to a new set of drivers](#Expand-a-model-to-a-new-set-of-drivers)
+    5. [Reuse existing feature data from the same drivers](#E---Reuse-existing-feature-data-from-the-same-drivers)
+    6. [Utilize advanced features](#Utilize-advanced-features)
+    7. [Leverage feature data from legacy data pipelines](#Leverage-feature-data-from-legacy-data-pipelines)
+    8. [Overwrite incorrect logged feature values](#Overwrite-incorrect-logged-feature-values)
+    9. [Adding labels to training dataset](#Adding-labels-to-training-dataset)
+    10. [Adding labels and apply aggregation on labels](#Adding-labels-and-apply-aggregation-on-labels)
 3. [FAQs](#FAQs)
 
 ## Introduction
@@ -267,7 +267,7 @@ Chronon improves the overall experience of creating and managing offline dataset
 3. **Label computation** - for attaching labels to features to form the full training set
    You can now add labels to your features! Chronon now supports a wide range of labeling computation patterns, including both pre-aggregated labels, or labels that require windowed aggregations
 
-### A - Create a brand-new feature set
+### Create a brand-new feature set
 Goal
 - build the training set for a brand-new model and serve the same feature set online for inference
 
@@ -307,7 +307,7 @@ v1 = Join(
 )
 ```
 
-### B - Set up log-based data refresh for an online model
+### Set up log-based data refresh for an online model
 Goal
 - Create a feature pipeline to automatically populate new ds using logged feature values
 
@@ -403,7 +403,7 @@ v2 = Join(
   bootstrap_parts=[BootstrapPart(table="db_name.team_name_model_v1")]
 )
 ```
-### C - Improve an existing feature set of an online model
+### Improve an existing feature set of an online model
 Goal
 - Create a new version of an existing model, carrying over most of the existing features while adding some new features.
   Steps
@@ -436,7 +436,7 @@ v2 = Join(
   ]
 )
 ```
-### D - Expand a model to a new set of drivers
+### Expand a model to a new set of drivers
 Goal
 - Create a new version of an existing model that expands to new traffic endpoints
 - This requires us to backfill features for the new endpoints in order to backtest the model, while keeping using log data for existing endpoints.
@@ -482,7 +482,7 @@ v2 = Join(
   ]
 )
 ```
-### E - Reuse existing feature data from the same drivers
+### Reuse existing feature data from the same drivers
 Goal:
 - Build a new model while leveraging training data of an existing model that shares the same events.
   Step
@@ -510,7 +510,7 @@ bootstrap_parts=[
     ]
 )
 ```
-### F - Utilize advanced features
+### Utilize advanced features
 Goal:
 - Leverage external / contextual features in the model. Once they are served online, we want to log them for future model retrains. For initial backfills, users will come up with a custom way to provide backfilled values
   Steps
@@ -560,7 +560,7 @@ v1 = Join(
    ]
 )
 ```
-### G - Leverage feature data from legacy data pipelines
+### Leverage feature data from legacy data pipelines
 Goal
 - We have feature data from a legacy data pipeline before a certain cutoff, and while we are moving over to Chronon after that, we would like to retain and ingest the historical data into the final training table produced by Chronon.
   Steps
@@ -611,7 +611,7 @@ v1 = Join(
   ]
 )
 ```
-### H - Overwrite incorrect logged feature values
+### Overwrite incorrect logged feature values
 Goal
 - The online serving was broken for certain feature values for a certain time period. We would like to overwrite the feature values by providing a custom backfill table.
   Step
@@ -640,7 +640,7 @@ v1 = Join(
    ]
 )
 ```
-### I - Adding labels to training dataset
+### Adding labels to training dataset
 Goal
 - We have a backfilled feature table and label data available. We would like to associate label values to features and generate the training dataset.
   Steps
@@ -681,7 +681,7 @@ v2 = Join(
    )
 )
 ```
-### J - Adding labels and apply aggregation on labels
+### Adding labels and apply aggregation on labels
 Goal
 - We have raw labels and would like to apply an aggregation to labels before adding these labels to  training datasets.
   Steps
