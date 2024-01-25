@@ -186,7 +186,7 @@ class Fetcher(val kvStore: KVStore,
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
             ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
             val requestTs = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
-            val requestDs = TsUtils.toStr(requestTs)
+            val requestDs = TsUtils.toStr(requestTs).substring(0, 10)
             val baseMap = internalMap ++ externalMap
             // used for derivation based on ts/ds
             val tsDsMap: Map[String, AnyRef] =
