@@ -18,6 +18,7 @@ package ai.chronon.online
 
 import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
+import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
 import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
@@ -184,12 +185,12 @@ class Fetcher(val kvStore: KVStore,
             val ctx = Metrics.Context(Environment.JoinFetching, join = joinName)
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
             ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
-            val request_ts = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
-            val request_ds = Constants.ZeroSpanPartitionSpec.at(request_ts)
+            val requestTs = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
+            val requestDs = TsUtils.toStr(requestTs)
             val baseMap = internalMap ++ externalMap
             // used for derivation based on ts/ds
             val tsDsMap: Map[String, AnyRef] =
-              Map("ts" -> (request_ts).asInstanceOf[AnyRef], "ds" -> (request_ds).asInstanceOf[AnyRef])
+              Map("ts" -> (requestTs).asInstanceOf[AnyRef], "ds" -> (requestDs).asInstanceOf[AnyRef])
             val derivedMap: Map[String, AnyRef] = Try(
               joinCodec
                 .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
