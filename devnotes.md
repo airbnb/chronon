@@ -260,3 +260,26 @@ sbt sphinx
 bash build.sh
 bash gcloud_release.sh
 ```
+
+# Testing on REPL
+{One-time} First install the ammonite REPL with [support](https://ammonite.io/#OlderScalaVersions) for scala 2.12
+```shell
+sudo sh -c '(echo "#!/usr/bin/env sh" && curl -L https://github.com/com-lihaoyi/Ammonite/releases/download/3.0.0-M0/2.12-3.0.0-M0) > /usr/local/bin/amm && chmod +x /usr/local/bin/amm' && amm
+```
+
+Build the chronon jar for scala 2.12
+```shell
+sbt ++2.12.12 spark_uber/assembly
+```
+
+Start the REPL
+```shell
+/usr/local/bin/amm
+```
+
+In the repl prompt load the jar 
+```scala
+import $cp.spark.target.`scala-2.12`.`spark_uber-assembly-0.0.63-SNAPSHOT.jar`
+```
+
+Now you can import the chronon classes and use them directly from repl for testing.
