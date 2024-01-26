@@ -252,9 +252,6 @@ class BaseFetcher(kvStore: KVStore,
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
           context.increment("group_by_request.count")
 
-          // Collect cache metrics once per `fetchGroupBys` call.
-          maybeBatchIrCache.foreach((cache) => Cache.collectCaffeineCacheMetrics(context, cache.cache, cache.cacheName))
-
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {
@@ -304,6 +301,9 @@ class BaseFetcher(kvStore: KVStore,
     // If caching is enabled, we check if any of the GetRequests are already cached. If so, we store them in a Map
     // and avoid the work of re-fetching them.
     val cachedRequests: Map[GetRequest, CachedBatchResponse] = getCachedRequests(groupByRequestToKvRequest)
+    // Collect cache metrics once per fetchGroupBys call; Caffeine metrics aren't tagged by groupBy
+    maybeBatchIrCache.foreach(cache =>
+      Cache.collectCaffeineCacheMetrics(caffeineMetricsContext, cache.cache, cache.cacheName))
 
     val allRequests: Seq[GetRequest] = groupByRequestToKvRequest.flatMap {
       case (_, Success(GroupByRequestMeta(_, batchRequest, streamingRequestOpt, _, _))) => {

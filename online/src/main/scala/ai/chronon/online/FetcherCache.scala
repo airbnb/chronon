@@ -25,10 +25,11 @@ import scala.collection.JavaConverters.mapAsScalaConcurrentMapConverter
  * requests to decrease feature serving latency.
  * */
 trait FetcherCache {
+  val batchIrCacheName = "batch_cache"
   val maybeBatchIrCache: Option[BatchIrCache] =
     Config
       .getEnvConfig("ai.chronon.fetcher.batch_ir_cache_size")
-      .map(size => new BatchIrCache("batch_ir_cache", size.toInt))
+      .map(size => new BatchIrCache(batchIrCacheName, size.toInt))
       .orElse(None)
 
   def isCacheSizeConfigured: Boolean = maybeBatchIrCache.isDefined
@@ -57,6 +58,8 @@ trait FetcherCache {
       }
     )
   }
+
+  protected val caffeineMetricsContext: Metrics.Context = Metrics.Context(Metrics.Environment.JoinFetching)
 
   /**
     * Obtain the Map[String, AnyRef] response from a batch response.
@@ -144,11 +147,17 @@ trait FetcherCache {
             val batchRequestCacheKey =
               BatchIrCache.Key(batchRequest.dataset, request.keys, servingInfo.batchEndTsMillis)
 
+            // Metrics so we can get per-groupby cache metrics
+            val metricsContext =
+              request.context.getOrElse(Metrics.Context(Metrics.Environment.JoinFetching, servingInfo.groupBy))
+
             maybeBatchIrCache.get.cache.getIfPresent(batchRequestCacheKey) match {
               case null =>
+                metricsContext.increment(s"${batchIrCacheName}_gb_misses")
                 val emptyMap: Map[GetRequest, CachedBatchResponse] = Map.empty
                 emptyMap
               case cachedIr: CachedBatchResponse =>
+                metricsContext.increment(s"${batchIrCacheName}_gb_hits")
                 Map(batchRequest -> cachedIr)
             }
           }

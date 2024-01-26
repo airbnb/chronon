@@ -46,13 +46,12 @@ object Cache {
   def collectCaffeineCacheMetrics(metricsContext: Metrics.Context,
                                   cache: CaffeineCache[_, _],
                                   cacheName: String): Unit = {
-    val context = metricsContext.withSuffix("cache")
     val stats = cache.stats()
-    context.gauge(s"$cacheName.hits", stats.hitCount())
-    context.gauge(s"$cacheName.misses", stats.missCount())
-    context.gauge(s"$cacheName.evictions", stats.evictionCount())
-    context.gauge(s"$cacheName.loads", stats.loadCount())
-    context.gauge(s"$cacheName.hit_rate", stats.hitRate())
-    context.gauge(s"$cacheName.average_load_penalty", stats.averageLoadPenalty())
+    metricsContext.gauge(s"$cacheName.hits", stats.hitCount())
+    metricsContext.gauge(s"$cacheName.misses", stats.missCount())
+    metricsContext.gauge(s"$cacheName.evictions", stats.evictionCount())
+    metricsContext.gauge(s"$cacheName.loads", stats.loadCount())
+    metricsContext.gauge(s"$cacheName.hit_rate", stats.hitRate())
+    metricsContext.gauge(s"$cacheName.average_load_penalty", stats.averageLoadPenalty())
   }
 }

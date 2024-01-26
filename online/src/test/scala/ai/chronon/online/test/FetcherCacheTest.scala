@@ -8,6 +8,7 @@ import ai.chronon.online.{AvroCodec, FetcherCache, GroupByServingInfoParsed, KVS
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.FetcherCache.{BatchIrCache, BatchResponses, CachedMapBatchResponse}
 import ai.chronon.online.KVStore.TimedValue
+import ai.chronon.online.Metrics.Context
 import org.junit.Assert.{assertArrayEquals, assertEquals, assertFalse, assertNull, assertTrue, fail}
 import org.junit.Test
 import org.mockito.Mockito._
@@ -50,7 +51,7 @@ class FetcherCacheTest extends MockitoHelper {
     batchIrCache.cache.putAll(batchIrs.asJava)
 
     // Check that the cache contains all the batchIrs we created
-    batchIrs.foreach((entry) => {
+    batchIrs.foreach(entry => {
       val cachedBatchIr = batchIrCache.cache.getIfPresent(entry._1)
       assertEquals(cachedBatchIr, entry._2)
     })
@@ -73,7 +74,7 @@ class FetcherCacheTest extends MockitoHelper {
     batchIrCache.cache.putAll(mapResponses.asJava)
 
     // Check that the cache contains all the mapResponses we created
-    mapResponses.foreach((entry) => {
+    mapResponses.foreach(entry => {
       val cachedBatchIr = batchIrCache.cache.getIfPresent(entry._1)
       assertEquals(cachedBatchIr, entry._2)
     })
@@ -116,7 +117,7 @@ class FetcherCacheTest extends MockitoHelper {
     val dataset = "TEST_GROUPBY_BATCH"
     val mockGroupByServingInfoParsed = mock[GroupByServingInfoParsed]
     val mockContext = mock[Metrics.Context]
-    val request = Request("req_name", keys, Some(eventTs))
+    val request = Request("req_name", keys, Some(eventTs), Some(mock[Context]))
     val getRequest = KVStore.GetRequest("key".getBytes, dataset, Some(eventTs))
     val requestMeta =
       GroupByRequestMeta(mockGroupByServingInfoParsed, getRequest, Some(getRequest), Some(eventTs), mockContext)
