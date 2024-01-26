@@ -63,10 +63,11 @@ object Extensions {
     val partitionRange: PartitionRange = PartitionRange(minPartition, maxPartition)
     val count: Long = partitionCounts.values.sum
 
-    def prunePartitions(range: PartitionRange): DfWithStats = {
+    def prunePartitions(range: PartitionRange): Option[DfWithStats] = {
       val intersected = partitionRange.intersect(range)
+      if (!intersected.wellDefined) return None
       val intersectedCounts = partitionCounts.filter(intersected.partitions contains _._1)
-      DfWithStats(df.prunePartition(range), intersectedCounts)
+      Some(DfWithStats(df.prunePartition(range), intersectedCounts))
     }
     def stats: DfStats = DfStats(count, partitionRange)
   }

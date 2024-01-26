@@ -151,7 +151,7 @@ abstract class JoinBase(joinConf: api.Join,
           unfilledRanges
             .foreach(unfilledRange => {
               val leftUnfilledRange = unfilledRange.shift(-shiftDays)
-              val prunedLeft = leftDf.map(_.prunePartitions(leftUnfilledRange))
+              val prunedLeft = leftDf.flatMap(_.prunePartitions(leftUnfilledRange))
               val filledDf =
                 computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt)
               // Cache join part data into intermediate table
