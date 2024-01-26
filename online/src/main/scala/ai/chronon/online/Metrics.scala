@@ -171,6 +171,19 @@ object Metrics {
     def histogram(metric: String, value: Double, tags: String): Unit =
       stats.histogram(prefix(metric), value, Context.sampleRate, tags)
     def histogram(metric: String, value: Long): Unit = stats.histogram(prefix(metric), value, Context.sampleRate)
+
+    /**
+      * Histogram, including all tags available in the context
+      */
+    def histogramTagged(metric: String, value: Long): Unit =
+      stats.histogram(prefix(metric), value, Context.sampleRate, tags)
+
+    /**
+      * Histogram, including all tags available in the context
+      */
+    def histogramTagged(metric: String, value: Double): Unit =
+      stats.histogram(prefix(metric), value, Context.sampleRate, tags)
+
     def gauge(metric: String, value: Double): Unit = stats.gauge(prefix(metric), value)
 
     def distribution(metric: String, value: Long): Unit =

@@ -86,7 +86,7 @@ class BaseFetcher(kvStore: KVStore,
       // Missing data
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         if (debug) println("Both batch and streaming data are null")
-        context.histogram("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
+        context.histogramTagged("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
         return null
       }
 
@@ -157,7 +157,7 @@ class BaseFetcher(kvStore: KVStore,
       servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
 
     }
-    context.histogram("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
+    context.histogramTagged("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
     responseMap
   }
 
@@ -172,11 +172,11 @@ class BaseFetcher(kvStore: KVStore,
     context.histogram(Name.RowCount, response.length)
     context.histogram(Name.Bytes, responseBytes)
     latestResponseTs.foreach { ts =>
-      context.histogram(Name.FreshnessMillis, queryTsMillis - ts)
+      context.histogramTagged(Name.FreshnessMillis, queryTsMillis - ts)
       context.histogram(Name.FreshnessMinutes, (queryTsMillis - ts) / 60000)
     }
-    context.histogram("attributed_latency.millis",
-                      (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
+    context.histogramTagged("attributed_latency.millis",
+                            (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
   }
 
   /**
@@ -305,7 +305,7 @@ class BaseFetcher(kvStore: KVStore,
     maybeBatchIrCache.foreach(cache =>
       Cache.collectCaffeineCacheMetrics(caffeineMetricsContext, cache.cache, cache.cacheName))
 
-    val allRequests: Seq[GetRequest] = groupByRequestToKvRequest.flatMap {
+    val allRequestsToFetch: Seq[GetRequest] = groupByRequestToKvRequest.flatMap {
       case (_, Success(GroupByRequestMeta(_, batchRequest, streamingRequestOpt, _, _))) => {
         // If a request is cached, don't include it in the list of requests to fetch.
         if (cachedRequests.contains(batchRequest)) streamingRequestOpt else Some(batchRequest) ++ streamingRequestOpt
@@ -314,8 +314,8 @@ class BaseFetcher(kvStore: KVStore,
     }
 
     val startTimeMs = System.currentTimeMillis()
-    val kvResponseFuture: Future[Seq[GetResponse]] = if (allRequests.nonEmpty) {
-      kvStore.multiGet(allRequests)
+    val kvResponseFuture: Future[Seq[GetResponse]] = if (allRequestsToFetch.nonEmpty) {
+      kvStore.multiGet(allRequestsToFetch)
     } else {
       Future(Seq.empty[GetResponse])
     }
@@ -339,7 +339,7 @@ class BaseFetcher(kvStore: KVStore,
               val responseMapTry = requestMetaTry.map { requestMeta =>
                 val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
 
-                context.count("multi_get.batch.size", allRequests.length)
+                context.count("multi_get.batch.size", allRequestsToFetch.length)
                 context.histogram("multi_get.bytes", totalResponseValueBytes)
                 context.histogram("multi_get.response.length", kvResponses.length)
                 context.histogram("multi_get.latency.millis", multiGetMillis)
