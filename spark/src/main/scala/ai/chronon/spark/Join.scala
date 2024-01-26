@@ -34,6 +34,7 @@ import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.duration.{Duration, DurationInt}
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
+import scala.util.{Failure, Success}
 
 /*
  * hashes: a list containing bootstrap hashes that represent the list of bootstrap parts that a record has matched
@@ -219,7 +220,7 @@ class Join(joinConf: api.Join,
     implicit val executionContext: ExecutionContextExecutorService =
       ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(tableUtils.joinPartParallelism))
 
-    val joinedDf = tableUtils
+    val joinedDfTry = tableUtils
       .wrapWithCache("Computing left parts for bootstrap table", bootstrapDf) {
         // parallelize the computation of each of the parts
 
@@ -261,22 +262,25 @@ class Join(joinConf: api.Join,
           // combine bootstrap table and join part tables
           // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
           // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
-          rightResults
-            .foldLeft(bootstrapDf) {
-              case (partialDf, (rightPart, rightDf)) => joinWithLeft(partialDf, rightDf, rightPart)
-            }
-            // drop all processing metadata columns
-            .drop(Constants.MatchedHashes, Constants.TimePartitionColumn)
+          Success(
+            rightResults
+              .foldLeft(bootstrapDf) {
+                case (partialDf, (rightPart, rightDf)) => joinWithLeft(partialDf, rightDf, rightPart)
+              }
+              // drop all processing metadata columns
+              .drop(Constants.MatchedHashes, Constants.TimePartitionColumn))
         } catch {
           case e: Exception =>
             e.printStackTrace()
-            null
+            Failure(e)
         } finally {
           executionContext.shutdownNow()
         }
       }
       .get
 
+    if (joinedDfTry.isFailure) throw joinedDfTry.failed.get
+    val joinedDf = joinedDfTry.get
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
     val finalBaseDf = padGroupByFields(joinedDf.selectExpr(outputColumns.map(c => s"`$c`"): _*), bootstrapInfo)
     val finalDf = cleanUpContextualFields(applyDerivation(finalBaseDf, bootstrapInfo, leftDf.columns),
