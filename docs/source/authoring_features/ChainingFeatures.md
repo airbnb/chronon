@@ -19,7 +19,7 @@ Chronon now has the capability to use output of join as input to downstream comp
 If you have similar features which would require multiple joins or groupbys, chaining features might be a good fit for your use case.
 
 ## How do I use it?
-We introduced a new source type **JoinSource**. You can now pass in a parent join as Source in GroupBys.
+You can pass in a parent join  **JoinSource** as Source in GroupBys. For example,
 
 ```python 
 # Chaining Feature API example 
