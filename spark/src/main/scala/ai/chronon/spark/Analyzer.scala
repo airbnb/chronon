@@ -400,38 +400,19 @@ class Analyzer(tableUtils: TableUtils,
       logger.info("No unfilled ranges found.")
       List.empty
     } else {
-      val firstUnfilledPartition = unfilledRanges.min.start
-      lazy val groupByOps = new GroupByOps(groupBy)
-      lazy val leftShiftedPartitionRangeStart = unfilledRanges.min.shift(-1).start
-      lazy val rightShiftedPartitionRangeStart = unfilledRanges.min.shift(1).start
-      val maxWindow = groupByOps.maxWindow
-      maxWindow match {
-        case Some(window) =>
-          val expectedStart = (leftDataModel, groupBy.dataModel, groupBy.inferredAccuracy) match {
-            // based on the end of the day snapshot
-            case (Entities, Events, _)   => tableUtils.partitionSpec.minus(rightShiftedPartitionRangeStart, window)
-            case (Entities, Entities, _) => firstUnfilledPartition
-            case (Events, Events, Accuracy.SNAPSHOT) =>
-              tableUtils.partitionSpec.minus(leftShiftedPartitionRangeStart, window)
-            case (Events, Events, Accuracy.TEMPORAL) =>
-              tableUtils.partitionSpec.minus(firstUnfilledPartition, window)
-            case (Events, Entities, Accuracy.SNAPSHOT) => leftShiftedPartitionRangeStart
-            case (Events, Entities, Accuracy.TEMPORAL) =>
-              tableUtils.partitionSpec.minus(leftShiftedPartitionRangeStart, window)
+      val expectedStart = QueryRangeHelper.earliestDate(leftDataModel, groupBy, tableUtils, unfilledRanges.min)
+      expectedStart.map{ start =>
+        groupBy.sources.toScala.flatMap { source =>
+          val table = source.table
+          logger.info(s"Checking table $table for data availability ... Expected start partition: $expectedStart")
+          //check if partition available or table is cumulative
+          if (!tableUtils.ifPartitionExistsInTable(table, start) && !source.isCumulative) {
+            Some((table, groupBy.getMetaData.getName, start))
+          } else {
+            None
           }
-          groupBy.sources.toScala.flatMap { source =>
-            val table = source.table
-            logger.info(s"Checking table $table for data availability ... Expected start partition: $expectedStart")
-            //check if partition available or table is cumulative
-            if (!tableUtils.ifPartitionExistsInTable(table, expectedStart) && !source.isCumulative) {
-              Some((table, groupBy.getMetaData.getName, expectedStart))
-            } else {
-              None
-            }
-          }
-        case None =>
-          List.empty
-      }
+        }
+      }.getOrElse(List.empty)
     }
   }
 

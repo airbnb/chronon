@@ -3,7 +3,7 @@ FROM openjdk:8-jre-slim
 
 # Set this manually before building the image, requires a local build of the jar
 
-ENV CHRONON_JAR_PATH=spark/target-embedded/scala-2.12/your_build.jar
+ENV CHRONON_JAR_PATH=/Users/varant_zanoyan/repos/chronon/spark/target/scala-2.12/spark_uber-assembly-vz--sampling-0.0.62-SNAPSHOT.jar
 
 # Update package lists and install necessary tools
 RUN apt-get update && apt-get install -y \
@@ -64,6 +64,7 @@ ENV PATH="/opt/spark/sbin:/opt/spark/bin:${PATH}"
 ENV SPARK_HOME="/opt/spark"
 
 COPY quickstart/conf/spark-defaults.conf "$SPARK_HOME/conf"
+COPY $CHRONON_JAR_PATH /srv/chronon/chronon.jar
 
 RUN chmod u+x /opt/spark/sbin/* && \
     chmod u+x /opt/spark/bin/*

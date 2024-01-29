@@ -36,7 +36,7 @@ services:
       KAFKA_MESSAGE_MAX_BYTES: 2147483647
 
   main:
-    image: ezvz/chronon
+    build: /Users/varant_zanoyan/repos/chronon
     command: bash -c "spark-shell -i scripts/data-loader.scala && tail -f /dev/null"
     ports:
       - "4040:4040"
@@ -53,7 +53,12 @@ services:
       - CHRONON_LOG_TABLE=default.chronon_log_table
       - CHRONON_ONLINE_CLASS=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
       - CHRONON_ONLINE_ARGS=-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin
-
+    volumes:
+      - ./api/py/test/sample:/srv/chronon                # Main working dir and repo for samples
+      - ./quickstart/mongo-online-impl:/srv/onlineImpl   # KV Store implementation
+      - ./quickstart/jars:/srv/jars                      # Driver connectors and other spark required jars
+      - /Users/varant_zanoyan/repos/chronon:/srv/chronon_jar
+      - spark_events:/opt/spark/spark-events
 
 volumes:
   mongodb_data:

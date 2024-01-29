@@ -17,9 +17,12 @@
 package ai.chronon.spark
 
 import ai.chronon.aggregator.windowing.TsUtils
-import ai.chronon.api.{Constants, Query, QueryUtils}
-
+import ai.chronon.api.{Accuracy, Constants, Query, QueryUtils}
 import scala.collection.JavaConverters._
+
+import ai.chronon.api
+import ai.chronon.api.DataModel.{DataModel, Entities, Events}
+import ai.chronon.api.Extensions.GroupByOps
 
 sealed trait DataRange {
   def toTimePoints: Array[Long]
@@ -154,4 +157,32 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
     }
   }
   override def toString(): String = s"[$start...$end]"
+}
+
+object QueryRangeHelper {
+
+  /*
+  Gets the earliest query date for a particular GroupBy given a left side data model and a query range
+   */
+  def earliestDate(leftDataModel: DataModel, groupBy: api.GroupBy, tableUtils: TableUtils,
+      queryRange: PartitionRange): Option[String] = {
+    lazy val leftShiftedPartitionRangeStart = queryRange.shift(-1).start
+    lazy val rightShiftedPartitionRangeStart = queryRange.shift(1).start
+    val firstUnfilledPartition = queryRange.start
+    val maxWindow = groupBy.maxWindow
+    (leftDataModel, groupBy.dataModel, groupBy.inferredAccuracy) match {
+      // based on the end of the day snapshot
+      case (Entities, Events, _) =>
+        maxWindow.map(tableUtils.partitionSpec.minus
+        (rightShiftedPartitionRangeStart, _))
+      case (Entities, Entities, _) => Option(firstUnfilledPartition)
+      case (Events, Events, Accuracy.SNAPSHOT) =>
+        maxWindow.map(tableUtils.partitionSpec.minus(leftShiftedPartitionRangeStart, _))
+      case (Events, Events, Accuracy.TEMPORAL) =>
+        maxWindow.map(tableUtils.partitionSpec.minus(firstUnfilledPartition, _))
+      case (Events, Entities, Accuracy.SNAPSHOT) => Option(leftShiftedPartitionRangeStart)
+      case (Events, Entities, Accuracy.TEMPORAL) =>
+        maxWindow.map(tableUtils.partitionSpec.minus(leftShiftedPartitionRangeStart, _))
+    }
+  }
 }

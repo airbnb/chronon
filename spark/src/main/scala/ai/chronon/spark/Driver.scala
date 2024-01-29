@@ -366,6 +366,45 @@ object Driver {
     }
   }
 
+  object Sample {
+    class Args extends Subcommand("sample") with OfflineSubcommand {
+      val startDate: ScallopOption[String] =
+        opt[String](required = false,
+          descr = "The earliest date for which you want sampled output, defaults to endDate if not set",
+          default = None)
+      val outputDir: ScallopOption[String] =
+        opt[String](
+          required = true,
+          descr = "The output directory for your sample data."
+        )
+      val forceResample: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          descr =
+            "Option to force resampling even if semantics haven't changed",
+          default = Some(false)
+        )
+      val numRows: ScallopOption[Int] =
+        opt[Int](required = false,
+          descr = "The number of output rows you want for your sampled GroupBy/Join",
+          default = Option(100))
+
+      override def subcommandName() = "sample"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      new Sample(
+        args.confPath(),
+        tableUtils,
+        args.startDate.getOrElse(args.endDate()),
+        args.endDate(),
+        args.outputDir(),
+        args.forceResample(),
+        args.numRows()).run()
+    }
+  }
+
   object MetadataExport {
     class Args extends Subcommand("metadata-export") with OfflineSubcommand {
       val inputRootPath: ScallopOption[String] =
@@ -825,6 +864,8 @@ object Driver {
     addSubcommand(GroupByStreamingArgs)
     object AnalyzerArgs extends Analyzer.Args
     addSubcommand(AnalyzerArgs)
+    object SampleArgs extends Sample.Args
+    addSubcommand(SampleArgs)
     object DailyStatsArgs extends DailyStats.Args
     addSubcommand(DailyStatsArgs)
     object LogStatsArgs extends LogStats.Args
@@ -868,6 +909,7 @@ object Driver {
           case args.ConsistencyMetricsArgs => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
           case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
           case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
+          case args.SampleArgs             => Sample.run(args.SampleArgs)
           case args.DailyStatsArgs         => DailyStats.run(args.DailyStatsArgs)
           case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
