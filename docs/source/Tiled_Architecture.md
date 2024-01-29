@@ -5,9 +5,9 @@
 
 ## What is tiling?
 
-Tiling or the tiled architecture is a modification to Chronon's online architecture to store pre-aggregates (also known as "IRs" or Intermediate Representations) in the Key-Value store instead of individual events. 
+Tiling, or the tiled architecture, is a modification to Chronon's online architecture to store pre-aggregates (also known as "IRs" or Intermediate Representations) in the Key-Value store instead of individual events. 
 
-The primary purpose of tiling is to improve handling of hot keys, increase scalability, decrease feature serving latency. 
+The primary purpose of tiling is to improve the handling of hot keys, increase scalability, and decrease feature serving latency. 
 
 Tiling requires [Flink](https://flink.apache.org/).
 
@@ -51,11 +51,11 @@ In general, tiling improves scalability and decreases feature serving latency. S
 - You want to reduce fanout to your datastore.
 - You need to support aggregating over hot key entities
 
-In particular, organizations operating a significant scale with many hot-key entities should consider using the tiled architecture. If the number of events per entity key is at most a few thousand, the untiled approach would still perform well. 
+In particular, organizations operating at significant scale with many hot-key entities should consider using the tiled architecture. If the number of events per entity key is at most a few thousand, the untiled approach would still perform well. 
 
 
 ## How to enable tiling
 
 To enable tiling, you first need to start using Flink on the write path. See the [Chronon on Flink documentation](./Flink.md) for instructions. As part of this process, you may also need to modify your KV store implementation to know how to write and fetch tiles.
 
-Once the Flink app is set up and writing tiles to your datastore, the final step is to enable tiled reads in the Fetcher. This is simple: add `enable_tiling=true` to the [customJson](https://github.com/airbnb/chronon/blob/48b789dd2c216c62bbf1d74fbf4e779f23db541f/api/py/ai/chronon/group_by.py#L561) of any GroupBy definition. 
+Once the Flink app is set up and writing tiles to your datastore, the final step is to enable tiled reads in the Fetcher. Just add `enable_tiling=true` to the [customJson](https://github.com/airbnb/chronon/blob/48b789dd2c216c62bbf1d74fbf4e779f23db541f/api/py/ai/chronon/group_by.py#L561) of any GroupBy definition. 
