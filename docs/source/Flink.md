@@ -5,7 +5,7 @@ _**Important**: The Flink connector is an experimental feature that is still in 
 
 Chronon on Flink is an alternative to Chronon on Spark Streaming. It's intended for organizations that don't have access to Spark Streaming or want to use the [The Tiled Architecture](./Tiled_Architecture.md).
 
-## How to use the Flink
+## How to use the Flink connector
 
 The process of integrating Flink will be different at each organization. The overall idea is simple: you need to integrate the [FlinkJob](https://github.com/airbnb/chronon/blob/master/flink/src/main/scala/ai/chronon/flink/FlinkJob.scala) so that it reads an event stream (e.g. Kafka) and writes out to a KV store.
 
@@ -20,7 +20,8 @@ The operators for the tiled and untiled Flink jobs differ slightly. The main dif
 ### The tiled Flink job
 
 The Flink job contains five main operators
-1. Source - Reads events of type `T` from a source, which is often a Kafka topic. The generic type `T` could be a POJO, Scala case class, [Thrift](https://thrift.apache.org/), [Proto](https://protobuf.dev/), etc.
+1. Source - Reads events of type `T` from a source, which is often a Kafka topic. The generic type `T` could be a POJO, Scala case class, [Thrift](https://thrift.apache.org/), [Proto](https://protobuf.dev/), etc. 
+   - Note: currently, the Source and Job don't adhere to the mutation interface of chronon.
 2. Spark expression evaluation - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input data. This operator runs Spark inside the Flink app using CatalystUtil.
 3. Window/tiling - This is the main tiling operator. It uses a window to aggregate incoming events and keep track of the IRs. It outputs the pre-aggregates on every event so they are written out to the KV store and the fetcher has access to fresh values.
 4. Avro conversion - Finishes [Avro-converting](https://avro.apache.org/) the output of the window (the IRs) to a form that can be written out to the KV store (`PutRequest` object).

@@ -51,7 +51,8 @@ In general, tiling improves scalability and decreases feature serving latency. S
 - You want to reduce fanout to your datastore.
 - You need to support aggregating over hot key entities
 
-In particular, organizations operating a significant scale should consider using the tiled architecture.
+In particular, organizations operating a significant scale with many hot-key entities should consider using the tiled architecture. If the number of events per entity key is at most a few thousand, the untiled approach would still perform well. 
+
 
 ## How to enable tiling
 
