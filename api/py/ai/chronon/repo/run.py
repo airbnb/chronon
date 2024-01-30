@@ -26,6 +26,7 @@ import re
 import subprocess
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
+import multiprocessing
 
 ONLINE_ARGS = "--online-jar={online_jar} --online-class={online_class} "
 OFFLINE_ARGS = "--conf-path={conf_path} --end-date={ds} "
@@ -391,22 +392,16 @@ class Runner:
         self.list_apps_cmd = args.list_apps
 
     def run(self):
-        base_args = MODE_ARGS[self.mode].format(
-            conf_path=self.conf,
-            ds=self.ds,
-            online_jar=self.online_jar,
-            online_class=self.online_class,
-        )
-        final_args = base_args + " " + str(self.args)
+        command_list = []
         if self.mode == "info":
-            command = "python3 {script} --conf {conf} --ds {ds} --repo {repo}".format(
+            command_list.append("python3 {script} --conf {conf} --ds {ds} --repo {repo}".format(
                 script=self.render_info, conf=self.conf, ds=self.ds, repo=self.repo
-            )
+            ))
         elif self.sub_help or (self.mode not in SPARK_MODES):
-            command = (
+            command_list.append(
                 "java -cp {jar} ai.chronon.spark.Driver {subcommand} {args}".format(
                     jar=self.jar_path,
-                    args="--help" if self.sub_help else final_args,
+                    args="--help" if self.sub_help else self._gen_final_args(),
                     subcommand=ROUTES[self.conf_type][self.mode],
                 )
             )
@@ -457,6 +452,16 @@ class Runner:
                             "Attempting to submit an application in client mode, but there's already"
                             " an existing one running."
                         )
+                command = (
+                    "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args} {additional_args}"
+                ).format(
+                    script=self.spark_submit,
+                    jar=self.jar_path,
+                    subcommand=ROUTES[self.conf_type][self.mode],
+                    args=self._gen_final_args(),
+                    additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
+                )
+                check_call(command)
             else:
                 # offline mode
                 if self.parallelism > 1:
@@ -464,16 +469,45 @@ class Runner:
                         "To use parallelism, please specify --start-ds and --end-ds to " \
                         "break down into multiple backfill jobs"
                     date_ranges = split_date_range(self.start_ds, self.ds, self.parallelism)
-            command = (
-                "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args} {additional_args}"
-            ).format(
-                script=self.spark_submit,
-                jar=self.jar_path,
-                subcommand=ROUTES[self.conf_type][self.mode],
-                args=final_args,
-                additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
-            )
-        check_call(command)
+                    for (start_ds, end_ds) in date_ranges:
+                        command = (
+                            "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args} {additional_args}"
+                        ).format(
+                            script=self.spark_submit,
+                            jar=self.jar_path,
+                            subcommand=ROUTES[self.conf_type][self.mode],
+                            args=self._gen_final_args(start_ds=start_ds, end_ds=end_ds),
+                            additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
+                        )
+                        command_list.append(command)
+                else:
+                    command = (
+                        "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args} {additional_args}"
+                    ).format(
+                        script=self.spark_submit,
+                        jar=self.jar_path,
+                        subcommand=ROUTES[self.conf_type][self.mode],
+                        args=self._gen_final_args(self.start_ds),
+                        additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
+                    )
+                    command_list.append(command)
+                first_command = command_list.pop(0)
+                check_call(first_command)
+                if len(command_list) > 0:
+                    with multiprocessing.Pool(processes=int(self.parallelism)) as pool:
+                        logging.info("Running args list {} with pool size {}".format(command_list, self.parallelism))
+                        pool.starmap(check_call, command_list)
+
+    def _gen_final_args(self, start_ds=None, end_ds=None):
+        base_args = MODE_ARGS[self.mode].format(
+            conf_path=self.conf,
+            ds=end_ds if end_ds else self.ds,
+            online_jar=self.online_jar,
+            online_class=self.online_class,
+        )
+        override_start_partition_arg = "--start-partition-override=" + start_ds if start_ds else ""
+        final_args = base_args + " " + str(self.args) + override_start_partition_arg
+        return final_args
 
 
 def split_date_range(start_date, end_date, parallelism):
@@ -600,8 +634,7 @@ if __name__ == "__main__":
     args, unknown_args = parser.parse_known_args()
     jar_type = "embedded" if args.mode in MODES_USING_EMBEDDED else "uber"
     extra_args = (" " + args.online_args) if args.mode in ONLINE_MODES else ""
-    override_start_partition_arg = "--start-partition-override=" + args.start_ds if args.start_ds else ""
-    args.args = " ".join(unknown_args) + extra_args + override_start_partition_arg
+    args.args = " ".join(unknown_args) + extra_args
     jar_path = (
         args.chronon_jar
         if args.chronon_jar
