@@ -25,7 +25,7 @@ import os
 import re
 import subprocess
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 
 ONLINE_ARGS = "--online-jar={online_jar} --online-class={online_class} "
 OFFLINE_ARGS = "--conf-path={conf_path} --end-date={ds} "
@@ -373,6 +373,7 @@ class Runner:
         else:
             self.conf_type = args.conf_type
         self.ds = args.end_ds if hasattr(args, 'end_ds') and args.end_ds else args.ds
+        self.start_ds = args.start_ds if hasattr(args, 'start_ds') and args.start_ds else None
         self.parallelism = args.parallelism if hasattr(args, 'parallelism') and args.parallelism else 1
         self.jar_path = jar_path
         self.args = args.args if args.args else ""
@@ -411,6 +412,7 @@ class Runner:
             )
         else:
             if self.mode in ["streaming", "streaming-client"]:
+                # streaming mode
                 self.app_name = self.app_name.replace(
                     "_streaming-client_", "_streaming_"
                 )  # If the job is running cluster mode we want to kill it.
@@ -455,6 +457,13 @@ class Runner:
                             "Attempting to submit an application in client mode, but there's already"
                             " an existing one running."
                         )
+            else:
+                # offline mode
+                if self.parallelism > 1:
+                    assert self.start_ds is not None and self.ds is not None, \
+                        "To use parallelism, please specify --start-ds and --end-ds to " \
+                        "break down into multiple backfill jobs"
+                    date_ranges = split_date_range(self.start_ds, self.ds, self.parallelism)
             command = (
                 "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args} {additional_args}"
             ).format(
@@ -465,6 +474,24 @@ class Runner:
                 additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
             )
         check_call(command)
+
+
+def split_date_range(start_date, end_date, parallelism):
+    start_date = datetime.strptime(start_date, "%Y-%m-%d")
+    end_date = datetime.strptime(end_date, "%Y-%m-%d")
+    total_days = (end_date - start_date).days
+    split_size = total_days // parallelism
+    date_ranges = []
+    # Loop to create the date ranges
+    for i in range(parallelism):
+        # Calculate the start and end of each split
+        split_start = start_date + timedelta(days=i * split_size)
+        if i == parallelism - 1:
+            split_end = end_date
+        else:
+            split_end = start_date + timedelta(days=(i + 1) * split_size, seconds=-1)
+        date_ranges.append((split_start.strftime("%Y-%m-%d"), split_end.strftime("%Y-%m-%d")))
+    return date_ranges
 
 
 def set_defaults(parser):
@@ -514,7 +541,8 @@ if __name__ == "__main__":
         "--end-ds", help="the end ds for a range backfill"
     )
     parser.add_argument(
-        "--parallelism", help="break down the backfill range into this number of tasks in parallel"
+        "--parallelism", help="break down the backfill range into this number of tasks in parallel. "
+                              "Please use it along with --start-ds and --end-ds"
     )
     parser.add_argument("--repo", help="Path to chronon repo")
     parser.add_argument(
