@@ -375,7 +375,7 @@ class Runner:
             self.conf_type = args.conf_type
         self.ds = args.end_ds if hasattr(args, 'end_ds') and args.end_ds else args.ds
         self.start_ds = args.start_ds if hasattr(args, 'start_ds') and args.start_ds else None
-        self.parallelism = args.parallelism if hasattr(args, 'parallelism') and args.parallelism else 1
+        self.parallelism = int(args.parallelism) if hasattr(args, 'parallelism') and args.parallelism else 1
         self.jar_path = jar_path
         self.args = args.args if args.args else ""
         self.online_class = args.online_class
@@ -494,10 +494,10 @@ class Runner:
             first_command = command_list.pop(0)
             check_call(first_command)
             if len(command_list) > 0:
-                # parallel backfill mode 
+                # parallel backfill mode
                 with multiprocessing.Pool(processes=int(self.parallelism)) as pool:
                     logging.info("Running args list {} with pool size {}".format(command_list, self.parallelism))
-                    pool.starmap(check_call, command_list)
+                    pool.map(check_call, command_list)
 
     def _gen_final_args(self, start_ds=None, end_ds=None):
         base_args = MODE_ARGS[self.mode].format(
@@ -514,17 +514,23 @@ class Runner:
 def split_date_range(start_date, end_date, parallelism):
     start_date = datetime.strptime(start_date, "%Y-%m-%d")
     end_date = datetime.strptime(end_date, "%Y-%m-%d")
-    total_days = (end_date - start_date).days
+    if start_date > end_date:
+        raise ValueError("Start date should be earlier than end date")
+    total_days = (end_date - start_date).days + 1  # +1 to include the end_date in the range
+
+    # Check if parallelism is greater than total_days
+    if parallelism > total_days:
+        raise ValueError("Parallelism should be less than or equal to total days")
+
     split_size = total_days // parallelism
     date_ranges = []
-    # Loop to create the date ranges
+
     for i in range(parallelism):
-        # Calculate the start and end of each split
         split_start = start_date + timedelta(days=i * split_size)
         if i == parallelism - 1:
             split_end = end_date
         else:
-            split_end = start_date + timedelta(days=(i + 1) * split_size, seconds=-1)
+            split_end = split_start + timedelta(days=split_size - 1)
         date_ranges.append((split_start.strftime("%Y-%m-%d"), split_end.strftime("%Y-%m-%d")))
     return date_ranges
 
