@@ -491,13 +491,13 @@ class Runner:
                         additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
                     )
                     command_list.append(command)
-            first_command = command_list.pop(0)
-            check_call(first_command)
-            if len(command_list) > 0:
-                # parallel backfill mode
-                with multiprocessing.Pool(processes=int(self.parallelism)) as pool:
-                    logging.info("Running args list {} with pool size {}".format(command_list, self.parallelism))
-                    pool.map(check_call, command_list)
+        first_command = command_list.pop(0)
+        check_call(first_command)
+        if len(command_list) > 0:
+            # parallel backfill mode
+            with multiprocessing.Pool(processes=int(self.parallelism)) as pool:
+                logging.info("Running args list {} with pool size {}".format(command_list, self.parallelism))
+                pool.map(check_call, command_list)
 
     def _gen_final_args(self, start_ds=None, end_ds=None):
         base_args = MODE_ARGS[self.mode].format(
