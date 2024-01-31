@@ -291,7 +291,8 @@ class Fetcher(val kvStore: KVStore,
           codec.loggingSchemaHash
         )
         if (logFunc != null) {
-          logFunc.accept(loggableResponse)
+          val sentLog = Try(logFunc.accept(loggableResponse))
+          if (sentLog.isFailure) logger.error("Failed to publish log", sentLog.failed.get)
           joinContext.foreach(context => context.increment("logging_request.count"))
           joinContext.foreach(context =>
             context.distribution("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
