@@ -295,13 +295,13 @@ class Fetcher(val kvStore: KVStore,
           if (sentLog.isFailure) {
             logger.error("Failed to publish log", sentLog.failed.get)
             joinContext.foreach(context => context.increment("logging_failure.count"))
+          } else {
+            joinContext.foreach(context => context.increment("logging_request.count"))
+            joinContext.foreach(context =>
+              context.distribution("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
+            joinContext.foreach(context =>
+              context.distribution("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
           }
-          joinContext.foreach(context => context.increment("logging_request.count"))
-          joinContext.foreach(context =>
-            context.distribution("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
-          joinContext.foreach(context =>
-            context.distribution("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
-
           if (debug) {
             logger.info(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
           }
