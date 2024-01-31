@@ -178,7 +178,7 @@ password=<your password>
 2. Install `tox, build, twine`. There are three python requirements for the python build process.
 * tox: Module for testing. To run the tests run tox in the main project directory.
 * build: Module for building. To build run `python -m build` in the main project directory
-* twine: Module for publishing. To upload a distribution run `twine upload dist/<distribution>`
+* twine: Module for publishing. To upload a distribution run `twine upload dist/<distribution>.whl`
 ```
 python3 -m pip install -U tox build twine
 ```
