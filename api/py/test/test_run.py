@@ -302,5 +302,5 @@ def test_split_date_range():
                        ('2022-01-09', '2022-01-11')]
 
     result = run.split_date_range(start_date, end_date, parallelism)
-    print(result)
     assert(result == expected_result)
+    
