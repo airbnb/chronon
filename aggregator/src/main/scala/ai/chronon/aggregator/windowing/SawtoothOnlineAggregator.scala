@@ -38,13 +38,11 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
 
   val batchTailTs: Array[Option[Long]] = tailTs(batchEndTs)
 
-  // Yank these printlns to see if they help us get around the issues we're seeing in #ir-song-subside
-  // Due to ArrayIndexOutOfBounds exceptions thrown in the TsUtils.toStr calls (as SimpleDateFormat isn't thread safe)
-  //println(s"Batch End: ${TsUtils.toStr(batchEndTs)}")
-  //println("Window Tails: ")
-  //for (i <- windowMappings.indices) {
-  //  println(s"  ${windowMappings(i).aggregationPart.outputColumnName} -> ${batchTailTs(i).map(TsUtils.toStr)}")
-  //}
+  println(s"Batch End: ${TsUtils.toStr(batchEndTs)}")
+  println("Window Tails: ")
+  for (i <- windowMappings.indices) {
+    println(s"  ${windowMappings(i).aggregationPart.outputColumnName} -> ${batchTailTs(i).map(TsUtils.toStr)}")
+  }
 
   def update(batchIr: BatchIr, row: Row): BatchIr = update(batchEndTs, batchIr, row, batchTailTs)
 
