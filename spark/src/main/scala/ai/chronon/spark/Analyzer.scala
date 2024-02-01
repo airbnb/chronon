@@ -295,7 +295,7 @@ class Analyzer(tableUtils: TableUtils,
       val gbStartPartition = part.groupBy.sources.toScala
         .map(_.query.startPartition)
         .filter(_ != null)
-      if (!gbStartPartition.isEmpty)
+      if (gbStartPartition.nonEmpty)
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
     val noAccessTables = runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
