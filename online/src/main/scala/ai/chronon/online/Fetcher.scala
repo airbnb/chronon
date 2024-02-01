@@ -462,14 +462,16 @@ class Fetcher(val kvStore: KVStore,
     rawResponses.map { responseFuture =>
       val convertedValue = responseFuture
         .flatMap { response =>
-          response.values.get.map {
-            case (key, v) =>
-              key ->
-                Map(
-                  "millis" -> response.millis.asInstanceOf[AnyRef],
-                  "value" -> StatsGenerator.SeriesFinalizer(key, v)
-                ).asJava
-          }
+          response.values
+            .getOrElse(Map.empty[String, AnyRef])
+            .map {
+              case (key, v) =>
+                key ->
+                  Map(
+                    "millis" -> response.millis.asInstanceOf[AnyRef],
+                    "value" -> StatsGenerator.SeriesFinalizer(key, v)
+                  ).asJava
+            }
         }
         .groupBy(_._1)
         .mapValues(_.map(_._2).toList.asJava)
