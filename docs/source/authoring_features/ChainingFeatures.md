@@ -5,7 +5,6 @@ Chaining Features refers to features which require weaving together transformati
 For example, compute  “average price of the last 10 items that a user purchased”.  This combines an initial `last_k` operation to get the "last 10 items" then applies an `average` operation on top of it as a chained aggregation.
 
 Or alternatively, "average weight of the last 10 items that a user purchased", but assuming that weight is not an included field in the purchases data, and rather stored in a normalized fashion in a different table.
-These features cannot be expressed in single Join or GroupBy but need to be aggregated in several steps.
 
 Assuming that square footage of a listing is stored separately from listing views - computing this requires
 - computing last_k listings viewed per user first from a view stream and
