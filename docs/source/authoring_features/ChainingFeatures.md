@@ -6,7 +6,7 @@ For example, compute  “average price of the last 10 items that a user purchase
 
 Or alternatively, "average weight of the last 10 items that a user purchased", but assuming that weight is not an included field in the purchases data, and rather stored in a normalized fashion in a different table.
 
-Assuming that square footage of a listing is stored separately from listing views - computing this requires
+Computing this would require:```
 - computing last_k items purchased per user, from the purchases stream
 - using the `item_id` to enrich the data with the `item_weight`
 - finally aggregating the item weight.
