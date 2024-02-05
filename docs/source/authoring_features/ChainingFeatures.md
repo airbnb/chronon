@@ -2,7 +2,9 @@
 
 ## What is a Chaining Feature
 Chaining Features refers to features which require weaving together transformations and aggregations along with denormalization.
-For example, compute  “average square footage of last_k listings viewed by a user in the last week” or “average price of listings a user viewed in the last 14 days”.
+For example, compute  “average price of the last 10 items that a user purchased”.  This combines an initial `last_k` operation to get the "last 10 items" then applies an `average` operation on top of it as a chained aggregation.
+
+Or alternatively, "average weight of the last 10 items that a user purchased", but assuming that weight is not an included field in the purchases data, and rather stored in a normalized fashion in a different table.
 These features cannot be expressed in single Join or GroupBy but need to be aggregated in several steps.
 
 Assuming that square footage of a listing is stored separately from listing views - computing this requires
