@@ -9,6 +9,7 @@ import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConv
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.spark.Driver.{logger, parseConf}
+import ai.chronon.spark.SampleHelper.{getPriorRunManifestMetadata, writeManifestMetadata}
 import com.google.gson.{Gson, GsonBuilder}
 import com.google.gson.reflect.TypeToken
 import org.apache.spark.sql.DataFrame
@@ -23,6 +24,10 @@ class Sample(conf: Any,
 
   val MANIFEST_FILE_NAME = "manifest.json"
   val MANIFEST_SERDE_TYPE_TOKEN = new TypeToken[java.util.Map[String, Integer]](){}.getType
+
+  val jobSemanticsMetadata: Map[String, Int] = {
+    Map("numRows" -> numRows, "startDate" -> dsToInt(startDate), "endDate" -> dsToInt(endDate))
+  }
 
   def sampleSource(table: String, dateRange: PartitionRange, includeLimit: Boolean,
       keySetOpt: Option[Seq[Map[String, Array[Any]]]] = None): DataFrame = {
@@ -77,151 +82,133 @@ class Sample(conf: Any,
     }.toMap
   }
 
+  def getTableSemanticHash(source: api.Source, groupBy: api.GroupBy): Int = {
+    // For a groupBy source, the relevant semantic fields include the filters, the keys at the GB level,
+    // and the job semantic metadata
+    val semanticFields: Map[String, Any] = Map(
+      source.rootTable -> source.query.getWheres.asScala.hashCode(),
+      "keys" -> groupBy.keyColumns.asScala
+    ) ++ jobSemanticsMetadata
+    semanticFields.hashCode()
+  }
+
+
   /*
   For a given GroupBy, sample all the sources. Can optionally take a set of keys to use for sampling
   (used by the join sample path).
    */
   def sampleGroupBy(groupBy: api.GroupBy): Unit = {
-    // Get a list of source table and relevant partition range for the ds being run
-    val manifestMetadata = generateManifestMetadata(groupBy)
-    val manifestDiff = getManifestDiff(manifestMetadata)
-    logger.info(s"Running sampling for the following sources: ${manifestDiff.mkString(", ")}")
-    val sourcesToSample = groupBy.sources.asScala.filter(source => manifestDiff.contains(source.rootTable))
-    sourcesToSample.foreach { source =>
-      val range: PartitionRange = GroupBy.getIntersectedRange(
-        source,
-        PartitionRange(startDate, endDate)(tableUtils),
-        tableUtils,
-        groupBy.maxWindow)
 
-      val keys = groupBy.keyColumns.asScala
+    val tablesToHashes = groupBy.sources.asScala.map { source =>
+      source.rootTable -> getTableSemanticHash(source, groupBy)
+    }.toMap
 
-      // Run a query to get the distinct key values that we will sample
-      val distinctKeysSql = s"""
-         |SELECT DISTINCT ${keys.mkString(", ")}
-         |FROM ${source.rootTable}
-         |WHERE ds >= $startDate AND
-         |ds <= $endDate
-         |LIMIT $numRows
-         |""".stripMargin
+    val sourcesDiff = getTablesWithSemanticDiff(tablesToHashes)
+    if (sourcesDiff.isEmpty) {
+      logger.error(s"No further sampling required based on metadata at $MANIFEST_FILE_NAME. The intended behavior" +
+        s"in the case is to not execute this job.")
+    } else {
+      logger.info(s"Running sampling for the following sources: ${sourcesDiff.mkString(", ")}")
+      val sourcesToSample = groupBy.sources.asScala.filter { source =>
+        sourcesDiff.contains(source.rootTable)}
 
-      val distinctKeysDf = tableUtils.sparkSession.sql(distinctKeysSql)
+      sourcesToSample.foreach { source =>
+        val range: PartitionRange = GroupBy.getIntersectedRange(
+          source,
+          PartitionRange(startDate, endDate)(tableUtils),
+          tableUtils,
+          groupBy.maxWindow)
 
-      val keyFilters: Map[String, Array[Any]] = createKeyFilters(keys, distinctKeysDf)
+        val keys = groupBy.keyColumns.asScala
 
-      // We don't need to do anything with the output df in this case
-      sampleSource(source.rootTable, range, false, Option(Seq(keyFilters)))
-    }
-    writeManifestMetadata(manifestMetadata)
-  }
+        // Run a query to get the distinct key values that we will sample
+        val distinctKeysSql = s"""
+                                 |SELECT DISTINCT ${keys.mkString(", ")}
+                                 |FROM ${source.rootTable}
+                                 |WHERE ds >= $startDate AND
+                                 |ds <= $endDate
+                                 |LIMIT $numRows
+                                 |""".stripMargin
 
-  def writeManifestMetadata(metadata: Map[String, Int]) = {
-    val gson = new GsonBuilder().serializeNulls().setPrettyPrinting().create()
-    // val javaMap: java.util.Map[String, Integer] = metadata.mapValues(_.asInstanceOf[Integer]).asJava
+        val distinctKeysDf = tableUtils.sparkSession.sql(distinctKeysSql)
 
-    // Convert your Scala Map[String, Int] to a Java map
-    val javaMap: java.util.Map[String, Integer] = {
-      val tempMap = new java.util.HashMap[String, Integer]()
-      metadata.foreach { case (key, value) => tempMap.put(key, value.asInstanceOf[Integer]) }
-      tempMap
-    }
+        val keyFilters: Map[String, Array[Any]] = createKeyFilters(keys, distinctKeysDf)
 
-    val jsonString = gson.toJson(javaMap, MANIFEST_SERDE_TYPE_TOKEN)
-    println("WRITING =======================")
-    println(jsonString)
-    val bw = new BufferedWriter(new FileWriter(s"$outputDir/$MANIFEST_FILE_NAME"))
-    try {
-      bw.write(jsonString)
-    } finally {
-      bw.close()
+        // We don't need to do anything with the output df in this case
+        sampleSource(source.rootTable, range, false, Option(Seq(keyFilters)))
+      }
+
+      writeManifestMetadata(outputDir, tablesToHashes)
     }
   }
 
-  def generateManifestMetadata(join: api.Join): Map[String, Int] = {
-    // Computes a semantic hash of all the sampling-related semantics for the left side and the right_parts of a join
-    // Iterate over joinParts and add an entry for each one with their semantic hash
-
-    join.joinParts.asScala.map{ joinPart =>
-      // For each joinPart, the only relevant sampling metadata for it's sources are keyMapping and keyColumn
-      s"${Option(joinPart.prefix).getOrElse("")}${joinPart.groupBy.metaData.getName}" ->
-        (joinPart.keyMapping.asScala, joinPart.groupBy.keyColumns.asScala).hashCode()
-    }.toMap + ("left" -> // Add the left side hash, which only depends on the source where clauses and the numRows requested in the job
-      (join.left.query.wheres.asScala, numRows).hashCode()) ++ getJobManifestMetadata()
-  }
-
-  def generateManifestMetadata(groupBy: api.GroupBy): Map[String, Int] = {
-    // GroupBy Semantic hashing only depends on the where clause and the number
-    groupBy.getSources.asScala.map { source =>
-      source.rootTable -> source.query.getWheres.asScala.hashCode()
-    }.toMap ++ getJobManifestMetadata()
-  }
-
-  def getJobManifestMetadata(): Map[String, Int] = {
-    Map("numRows" -> numRows, "startDate" -> dsToInt(startDate), "endDate" -> dsToInt(endDate))
-  }
 
   def dsToInt(ds: String): Int = {
     ds.replace("-", "").toInt
   }
 
-  def getPriorRunManifestMetadata(): Map[String, Int] = {
-    val gson = new Gson()
-    try {
-      val metadata = Source.fromFile(s"$outputDir/$MANIFEST_FILE_NAME").getLines.mkString
-      val javaMap: java.util.Map[String, Integer]  = gson.fromJson(metadata, MANIFEST_SERDE_TYPE_TOKEN)
-      // Convert to Scala
-      javaMap.asScala.mapValues(_.intValue()).toMap
-    } catch {
-      case err: Throwable =>
-        logger.error(s"Manifest Deserialization error:")
-        err.printStackTrace()
-        Map.empty[String, Int]
-    }
+  def getTableSemanticHash(joinParts: List[api.JoinPart], join: api.Join): Int = {
+    // Generates the semantic hash of an output table given the various joinParts that are downstream of it, and the join itself
+    // first get a map of join_parts to relevant semantic fields
+    val joinPartsSemantics = joinParts.map{ joinPart =>
+      // For each joinPart, the only relevant sampling metadata for it's sources are keyMapping and keyColumn
+      s"${Option(joinPart.prefix).getOrElse("")}${joinPart.groupBy.metaData.getName}" ->
+        (joinPart.keyMapping.asScala, joinPart.groupBy.keyColumns.asScala).hashCode()
+    }.toMap
+
+    // The left side hash only depends on the source where clauses
+    val leftSideSemantics = Map("left" -> join.left.query.wheres.asScala)
+
+    // Add them together along with job semantics, return the hashcode
+    val semantics: Map[String, Any] = joinPartsSemantics ++ leftSideSemantics ++ jobSemanticsMetadata
+    semantics.hashCode()
   }
 
-  def getManifestDiff(currentRunMetadata: Map[String, Int]): Seq[String] = {
-    // Find which entities need resampling based on semantic hash
-    val prior = getPriorRunManifestMetadata()
-    println("CURRENT ========= \n\n ")
-    println(currentRunMetadata)
-    println("\n\n PRIOR =========== \n\n")
-    println(prior)
-    print(" =========== ")
-    val numRowsDiff = currentRunMetadata("numRows") != prior.getOrElse("numRows", 0)
-    val datesDiff = currentRunMetadata("startDate") < prior.getOrElse("startDate", Int.MaxValue) ||
-      currentRunMetadata("endDate") > prior.getOrElse("endDate", Int.MinValue)
-    val leftDiff = currentRunMetadata.getOrElse("left", 0) != prior.getOrElse("left", 0)
-    if (numRowsDiff || datesDiff || leftDiff || forceResample) {
-      // Under these conditions, resample everything
-      currentRunMetadata.keys.toSeq
-    } else {
-      currentRunMetadata.filter {
-        case (key, value) => prior.get(key) match {
-          case Some(v) => v != value // The semantic hash has changed
-          case None => true          // The entity did not exist in the old metadata
-        }
-      }.keys.toSeq
-    }
+  def getTablesWithSemanticDiff(tableHashes: Map[String, Int]): Seq[String] = {
+    val prior = getPriorRunManifestMetadata(outputDir)
+    tableHashes.filter {
+      case (key, value) => prior.get(key) match {
+        case Some(v) => v != value // The semantic hash has changed
+        case None => true          // The entity did not exist in the old metadata
+      }
+    }.keys.toSeq
   }
 
-  def sampleJoin(join: api.Join) = {
-    val manifestMetadata = generateManifestMetadata(join)
-    val entitiesToSample = getManifestDiff(manifestMetadata)
-    if (entitiesToSample.isEmpty) {
-      logger.error(s"No entities need resampling based off of the manifest at $outputDir/$MANIFEST_FILE_NAME." +
-        s"The intended behavior in this case is to never execute this job")
+  def sampleJoin(join: api.Join): Unit = {
+
+    // Create a map of table -> List[joinPart]
+    // So that we can generate semantic hashing per table, and construct one query per source table
+    val tablesMap: Map[String, List[api.JoinPart]] = join.joinParts.asScala.flatMap { joinPart =>
+      joinPart.groupBy.sources.asScala.map { source =>
+        (source.rootTable, joinPart)
+      }
+    }.groupBy(_._1).mapValues(_.map(_._2).toList)
+
+    val tableHashes: Map[String, Int] = tablesMap.map{ case(table, joinParts) =>
+      (table, getTableSemanticHash(joinParts, join))
+    }
+
+    val tablesToSample: Seq[String] = if (forceResample) {
+      tableHashes.keys.toSeq
     } else {
+      getTablesWithSemanticDiff(tableHashes)
+    }
+
+    if (tablesToSample.isEmpty) {
+      logger.error(s"No entities need resampling based off of the manifest at $outputDir/$MANIFEST_FILE_NAME. " +
+        s"Exiting without doing anything (this job should have been skipped, possible issue in run.py).")
+    } else {
+      logger.info(s"Sampling for the following tables: $tablesToSample")
       val queryRange = PartitionRange(startDate, endDate)(tableUtils)
       // First sample the left side
       val leftRoot = join.getLeft.rootTable
       val sampledLeftDf = sampleSource(leftRoot, queryRange, true)
 
-      // Filter down to joinParts that require computation
-      val joinPartsToRun = join.joinParts.asScala.filter{ joinPart =>
-        entitiesToSample.contains(s"${Option(joinPart.prefix).getOrElse("")}${joinPart.groupBy.metaData.getName}")}
+      val filteredTablesMap = tablesMap.filter { case (key, _) =>
+        tablesToSample.contains(key) }
 
-      // Create a map of table -> (earliestStartDate, List[keyFilters]) so that we can construct one query per source table
-      joinPartsToRun.flatMap { joinPart =>
+      filteredTablesMap.map { case (table, joinParts) =>
+        val startDateAndKeyFilters = joinParts.map { joinPart =>
           val groupBy = joinPart.groupBy
 
           // Get the key cols
@@ -235,39 +222,19 @@ class Sample(conf: Any,
           val keyFilters: Map[String, Array[Any]] = createKeyFilters(keys, sampledLeftDf)
 
           val start = QueryRangeHelper.earliestDate(join.left.dataModel, groupBy, tableUtils, queryRange)
-          println(s"INFERRED START $start")
-
-          groupBy.sources.asScala.map { source =>
-            (source.rootTable, start, keyFilters)
-          }
-        }.groupBy(_._1) // Group by the source table
-        .map { case (key, tuple) =>
-          val minStartDate = tuple.minBy(_._2)._2
-          val keySetList = tuple.map(_._3) // Collect all the distinct keySets to sample
-          (key, (minStartDate, keySetList))
-        }.foreach{ case(table, tuple) =>
-          val sourceEndDate = if (table == leftRoot) {
-            // In this case, a GroupBy source table is the same as the left root table.
-            // Because we're going to union this with the leftDf, we don't want overlapping dates to avoid duplicate rows
-            // So we set the end date to a day before the earliest partition of the
-            tableUtils.partitionSpec.shift(startDate, -1)
-          } else {
-            endDate
-          }
-
-        // If start date is missing (unwindowed events case), just use a 0 hack for query rendering (allows us
-        // to use PartitionRange rather than an (Option[String], string)
-        val sourceStartDate = tuple._1.getOrElse("0000-00-00")
-
-          // it's possible that there's no longer any need to sample this source
-          if (startDate <= endDate) {
-            // We do not include the limit on the rightParts sampling, because that only applies to the left side
-            val effectiveStart =
-            sampleSource(table, PartitionRange(sourceStartDate, sourceEndDate)(tableUtils), false, Option(tuple._2))
-          }
+          (start, keyFilters)
         }
+        // get the earliest start date
+        // If start date is missing (unwindowed events case), just use a 0 hack for query rendering
+        // This allows us to use PartitionRange rather than an (Option[String], string)
+        val sourceStartDate = startDateAndKeyFilters.minBy(_._1)._1.getOrElse("0000-00-00")
+
+        val keyFilters = startDateAndKeyFilters.map(_._2)
+
+        sampleSource(table, PartitionRange(sourceStartDate, endDate)(tableUtils), false, Option(keyFilters))
+      }
     }
-    writeManifestMetadata(manifestMetadata)
+    writeManifestMetadata(outputDir, tableHashes)
   }
 
   def run(): Unit = {
