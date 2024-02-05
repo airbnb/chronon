@@ -9,7 +9,7 @@ Or alternatively, "average weight of the last 10 items that a user purchased", b
 Assuming that square footage of a listing is stored separately from listing views - computing this requires
 - computing last_k items purchased per user, from the purchases stream
 - using the `item_id` to enrich the data with the `item_weight`
-- finally aggregating the listing price.
+- finally aggregating the item weight.
 
 To express the above transformations, we need 2 Joins in Chronon to aggregate listings in the last 14 days and average price for these listings.
 Chronon now has the capability to use output of join as input to downstream computations and serve chaining features in real-time, enabling users to seamlessly access the features without worrying about upstream computation. In detail, Chronon enriches data in following three computation paradigms to provide efficient and accurate results.
