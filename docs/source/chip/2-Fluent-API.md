@@ -94,5 +94,19 @@ As mentioned, in Chronon the select clause is exclusively reserved for projectio
 
 
 
+#### Group By
+At this point we have a fully formed source we can now support union, groupBy and join on the fully formed source
 
-
+```python
+    
+src
+    .groupBy(key1, key2)
+    .defaultWindows([1d, 7d])
+    .agg(
+        last_k(col1, k = 10, windows = [1d, 7d], buckets = [bucket1, bucket2]),
+        approx_uniq(col2, lg_k = 20),
+        last(col3, buckets = [bucket1, bucket2])
+    )
+    .temporalAccuracy() # optional
+    .derive(alias1 = expr1, alias2 = expr2)
+```
