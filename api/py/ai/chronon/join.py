@@ -219,7 +219,7 @@ def ExternalPart(source: api.ExternalSource,
 def LabelPart(labels: List[api.JoinPart],
               left_start_offset: int,
               left_end_offset: int,
-              label_offline_schedule: str = '@daily') -> api.LabelPart:
+              label_offline_schedule: str) -> api.LabelPart:
     """
     Used to describe labels in join. Label part can be viewed as regular join part but represent
     label data instead of regular feature data. Once labels are mature, label join job would join
@@ -369,7 +369,7 @@ def Join(left: api.Source,
          sample_percent: float = 100.0,
          consistency_sample_percent: float = 5.0,
          online_external_parts: List[api.ExternalPart] = None,
-         offline_schedule: str = '@daily',
+         offline_schedule: str = None,
          row_ids: List[str] = None,
          bootstrap_parts: List[api.BootstrapPart] = None,
          bootstrap_from_log: bool = False,
