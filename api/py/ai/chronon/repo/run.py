@@ -583,7 +583,7 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--parallelism", help="break down the backfill range into this number of tasks in parallel. "
-                              "Please use it along with --start-ds and --end-ds"
+                              "Please use it along with --start-ds and --end-ds and only in manual mode"
     )
     parser.add_argument("--repo", help="Path to chronon repo")
     parser.add_argument(
