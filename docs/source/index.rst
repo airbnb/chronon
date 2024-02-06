@@ -18,6 +18,7 @@
 
    authoring_features/GroupBy
    authoring_features/Join
+   authoring_features/ChainingFeatures
    authoring_features/Source
    authoring_features/StagingQuery
    authoring_features/DerivedFeatures
