@@ -137,6 +137,7 @@ def create_mock_source(source: Source, accuracy: Accuracy, key_columns: List[str
     cleansed_source_query = source_query.replace(
         uncleansed_base_table_name, cleansed_base_table_name
     )
+    print(f"Creating mock source with accuracy {accuracy} (0 for TEMPORAL, 1 for SNAPSHOT) and rendering source query:\n {cleansed_source_query}")
 
     result_df = spark.sql(cleansed_source_query)
 
