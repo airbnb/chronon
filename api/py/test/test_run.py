@@ -289,3 +289,18 @@ def test_streaming_client(repo, parser, test_online_group_by, monkeypatch):
     runner = run.Runner(parse_args, 'some.jar')
     with pytest.raises(RuntimeError):
         runner.run()
+
+
+def test_split_date_range():
+    start_date = "2022-01-01"
+    end_date = "2022-01-11"
+    parallelism = 5
+    expected_result = [('2022-01-01', '2022-01-02'),
+                       ('2022-01-03', '2022-01-04'),
+                       ('2022-01-05', '2022-01-06'),
+                       ('2022-01-07', '2022-01-08'),
+                       ('2022-01-09', '2022-01-11')]
+
+    result = run.split_date_range(start_date, end_date, parallelism)
+    assert(result == expected_result)
+    
