@@ -11,7 +11,7 @@ import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
 import java.util.concurrent.{LinkedBlockingQueue, RejectedExecutionException, ThreadPoolExecutor}
-import java.util.function.Consumer
+import java.util.function.{BiPredicate, Consumer}
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
@@ -43,7 +43,8 @@ class Fetcher(val kvStore: KVStore,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
               val externalSourceRegistry: ExternalSourceRegistry = null,
-              asyncLogging: Boolean = false)
+              asyncLogging: Boolean = false,
+              isFeatureFlagEnabled: BiPredicate[String, Map[String, String]])
     extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
 
   // Set up a separate thread pool for async feature logging.

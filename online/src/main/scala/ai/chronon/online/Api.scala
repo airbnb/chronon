@@ -3,7 +3,7 @@ package ai.chronon.online
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 
-import java.util.function.Consumer
+import java.util.function.{BiPredicate, Consumer}
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -147,6 +147,13 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   }
   private var fetcherObj: Fetcher = null
 
+  lazy val javaFetcher: JavaFetcher = {
+    if (javaFetcherObj == null)
+      javaFetcherObj = buildJavaFetcher()
+    javaFetcherObj
+  }
+  private var javaFetcherObj: JavaFetcher = null
+
   def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
 
   def genKvStore: KVStore
@@ -175,6 +182,9 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     */
   def logResponse(resp: LoggableResponse): Unit
 
+  // override to allow rolling out features/infrastructure changes in a safe, controlled manner
+  def isFeatureFlagEnabled(flagName: String, attributes: Map[String, String]): Boolean = false
+
   // helper functions
   final def buildFetcher(debug: Boolean = false): Fetcher =
     new Fetcher(genKvStore,
@@ -183,7 +193,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 debug = debug,
                 externalSourceRegistry = externalRegistry,
                 timeoutMillis = timeoutMillis,
-                asyncLogging = asyncLogging)
+                asyncLogging = asyncLogging,
+                isFeatureFlagEnabled = isFeatureFlagEnabled)
 
   final def buildJavaFetcher(): JavaFetcher =
     new JavaFetcher(genKvStore,
@@ -191,7 +202,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                     timeoutMillis,
                     responseConsumer,
                     externalRegistry,
-                    asyncLogging)
+                    asyncLogging,
+                    isFeatureFlagEnabled)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
