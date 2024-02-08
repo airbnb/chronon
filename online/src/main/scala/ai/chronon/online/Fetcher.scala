@@ -494,7 +494,7 @@ class Fetcher(val kvStore: KVStore,
         .sortBy(_.millis)
         .sliding(2)
         .collect {
-          case Seq(prev, curr) =>
+          case Seq(prev, curr) if prev.values.isSuccess && curr.values.isSuccess =>
             val commonKeys = prev.values.get.keySet.intersect(curr.values.get.keySet.filter(_.endsWith("percentile")))
             commonKeys
               .map { key =>
