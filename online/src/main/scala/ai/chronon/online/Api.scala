@@ -147,12 +147,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   }
   private var fetcherObj: Fetcher = null
 
-  lazy val javaFetcher: JavaFetcher = {
-    if (javaFetcherObj == null)
-      javaFetcherObj = buildJavaFetcher()
-    javaFetcherObj
-  }
-  private var javaFetcherObj: JavaFetcher = null
+  lazy val javaFetcher: JavaFetcher = buildJavaFetcher()
 
   def streamDecoder(groupByServingInfoParsed: GroupByServingInfoParsed): StreamDecoder
 
@@ -183,7 +178,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   def logResponse(resp: LoggableResponse): Unit
 
   // override to allow rolling out features/infrastructure changes in a safe, controlled manner
-  def isFeatureFlagEnabled(flagName: String, attributes: Map[String, String]): Boolean = false
+  def isFeatureFlagEnabled(flagName: String, attributes: java.util.Map[String, String]): Boolean = false
 
   // helper functions
   final def buildFetcher(debug: Boolean = false): Fetcher =
@@ -194,7 +189,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 externalSourceRegistry = externalRegistry,
                 timeoutMillis = timeoutMillis,
                 asyncLogging = asyncLogging,
-                isFeatureFlagEnabled = isFeatureFlagEnabled)
+                featureFlags = featureFlagBiPredicate)
 
   final def buildJavaFetcher(): JavaFetcher =
     new JavaFetcher(genKvStore,
@@ -203,10 +198,15 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                     responseConsumer,
                     externalRegistry,
                     asyncLogging,
-                    isFeatureFlagEnabled)
+                    featureFlagBiPredicate)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
+    }
+
+  private def featureFlagBiPredicate: BiPredicate[String, java.util.Map[String, String]] =
+    new BiPredicate[String, java.util.Map[String, String]] {
+      override def test(t: String, u: java.util.Map[String, String]): Boolean = isFeatureFlagEnabled(t, u)
     }
 }

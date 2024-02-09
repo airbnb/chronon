@@ -32,8 +32,8 @@ import static java.util.Map.*;
 public class JavaFetcher {
   Fetcher fetcher;
 
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, Boolean asyncLogging, BiPredicate<String, scala.collection.immutable.Map<String, String>> isFeatureFlagEnabled) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, asyncLogging, isFeatureFlagEnabled);
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, Boolean asyncLogging, BiPredicate<String, Map<String, String>> featureFlags) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, asyncLogging, featureFlags);
   }
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {

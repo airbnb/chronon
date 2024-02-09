@@ -44,7 +44,7 @@ class Fetcher(val kvStore: KVStore,
               debug: Boolean = false,
               val externalSourceRegistry: ExternalSourceRegistry = null,
               asyncLogging: Boolean = false,
-              isFeatureFlagEnabled: BiPredicate[String, Map[String, String]])
+              featureFlags: BiPredicate[String, java.util.Map[String, String]])
     extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
 
   // Set up a separate thread pool for async feature logging.
