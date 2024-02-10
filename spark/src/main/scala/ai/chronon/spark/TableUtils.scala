@@ -27,7 +27,7 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.storage.StorageLevel
 
 import java.time.format.DateTimeFormatter
@@ -324,8 +324,31 @@ case class TableUtils(sparkSession: SparkSession) {
     val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
     logger.info(
       s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n")
-    val df = sparkSession.sql(query).coalesce(partitionCount)
-    df
+    try {
+      // Run the query
+      val df = sparkSession.sql(query).coalesce(partitionCount)
+      df
+    } catch {
+      case e: AnalysisException =>
+        // Check if the query contains function definitions
+        val queryFunctions = sparkSession.sessionState.sqlParser.parsePlan(query).flatMap {
+          case p: org.apache.spark.sql.catalyst.plans.logical.CreateFunctionStatement => p.functionName
+        }
+        // If the query contains function definitions, then inspect existing functions
+        if (queryFunctions.nonEmpty) {
+          val functionIdentifiers = sparkSession.catalog.listFunctions().collect().map(_.name)
+          val existingFunctions = functionIdentifiers.intersect(queryFunctions)
+          if (existingFunctions.nonEmpty) {
+            logger.warn(
+              s"The following function(s) already exist(s): ${existingFunctions.mkString(", ")}. Query may result in function redefinition.")
+            return null
+          }
+        }
+        throw e
+      case e: Exception =>
+        logger.error("Error running query:", e)
+        throw e
+    }
   }
 
   def insertUnPartitioned(df: DataFrame,

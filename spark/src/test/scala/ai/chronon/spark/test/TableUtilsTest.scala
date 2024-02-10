@@ -410,6 +410,14 @@ class TableUtilsTest {
   }
 
   @Test
+  def testDoubleUDFRegistration(): Unit = {
+    val resourceURL = getClass.getResource("/jars/brickhouse-0.6.0.jar")
+    tableUtils.sql(s"ADD JAR ${resourceURL.getPath}")
+    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'brickhouse.udf.date.AddDaysUDF';")
+    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'brickhouse.udf.date.AddDaysUDF';")
+  }
+
+  @Test
   def testIfPartitionExistsInTable(): Unit = {
     val tableName = "db.test_if_partition_exists"
     prepareTestDataWithSubPartitions(tableName)
