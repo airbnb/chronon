@@ -411,7 +411,7 @@ class TableUtilsTest {
 
   @Test
   def testDoubleUDFRegistration(): Unit = {
-    val resourceURL = getClass.getResource("/jars/brickhouse-0.6.0.jar")
+    val resourceURL = getClass.getResource("/jars/brickhouse-0.6.0.jar.resource")
     tableUtils.sql(s"ADD JAR ${resourceURL.getPath}")
     tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'brickhouse.udf.date.AddDaysUDF';")
     tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'brickhouse.udf.date.AddDaysUDF';")

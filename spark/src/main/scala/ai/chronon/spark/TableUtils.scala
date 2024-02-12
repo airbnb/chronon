@@ -341,7 +341,7 @@ case class TableUtils(sparkSession: SparkSession) {
           if (existingFunctions.nonEmpty) {
             logger.warn(
               s"The following function(s) already exist(s): ${existingFunctions.mkString(", ")}. Query may result in function redefinition.")
-            return sparkSession.sql("SELECT NULL")
+            return sparkSession.sql("SELECT 1")
           }
         }
         throw e
