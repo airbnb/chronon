@@ -22,12 +22,21 @@ import ai.chronon.spark.test.TestUtils.makeDf
 import ai.chronon.api.{StructField, _}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
+import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
 
 import scala.util.Try
+
+
+
+class SimpleAddUDF extends UDF {
+  def evaluate(value: Int): Int = {
+    value + 20
+  }
+}
 
 class TableUtilsTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("TableUtilsTest", local = true)
@@ -411,10 +420,8 @@ class TableUtilsTest {
 
   @Test
   def testDoubleUDFRegistration(): Unit = {
-    val resourceURL = getClass.getResource("/jars/brickhouse-0.6.0.jar.resource")
-    tableUtils.sql(s"ADD JAR ${resourceURL.getPath}")
-    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'brickhouse.udf.date.AddDaysUDF';")
-    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'brickhouse.udf.date.AddDaysUDF';")
+    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF';")
+    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF';")
   }
 
   @Test
