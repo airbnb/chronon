@@ -50,14 +50,7 @@ class FetcherBase(kvStore: KVStore,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
-
-  private case class GroupByRequestMeta(
-      groupByServingInfoParsed: GroupByServingInfoParsed,
-      batchRequest: GetRequest,
-      streamingRequestOpt: Option[GetRequest],
-      endTs: Option[Long],
-      context: Metrics.Context
-  )
+  import FetcherBase._
 
   // a groupBy request is split into batchRequest and optionally a streamingRequest
   // this method decodes bytes (of the appropriate avro schema) into chronon rows aggregates further if necessary
@@ -534,4 +527,14 @@ class FetcherBase(kvStore: KVStore,
       responseByQuery
     }
   }
+}
+
+object FetcherBase {
+  private[online] case class GroupByRequestMeta(
+      groupByServingInfoParsed: GroupByServingInfoParsed,
+      batchRequest: GetRequest,
+      streamingRequestOpt: Option[GetRequest],
+      endTs: Option[Long],
+      context: Metrics.Context
+  )
 }
