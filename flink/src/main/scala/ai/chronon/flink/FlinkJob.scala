@@ -121,7 +121,7 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
         f"Tiling is enabled.")
 
     val tilingWindowSizeInMillis: Option[Long] =
-      groupByServingInfoParsed.groupBy.getSmallestWindowResolutionInMillis
+      ResolutionUtils.getSmallestWindowResolutionInMillis(groupByServingInfoParsed.groupBy)
 
     val sourceStream: DataStream[T] =
       eventSrc
