@@ -196,6 +196,8 @@ object Metrics {
 
     def gauge(metric: String, value: Long): Unit = stats.gauge(prefix(metric), value, tags)
 
+    def gauge(metric: String, value: Double): Unit = stats.gauge(prefix(metric), value, tags)
+
     def toTags: Array[String] = {
       val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String]).map(_.sanitize)
       assert(
