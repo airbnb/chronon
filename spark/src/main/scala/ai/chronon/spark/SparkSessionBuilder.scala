@@ -90,6 +90,40 @@ object SparkSessionBuilder {
     spark
   }
 
+  def build2(name: String,
+      local: Boolean = false,
+      localWarehouseLocation: Option[String] = None,
+      additionalConfig: Option[Map[String, String]] = None): SparkSession = {
+    if (local) {
+      //required to run spark locally with hive support enabled - for sbt test
+      System.setSecurityManager(null)
+    }
+    val userName = Properties.userName
+    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
+    val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
+    val baseBuilder = SparkSession
+      .builder()
+      .appName(name)
+      .config("spark.sql.session.timeZone", "UTC")
+      //otherwise overwrite will delete ALL partitions, not just the ones it touches
+      .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
+      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+      .config("spark.kryo.registrator", "ai.chronon.spark.ChrononKryoRegistrator")
+      .config("spark.kryoserializer.buffer.max", "2000m")
+      .config("spark.kryo.referenceTracking", "false")
+      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
+      .master("local[*]")
+      .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
+      .config("spark.kryo.registrationRequired", s"${localWarehouseLocation.isEmpty}")
+      .config("spark.sql.warehouse.dir", s"$warehouseDir")
+
+    val spark = baseBuilder.getOrCreate()
+    // disable log spam
+    spark.sparkContext.setLogLevel("ERROR")
+    Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
+    spark
+  }
+
   def buildStreaming(local: Boolean): SparkSession = {
     val userName = Properties.userName
     val baseBuilder = SparkSession

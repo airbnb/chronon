@@ -29,7 +29,8 @@ from datetime import datetime
 
 ONLINE_ARGS = "--online-jar={online_jar} --online-class={online_class} "
 OFFLINE_ARGS = "--conf-path={conf_path} --end-date={ds} "
-SAMPLING_ARGS = "--output-dir={output_dir} "
+SAMPLING_ARGS = "--output-dir={output_dir} --num-rows={num_rows}"
+SAMPLED_BACKFILL_ARGS = "--output-dir={output_dir} --local-warehouse-location={local_warehouse_location} --start-date={start_date}"
 ONLINE_WRITE_ARGS = "--conf-path={conf_path} " + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
 ONLINE_MODES = [
@@ -52,7 +53,8 @@ SPARK_MODES = [
     "log-flattener",
     "metadata-export",
     "label-join",
-    "sample"
+    "sample",
+    "sampled-backfill"
 ]
 MODES_USING_EMBEDDED = ["metadata-upload", "fetch", "local-streaming"]
 
@@ -77,6 +79,7 @@ MODE_ARGS = {
     "label-join": OFFLINE_ARGS,
     "streaming-client": ONLINE_WRITE_ARGS,
     "sample": OFFLINE_ARGS + SAMPLING_ARGS,
+    "sampled-backfill": OFFLINE_ARGS + SAMPLED_BACKFILL_ARGS,
     "info": "",
 }
 
@@ -104,7 +107,8 @@ ROUTES = {
         "log-flattener": "log-flattener",
         "metadata-export": "metadata-export",
         "label-join": "label-join",
-        "sample": "sample"
+        "sample": "sample",
+        "sampled-backfill": "sampled-join"
     },
     "staging_queries": {
         "backfill": "staging-query-backfill",
@@ -350,6 +354,9 @@ class Runner:
         self.mode = args.mode
         self.online_jar = args.online_jar
         self.output_dir = args.output_dir
+        self.num_rows = args.num_rows
+        self.start_date = args.start_date
+        self.local_warehouse_location = args.local_warehouse_location
         valid_jar = args.online_jar and os.path.exists(args.online_jar)
         # fetch online jar if necessary
         if (self.mode in ONLINE_MODES) and (not args.sub_help) and not valid_jar:
@@ -395,15 +402,18 @@ class Runner:
             self.spark_submit = args.spark_submit_path
         self.list_apps_cmd = args.list_apps
 
-    def run(self):
+    def run(self, runtime_args=""):
         base_args = MODE_ARGS[self.mode].format(
             conf_path=self.conf,
             ds=self.ds,
             online_jar=self.online_jar,
             online_class=self.online_class,
-            output_dir=self.output_dir
+            output_dir=self.output_dir,
+            num_rows=self.num_rows,
+            local_warehouse_location=self.local_warehouse_location,
+            start_date=self.start_date
         )
-        final_args = base_args + " " + str(self.args)
+        final_args = base_args + " " + str(self.args) + " " + runtime_args
         if self.mode == "info":
             command = "python3 {script} --conf {conf} --ds {ds} --repo {repo}".format(
                 script=self.render_info, conf=self.conf, ds=self.ds, repo=self.repo
@@ -476,17 +486,23 @@ class Runner:
         if self.mode == "sample":
             # After executing the local data sampling, sample mode runs also run a local execution of the job itself
             print("Sampling complete. Running {} in local mode".format(self.conf))
-            self.mode = "backfill"
+            self.mode = "sampled-backfill"
             # Make sure you set `--master "${SPARK_JOB_MODE:-yarn}"` in your spark_submit script for this to work as intended
-            os.environ["SPARK_JOB_MODE"] = "local[*]"
+            # os.environ["SPARK_JOB_MODE"] = "local[*]"
+            #if not self.local_warehouse_location:
+            #    raise RuntimeError("You must provide the `local-warehouse-dir` argument to use sample mode")
+            #os.environ["SPARK_local_warehouse_location"] = self.local_warehouse_location
             self.run()
 
 
 
-def set_defaults(parser):
+def set_defaults(parser, pre_parse_args=None):
     """Set default values based on environment"""
     chronon_repo_path = os.environ.get("CHRONON_REPO_PATH", ".")
     today = datetime.today().strftime("%Y-%m-%d")
+    start_date_default = None
+    if pre_parse_args:
+        start_date_default = pre_parse_args.ds if pre_parse_args.mode == "sample" else None
     parser.set_defaults(
         mode="backfill",
         ds=today,
@@ -506,7 +522,10 @@ def set_defaults(parser):
         chronon_jar=os.environ.get("CHRONON_DRIVER_JAR"),
         list_apps="python3 " + os.path.join(chronon_repo_path, "scripts/yarn_list.py"),
         render_info=os.path.join(chronon_repo_path, RENDER_INFO_DEFAULT_SCRIPT),
-        output_dir=os.environ.get("CHRONON_LOCAL_DATA_DIR")
+        output_dir=os.environ.get("CHRONON_LOCAL_DATA_DIR"),
+        num_rows=100,
+        local_warehouse_location=os.environ.get("CHRONON_LOCAL_WAREHOUSE_LOCATION", os.getcwd() + "/chronon_local"),
+        start_date=start_date_default
     )
 
 if __name__ == "__main__":
@@ -517,7 +536,7 @@ if __name__ == "__main__":
         help="Conf param - required for every mode except fetch",
     )
     parser.add_argument("--mode", choices=MODE_ARGS.keys())
-    parser.add_argument("--ds", help="the end partition to backfill the data")
+    parser.add_argument("--ds", help="the end partition to backfill the data. Acts as start_date default as well in sampling case.")
     parser.add_argument(
         "--app-name", help="app name. Default to {}".format(APP_NAME_TEMPLATE)
     )
@@ -585,11 +604,21 @@ if __name__ == "__main__":
         help="Path to local directory to store sampled data for in-memory runs. "
         + "Only applicable when mode is set to sample",
     )
+    parser.add_argument(
+        "--num-rows",
+        help="Number of output rows desired for sample run. "
+        + "Only applicable when mode is set to sample",
+    )
+    parser.add_argument(
+        "--local-warehouse-location",
+        help="Directory to use as the local warehouse for local runs."
+        + "Only applicable when mode is set to sample",
+    )
     set_defaults(parser)
     pre_parse_args, _ = parser.parse_known_args()
     # We do a pre-parse to extract conf, mode, etc and set environment variables and re parse default values.
     set_runtime_env(pre_parse_args)
-    set_defaults(parser)
+    set_defaults(parser, pre_parse_args)
     args, unknown_args = parser.parse_known_args()
     jar_type = "embedded" if args.mode in MODES_USING_EMBEDDED else "uber"
     extra_args = (" " + args.online_args) if args.mode in ONLINE_MODES else ""

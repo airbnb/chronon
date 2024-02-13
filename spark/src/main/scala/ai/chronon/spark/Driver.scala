@@ -405,6 +405,59 @@ object Driver {
     }
   }
 
+  object SampledJoin {
+    class Args extends Subcommand("sampled-join") with OfflineSubcommand {
+      val startDate: ScallopOption[String] =
+        opt[String](required = false,
+          descr = "The earliest date for which you want to run your join, defaults to endDate if not set",
+          default = None)
+      val outputDir: ScallopOption[String] =
+        opt[String](
+          required = true,
+          descr = "The output directory for your sample data which will be used by the join."
+        )
+      val forceResample: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          descr =
+            "Option to force resampling even if semantics haven't changed",
+          default = Some(false)
+        )
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = "sampledJoin"
+    }
+
+    def run(args: Args): Unit = {
+      // Todo - start date and force override
+
+      val session = SparkSessionBuilder.build2(args.subcommandName(),
+        local = true,
+        localWarehouseLocation = args.localWarehouseLocation.toOption)
+
+      val tableUtils = TableUtils(session)
+      SampleDataLoader.loadAllData(args.outputDir(), tableUtils)
+
+      println(s"\n\n\n \n ==== ======= \n\n\n Creating join with end date of ${args.endDate()} and start date of ${args.startDate}")
+
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        false
+      )
+      println ("\n\n\n ------------------------------------------- \n\n")
+      session.sql("use data")
+      session.sql("show tables").show(10)
+      val df = join.computeJoin(overrideStartPartition = args.startDate.toOption)
+
+      df.show(numRows = 3, truncate = 0, vertical = true)
+      logger.info(
+        s"\nShowing three rows of output above.\nQuery table `${args.joinConf.metaData.outputTable}` for more.\n")
+
+    }
+
+  }
+
   object MetadataExport {
     class Args extends Subcommand("metadata-export") with OfflineSubcommand {
       val inputRootPath: ScallopOption[String] =
@@ -866,6 +919,8 @@ object Driver {
     addSubcommand(AnalyzerArgs)
     object SampleArgs extends Sample.Args
     addSubcommand(SampleArgs)
+    object SampledJoinArgs extends SampledJoin.Args
+    addSubcommand(SampledJoinArgs)
     object DailyStatsArgs extends DailyStats.Args
     addSubcommand(DailyStatsArgs)
     object LogStatsArgs extends LogStats.Args
@@ -891,9 +946,11 @@ object Driver {
 
   def main(baseArgs: Array[String]): Unit = {
     val args = new Args(baseArgs)
+    println("HERE!")
     var shouldExit = true
     args.subcommand match {
       case Some(x) =>
+        println(s"HERE!!! ${x}")
         x match {
           case args.JoinBackFillArgs         => JoinBackfill.run(args.JoinBackFillArgs)
           case args.GroupByBackfillArgs      => GroupByBackfill.run(args.GroupByBackfillArgs)
@@ -910,6 +967,7 @@ object Driver {
           case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
           case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
           case args.SampleArgs             => Sample.run(args.SampleArgs)
+          case args.SampledJoinArgs        => SampledJoin.run(args.SampledJoinArgs)
           case args.DailyStatsArgs         => DailyStats.run(args.DailyStatsArgs)
           case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)

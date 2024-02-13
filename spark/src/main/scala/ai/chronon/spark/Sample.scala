@@ -8,11 +8,12 @@ import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConv
 
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.spark.Driver.{logger, parseConf}
+import ai.chronon.spark.Driver.{parseConf}
 import ai.chronon.spark.SampleHelper.{getPriorRunManifestMetadata, writeManifestMetadata}
 import com.google.gson.{Gson, GsonBuilder}
 import com.google.gson.reflect.TypeToken
 import org.apache.spark.sql.DataFrame
+import org.slf4j.LoggerFactory
 
 class Sample(conf: Any,
              tableUtils: TableUtils,
@@ -22,6 +23,7 @@ class Sample(conf: Any,
              forceResample: Boolean = false,
              numRows: Int = 100) {
 
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val MANIFEST_FILE_NAME = "manifest.json"
   val MANIFEST_SERDE_TYPE_TOKEN = new TypeToken[java.util.Map[String, Integer]](){}.getType
 
@@ -153,7 +155,7 @@ class Sample(conf: Any,
     val joinPartsSemantics = joinParts.map{ joinPart =>
       // For each joinPart, the only relevant sampling metadata for it's sources are keyMapping and keyColumn
       s"${Option(joinPart.prefix).getOrElse("")}${joinPart.groupBy.metaData.getName}" ->
-        (joinPart.keyMapping.asScala, joinPart.groupBy.keyColumns.asScala).hashCode()
+        (joinPart.keyMapping.asScala, joinPart.groupBy.keyColumns.asScala, joinPart.groupBy.maxWindow).hashCode()
     }.toMap
 
     // The left side hash only depends on the source where clauses
@@ -186,7 +188,7 @@ class Sample(conf: Any,
 
     val tableHashes: Map[String, Int] = tablesMap.map{ case(table, joinParts) =>
       (table, getTableSemanticHash(joinParts, join))
-    }
+    } ++ Map(join.getLeft.rootTable -> Option(join.left.query.wheres.asScala).getOrElse("").hashCode())
 
     val tablesToSample: Seq[String] = if (forceResample) {
       tableHashes.keys.toSeq

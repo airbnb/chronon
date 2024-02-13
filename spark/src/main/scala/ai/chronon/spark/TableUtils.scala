@@ -72,6 +72,9 @@ case class TableUtils(sparkSession: SparkSession) {
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
   val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
   val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
+  val dataWarehouseDir: Option[String] = sparkSession.sparkContext.getConf.getOption("spark.sql.warehouse.dir")
+  val jobMode: String = sparkSession.sparkContext.master
+  val hiveMetastore: Option[String] = sparkSession.sparkContext.getConf.getOption("hive.metastore.uris")
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
