@@ -329,22 +329,9 @@ case class TableUtils(sparkSession: SparkSession) {
       val df = sparkSession.sql(query).coalesce(partitionCount)
       df
     } catch {
-      case e: AnalysisException =>
-        // Check if the query contains function definitions
-        val queryFunctions = sparkSession.sessionState.sqlParser.parsePlan(query).flatMap {
-          case p: org.apache.spark.sql.catalyst.plans.logical.CreateFunctionStatement => p.functionName
-        }
-        // If the query contains function definitions, then inspect existing functions
-        if (queryFunctions.nonEmpty) {
-          val functionIdentifiers = sparkSession.catalog.listFunctions().collect().map(_.name)
-          val existingFunctions = functionIdentifiers.intersect(queryFunctions)
-          if (existingFunctions.nonEmpty) {
-            logger.warn(
-              s"The following function(s) already exist(s): ${existingFunctions.mkString(", ")}. Query may result in function redefinition.")
-            return sparkSession.sql("SELECT 1")
-          }
-        }
-        throw e
+      case e: AnalysisException if e.getMessage.contains(" already exists") =>
+        logger.warn(s"Non-Fatal: ${e.getMessage}. Query may result in redefinition.")
+        sparkSession.sql("SHOW USER FUNCTIONS")
       case e: Exception =>
         logger.error("Error running query:", e)
         throw e
