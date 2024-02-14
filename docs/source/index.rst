@@ -57,9 +57,9 @@
 
 What is Chronon?
 =====================
-Chronon is a feature engineering framework is being used to power Machine Learning in every 
+Chronon is a feature engineering framework being used to power Machine Learning in every
 organization within Airbnb. Chronon makes developing production-grade, 
-features at scale very easy. 
+features at scale very easy.
 
 With Chronon you can generate training data, serve features, monitor feature quality 
 and manage features with a unified feature definition.
