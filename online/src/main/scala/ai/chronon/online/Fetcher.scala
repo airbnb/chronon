@@ -29,7 +29,9 @@ object Fetcher {
   case class MergedStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class SeriesStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
-  case class ResponseWithContext(request: Request, derivedValues: Map[String, AnyRef], baseValues: Map[String, AnyRef]) {
+  case class ResponseWithContext(request: Request,
+                                 derivedValues: Map[String, AnyRef],
+                                 baseValues: Map[String, AnyRef]) {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
   }
 }
@@ -45,7 +47,7 @@ class Fetcher(val kvStore: KVStore,
               val externalSourceRegistry: ExternalSourceRegistry = null,
               asyncLogging: Boolean = false,
               featureFlags: BiPredicate[String, java.util.Map[String, String]])
-    extends BaseFetcher(kvStore, metaDataSet, timeoutMillis, debug) {
+    extends BaseFetcher(kvStore, featureFlags, metaDataSet, timeoutMillis, debug) {
 
   // Set up a separate thread pool for async feature logging.
   // Since there is no harm in just throwing away an arbitrary log,
@@ -57,86 +59,98 @@ class Fetcher(val kvStore: KVStore,
       Constants.AsyncLoggingMaximumPoolSize,
       Constants.AsyncLoggingThreadKeepAliveTime,
       java.util.concurrent.TimeUnit.SECONDS,
-      new LinkedBlockingQueue[Runnable](Constants.AsyncLoggingQueueSize),
+      new LinkedBlockingQueue[Runnable](Constants.AsyncLoggingQueueSize)
     )
   )
 
   // key and value schemas
-  lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]]({ joinName: String =>
-    val joinConfTry = getJoinConf(joinName)
-    // contains the schema of all keys input to the join, both entityKeyFields and externalKeyFields
-    val keyFields = new mutable.LinkedHashSet[StructField]
-    // contains the schema for only entity keys input to the join
-    val entityKeyFields = new mutable.LinkedHashSet[StructField]
-    // contains the schema for only external keys input to the join
-    val externalKeyFields = new mutable.LinkedHashSet[StructField]
-    val valueFields = new mutable.ListBuffer[StructField]
-    joinConfTry.map { joinConf =>
-      // collect schema from
-      joinConf.joinPartOps.foreach {
-        joinPart =>
-          val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
-          servingInfoTry
-            .map {
-              servingInfo =>
-                val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
-                joinPart.leftToRight
-                  .mapValues(right => keySchema.fields.find(_.name == right).get.fieldType)
-                  .foreach {
-                    case (name, dType) =>
-                      val keyField = StructField(name, dType)
-                      keyFields.add(keyField)
-                      entityKeyFields.add(keyField)
-                  }
-                val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
-                  servingInfo.selectedChrononSchema
-                } else {
-                  servingInfo.outputChrononSchema
+  lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]](
+    {
+      joinName: String =>
+        val joinConfTry = getJoinConf(joinName)
+        // contains the schema of all keys input to the join, both entityKeyFields and externalKeyFields
+        val keyFields = new mutable.LinkedHashSet[StructField]
+        // contains the schema for only entity keys input to the join
+        val entityKeyFields = new mutable.LinkedHashSet[StructField]
+        // contains the schema for only external keys input to the join
+        val externalKeyFields = new mutable.LinkedHashSet[StructField]
+        val valueFields = new mutable.ListBuffer[StructField]
+        joinConfTry
+          .map {
+            joinConf =>
+              // collect schema from
+              joinConf.joinPartOps
+                .foreach {
+                  joinPart =>
+                    val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
+                    servingInfoTry
+                      .map {
+                        servingInfo =>
+                          val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
+                          joinPart.leftToRight
+                            .mapValues(right => keySchema.fields.find(_.name == right).get.fieldType)
+                            .foreach {
+                              case (name, dType) =>
+                                val keyField = StructField(name, dType)
+                                keyFields.add(keyField)
+                                entityKeyFields.add(keyField)
+                            }
+                          val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
+                            servingInfo.selectedChrononSchema
+                          } else {
+                            servingInfo.outputChrononSchema
+                          }
+                          baseValueSchema.fields.foreach { sf =>
+                            valueFields.append(joinPart.constructJoinPartSchema(sf))
+                          }
+                      }
                 }
-                baseValueSchema.fields.foreach { sf =>
-                  valueFields.append(joinPart.constructJoinPartSchema(sf))
+
+              // gather key schema and value schema from external sources.
+              Option(joinConf.join.onlineExternalParts)
+                .foreach {
+                  externals =>
+                    externals
+                      .iterator()
+                      .asScala
+                      .foreach {
+                        part =>
+                          val source = part.source
+
+                          def buildFields(schema: TDataType, prefix: String = ""): Seq[StructField] =
+                            DataType
+                              .fromTDataType(schema)
+                              .asInstanceOf[StructType]
+                              .fields
+                              .map(f => StructField(prefix + f.name, f.fieldType))
+
+                          buildFields(source.getKeySchema).foreach(f => {
+                            val updatedField = f.copy(name = part.rightToLeft.getOrElse(f.name, f.name))
+                            keyFields.add(updatedField)
+                            externalKeyFields.add(updatedField)
+                          })
+                          buildFields(source.getValueSchema, part.fullName + "_").foreach(f => valueFields.append(f))
+                      }
                 }
-            }
-      }
 
-      // gather key schema and value schema from external sources.
-      Option(joinConf.join.onlineExternalParts).foreach {
-        externals =>
-          externals
-            .iterator()
-            .asScala
-            .foreach { part =>
-              val source = part.source
-
-              def buildFields(schema: TDataType, prefix: String = ""): Seq[StructField] =
-                DataType
-                  .fromTDataType(schema)
-                  .asInstanceOf[StructType]
-                  .fields
-                  .map(f => StructField(prefix + f.name, f.fieldType))
-
-              buildFields(source.getKeySchema).foreach(f => {
-                val updatedField = f.copy(name = part.rightToLeft.getOrElse(f.name, f.name))
-                keyFields.add(updatedField)
-                externalKeyFields.add(updatedField)
-              })
-              buildFields(source.getValueSchema, part.fullName + "_").foreach(f => valueFields.append(f))
-            }
-      }
-
-      val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
-      val entityKeySchema = StructType(s"${joinName}_entity_key", entityKeyFields.toArray)
-      val externalKeySchema = StructType(s"${joinName}_external_key", externalKeyFields.toArray)
-      val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
-      val baseValueSchema = StructType(s"${joinName}_value", valueFields.toArray)
-      val baseValueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
-      val joinCodec = JoinCodec(joinConf, keySchema, entityKeySchema, externalKeySchema, baseValueSchema, keyCodec, baseValueCodec)
-      logControlEvent(joinCodec)
-      joinCodec
-    }
-  },
-    {join: String => Metrics.Context(environment = "join.codec.fetch", join = join)}
-  )
+              val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
+              val entityKeySchema = StructType(s"${joinName}_entity_key", entityKeyFields.toArray)
+              val externalKeySchema = StructType(s"${joinName}_external_key", externalKeyFields.toArray)
+              val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
+              val baseValueSchema = StructType(s"${joinName}_value", valueFields.toArray)
+              val baseValueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
+              val joinCodec = JoinCodec(joinConf,
+                                        keySchema,
+                                        entityKeySchema,
+                                        externalKeySchema,
+                                        baseValueSchema,
+                                        keyCodec,
+                                        baseValueCodec)
+              logControlEvent(joinCodec)
+              joinCodec
+          }
+    },
+    { join: String => Metrics.Context(environment = "join.codec.fetch", join = join) })
 
   private[online] def withTs(responses: Future[scala.collection.Seq[Response]]): Future[FetcherResponseWithTs] = {
     responses.map { response =>
@@ -176,8 +190,11 @@ class Fetcher(val kvStore: KVStore,
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
             ctx.histogram("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
             val baseMap = internalMap ++ externalMap
-            val derivedMap: Map[String, AnyRef] = Try(joinCodec.deriveFunc(internalResponse.request.keys, baseMap)
-              .mapValues(_.asInstanceOf[AnyRef]).toMap) match {
+            val derivedMap: Map[String, AnyRef] = Try(
+              joinCodec
+                .deriveFunc(internalResponse.request.keys, baseMap)
+                .mapValues(_.asInstanceOf[AnyRef])
+                .toMap) match {
               case Success(derivedMap) => derivedMap
               case Failure(exception) => {
                 ctx.incrementException(exception)
@@ -193,24 +210,27 @@ class Fetcher(val kvStore: KVStore,
 
     combinedResponsesF
       .map { combinedResponse =>
-        combinedResponse.iterator.map(resp => {
-          if (asyncLogging) {
-            Future {
-              logResponse(resp, ts)
-            }(loggingExecutionContext)
-              .recover {
-                case e: RejectedExecutionException =>
-                  resp.request.context.foreach(context => context.increment("logging_request_async_failed_to_queue.count"))
-                  if (debug) {
-                    println("Failed to schedule async log. Response will not be logged.", e.getMessage)
-                  }
-              }
+        combinedResponse.iterator
+          .map(resp => {
+            if (asyncLogging) {
+              Future {
+                logResponse(resp, ts)
+              }(loggingExecutionContext)
+                .recover {
+                  case e: RejectedExecutionException =>
+                    resp.request.context.foreach(context =>
+                      context.increment("logging_request_async_failed_to_queue.count"))
+                    if (debug) {
+                      println("Failed to schedule async log. Response will not be logged.", e.getMessage)
+                    }
+                }
 
-            Response(resp.request, Success(resp.derivedValues))
-          } else {
-            logResponse(resp, ts)
-          }
-        }).toSeq
+              Response(resp.request, Success(resp.derivedValues))
+            } else {
+              logResponse(resp, ts)
+            }
+          })
+          .toSeq
       }
   }
 
@@ -293,8 +313,10 @@ class Fetcher(val kvStore: KVStore,
         if (logFunc != null) {
           logFunc.accept(loggableResponse)
           joinContext.foreach(context => context.increment("logging_request.count"))
-          joinContext.foreach(context => context.histogram("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
-          joinContext.foreach(context => context.histogram("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
+          joinContext.foreach(context =>
+            context.histogram("logging_request.latency.millis", System.currentTimeMillis() - loggingStartTs))
+          joinContext.foreach(context =>
+            context.histogram("logging_request.overall.latency.millis", System.currentTimeMillis() - ts))
 
           if (debug) {
             println(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
@@ -396,7 +418,9 @@ class Fetcher(val kvStore: KVStore,
 
       // step-4 convert the resultMap into Responses
       joinRequests.map { req =>
-        Metrics.Context(Environment.JoinFetching, join = req.name).histogram("external.latency.millis", System.currentTimeMillis() - startTime)
+        Metrics
+          .Context(Environment.JoinFetching, join = req.name)
+          .histogram("external.latency.millis", System.currentTimeMillis() - startTime)
         Response(req, resultMap(req).map(_.mapValues(_.asInstanceOf[AnyRef]).toMap))
       }
     }
@@ -427,12 +451,19 @@ class Fetcher(val kvStore: KVStore,
   def fetchStats(joinRequest: StatsRequest): Future[Seq[StatsResponse]] = {
     val joinCodecs = getJoinCodecs(joinRequest.name).get
     val upperBound: Long = joinRequest.endTs.getOrElse(System.currentTimeMillis())
-    kvStore.get(
-      GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinRequest.name)), Constants.StatsBatchDataset, afterTsMillis = joinRequest.startTs)
-    ).map(_.values.get.toArray.filter(_.millis <= upperBound).map {
-      tv =>
-        StatsResponse(joinRequest, Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
-    }.toSeq)
+    kvStore
+      .get(
+        GetRequest(joinCodecs.statsKeyCodec.encodeArray(Array(joinRequest.name)),
+                   Constants.StatsBatchDataset,
+                   afterTsMillis = joinRequest.startTs)
+      )
+      .map(
+        _.values.get.toArray
+          .filter(_.millis <= upperBound)
+          .map { tv =>
+            StatsResponse(joinRequest, Try(joinCodecs.statsIrCodec.decodeMap(tv.bytes)), millis = tv.millis)
+          }
+          .toSeq)
   }
 
   /**
@@ -440,22 +471,22 @@ class Fetcher(val kvStore: KVStore,
     */
   def fetchStatsTimeseries(joinRequest: StatsRequest): Future[SeriesStatsResponse] = {
     val rawResponses = fetchStats(joinRequest)
-    rawResponses.map {
-      responseFuture =>
-        val convertedValue = responseFuture.flatMap {
-          response =>
-            response.values.get.map {
-              case (key, v) =>
-                key ->
-                    Map(
-                      "millis" -> response.millis.asInstanceOf[AnyRef],
-                      "value" -> StatsGenerator.SeriesFinalizer(key, v)
-                    ).asJava
-            }
-        }.groupBy(_._1)
-          .mapValues(_.map(_._2).toList.asJava)
-          .toMap
-        SeriesStatsResponse(joinRequest, Try(convertedValue))
+    rawResponses.map { responseFuture =>
+      val convertedValue = responseFuture
+        .flatMap { response =>
+          response.values.get.map {
+            case (key, v) =>
+              key ->
+                Map(
+                  "millis" -> response.millis.asInstanceOf[AnyRef],
+                  "value" -> StatsGenerator.SeriesFinalizer(key, v)
+                ).asJava
+          }
+        }
+        .groupBy(_._1)
+        .mapValues(_.map(_._2).toList.asJava)
+        .toMap
+      SeriesStatsResponse(joinRequest, Try(convertedValue))
     }
   }
 
@@ -472,21 +503,24 @@ class Fetcher(val kvStore: KVStore,
     val rawResponses = fetchStats(joinRequest)
     rawResponses.map {
       var mergedIr: Array[Any] = Array.fill(aggregator.length)(null)
-      responseFuture => responseFuture.foreach {
-        response =>
-          val batchRecord = aggregator.denormalize(joinCodecs.statsIrSchema.map { field => response.values.get(field.name).asInstanceOf[Any]}.toArray)
+      responseFuture =>
+        responseFuture.foreach { response =>
+          val batchRecord = aggregator.denormalize(joinCodecs.statsIrSchema.map { field =>
+            response.values.get(field.name).asInstanceOf[Any]
+          }.toArray)
           mergedIr = aggregator.merge(mergedIr, batchRecord)
-      }
+        }
         // Other things that would require custom processing: HeavyHitters
         val responseMap = (aggregator.outputSchema.map(_._1) zip aggregator.finalize(mergedIr)).map {
           case (statName, finalStat) =>
             if (statName.endsWith("percentile")) {
               statName ->
-                StatsGenerator.finalizedPercentilesMerged.indices.map(idx =>
-                  Map(
-                    "xvalue" -> StatsGenerator.finalizedPercentilesMerged(idx).asInstanceOf[AnyRef],
-                    "value" -> finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef]).asJava
-                ).toList.asJava
+                StatsGenerator.finalizedPercentilesMerged.indices
+                  .map(idx =>
+                    Map("xvalue" -> StatsGenerator.finalizedPercentilesMerged(idx).asInstanceOf[AnyRef],
+                        "value" -> finalStat.asInstanceOf[Array[Float]](idx).asInstanceOf[AnyRef]).asJava)
+                  .toList
+                  .asJava
             } else {
               statName -> finalStat.asInstanceOf[AnyRef]
             }
@@ -496,67 +530,69 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
-   * Generate the list of features for a given join and what the data type is for each feature.
-   * @param joinName - name of the join
-   * @return - mapping of feature name to data type
-   */
+    * Generate the list of features for a given join and what the data type is for each feature.
+    * @param joinName - name of the join
+    * @return - mapping of feature name to data type
+    */
   def retrieveJoinSchema(joinName: String): Map[String, DataType] = {
     getJoinCodecs(joinName).get.valueFields.map(sf => (sf.name, sf.fieldType)).toMap
   }
 
   /**
-   * Generate the list of features for a given group by and what the data type is for each feature.
-   *
-   * @param groupByName - name of the group by
-   * @return - mapping of feature name to data type
-   */
+    * Generate the list of features for a given group by and what the data type is for each feature.
+    *
+    * @param groupByName - name of the group by
+    * @return - mapping of feature name to data type
+    */
   def retrieveGroupBySchema(groupByName: String): Map[String, DataType] = {
-    val groupByServingInfoParsed: GroupByServingInfoParsed = new GroupByServingInfoParsed(getGroupByServingInfo.apply(groupByName).get, getPartitionSpec())
+    val groupByServingInfoParsed: GroupByServingInfoParsed =
+      new GroupByServingInfoParsed(getGroupByServingInfo.apply(groupByName).get, getPartitionSpec())
     groupByServingInfoParsed.outputChrononSchema.fields.map(sf => (sf.name, sf.fieldType)).toMap
   }
 
   /**
-   * Retrieve the set of all keys for a given join and what the data type is for each key.
-   * This includes both entity keys defined on the join's groupBys and contextual features
-   * defined in online external parts on the join.
-   *
-   * @param joinName - name of the join
-   * @return - mapping of key name to data type
-   */
+    * Retrieve the set of all keys for a given join and what the data type is for each key.
+    * This includes both entity keys defined on the join's groupBys and contextual features
+    * defined in online external parts on the join.
+    *
+    * @param joinName - name of the join
+    * @return - mapping of key name to data type
+    */
   def retrieveJoinKeys(joinName: String): Map[String, DataType] = {
     getJoinCodecs(joinName).get.keyFields.map(sf => (sf.name, sf.fieldType)).toMap
   }
 
   /**
-   * Retrieve the set of entity keys for a given join and what the data type is for each key.
-   * This includes only entity keys defined on the join's groupBys.
-   *
-   * @param joinName - name of the join
-   * @return - mapping of key name to data type
-   */
+    * Retrieve the set of entity keys for a given join and what the data type is for each key.
+    * This includes only entity keys defined on the join's groupBys.
+    *
+    * @param joinName - name of the join
+    * @return - mapping of key name to data type
+    */
   def retrieveEntityJoinKeys(joinName: String): Map[String, DataType] = {
     getJoinCodecs(joinName).get.entityKeyFields.map(sf => (sf.name, sf.fieldType)).toMap
   }
 
   /**
-   * Retrieve the set of external keys for a given join and what the data type is for each key.
-   * These are the contextual features defined in online external parts on the join.
-   *
-   * @param joinName - name of the join
-   * @return - mapping of key name to data type
-   */
+    * Retrieve the set of external keys for a given join and what the data type is for each key.
+    * These are the contextual features defined in online external parts on the join.
+    *
+    * @param joinName - name of the join
+    * @return - mapping of key name to data type
+    */
   def retrieveExternalJoinKeys(joinName: String): Map[String, DataType] = {
     getJoinCodecs(joinName).get.externalKeyFields.map(sf => (sf.name, sf.fieldType)).toMap
   }
 
   /**
-   * Retrieve the set of keys for a given groupby and what the data type is for each key.
-   *
-   * @param groupByName - name of the groupby
-   * @return - mapping of key name to data type
-   */
+    * Retrieve the set of keys for a given groupby and what the data type is for each key.
+    *
+    * @param groupByName - name of the groupby
+    * @return - mapping of key name to data type
+    */
   def retrieveGroupByKeys(groupByName: String): Map[String, DataType] = {
-    val groupByServingInfoParsed: GroupByServingInfoParsed = new GroupByServingInfoParsed(getGroupByServingInfo.apply(groupByName).get, getPartitionSpec())
+    val groupByServingInfoParsed: GroupByServingInfoParsed =
+      new GroupByServingInfoParsed(getGroupByServingInfo.apply(groupByName).get, getPartitionSpec())
     groupByServingInfoParsed.keyChrononSchema.fields.map(sf => (sf.name, sf.fieldType)).toMap
   }
 

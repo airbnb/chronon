@@ -37,7 +37,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
             .filter {
               case (version, _) => req.afterTsMillis.forall(version >= _)
             } // filter version
-            .map { case (version, bytes) => TimedValue(bytes, version) }
+            .map { case (version, bytes) => TimedValue(bytes, version, Some(5 * 60 * 1000)) }
         }
         KVStore.GetResponse(req, values)
       }

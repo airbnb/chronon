@@ -233,10 +233,10 @@ class FetcherTest extends TestCase {
       // 1L listing id event data
       Row(1L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
       Row(1L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
-      Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
-      Row(1L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
-      Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
-      Row(1L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 4, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 6, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 7, "2021-04-10"),
+      Row(1L, toTs("2021-04-10 02:30:00"), 10, "2021-04-10"),
       // 2L listing id event data
       Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7
       Row(2L, toTs("2021-04-06 00:30:00"), 10, "2021-04-06"), // excluded from all aggs with start partition 4/7

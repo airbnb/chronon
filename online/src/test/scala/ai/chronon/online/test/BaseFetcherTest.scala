@@ -15,12 +15,13 @@ import org.mockito.Mockito
 import org.mockito.stubbing.Stubber
 import org.scalatestplus.mockito.MockitoSugar
 
+import java.util.function.BiPredicate
 import scala.util.{Success, Try}
 
 class BaseFetcherTest extends MockitoHelper {
   @Test
   def test_getServingInfo_ShouldCallUpdateServingInfoIfBatchResponseIsFromKvStore(): Unit = {
-    val baseFetcher = new BaseFetcher(mock[KVStore])
+    val baseFetcher = new BaseFetcher(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
     val spiedBaseFetcher = spy(baseFetcher)
     val oldServingInfo = mock[GroupByServingInfoParsed]
     val updatedServingInfo = mock[GroupByServingInfoParsed]
@@ -36,7 +37,7 @@ class BaseFetcherTest extends MockitoHelper {
 
   @Test
   def test_getServingInfo_ShouldRefreshServingInfoIfBatchResponseIsCached(): Unit = {
-    val baseFetcher = new BaseFetcher(mock[KVStore])
+    val baseFetcher = new BaseFetcher(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
     val spiedBaseFetcher = spy(baseFetcher)
     val oldServingInfo = mock[GroupByServingInfoParsed]
     val metaData = mock[MetaData]

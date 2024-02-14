@@ -14,6 +14,7 @@ import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
+import java.util.function.BiPredicate
 import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.concurrent.Future
@@ -24,6 +25,7 @@ import scala.util.{Failure, Success, Try}
 //   2. does the fan out and fan in from kv store in a parallel fashion
 //   3. does the post aggregation
 class BaseFetcher(kvStore: KVStore,
+                  featureFlags: BiPredicate[String, java.util.Map[String, String]],
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
@@ -102,22 +104,32 @@ class BaseFetcher(kvStore: KVStore,
         getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
 
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
-        val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
+        val streamingIrs: Seq[TiledIr] = streamingResponses
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .map { tVal =>
-            try {
-              val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
-              TiledIr(tVal.millis, tile, tVal.tileSizeMillis)
-            } catch {
-              case e: Throwable =>
-                // capture additional info we need and rethrow so that we can log upstream
-                val base64Bytes = java.util.Base64.getEncoder.encodeToString(tVal.bytes)
-                val avroSchema = servingInfo.tiledCodec.tileAvroSchema
+            val (tile, _) =
+              try {
+                servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
+              } catch {
+                case e: Throwable =>
+                  // capture additional info we need and rethrow so that we can log upstream
+                  val base64Bytes = java.util.Base64.getEncoder.encodeToString(tVal.bytes)
+                  val avroSchema = servingInfo.tiledCodec.tileAvroSchema
+                  throw new RuntimeException(
+                    s"Failed to decode tile for ${servingInfo.groupBy.metaData.getName} at ${tVal.millis}. " +
+                      s"Avro schema: $avroSchema. Base64 bytes: $base64Bytes",
+                    e)
+              }
+
+            val tileSize = tVal.tileSizeMillis match {
+              case Some(size) => size
+              case None =>
                 throw new RuntimeException(
-                  s"Failed to decode tile for ${servingInfo.groupBy.metaData.getName} at ${tVal.millis}. " +
-                    s"Avro schema: $avroSchema. Base64 bytes: $base64Bytes",
-                  e)
+                  "Encountered a TimedValue for tiled usage of chronon that does not have the tile size set." +
+                    "Failing to construct TiledIr.")
             }
+
+            TiledIr(tVal.millis, tile, tileSize)
           }
 
         if (debug) {
@@ -130,7 +142,10 @@ class BaseFetcher(kvStore: KVStore,
                  |""".stripMargin)
         }
 
-        aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
+        val useTileLayering = featureFlags.test(
+          "shepherd.enable_tile_layering_reads",
+          Map("feature_group_dataset" -> servingInfo.groupByOps.streamingDataset).asJava)
+        aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs, useTileLayering)
       } else {
         val selectedCodec = servingInfo.groupByOps.dataModel match {
           case DataModel.Events   => servingInfo.valueAvroCodec

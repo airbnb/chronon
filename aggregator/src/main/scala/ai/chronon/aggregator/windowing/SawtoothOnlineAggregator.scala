@@ -9,8 +9,7 @@ import ai.chronon.api._
 // ir: IR of the streaming data for the tile
 // size: size in millis of the time range for the IR
 // Based on the above, tile start = ts, tile end = ts + size
-// TODO(aarongreen): Make size non-optional once the KVStore is updated to include the tileSize
-case class TiledIr(ts: Long, ir: Array[Any], size: Option[Long])
+case class TiledIr(ts: Long, ir: Array[Any], size: Long)
 
 // batchEndTs = upload time of the batch data as derived from GroupByServingInfo & Cached
 // cache = Jul-22 / latest = Jul-23, streaming data = 22 - now (filter < jul 23)
@@ -98,12 +97,13 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   }
 
   def lambdaAggregateIrTiled(finalBatchIr: FinalBatchIr,
-                             streamingTiledIrs: Iterator[TiledIr],
-                             queryTs: Long): Array[Any] = {
+                             streamingTiledIrs: Seq[TiledIr],
+                             queryTs: Long,
+                             useTileLayering: Boolean): Array[Any] = {
     // null handling
     if (finalBatchIr == null && streamingTiledIrs == null) return null
     val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
-    val headStreamingTiledIrs = Option(streamingTiledIrs).getOrElse(Array.empty[TiledIr].iterator)
+    val headStreamingTiledIrs = Option(streamingTiledIrs).getOrElse(Seq.empty[TiledIr])
 
     if (batchEndTs > queryTs) {
       throw new IllegalArgumentException(s"Request time of $queryTs is less than batch time $batchEndTs")
@@ -113,7 +113,11 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     val resultIr = windowedAggregator.clone(batchIr.collapsed)
 
     // add head events
-    updateIrTiled(resultIr, headStreamingTiledIrs, queryTs, batchEndTs)
+    if (useTileLayering) {
+      updateIrTiledWithTileLayering(resultIr, headStreamingTiledIrs, queryTs, batchEndTs)
+    } else {
+      updateIrTiled(resultIr, headStreamingTiledIrs.iterator, queryTs, batchEndTs)
+    }
 
     mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
     resultIr
@@ -127,10 +131,11 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   }
 
   def lambdaAggregateFinalizedTiled(finalBatchIr: FinalBatchIr,
-                                    streamingTiledIrs: Iterator[TiledIr],
-                                    ts: Long): Array[Any] = {
+                                    streamingTiledIrs: Seq[TiledIr],
+                                    ts: Long,
+                                    useTileLayering: Boolean): Array[Any] = {
     // TODO: Add support for mutations / hasReversal to the tiled implementation
-    windowedAggregator.finalize(lambdaAggregateIrTiled(finalBatchIr, streamingTiledIrs, ts))
+    windowedAggregator.finalize(lambdaAggregateIrTiled(finalBatchIr, streamingTiledIrs, ts, useTileLayering))
   }
 
 }
