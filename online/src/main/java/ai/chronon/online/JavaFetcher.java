@@ -185,14 +185,15 @@ public class JavaFetcher {
 
   /**
    * Allow users to set the join configuration for the fetcher.
+   * Returns the Future from putting the join config in our KVstore.
    */
-  public void putJoinConf(String joinName, String joinConfigString) throws UnsupportedEncodingException {
+  public Future<Object> putJoinConf(String joinName, String joinConfigString) throws UnsupportedEncodingException {
     KVStore.PutRequest joinPutReq = new KVStore.PutRequest(
             ("joins/" + joinName).getBytes(Constants.UTF8()),
             joinConfigString.getBytes(Constants.UTF8()),
             fetcher.dataset(),
             Option.empty());
 
-    this.fetcher.kvStore().put(joinPutReq);
+    return this.fetcher.kvStore().put(joinPutReq);
   }
 }
