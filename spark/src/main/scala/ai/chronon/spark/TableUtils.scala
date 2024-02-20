@@ -104,6 +104,8 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def tableExists(tableName: String): Boolean = sparkSession.catalog.tableExists(tableName)
 
+  def databaseExists(databaseName: String): Boolean = sparkSession.catalog.databaseExists(databaseName)
+
   def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
 
   def isPartitioned(tableName: String): Boolean = {

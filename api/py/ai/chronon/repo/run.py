@@ -485,15 +485,22 @@ class Runner:
 
         if self.mode == "sample":
             # After executing the local data sampling, sample mode runs also run a local execution of the job itself
-            print("Sampling complete. Running {} in local mode".format(self.conf))
+            conf_path = os.path.join(args.repo, args.conf)
+            with open(conf_path, "r") as conf_file:
+                conf_json = json.load(conf_file)
+                name = conf_json.get("metaData").get("name")
+            print("Sampling complete. Running {} in local mode".format(name))
             self.mode = "sampled-backfill"
-            # Make sure you set `--master "${SPARK_JOB_MODE:-yarn}"` in your spark_submit script for this to work as intended
-            # os.environ["SPARK_JOB_MODE"] = "local[*]"
-            #if not self.local_warehouse_location:
-            #    raise RuntimeError("You must provide the `local-warehouse-dir` argument to use sample mode")
-            #os.environ["SPARK_local_warehouse_location"] = self.local_warehouse_location
             self.run()
+            full_output_directory = "{}/data/{}".format(self.local_warehouse_location, name.replace(".", "_"))
+            print("""\n\n 
+            Sampled run complete. Note that your data exists external to your production warehouse.
+            To query this data from pyspark:
 
+            from pyspark.sql import SparkSession
+            df = spark.read.parquet("{}")
+
+            """.format(full_output_directory))
 
 
 def set_defaults(parser, pre_parse_args=None):

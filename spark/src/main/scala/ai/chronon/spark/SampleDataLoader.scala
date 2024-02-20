@@ -52,7 +52,8 @@ object SampleDataLoader {
 
     getPriorRunManifestMetadata(sampleDirectory).foreach { case(tableName, hash) =>
       logger.info(s"Checking $tableName")
-      val resampleTable = if (tableUtils.tableExists(tableName)) {
+      val database = tableName.split("\\.").head
+      val resampleTable = if (tableUtils.databaseExists(database) && tableUtils.tableExists(tableName)) {
         logger.info(s"Found existing table $tableName.")
         val tableDesc = sparkSession.sql(s"DESCRIBE TABLE EXTENDED $tableName")
         tableDesc.show(10)
@@ -61,8 +62,7 @@ object SampleDataLoader {
         val semanticHashValue = SEMANTIC_HASH_REGEX.findFirstMatchIn(tableMetadata) match {
           case Some(matchFound) => matchFound.group(1)
           case None =>
-            logger.error(s"Failed to parse semantic hash from $tableName. Table metadata: $tableMetadata")
-            ""
+            throw new RuntimeException(s"Failed to parse semantic hash from $tableName. Table metadata: $tableMetadata")
         }
 
         // Reload table when the data hash changed

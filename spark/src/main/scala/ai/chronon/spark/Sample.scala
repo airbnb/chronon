@@ -7,8 +7,9 @@ import scala.io.Source
 import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConverter}
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.spark.Driver.{parseConf}
+import ai.chronon.api.Extensions.{GroupByOps, QueryOps, SourceOps}
+import ai.chronon.api.QueryUtils
+import ai.chronon.spark.Driver.parseConf
 import ai.chronon.spark.SampleHelper.{getPriorRunManifestMetadata, writeManifestMetadata}
 import com.google.gson.{Gson, GsonBuilder}
 import com.google.gson.reflect.TypeToken
@@ -32,14 +33,23 @@ class Sample(conf: Any,
   }
 
   def sampleSource(table: String, dateRange: PartitionRange, includeLimit: Boolean,
-      keySetOpt: Option[Seq[Map[String, Array[Any]]]] = None): DataFrame = {
+      keySetOpt: Option[Seq[Map[String, Array[Any]]]] = None, baseWhereClause: String = ""): DataFrame = {
 
     val outputFile = s"$outputDir/$table"
     val additionalFilterString = keySetOpt.map { keySetList =>
 
       val keyFilterWheres = keySetList.map { keySet =>
         val filterList = keySet.map { case (keyName: String, values: Array[Any]) =>
-          val valueSet = values.map {
+
+          val (notNullValues, nullValues) = values.partition(_ != null)
+
+          if (notNullValues.isEmpty) {
+            throw new RuntimeException(s"No not-null keys found for table: $table key: $keyName. Check source table or where clauses.")
+          } else if (!nullValues.isEmpty) {
+            logger.warn(s"Found ${nullValues.length} null keys for table: $table key: $keyName.")
+          }
+
+          val valueSet = notNullValues.map {
             case s: String => s"'$s'" // Add single quotes for string values
             case other => other.toString // Keep other types (like Int) as they are
           }.toSet
@@ -54,12 +64,19 @@ class Sample(conf: Any,
 
     val limitString = if (includeLimit) s"LIMIT $numRows" else ""
 
+    val whereClauseInjection = if (baseWhereClause.isEmpty) {
+      ""
+    } else {
+      s"AND $baseWhereClause"
+    }
+
     val sql =
       s"""
          |SELECT * FROM $table
          |WHERE ds >= "${dateRange.start}" AND
          |ds <= "${dateRange.end}"
          |$additionalFilterString
+         |$whereClauseInjection
          |$limitString
          |""".stripMargin
 
@@ -77,11 +94,16 @@ class Sample(conf: Any,
     df
   }
 
-  def createKeyFilters(keys: Seq[String], df: DataFrame): Map[String, Array[Any]] = {
-    keys.map{ key =>
-      val values = df.select(key).collect().map(row => row(0))
-      key -> values
-    }.toMap
+  def createKeyFilters(keys: Map[String, String], df: DataFrame, joinOpt: Option[api.Join] = None): Map[String, Array[Any]] = {
+    val joinSelects: Map[String, String] = joinOpt.map{ join =>
+      Option(join.left.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
+    }.getOrElse(Map.empty[String, String])
+
+    keys.map{ case (keyName, keyExpression) =>
+      val selectExpression = joinSelects.getOrElse(keyName, keyName)
+      val values = df.select(selectExpression).collect().map(row => row(0))
+      keyExpression -> values
+    }
   }
 
   def getTableSemanticHash(source: api.Source, groupBy: api.GroupBy): Int = {
@@ -134,7 +156,9 @@ class Sample(conf: Any,
 
         val distinctKeysDf = tableUtils.sparkSession.sql(distinctKeysSql)
 
-        val keyFilters: Map[String, Array[Any]] = createKeyFilters(keys, distinctKeysDf)
+        val keyExpressions = createKeyExpressionMap(keys, source.rootQuery)
+
+        val keyFilters: Map[String, Array[Any]] = createKeyFilters(keyExpressions, distinctKeysDf)
 
         // We don't need to do anything with the output df in this case
         sampleSource(source.rootTable, range, false, Option(Seq(keyFilters)))
@@ -144,6 +168,12 @@ class Sample(conf: Any,
     }
   }
 
+  def createKeyExpressionMap(keys: Seq[String], query: api.Query): Map[String, String] = {
+    val selectMap = Option(query.getQuerySelects).getOrElse(Map.empty[String, String])
+    keys.map { key=>
+      key -> selectMap.getOrElse(key, key)
+    }.toMap
+  }
 
   def dsToInt(ds: String): Int = {
     ds.replace("-", "").toInt
@@ -178,16 +208,32 @@ class Sample(conf: Any,
 
   def sampleJoin(join: api.Join): Unit = {
 
+    // TODO: Fix logic for when left ts != ds
+
     // Create a map of table -> List[joinPart]
     // So that we can generate semantic hashing per table, and construct one query per source table
-    val tablesMap: Map[String, List[api.JoinPart]] = join.joinParts.asScala.flatMap { joinPart =>
-      joinPart.groupBy.sources.asScala.map { source =>
-        (source.rootTable, joinPart)
+    val tablesMap: Map[String, List[(api.JoinPart, Map[String, String])]] = join.joinParts.asScala.flatMap { joinPart =>
+      // Get the key cols
+      val keyNames: Seq[String] = if (joinPart.keyMapping != null) {
+        joinPart.keyMapping.asScala.keys.toSeq
+      } else {
+        joinPart.groupBy.getKeyColumns.asScala
       }
+
+      joinPart.groupBy.sources.asScala.map { source =>
+        val selectMap = Option(source.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
+        val keyExpressions = keyNames.map { key=>
+          key -> selectMap.getOrElse(key, key)
+        }.toMap
+        (source.rootTable, joinPart, keyExpressions)
+      }
+    }.map {
+      case (rootTable, joinPart, keyMap) => (rootTable, (joinPart, keyMap))
     }.groupBy(_._1).mapValues(_.map(_._2).toList)
 
-    val tableHashes: Map[String, Int] = tablesMap.map{ case(table, joinParts) =>
-      (table, getTableSemanticHash(joinParts, join))
+
+    val tableHashes: Map[String, Int] = tablesMap.map{ case(table, joinPartsAndKeys) =>
+      (table, getTableSemanticHash(joinPartsAndKeys.map(_._1), join))
     } ++ Map(join.getLeft.rootTable -> Option(join.left.query.wheres.asScala).getOrElse("").hashCode())
 
     val tablesToSample: Seq[String] = if (forceResample) {
@@ -204,25 +250,25 @@ class Sample(conf: Any,
       val queryRange = PartitionRange(startDate, endDate)(tableUtils)
       // First sample the left side
       val leftRoot = join.getLeft.rootTable
-      val sampledLeftDf = sampleSource(leftRoot, queryRange, true)
+      // val wheres = join.getLeft.getJoinSource.getQuery.getWheres.asScala TODO: same as above
+      val wheres = join.getLeft.getEvents.getQuery.getWheres.asScala
 
-      val filteredTablesMap = tablesMap.filter { case (key, _) =>
-        tablesToSample.contains(key) }
+      // QueryUtils.build(null, leftRoot, wheres)
+      val whereClause = QueryUtils.getWhereClause(wheres, false)
 
-      filteredTablesMap.map { case (table, joinParts) =>
-        val startDateAndKeyFilters = joinParts.map { joinPart =>
+      val sampledLeftDf = sampleSource(leftRoot, queryRange, true, keySetOpt = None, baseWhereClause = whereClause)
+
+      val filteredTablesMap = tablesMap.filter { case (tableName, _) =>
+        tablesToSample.contains(tableName) }
+
+      filteredTablesMap.map { case (table, joinPartsAndKeys) =>
+        val startDateAndKeyFilters = joinPartsAndKeys.map { case (joinPart, keyMap) =>
           val groupBy = joinPart.groupBy
 
-          // Get the key cols
-          val keys: Seq[String] = if (joinPart.keyMapping != null) {
-            joinPart.keyMapping.asScala.keys.toSeq
-          } else {
-            groupBy.getKeyColumns.asScala
-          }
-
           // Construct the specific key filter for each GroupBy using the sampledLeftDf
-          val keyFilters: Map[String, Array[Any]] = createKeyFilters(keys, sampledLeftDf)
+          val keyFilters: Map[String, Array[Any]] = createKeyFilters(keyMap, sampledLeftDf, Option(join))
 
+          // TODO, this queryrange should be based off of timestamps
           val start = QueryRangeHelper.earliestDate(join.left.dataModel, groupBy, tableUtils, queryRange)
           (start, keyFilters)
         }

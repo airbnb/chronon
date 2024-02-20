@@ -18,6 +18,18 @@ package ai.chronon.api
 
 // utilized by both streaming and batch
 object QueryUtils {
+
+  def getWhereClause(wheres: Seq[String], includeWhere: Boolean = true): String = {
+    val whereString = if (includeWhere) "where" else ""
+    Option(wheres)
+      .filter(_.nonEmpty)
+      .map { ws =>
+        s"""
+           |$whereString
+           |  ${ws.map(w => s"(${w})").mkString(" AND ")}""".stripMargin
+      }
+      .getOrElse("")
+  }
   // when the value in fillIfAbsent for a key is null, we expect the column with the same name as the key
   // to be present in the table that the generated query runs on.
   def build(selects: Map[String, String],
@@ -41,14 +53,7 @@ object QueryUtils {
       case (None, _)                 => Seq("*")
     }
 
-    val whereClause = Option(wheres)
-      .filter(_.nonEmpty)
-      .map { ws =>
-        s"""
-           |WHERE
-           |  ${ws.map(w => s"(${w})").mkString(" AND ")}""".stripMargin
-      }
-      .getOrElse("")
+    val whereClause = getWhereClause(wheres)
 
     s"""SELECT
        |  ${finalSelects.mkString(",\n  ")}
