@@ -29,7 +29,7 @@ import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
 
-import java.util.function.Consumer
+import java.util.function.{BiPredicate, Consumer}
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
@@ -80,7 +80,8 @@ class Fetcher(val kvStore: KVStore,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
-              val externalSourceRegistry: ExternalSourceRegistry = null)
+              val externalSourceRegistry: ExternalSourceRegistry = null,
+              featureFlags: BiPredicate[String, java.util.Map[String, String]])
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
 
   def buildJoinCodec(joinConf: api.Join): JoinCodec = {

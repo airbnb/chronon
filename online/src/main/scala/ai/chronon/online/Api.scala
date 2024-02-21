@@ -21,7 +21,7 @@ import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
 
-import java.util.function.Consumer
+import java.util.function.{BiPredicate, Consumer}
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -190,6 +190,9 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     */
   def logResponse(resp: LoggableResponse): Unit
 
+  // override to allow rolling out features/infrastructure changes in a safe, controlled manner
+  def isFeatureFlagEnabled(flagName: String, attributes: java.util.Map[String, String]): Boolean = false
+
   // helper functions
   final def buildFetcher(debug: Boolean = false): Fetcher =
     new Fetcher(genKvStore,
@@ -197,13 +200,24 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 logFunc = responseConsumer,
                 debug = debug,
                 externalSourceRegistry = externalRegistry,
-                timeoutMillis = timeoutMillis)
+                timeoutMillis = timeoutMillis,
+                featureFlags = featureFlagBiPredicate)
 
   final def buildJavaFetcher(): JavaFetcher =
-    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
+    new JavaFetcher(genKvStore,
+                    Constants.ChrononMetadataKey,
+                    timeoutMillis,
+                    responseConsumer,
+                    externalRegistry,
+                    featureFlagBiPredicate)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
+    }
+
+  private def featureFlagBiPredicate: BiPredicate[String, java.util.Map[String, String]] =
+    new BiPredicate[String, java.util.Map[String, String]] {
+      override def test(t: String, u: java.util.Map[String, String]): Boolean = isFeatureFlagEnabled(t, u)
     }
 }
