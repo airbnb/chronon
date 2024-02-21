@@ -9,7 +9,7 @@ import ai.chronon.online.Fetcher.{Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.{MetadataOps, ThrowableOps}
+import ai.chronon.api.Extensions.{MetadataOps, ThrowableOps, GroupByOps}
 import com.google.gson.Gson
 
 import java.io.{PrintWriter, StringWriter}
@@ -251,6 +251,19 @@ class BaseFetcher(kvStore: KVStore,
     } else {
       groupByServingInfo
     }
+  }
+
+  override def isCachingEnabled(groupBy: GroupBy): Boolean = {
+    if (!isCacheSizeConfigured || groupBy.getMetaData == null || groupBy.getMetaData.getName == null) return false
+
+    val isCachingFlagEnabled = featureFlags.test("zoolander.shepherd.enable_fetcher_batch_ir_cache",
+                                                 Map("feature_group_dataset" -> groupBy.streamingDataset).asJava)
+
+    if (debug)
+      println(
+        s"Online IR caching is ${if (isCachingFlagEnabled) "enabled" else "disabled"} for ${groupBy.streamingDataset}")
+
+    isCachingFlagEnabled
   }
 
   // 1. fetches GroupByServingInfo

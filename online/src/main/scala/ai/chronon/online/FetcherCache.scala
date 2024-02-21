@@ -34,30 +34,7 @@ trait FetcherCache {
 
   def isCacheSizeConfigured: Boolean = maybeBatchIrCache.isDefined
 
-  // Memoize which GroupBys have caching enabled
-  private[online] val isCachingEnabledForGroupBy: collection.concurrent.Map[String, Boolean] =
-    new ConcurrentHashMap[String, Boolean]().asScala
-
-  def isCachingEnabled(groupBy: GroupBy): Boolean = {
-    if (!isCacheSizeConfigured || groupBy.getMetaData == null || groupBy.getMetaData.getName == null) return false
-
-    val groupByName = groupBy.getMetaData.getName
-    isCachingEnabledForGroupBy.getOrElse(
-      groupByName, {
-        groupBy.getMetaData.customJsonLookUp("enable_caching") match {
-          case b: Boolean =>
-            println(s"Caching is ${if (b) "enabled" else "disabled"} for $groupByName")
-            isCachingEnabledForGroupBy.putIfAbsent(groupByName, b)
-            b
-          case null =>
-            println(s"Caching is disabled for $groupByName, enable_caching is not set.")
-            isCachingEnabledForGroupBy.putIfAbsent(groupByName, false)
-            false
-          case _ => false
-        }
-      }
-    )
-  }
+  def isCachingEnabled(groupBy: GroupBy): Boolean = false
 
   protected val caffeineMetricsContext: Metrics.Context = Metrics.Context(Metrics.Environment.JoinFetching)
 
