@@ -79,9 +79,9 @@ enriched_listings = Join(
 
 ```
 ### Configuration Example
-[Chaining GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/sample_team/sample_chaining_group_by.py)
+[Chaining GroupBy](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/sample_team/sample_chaining_group_by.py)
 
-[Chaining Join](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/joins/sample_team/sample_chaining_join.py)
+[Chaining Join](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/joins/sample_team/sample_chaining_join.py)
 
 ## Clarifications
 - The goal of chaining is to use output of a Join as input to downstream computations like GroupBy or a Join. As of today we support the case 1 and case 2 in future plan

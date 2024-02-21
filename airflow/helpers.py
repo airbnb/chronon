@@ -66,7 +66,7 @@ def normalize_name(object_name):
     return re.sub("[^A-Za-z0-9_]", "__", safe_name)
 
 
-# https://github.com/airbnb/chronon/blob/master/api/src/main/scala/ai/chronon/api/Extensions.scala
+# https://github.com/airbnb/chronon/blob/main/api/src/main/scala/ai/chronon/api/Extensions.scala
 def sanitize(name):
     return re.sub("[^a-zA-Z0-9_]", "_", name)
 

@@ -183,37 +183,37 @@ Below is a list of resources that can be useful for development and debugging.
 ## Docs
 
 (Docsite)[https://chronon.ai]
-(doc directory)[https://github.com/airbnb/chronon/tree/master/docs/source]
+(doc directory)[https://github.com/airbnb/chronon/tree/main/docs/source]
 (Code of conduct)[TODO]
 
 ## Links: 
 
 (pip project)[https://pypi.org/project/chronon-ai/]
-(maven central)[https://mvnrepository.com/artifact/ai.chronon/]: (publishing)[https://github.com/airbnb/chronon/blob/master/devnotes.md#publishing-all-the-artifacts-of-chronon]
-(Docsite: publishing)[https://github.com/airbnb/chronon/blob/master/devnotes.md#chronon-artifacts-publish-process]
+(maven central)[https://mvnrepository.com/artifact/ai.chronon/]: (publishing)[https://github.com/airbnb/chronon/blob/main/devnotes.md#publishing-all-the-artifacts-of-chronon]
+(Docsite: publishing)[https://github.com/airbnb/chronon/blob/main/devnotes.md#chronon-artifacts-publish-process]
 
 
 ## Code Pointers
 
-Api - (Thrift)[https://github.com/airbnb/chronon/blob/master/api/thrift/api.thrift#L180], (Python)[https://github.com/airbnb/chronon/blob/master/api/py/ai/chronon/group_by.py]
-(CLI driver entry point for job launching.)[https://github.com/airbnb/chronon/blob/master/spark/src/main/scala/ai/chronon/spark/Driver.scala]
+Api - (Thrift)[https://github.com/airbnb/chronon/blob/main/api/thrift/api.thrift#L180], (Python)[https://github.com/airbnb/chronon/blob/main/api/py/ai/chronon/group_by.py]
+(CLI driver entry point for job launching.)[https://github.com/airbnb/chronon/blob/main/spark/src/main/scala/ai/chronon/spark/Driver.scala]
 
 **Offline flows that produce hive tables or file output**
-(GroupBy)[https://github.com/airbnb/chronon/blob/master/spark/src/main/scala/ai/chronon/spark/GroupBy.scala]
-(Staging Query)[https://github.com/airbnb/chronon/blob/master/spark/src/main/scala/ai/chronon/spark/StagingQuery.scala]
-(Join backfills)[https://github.com/airbnb/chronon/blob/master/spark/src/main/scala/ai/chronon/spark/Join.scala]
-(Metadata Export)[https://github.com/airbnb/chronon/blob/master/spark/src/main/scala/ai/chronon/spark/MetadataExporter.scala]
+(GroupBy)[https://github.com/airbnb/chronon/blob/main/spark/src/main/scala/ai/chronon/spark/GroupBy.scala]
+(Staging Query)[https://github.com/airbnb/chronon/blob/main/spark/src/main/scala/ai/chronon/spark/StagingQuery.scala]
+(Join backfills)[https://github.com/airbnb/chronon/blob/main/spark/src/main/scala/ai/chronon/spark/Join.scala]
+(Metadata Export)[https://github.com/airbnb/chronon/blob/main/spark/src/main/scala/ai/chronon/spark/MetadataExporter.scala]
 Online flows that update and read data & metadata from the kvStore
-(GroupBy window tail upload )[https://github.com/airbnb/chronon/blob/master/spark/src/main/scala/ai/chronon/spark/GroupByUpload.scala]
-(Streaming window head upload)[https://github.com/airbnb/chronon/blob/master/spark/src/main/scala/ai/chronon/spark/streaming/GroupBy.scala]
-(Fetching)[https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/Fetcher.scala]
+(GroupBy window tail upload )[https://github.com/airbnb/chronon/blob/main/spark/src/main/scala/ai/chronon/spark/GroupByUpload.scala]
+(Streaming window head upload)[https://github.com/airbnb/chronon/blob/main/spark/src/main/scala/ai/chronon/spark/streaming/GroupBy.scala]
+(Fetching)[https://github.com/airbnb/chronon/blob/main/online/src/main/scala/ai/chronon/online/Fetcher.scala]
 Aggregations
-(time based aggregations)[https://github.com/airbnb/chronon/blob/master/aggregator/src/main/scala/ai/chronon/aggregator/base/TimedAggregators.scala]
-(time independent aggregations)[https://github.com/airbnb/chronon/blob/master/aggregator/src/main/scala/ai/chronon/aggregator/base/SimpleAggregators.scala]
-(integration point with rest of chronon)[https://github.com/airbnb/chronon/blob/master/aggregator/src/main/scala/ai/chronon/aggregator/row/ColumnAggregator.scala#L223]
-(Windowing)[https://github.com/airbnb/chronon/tree/master/aggregator/src/main/scala/ai/chronon/aggregator/windowing]
+(time based aggregations)[https://github.com/airbnb/chronon/blob/main/aggregator/src/main/scala/ai/chronon/aggregator/base/TimedAggregators.scala]
+(time independent aggregations)[https://github.com/airbnb/chronon/blob/main/aggregator/src/main/scala/ai/chronon/aggregator/base/SimpleAggregators.scala]
+(integration point with rest of chronon)[https://github.com/airbnb/chronon/blob/main/aggregator/src/main/scala/ai/chronon/aggregator/row/ColumnAggregator.scala#L223]
+(Windowing)[https://github.com/airbnb/chronon/tree/main/aggregator/src/main/scala/ai/chronon/aggregator/windowing]
               
 **Testing**
-(Testing - sbt commands)[https://github.com/airbnb/chronon/blob/master/devnotes.md#testing]
+(Testing - sbt commands)[https://github.com/airbnb/chronon/blob/main/devnotes.md#testing]
 (Automated testing - circle-ci pipelines)[https://app.circleci.com/pipelines/github/airbnb/chronon]
-(Dev Setup)[https://github.com/airbnb/chronon/blob/master/devnotes.md#prerequisites]
+(Dev Setup)[https://github.com/airbnb/chronon/blob/main/devnotes.md#prerequisites]

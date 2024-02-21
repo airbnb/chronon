@@ -411,7 +411,7 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
 // See: Back to the future: an even more nearly optimal cardinality estimation algorithm, 2017
 // https://arxiv.org/abs/1708.06839
 // refer to the chart here to tune your sketch size with lgK
-// https://github.com/apache/incubator-datasketches-java/blob/master/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180
+// https://github.com/apache/incubator-datasketches-java/blob/main/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180
 // default is about 1200 bytes
 class ApproxDistinctCount[Input: CpcFriendly](lgK: Int = 8) extends SimpleAggregator[Input, CpcSketch, Long] {
   override def outputType: DataType = LongType
