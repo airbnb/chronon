@@ -26,6 +26,7 @@ import scala.concurrent.Future;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.BiPredicate;
 import java.util.function.Consumer;
@@ -35,7 +36,7 @@ public class JavaFetcher {
   Fetcher fetcher;
 
   public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, BiPredicate<String, Map<String, String>> featureFlags) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry);
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, featureFlags);
   }
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {
