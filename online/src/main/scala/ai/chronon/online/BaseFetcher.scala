@@ -143,7 +143,7 @@ class BaseFetcher(kvStore: KVStore,
         }
 
         val useTileLayering = featureFlags.test(
-          "shepherd.enable_tile_layering_reads",
+          "zoolander.shepherd.enable_tile_layering_reads",
           Map("feature_group_dataset" -> servingInfo.groupByOps.streamingDataset).asJava)
         aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs, useTileLayering)
       } else {
