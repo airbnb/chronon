@@ -79,6 +79,11 @@ struct EventSource {
     * It's okay to use hourly partitioned tables in the format of yyyyMMddhh, we just need to know whether it is or not at the time of scheduling the airflow task.
     */
     6: optional bool isHourlyPartitioned 
+
+    /**
+    * If the topic you are utilizing is an envelope queue then you will want to specify a collection name. Envelope queues are kafka topics that contain multiple different types of events known as collections. 
+    */
+    7: optional string collectionName
 }
 
 
