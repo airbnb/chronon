@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Builders, Constants, LongType, GroupBy, Join, Operation, Source, StringType, TimeUnit, Window}
+import ai.chronon.api.{Accuracy, Builders, Constants, GroupBy, Join, LongType, Operation, Source, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.{renderDataSourceQuery, renderUnpartitionedDataSourceQuery}
@@ -94,13 +94,14 @@ class HourlyJoinTest {
     viewDf.show()
   }
 
-  def makeViewEventSource(sourceStartPartition: String, timeColumn: Option[String]): Source = Builders.Source.events(
+  def makeViewEventSource(sourceStartPartition: String, timeColumn: Option[String], lag: Long = 0L): Source = Builders.Source.events(
     query = Builders.Query(
       selects = Builders.Selects("sess_length", "item"),
       startPartition = sourceStartPartition,
       timeColumn = timeColumn.orNull
     ),
-    table = viewsTable
+    table = viewsTable,
+    lag = lag
   )
 
   def makeItemQueryEventSource(sourceStartPartition: String): Source = Builders.Source.events(
@@ -108,46 +109,54 @@ class HourlyJoinTest {
     table = itemQueriesTable
   )
 
-  def makeViewGroupBy(accuracy: Accuracy, sourceStartPartition: String, sourceTimeColumn: Option[String]): GroupBy = Builders.GroupBy(
-    metaData = Builders.MetaData(
-      namespace = namespace,
-      name = "viewgroupby"
-    ),
-    sources = List(makeViewEventSource(sourceStartPartition, sourceTimeColumn)),
-    keyColumns = List("item"),
-    aggregations = List(
-      Builders.Aggregation(
-        operation = Operation.SUM,
-        inputColumn = "sess_length",
-        windows = List(
-          new Window(6, TimeUnit.HOURS),
-          new Window(1, TimeUnit.DAYS),
-          new Window(2, TimeUnit.DAYS),
+  def makeViewGroupBy(accuracy: Accuracy,
+                      source: Source
+                     ): GroupBy =
+    Builders.GroupBy(
+      metaData = Builders.MetaData(
+        namespace = namespace,
+        name = "viewgroupby"
+      ),
+      sources = List(source),
+      keyColumns = List("item"),
+      aggregations = List(
+        Builders.Aggregation(
+          operation = Operation.SUM,
+          inputColumn = "sess_length",
+          windows = List(
+            new Window(6, TimeUnit.HOURS),
+            new Window(1, TimeUnit.DAYS),
+            new Window(2, TimeUnit.DAYS),
+          )
         )
-      )
-    ),
-    accuracy = accuracy
-  )
+      ),
+      accuracy = accuracy
+    )
 
   // LHS: Queries with an `item`
   // RHS: aggregations on sess_length by key `item`
-  def makeQueryViewJoin(accuracy: Accuracy, sourceStartPartition: String, sourceTimeColumn: Option[String]): Join = Builders.Join(
-    metaData = Builders.MetaData(
-      name = "viewjoin",
-      namespace = namespace
-    ),
-    left = makeItemQueryEventSource(sourceStartPartition),
-    joinParts = Seq(
-      Builders.JoinPart(
-        groupBy = makeViewGroupBy(accuracy, sourceStartPartition, sourceTimeColumn)
+  def makeQueryViewJoin(
+                        querySource: Source,
+                        groupBy: GroupBy
+                       ): Join =
+    Builders.Join(
+      metaData = Builders.MetaData(
+        name = "viewjoin",
+        namespace = namespace
+      ),
+      left = querySource,
+      joinParts = Seq(
+        Builders.JoinPart(
+          groupBy = groupBy
+        )
       )
     )
-  )
 
-  def makeJoinAndCompareToSql(sourceStartPartition: String, sourceTimeColumn: Option[String], joinAccuracy: Accuracy, joinSqlQuery: String): Unit = {
-    val queryViewJoin = makeQueryViewJoin(joinAccuracy, sourceStartPartition, sourceTimeColumn)
+  def compareToSql(join: Join,
+                   joinSqlQuery: String,
+  ): Unit = {
     val _: DataFrame = new ai.chronon.spark.Join(
-      queryViewJoin,
+      join,
       endPartition = today,
       tableUtils = hourlyTableUtils
     ).computeJoin()
@@ -185,7 +194,7 @@ class HourlyJoinTest {
       )
     )
 
-    val groupBy = makeViewGroupBy(Accuracy.SNAPSHOT, "2023123100", None)
+    val groupBy = makeViewGroupBy(Accuracy.SNAPSHOT, makeViewEventSource("2023123100", None))
     val renderedIncremental = renderDataSourceQuery(
       groupBy,
       groupBy.sources.asScala.head,
@@ -225,10 +234,16 @@ class HourlyJoinTest {
       )
     )
 
-    makeJoinAndCompareToSql(
-      sourceStartPartition =  "2024010100",
-      sourceTimeColumn = Some("ts"),
-      joinAccuracy = Accuracy.SNAPSHOT,
+    val queryViewJoin = makeQueryViewJoin(
+      makeItemQueryEventSource("2024010100"),
+      makeViewGroupBy(
+        Accuracy.SNAPSHOT,
+        makeViewEventSource("2023123100", Some("ts"))
+      )
+    )
+
+    compareToSql(
+      queryViewJoin,
       joinSqlQuery = snapshotEventEventSql
     )
   }
@@ -262,10 +277,14 @@ class HourlyJoinTest {
       )
     )
 
-    makeJoinAndCompareToSql(
-      sourceStartPartition = "2024010100",
-      sourceTimeColumn = None,
-      joinAccuracy = Accuracy.SNAPSHOT,
+    compareToSql(
+      makeQueryViewJoin(
+        makeItemQueryEventSource("2024010100"),
+        makeViewGroupBy(
+          Accuracy.SNAPSHOT,
+          makeViewEventSource("2023123100", None)
+        )
+      ),
       joinSqlQuery = snapshotEventEventSql
     )
   }
@@ -299,18 +318,22 @@ class HourlyJoinTest {
     println("itemqueriesdf")
     hourlyTableUtils.sql(s"SELECT * FROM $itemQueriesTable").show()
 
-    makeJoinAndCompareToSql(
-      sourceStartPartition = sourceStartPartition,
-      sourceTimeColumn = None,
-      joinAccuracy = Accuracy.SNAPSHOT,
+    compareToSql(
+      makeQueryViewJoin(
+        makeItemQueryEventSource("2024010100"),
+        makeViewGroupBy(
+          Accuracy.SNAPSHOT,
+          makeViewEventSource("2023123100", None)
+        )
+      ),
       joinSqlQuery = snapshotEventEventSql
     )
   }
 
-  val temporalEventEventSql =
+  def temporalEventEventSql(lag: Long = 0L): String =
     s"""
        |WITH
-       |  events as (SELECT sess_length, item, ts, ds FROM $viewsTable),
+       |  events as (SELECT sess_length, item, ts + $lag as ts, ds FROM $viewsTable),
        |  queries as (SELECT item, ts, ds FROM $itemQueriesTable)
        |SELECT
        |  queries.item,
@@ -358,12 +381,264 @@ class HourlyJoinTest {
       )
     )
 
-    makeJoinAndCompareToSql(
-      sourceStartPartition = "2024010100",
-      sourceTimeColumn = None,
-      joinAccuracy = Accuracy.TEMPORAL,
-      joinSqlQuery = temporalEventEventSql
+    compareToSql(
+      makeQueryViewJoin(
+        makeItemQueryEventSource("2024010100"),
+        makeViewGroupBy(
+          Accuracy.TEMPORAL,
+          makeViewEventSource("2023123100", None)
+        )
+      ),
+      joinSqlQuery = temporalEventEventSql()
     )
+  }
+
+  @Test
+  def testEventsEventsTemporalHourlyWithLagSmall(): Unit = {
+    writeItemQueryDf(
+      Seq(
+        Seq("A", 1704069360000L, "2024010100"), // Monday, January 1, 2024 12:36:00 AM UTC
+        Seq("A", 1704075180000L, "2024010102"), // Monday, January 1, 2024 2:13:00 AM UTC
+        Seq("A", 1704145200000L, "2024010121"), // Monday, January 1, 2024 9:40:00 PM UTC
+        Seq("A", 1704156720000L, "2024010200"), // Tuesday, January 2, 2024 12:52:00 AM UTC
+        Seq("A", 1704163680000L, "2024010202"), // Tuesday, January 2, 2024 2:48:00 AM UTC
+        Seq("A", 1704237300000L, "2024010223") // Tuesday, January 2, 2024 11:15:00 PM UTC
+      )
+    )
+
+    writeViewDf(
+      Seq(
+        Seq("A", 1, 1704067260000L, "2024010100"), // Monday, January 1, 2024 12:01:00 AM UTC
+        Seq("A", 3, 1704070800000L, "2024010101"), // Monday, January 1, 2024 1:00:00 AM UTC
+        Seq("A", 2, 1704134700000L, "2024010118"), // Monday, January 1, 2024 6:45:00 PM UTC
+        Seq("A", 7, 1704153720000L, "2024010200"), // Tuesday, January 2, 2024 12:02:00 AM
+        Seq("A", 4, 1704157200000L, "2024010201"), // Tuesday, January 2, 2024 1:00:00 AM UTC
+        Seq("A", 8, 1704222000000L, "2024010219") // Tuesday, January 2, 2024 7:00:00 PM UTC
+      )
+    )
+
+    val lag = 2 * 60 * 60 * 1000 // 2 hrs in ms
+
+    compareToSql(
+      makeQueryViewJoin(
+        makeItemQueryEventSource("2024010100"),
+        makeViewGroupBy(
+          Accuracy.TEMPORAL,
+          makeViewEventSource("2023123100", Some("ts"), lag = lag)
+        )
+      ),
+      joinSqlQuery = temporalEventEventSql(lag = lag),
+    )
+  }
+
+  @Test
+  def testEntitiesEntitiesHourlyWithLag(): Unit = {
+    // untimed/unwindowed entities on right
+    // right side
+    val weightSchema = List(
+      Column("user", api.StringType, 1000),
+      Column("country", api.StringType, 100),
+      Column("weight", api.DoubleType, 500)
+    )
+    val weightTable = s"$namespace.weights"
+    DataFrameGen.entities(spark, weightSchema, 1000, partitions = 400, optTableUtils = Some(hourlyTableUtils)).save(weightTable)
+    val lagHours = 2
+    val weightSource = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("weight"),
+        startPartition = yearAgo,
+        endPartition = dayAndMonthBefore),
+      snapshotTable = weightTable,
+      lag = 1000 * 60 * 60 * lagHours
+    )
+
+    val weightGroupBy = Builders.GroupBy(
+      sources = Seq(weightSource),
+      keyColumns = Seq("country"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "weight")),
+      metaData = Builders.MetaData(name = "unit_test.country_weights_lag_unittest", namespace = namespace)
+    )
+
+    val heightSchema = List(
+      Column("user", api.StringType, 1000),
+      Column("country", api.StringType, 100),
+      Column("height", api.LongType, 200)
+    )
+    val heightTable = s"$namespace.heights"
+    val heightDf = DataFrameGen.entities(spark, heightSchema, 1000, partitions = 400, optTableUtils = Some(hourlyTableUtils))
+    println("heightDf")
+    heightDf.show()
+    heightDf.save(heightTable)
+    val heightSource = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("height"), startPartition = monthAgo),
+      snapshotTable = heightTable
+    )
+
+    val heightGroupBy = Builders.GroupBy(
+      sources = Seq(heightSource),
+      keyColumns = Seq("country"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "height")),
+      metaData = Builders.MetaData(name = "unit_test.country_heights_lag_unittest", namespace = namespace)
+    )
+
+    // left side
+    val countrySchema = List(Column("country", api.StringType, 100))
+    val countryTable = s"$namespace.countries"
+    val countryDf = DataFrameGen.entities(spark, countrySchema, 1000, partitions = 400, optTableUtils = Some(hourlyTableUtils))
+    println("countryDf")
+    countryDf.show()
+    countryDf.save(countryTable)
+
+    val start = hourlyTableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    val end = hourlyTableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
+    val joinConf = Builders.Join(
+      left = Builders.Source.entities(Builders.Query(startPartition = start), snapshotTable = countryTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = weightGroupBy), Builders.JoinPart(groupBy = heightGroupBy)),
+      metaData = Builders.MetaData(name = "test.country_features_lag_unittest", namespace = namespace, team = "chronon")
+    )
+
+    val runner = new ai.chronon.spark.Join(joinConf, end, hourlyTableUtils)
+    val computed = runner.computeJoin(Some(7))
+    val expected = hourlyTableUtils.sql(
+      s"""
+         |WITH
+         |   countries AS (SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'),
+         |   grouped_weights AS (
+         |      SELECT country,
+         |             ds,
+         |             avg(weight) as unit_test_country_weights_lag_unittest_weight_average
+         |      FROM $weightTable
+         |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
+         |      GROUP BY country, ds),
+         |   grouped_heights AS (
+         |      SELECT country,
+         |             ds,
+         |             avg(height) as unit_test_country_heights_lag_unittest_height_average
+         |      FROM $heightTable
+         |      WHERE ds >= '$monthAgo'
+         |      GROUP BY country, ds)
+         |   SELECT countries.country,
+         |        countries.ds,
+         |        grouped_weights.unit_test_country_weights_lag_unittest_weight_average,
+         |        grouped_heights.unit_test_country_heights_lag_unittest_height_average
+         | FROM countries left outer join grouped_weights
+         | ON countries.country = grouped_weights.country
+         | AND countries.ds = DATE_FORMAT(TO_TIMESTAMP(grouped_weights.ds, '$fmt') + INTERVAL $lagHours HOURS, '$fmt')
+         | left outer join grouped_heights
+         | ON countries.ds = grouped_heights.ds
+         | AND countries.country = grouped_heights.country
+    """.stripMargin)
+
+    println("showing intermediate table")
+    hourlyTableUtils.sql(
+      """
+        |SELECT * FROM test_namespace_hourlyjointest.test_country_features_lag_unittest_unit_test_country_heights_lag_unittest
+        |""".stripMargin).show()
+    println("showing join result")
+    computed.show()
+    println("showing query result")
+    expected.show()
+    println(
+      s"Left side count: ${spark.sql(s"SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'").count()}")
+    println(s"Actual count: ${computed.count()}")
+    println(s"Expected count: ${expected.count()}")
+    val diff = Comparison.sideBySide(computed, expected, List("country", "ds"))
+    if (diff.count() > 0) {
+      println(s"Diff count: ${diff.count()}")
+      println(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diff.count(), 0)
+  }
+
+  @Test
+  def testEventsEntitiesSnapshotHourlySmall(): Unit = {
+    // Now View is an entity source e.g. cdm.merchants_core. Every partition contains all
+    // views occurring before or during the partition interval.
+    // e.g. 2024010100 will contain just the first row,
+    // but everything between 2024010101 and
+    // 2024010117 will contain the first two rows.
+    val entities = Seq(
+      Seq("A", 1, 1704067260000L, "2024010100"), // Monday, January 1, 2024 12:01:00 AM UTC
+      Seq("A", 3, 1704070800000L, "2024010101"), // Monday, January 1, 2024 1:00:00 AM UTC
+      Seq("A", 2, 1704134700000L, "2024010118"), // Monday, January 1, 2024 6:45:00 PM UTC
+      Seq("A", 7, 1704153720000L, "2024010200"), // Tuesday, January 2, 2024 12:02:00 AM
+      Seq("A", 4, 1704157200000L, "2024010201"), // Tuesday, January 2, 2024 1:00:00 AM UTC
+      Seq("A", 8, 1704222000000L, "2024010219") // Tuesday, January 2, 2024 7:00:00 PM UTC
+    )
+
+    val entitiesViews: Seq[Seq[Any]] = PartitionRange("2024010100", "2024010223")(hourlyTableUtils)
+      .toTimePoints // fill every partition with all the events that happened before or during it
+      .flatMap { partitionStartTs: Long =>
+        val partitionEndTs = partitionStartTs + hourlyTableUtils.partitionSpec.spanMillis
+        entities
+          // all views in this partition occurred before the end of the current partition
+          .filter(r => r(2).asInstanceOf[Long] < partitionEndTs)
+          .map { r =>
+            // replace the original partition string with the one for the partition
+            // we're currently filling
+            val partitionString = hourlyTableUtils.partitionSpec.at(partitionStartTs)
+            r.take(3) :+ partitionString
+          }
+      }
+
+    entitiesViews.foreach(println)
+    writeViewDf(
+      entitiesViews
+    )
+
+    writeItemQueryDf(
+      Seq(
+        Seq("A", 1704069360000L, "2024010100"), // Monday, January 1, 2024 12:36:00 AM UTC
+        Seq("A", 1704075180000L, "2024010102"), // Monday, January 1, 2024 2:13:00 AM UTC
+        Seq("A", 1704145200000L, "2024010121"), // Monday, January 1, 2024 9:40:00 PM UTC
+        Seq("A", 1704156720000L, "2024010200"), // Tuesday, January 2, 2024 12:52:00 AM UTC
+        Seq("A", 1704163680000L, "2024010202"), // Tuesday, January 2, 2024 2:48:00 AM UTC
+        Seq("A", 1704237300000L, "2024010223") // Tuesday, January 2, 2024 11:15:00 PM UTC
+      )
+    )
+
+    val entityJoin = makeQueryViewJoin(
+      makeItemQueryEventSource("2024010100"),
+      makeViewGroupBy(
+        Accuracy.SNAPSHOT,
+        Builders.Source.entities(
+          query = Builders.Query(
+            selects = Builders.Selects("sess_length", "item"),
+            startPartition = "2023123100",
+            timeColumn = "ts"
+          ),
+          snapshotTable = viewsTable,
+        )
+      )
+    )
+
+
+    // The way we've constructed the entity datasets above is equivalent
+    // to the evented dataset created in testEventsEventsSnapshotHourlySmall.
+    // Manually verifying that the rows match the values computed in that test
+    val _: DataFrame = new ai.chronon.spark.Join(
+      entityJoin,
+      endPartition = today,
+      tableUtils = hourlyTableUtils,
+    ).computeJoin()
+
+    println("viewjoin join table")
+    val joinDf = spark.sql(s"select * from $namespace.viewjoin")
+    joinDf.show(numRows = 400)
+
+    val rows = joinDf.collect().sortBy(_.getAs[String]("ds")).map(_.toSeq)
+    val expected = Seq(
+      Seq("A", 1704069360000L, null, null, null, "2024010100"),
+      Seq("A", 1704075180000L, 4, 4, 4, "2024010102"),
+      Seq("A", 1704145200000L, 2, 6, 6, "2024010121"),
+      Seq("A", 1704156720000L, 2, 6, 6, "2024010200"),
+      Seq("A", 1704163680000L, 11, 13, 17, "2024010202"),
+      Seq("A", 1704237300000L, 8, 19, 25, "2024010223"),
+    )
+    expected.zip(rows).foreach {
+      case (expected, actual) => assert(expected == actual)
+    }
+
   }
 
 }

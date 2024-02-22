@@ -208,12 +208,18 @@ object Extensions {
     def camelToSnake: DataFrame =
       df.columns.foldLeft(df)((renamed, col) => renamed.withColumnRenamed(col, camelToSnake(col)))
 
-    def withPartitionBasedTimestamp(colName: String, inputColumn: String = tableUtils.partitionColumn): DataFrame =
-      df.withColumn(colName, unix_timestamp(df.col(inputColumn), tableUtils.partitionSpec.format) * 1000)
+    def withPartitionBasedTimestamp(colName: String,
+                                    inputColumn: String = tableUtils.partitionColumn,
+                                    fmt: String = tableUtils.partitionSpec.format
+                                   ): DataFrame =
+      df.withColumn(colName, unix_timestamp(df.col(inputColumn), fmt) * 1000)
 
-    def withShiftedPartition(colName: String, days: Int = 1): DataFrame =
-      df.withColumn(colName,
-                    date_format(date_add(to_date(df.col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), days), tableUtils.partitionSpec.format))
+    def withShiftedPartition(colName: String, partitionSpans: Int = 1, tableUtils: BaseTableUtils = tableUtils): DataFrame =
+      df.withColumn(
+        colName,
+        from_unixtime(((unix_timestamp(to_timestamp(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format)) * 1000) + partitionSpans * tableUtils.partitionSpec.spanMillis) / 1000, tableUtils.partitionSpec.format)
+      )
+
 
     def replaceWithReadableTime(cols: Seq[String], dropOriginal: Boolean): DataFrame = {
       cols.foldLeft(df) { (dfNew, col) =>

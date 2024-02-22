@@ -71,9 +71,7 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
       // increment one partition span to align with left side ts_ds
       // because one partition span was decremented from the partition range for snapshot accuracy
       prefixedRightDf
-        .withColumn(Constants.TimePartitionColumn,
-          from_unixtime(((unix_timestamp(to_timestamp(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format)) * 1000) + tableUtils.partitionSpec.spanMillis) / 1000, tableUtils.partitionSpec.format)
-        )
+        .withShiftedPartition(Constants.TimePartitionColumn, 1, tableUtils)
         .drop(tableUtils.partitionColumn)
     } else {
       prefixedRightDf
@@ -246,24 +244,27 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
       skewFilteredLeft.select(columns: _*)
     }
 
+    // TODO(FCOMP-2754) Should this be set by GroupBy or threaded in explicitly
+    //  from outside?
+    val snapshotResolution = tableUtils.partitionSpec match {
+      case PartitionSpec(_, spanMillis) if spanMillis == WindowUtils.Hour.millis => HourlyResolution
+      case PartitionSpec(_, spanMillis) if spanMillis == WindowUtils.Day.millis => DailyResolution
+      case PartitionSpec(_, spanMillis) => throw new Exception(s"No resolution yet supported for partition span length = $spanMillis ms")
+    }
+
     lazy val shiftedPartitionRange = unfilledTimeRange.toPartitionRange.shift(-1)
     val rightDf = (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
-      case (Entities, Events, _)   => partitionRangeGroupBy.snapshotEvents(unfilledRange)
+      case (Entities, Events, _)   =>
+        partitionRangeGroupBy.snapshotEvents(unfilledRange, snapshotResolution)
       case (Entities, Entities, _) => partitionRangeGroupBy.snapshotEntities
       case (Events, Events, Accuracy.SNAPSHOT) =>
-        // TODO(FCOMP-2754) Should this be set by GroupBy or threaded in explicitly
-        //  from outside?
-        val snapshotResolution = tableUtils.partitionSpec match {
-          case PartitionSpec(_, spanMillis) if spanMillis == WindowUtils.Hour.millis => HourlyResolution
-          case PartitionSpec(_, spanMillis) if spanMillis == WindowUtils.Day.millis => DailyResolution
-          case PartitionSpec(_, spanMillis) => throw new Exception(s"No resolution yet supported for partition span length = $spanMillis ms")
-        }
         genGroupBy(shiftedPartitionRange).snapshotEvents(shiftedPartitionRange, snapshotResolution)
       case (Events, Events, Accuracy.TEMPORAL) =>
         val groupBy = genGroupBy(unfilledTimeRange.toPartitionRange)
         if (useTwoStack) groupBy.temporalEventsTwoStack(renamedLeftDf, Some(unfilledTimeRange), sparkUtils = sparkUtils)
         else groupBy.temporalEvents(renamedLeftDf, Some(unfilledTimeRange))
-      case (Events, Entities, Accuracy.SNAPSHOT) => genGroupBy(shiftedPartitionRange).snapshotEntities
+      case (Events, Entities, Accuracy.SNAPSHOT) =>
+        genGroupBy(shiftedPartitionRange).snapshotEntities
 
       case (Events, Entities, Accuracy.TEMPORAL) => {
         // Snapshots and mutations are partitioned with ds holding data between <ds 00:00> and ds <23:53>.

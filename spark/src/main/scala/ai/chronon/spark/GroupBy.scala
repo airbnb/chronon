@@ -93,7 +93,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ tableUtils.partitionColumn).toArray, inputDf.schema)
     val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
       val partitionTs = "ds_ts"
-      val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
+      val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs, fmt = tableUtils.partitionSpec.format)
       val partitionTsIndex = inputWithPartitionTs.schema.fieldIndex(partitionTs)
       val updateFunc = (ir: Array[Any], row: Row) => {
         // update when ts < tsOf(ds + 1)
@@ -472,23 +472,28 @@ object GroupBy {
 
   def needsTime(groupByConf: api.GroupBy) = Option(groupByConf.getAggregations).exists(_.toScala.needsTimestamp)
 
-  def millisecondsToDays(lagMilliseconds: Long) = {
-    val millisecondsInDay = 1000.0 * 60 * 60 * 24
-    math.ceil(lagMilliseconds / millisecondsInDay).toInt
+  /**
+   * @param lagMilliseconds
+   * @param tableUtils
+   * @return Converts lag in ms to number of partition spans to shift,
+   *         as determined by [[tableUtils.partitionSpec]]
+   */
+  def millisecondsToPartitionSpans(lagMilliseconds: Long, tableUtils: BaseTableUtils) = {
+    math.ceil(lagMilliseconds / tableUtils.partitionSpec.spanMillis).toInt
   }
 
   def adjustForLag(input: DataFrame, lagToAdjustBy: Long, tableUtils: BaseTableUtils) = {
     val maybeTimeColumnAdjusted = if (tableUtils.hasValidTimeColumn(input)) {
-      logger.info(s"Adjusting time column ${Constants.TimeColumn} for lag by ${lagToAdjustBy}")
+      logger.info(s"Adjusting time column ${Constants.TimeColumn} for lag by ${lagToAdjustBy} milliseconds")
       input.withColumn(Constants.TimeColumn, col(Constants.TimeColumn) + lit(lagToAdjustBy))
     } else {
       input
     }
     if (input.schema.fieldNames.contains(tableUtils.partitionColumn)) {
       // Adjust partition column.
-      val lagDays = millisecondsToDays(lagToAdjustBy)
-      logger.info(s"Adjusting partition column ${tableUtils.partitionColumn} for lag by ${lagDays}")
-      maybeTimeColumnAdjusted.withShiftedPartition(tableUtils.partitionColumn, lagDays)
+      val lagSpans = millisecondsToPartitionSpans(lagToAdjustBy, tableUtils)
+      logger.info(s"Adjusting partition column ${tableUtils.partitionColumn} for lag by ${lagSpans} partition spans")
+      maybeTimeColumnAdjusted.withShiftedPartition(tableUtils.partitionColumn, lagSpans, tableUtils)
     } else {
       maybeTimeColumnAdjusted
     }
@@ -502,14 +507,15 @@ object GroupBy {
            finalize: Boolean = true,
            lag: Long = 0): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
-    val lagDays = millisecondsToDays(lag)
-    logger.info("adjusting start of query range by " + lagDays + " days for lag of " + lag)
-    val updatedQueryRange = queryRange.shiftStart(-1 * lagDays)
+    val lagSpans = millisecondsToPartitionSpans(lag, tableUtils)
+    logger.info("adjusting start of query range by " + lagSpans + " partition spans for lag of " + lag)
+    val updatedQueryRange = queryRange.shiftStart(-1 * lagSpans)
     val inputDf = groupByConf.sources.asScala
       .map { source =>
         if (!tableUtils.isPartitioned(source.table)) {
           renderUnpartitionedDataSourceQuery(source,
             groupByConf.getKeyColumns.asScala,
+            tableUtils,
             groupByConf.inferredAccuracy)
         } else {
           renderDataSourceQuery(groupByConf,
@@ -647,7 +653,6 @@ object GroupBy {
                             window: Option[api.Window],
                             accuracy: api.Accuracy,
                             mutations: Boolean = false): String = {
-
     val sourceTableIsPartitioned = tableUtils.isPartitioned(source.table)
 
     val intersectedRange: Option[PartitionRange] = if (sourceTableIsPartitioned) {
@@ -708,14 +713,15 @@ object GroupBy {
 
   def renderUnpartitionedDataSourceQuery(source: api.Source,
                             keys: Seq[String],
+                            tableUtils: BaseTableUtils,
                             accuracy: api.Accuracy): String = {
     var metaColumns: Map[String, String] = Map()
 
     val timeMapping = accuracy match {
       case api.Accuracy.TEMPORAL => Some(Constants.TimeColumn -> source.query.timeColumn)
       case api.Accuracy.SNAPSHOT => {
-        val dsBasedTimestamp = // TODO(FCOMP-2773) this will need to be fixed for hourly support on unpartitioned data
-          s"(((UNIX_TIMESTAMP(${Constants.PartitionColumn}, '${Constants.Partition.format}') + 86400) * 1000) - 1)"
+        val dsBasedTimestamp = // 1 millisecond before start of next partition
+          s"((UNIX_TIMESTAMP(${tableUtils.partitionColumn}, '${tableUtils.partitionSpec.format}') * 1000) + ${tableUtils.partitionSpec.spanMillis} - 1)"
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
     }
@@ -731,8 +737,8 @@ object GroupBy {
   }
 
   // Required for pyspark support
-  def renderUnpartitionedDataSourceQueryWithArrayList(source: api.Source, keys: java.util.ArrayList[String], accuracy: api.Accuracy): String = {
-    renderUnpartitionedDataSourceQuery(source, keys.asScala.toSeq, accuracy)
+  def renderUnpartitionedDataSourceQueryWithArrayList(source: api.Source, keys: java.util.ArrayList[String], tableUtils: BaseTableUtils, accuracy: api.Accuracy): String = {
+    renderUnpartitionedDataSourceQuery(source, keys.asScala.toSeq, tableUtils, accuracy)
   }
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,

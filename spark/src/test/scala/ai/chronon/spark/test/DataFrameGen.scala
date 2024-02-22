@@ -16,8 +16,8 @@ import scala.collection.Seq
 // String types are nulled at row level and also at the set level (some strings are always absent)
 object DataFrameGen {
   //  The main api: that generates dataframes given certain properties of data
-  def gen(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
-    val tableUtils = TableUtils(spark)
+  def gen(spark: SparkSession, columns: Seq[Column], count: Int, optTableUtils: Option[BaseTableUtils] = None): DataFrame = {
+    val tableUtils = optTableUtils.getOrElse(TableUtils(spark))
     val RowsWithSchema(rows, schema) = CStream.gen(columns, count, tableUtils.partitionColumn, tableUtils.partitionSpec)
     val genericRows = rows.map { row => new GenericRow(row.fieldsSeq.toArray) }.toArray
     val data: RDD[Row] = spark.sparkContext.parallelize(genericRows)
@@ -34,14 +34,16 @@ object DataFrameGen {
       from_unixtime(generated.col(Constants.TimeColumn) / 1000, tableUtils.partitionSpec.format))
   }
 
-  def unpartitionedEvents(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
-    events(spark, columns, count, 200)
+  def unpartitionedEvents(spark: SparkSession, columns: Seq[Column], count: Int, optTableUtils: Option[BaseTableUtils] = None): DataFrame = {
+    val tableUtils = optTableUtils.getOrElse(TableUtils(spark))
+    events(spark, columns, count, 200, optTableUtils = Some(tableUtils))
       .drop("ds")
   }
 
   //  Generates Entity data
-  def entities(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int): DataFrame = {
-    gen(spark, columns :+ Column(TableUtils(spark).partitionColumn, StringType, partitions), count)
+  def entities(spark: SparkSession, columns: Seq[Column], count: Int, partitions: Int, optTableUtils: Option[BaseTableUtils] = None): DataFrame = {
+    val tableUtils = optTableUtils.getOrElse(TableUtils(spark))
+    gen(spark, columns :+ Column(tableUtils.partitionColumn, StringType, partitions), count, optTableUtils = Some(tableUtils))
   }
 
   def unpartitionedEntities(spark: SparkSession, columns: Seq[Column], count: Int): DataFrame = {
