@@ -19,6 +19,7 @@ import com.github.benmanes.caffeine.cache.{Cache => CaffeineCache}
 import scala.util.{Success, Try}
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.JavaConverters.mapAsScalaConcurrentMapConverter
+import scala.collection.Seq
 
 /*
  * FetcherCache is an extension to FetcherBase that provides caching functionality. It caches KV store
