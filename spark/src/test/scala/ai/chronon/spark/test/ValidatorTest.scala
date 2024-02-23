@@ -116,7 +116,7 @@ class ValidatorTest {
     ).toDF("a", "ts")
     val result = Validator.validateTimeColumn(df, buildGroupBy())
     assertEquals(result.size, 1)
-    assertEquals(result(0), "df for groupBy groupBy1 has wrong type for TimeColumn ts, should be LongType")
+    assertEquals(result(0), "df for groupBy groupBy1 has wrong type for time_column, should be LongType")
   }
 
   @Test
@@ -126,7 +126,7 @@ class ValidatorTest {
     ).toDF("a", "ts")
     val result = Validator.validateTimeColumn(df, buildGroupBy())
     assertEquals(result.size, 1)
-    assertEquals(result(0), "df for groupBy groupBy1 should have TimeColumn ts that is milliseconds since Unix epoch. Example invalid ts: 1691369")
+    assertEquals(result(0), "df for groupBy groupBy1 should have time_column that is milliseconds since Unix epoch. Example invalid ts: 1691369")
   }
 
   @Test
@@ -136,6 +136,6 @@ class ValidatorTest {
     ).toDF("a", "ts")
     val result = Validator.validateTimeColumn(df, buildGroupBy())
     assertEquals(result.size, 1)
-    assertEquals(result(0), "df for groupBy groupBy1 should have TimeColumn ts that is milliseconds since Unix epoch. Example invalid ts: 1691369564000000")
+    assertEquals(result(0), "df for groupBy groupBy1 should have time_column that is milliseconds since Unix epoch. Example invalid ts: 1691369564000000")
   }
 }

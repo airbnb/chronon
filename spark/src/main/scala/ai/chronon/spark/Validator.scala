@@ -91,7 +91,7 @@ object Validator {
       return List(s"df for groupBy ${groupByConf.metaData.name} does not contain TimeColumn " + Constants.TimeColumn)
     }
     if (schema(Constants.TimeColumn).dataType != LongType) {
-      return List(s"df for groupBy ${groupByConf.metaData.name} has wrong type for TimeColumn ${Constants.TimeColumn}, should be LongType")
+      return List(s"df for groupBy ${groupByConf.metaData.name} has wrong type for time_column, should be LongType")
     }
     val timeColumnSample = df.select(col(Constants.TimeColumn)).where(col(Constants.TimeColumn).isNotNull).take(100).map(_.getLong(0))
     val formatter = DateTimeFormatter.ofPattern("yyyyMMdd")
@@ -103,7 +103,7 @@ object Validator {
     val upperBound = LocalDate.parse("25000101", formatter).atStartOfDay(ZoneId.of("UTC")).toInstant.toEpochMilli
     timeColumnSample.map { ts =>
       if (ts <= lowerBound || ts >= upperBound) {
-        return List(s"df for groupBy ${groupByConf.metaData.name} should have TimeColumn ${Constants.TimeColumn} that is milliseconds since Unix epoch. Example invalid ts: $ts")
+        return List(s"df for groupBy ${groupByConf.metaData.name} should have time_column that is milliseconds since Unix epoch. Example invalid ts: $ts")
       }
     }
     List.empty
