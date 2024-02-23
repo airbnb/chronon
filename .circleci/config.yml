@@ -140,9 +140,6 @@ workflows:
     build_test_deploy:
         jobs:
             - "Docker Base Build"
-            - "Scala 11 -- Spark 2 Tests":
-                  requires:
-                      - "Docker Base Build"
             - "Scala 12 -- Spark 3 Tests":
                   requires:
                       - "Docker Base Build"
