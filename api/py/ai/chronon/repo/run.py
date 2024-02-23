@@ -298,6 +298,9 @@ def set_runtime_env(args):
                 environment["team_env"] = (
                     teams_json[team].get(context, {}).get(effective_mode, {})
                 )
+                environment["dev_team_env"] = (
+                    teams_json[team].get("dev", {}).get(effective_mode, {})
+                )
                 environment["default_env"] = (
                     teams_json.get("default", {})
                     .get(context, {})
@@ -326,7 +329,12 @@ def set_runtime_env(args):
     environment["cli_args"]["CHRONON_DRIVER_JAR"] = args.chronon_jar
     environment["cli_args"]["CHRONON_ONLINE_JAR"] = args.online_jar
     environment["cli_args"]["CHRONON_ONLINE_CLASS"] = args.online_class
-    order = ["conf_env", "team_env", "default_env", "common_env", "cli_args"]
+    # If the job is running on airflow, ignore the dev team environment.
+    if 'AIRFLOW_CTX_EXECUTION_DATE' in os.environ:
+        order = ["conf_env", "team_env", "default_env", "common_env", "cli_args"]
+    else:
+        # If the job is running locally for testing, dev team environment should be prioritized.
+        order = ["conf_env", "dev_team_env", "team_env", "default_env", "common_env", "cli_args"]
     print("Setting env variables:")
     for key in os.environ:
         if any([key in environment[set_key] for set_key in order]):
