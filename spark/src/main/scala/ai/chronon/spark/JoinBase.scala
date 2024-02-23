@@ -32,6 +32,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import java.time.Instant
 import scala.collection.JavaConverters._
 import scala.collection.Seq
+import scala.util.ScalaJavaConversions._
 
 abstract class JoinBase(joinConf: api.Join,
                         endPartition: String,
@@ -145,21 +146,49 @@ abstract class JoinBase(joinConf: api.Join,
             skipFirstHole = false
           )
           .getOrElse(Seq())
+
         val partitionCount = unfilledRanges.map(_.partitions.length).sum
         if (partitionCount > 0) {
           val start = System.currentTimeMillis()
-          unfilledRanges
-            .foreach(unfilledRange => {
-              val leftUnfilledRange = unfilledRange.shift(-shiftDays)
-              val prunedLeft = leftDf.flatMap(_.prunePartitions(leftUnfilledRange))
-              val filledDf =
-                computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt)
-              // Cache join part data into intermediate table
-              if (filledDf.isDefined) {
-                logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
-                filledDf.get.save(partTable, tableProps, stats = prunedLeft.map(_.stats))
-              }
-            })
+          val joinPartAddtionalArgs = Option(joinPart.groupBy.metaData.customJsonLookUp(key = "additional_args"))
+            .getOrElse(new java.util.ArrayList[String]())
+            .asInstanceOf[java.util.ArrayList[String]]
+            .toScala
+          val joinPartStepDay =
+            joinPartAddtionalArgs
+              .map(_.split("="))
+              .find(_(0).contains("step-days"))
+              .map(_(1).toInt)
+          val stepRanges = unfilledRanges.flatMap { unfilledRange =>
+            joinPartStepDay.map(unfilledRange.steps).getOrElse(Seq(unfilledRange))
+          }
+            stepRanges.zipWithIndex.foreach {
+                case (stepRange, index) =>
+                val progress = s"| [${index + 1}/${stepRanges.size}]"
+                logger.info(s"Computing join part for range: ${stepRange.toString}  $progress")
+                  val leftUnfilledRange = stepRange.shift(-shiftDays)
+                  val prunedLeft = leftDf.flatMap(_.prunePartitions(leftUnfilledRange))
+                  val filledDf =
+                    computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt)
+                  // Cache join part data into intermediate table
+                  if (filledDf.isDefined) {
+                    logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
+                    filledDf.get.save(partTable, tableProps, stats = prunedLeft.map(_.stats))
+                  }
+            }
+          
+//          unfilledRanges
+//            .foreach(unfilledRange => {
+//              val leftUnfilledRange = unfilledRange.shift(-shiftDays)
+//              val prunedLeft = leftDf.flatMap(_.prunePartitions(leftUnfilledRange))
+//              val filledDf =
+//                computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt)
+//              // Cache join part data into intermediate table
+//              if (filledDf.isDefined) {
+//                logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
+//                filledDf.get.save(partTable, tableProps, stats = prunedLeft.map(_.stats))
+//              }
+//            })
           val elapsedMins = (System.currentTimeMillis() - start) / 60000
           partMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           partMetrics.gauge(Metrics.Name.PartitionCount, partitionCount)
