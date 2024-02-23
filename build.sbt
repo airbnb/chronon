@@ -1,9 +1,11 @@
-import sbt.Keys._
+import sbt.Keys.*
 import sbt.Test
 
 import scala.io.StdIn
-import scala.sys.process._
-import complete.DefaultParsers._
+import scala.sys.process.*
+import complete.DefaultParsers.*
+
+import scala.language.postfixOps
 
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
@@ -51,7 +53,7 @@ lazy val publishSettings = Seq(
 )
 
 // Release related configs
-import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations._
+import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 lazy val releaseSettings = Seq(
   releaseUseGlobalVersion := false,
   releaseVersionBump := sbtrelease.Version.Bump.Next,
@@ -86,7 +88,7 @@ lazy val root = (project in file("."))
     crossScalaVersions := Nil,
     name := "chronon"
   )
-  .settings(releaseSettings: _*)
+  .settings(releaseSettings *)
 
 // Git related config
 git.useGitDescribe := true
@@ -96,10 +98,10 @@ git.gitTagToVersionNumber := { tag: String =>
   val branchTag = git.gitCurrentBranch.value.replace("/", "-")
   if (branchTag == "main" || branchTag == "master") {
     // For main branches, we tag the packages as <package-name>-<build-version>
-    Some(s"${versionStr}")
+    Some(versionStr)
   } else {
     // For user branches, we tag the packages as <package-name>-<user-branch>-<build-version>
-    Some(s"${branchTag}-${versionStr}")
+    Some(s"$branchTag-$versionStr")
   }
 }
 
@@ -240,8 +242,8 @@ python_api := {
   val s: TaskStreams = streams.value
   val versionStr = (api / version).value
   val branchStr = git.gitCurrentBranch.value.replace("/", "-")
-  s.log.info(s"Building Python API version: ${versionStr}, branch: ${branchStr}, action: ${action} ...")
-  if ((s"api/py/python-api-build.sh ${versionStr} ${branchStr} ${action}" !) == 0) {
+  s.log.info(s"Building Python API version: ${versionStr}, branch: $branchStr, action: $action ...")
+  if ((s"api/py/python-api-build.sh $versionStr $branchStr $action" !) == 0) {
     s.log.success("Built Python API")
   } else {
     throw new IllegalStateException("Python API build failed!")
@@ -310,7 +312,7 @@ def cleanSparkMeta(): Unit = {
                file(tmp_warehouse) / "metastore_db")
 }
 
-val sparkBaseSettings: Seq[Setting[_]] = Seq(
+val sparkBaseSettings: Seq[Setting[?]] = Seq(
   assembly / test := {},
   assembly / artifact := {
     val art = (assembly / artifact).value
@@ -361,10 +363,10 @@ sphinx := {
 
 ThisBuild / assemblyMergeStrategy := {
   case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
-  case PathList("META-INF", _ @_*)         => MergeStrategy.filterDistinctLines
+  case PathList("META-INF", _*)         => MergeStrategy.filterDistinctLines
   case "plugin.xml"                        => MergeStrategy.last
-  case PathList("com", "fasterxml", _ @_*) => MergeStrategy.last
-  case PathList("com", "google", _ @_*)    => MergeStrategy.last
+  case PathList("com", "fasterxml", _*) => MergeStrategy.last
+  case PathList("com", "google", _*)    => MergeStrategy.last
   case _                                   => MergeStrategy.first
 }
 exportJars := true
