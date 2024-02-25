@@ -16,6 +16,8 @@
 
 package ai.chronon.spark
 
+import java.io.{PrintWriter, StringWriter}
+
 import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
@@ -29,10 +31,10 @@ import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.storage.StorageLevel
-
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import java.util.concurrent.{ExecutorService, Executors}
+
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.{Failure, Success, Try}
@@ -46,6 +48,8 @@ case class TableUtils(sparkSession: SparkSession) {
     .withZone(ZoneId.systemDefault())
   val partitionColumn: String =
     sparkSession.conf.get("spark.chronon.partition.column", "ds")
+  var shouldRepartition: Boolean = false
+    //sparkSession.conf.get("spark.chronon.repartition", "true").toBoolean
   private val partitionFormat: String =
     sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
@@ -76,6 +80,9 @@ case class TableUtils(sparkSession: SparkSession) {
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
 
+  def setRepartition(setTo: Boolean): Unit = {
+    this.shouldRepartition = setTo
+  }
   def preAggRepartition(df: DataFrame): DataFrame =
     if (df.rdd.getNumPartitions < aggregationParallelism) {
       df.repartition(aggregationParallelism)
@@ -322,8 +329,14 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def sql(query: String): DataFrame = {
     val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
+    val sw = new StringWriter()
+    val pw = new PrintWriter(sw)
+    new Throwable().printStackTrace(pw)
+    val stackTraceString = sw.toString
+    val stackTraceStringPretty = stackTraceString.split("\n").filter(_.contains("chronon")).map(_.replace("at ai.chronon.spark.", "")).mkString("\n")
+
     logger.info(
-      s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n")
+      s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n\n Query call path (not an error stack trace): \n$stackTraceStringPretty \n\n --------")
     try {
       // Run the query
       val df = sparkSession.sql(query).coalesce(partitionCount)
@@ -393,7 +406,15 @@ case class TableUtils(sparkSession: SparkSession) {
                                   saveMode: SaveMode,
                                   stats: Option[DfStats]): Unit = {
     wrapWithCache(s"repartition & write to $tableName", df) {
-      repartitionAndWriteInternal(df, tableName, saveMode, stats)
+      if (shouldRepartition) {
+        logger.info(s"Repartitioning before writing...")
+        repartitionAndWriteInternal(df, tableName, saveMode, stats)
+      } else {
+        logger.info(s"Skipping repartition...")
+        df.write.mode(saveMode).insertInto(tableName)
+        logger.info(s"Finished writing to $tableName")
+      }
+
     }.get
   }
 
@@ -402,6 +423,7 @@ case class TableUtils(sparkSession: SparkSession) {
                                           saveMode: SaveMode,
                                           stats: Option[DfStats]): Unit = {
     // get row count and table partition count statistics
+
     val (rowCount: Long, tablePartitionCount: Int) =
       if (df.schema.fieldNames.contains(partitionColumn)) {
         if (stats.isDefined && stats.get.partitionRange.wellDefined) {

@@ -16,6 +16,10 @@
 
 package ai.chronon.spark
 
+
+import java.util
+
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
@@ -41,6 +45,8 @@ import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorServic
 import scala.jdk.CollectionConverters.{asJavaIterableConverter, asScalaBufferConverter, mapAsScalaMapConverter}
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
 import scala.util.{Failure, Success}
+
+import ai.chronon.api.Constants.SmallJoinCutoff
 
 /*
  * hashes: a list containing bootstrap hashes that represent the list of bootstrap parts that a record has matched
@@ -206,6 +212,16 @@ class Join(joinConf: api.Join,
     coveringSetsPerJoinPart
   }
 
+  def getAllLeftSideKeyNames(): Seq[String] = {
+    joinConf.getJoinParts.asScala.flatMap { joinPart =>
+      if (joinPart.keyMapping != null) {
+        joinPart.keyMapping.asScala.keys.toSeq
+      } else {
+        joinPart.groupBy.getKeyColumns.asScala
+      }
+    }
+  }
+
   def injectKeyFilter(leftDf: DataFrame, joinPart: api.JoinPart): Unit = {
     // Modifies the joinPart to inject the key filter into the
 
@@ -213,7 +229,7 @@ class Join(joinConf: api.Join,
 
     // In case the joinPart uses a keymapping
     val leftSideKeyNames: Map[String, String] = if (joinPart.keyMapping != null) {
-      joinPart.keyMapping.asScala.toMap
+      joinPart.rightToLeft
     } else {
       groupByKeyNames.map { k =>
         (k, k)
@@ -230,9 +246,12 @@ class Join(joinConf: api.Join,
       val joinSelects: Map[String, String] = Option(joinConf.left.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
 
       groupByKeyExpressions.map{ case (keyName, groupByKeyExpression) =>
+        println("---------------------------------------")
+        println(s"Left side keynames ${leftSideKeyNames.mkString(",")}")
+        println(s"keyName: $keyName, expression: $groupByKeyExpressions")
+        println("---------------------------------------")
         val leftSideKeyName = leftSideKeyNames.get(keyName).get
-        val leftSelectExpression = joinSelects.getOrElse(leftSideKeyName, keyName)
-        val values = leftDf.select(leftSelectExpression).collect().map(row => row(0))
+        val values = leftDf.select(leftSideKeyName).collect().map(row => row(0))
 
         // Check for null keys, warn if found, err if all null
         val (notNullValues, nullValues) = values.partition(_ != null)
@@ -250,7 +269,11 @@ class Join(joinConf: api.Join,
 
         // Form the final WHERE clause for injection
         s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
-      }.foreach(source.rootQuery.getWheres.add(_))
+      }.foreach { whereClause =>
+        val currentWheres = Option(source.rootQuery.getWheres).getOrElse(new util.ArrayList[String]())
+        currentWheres.add(whereClause)
+        source.rootQuery.setWheres(currentWheres)
+      }
     }
   }
 
@@ -273,7 +296,7 @@ class Join(joinConf: api.Join,
     val bootstrapCoveringSets = findBootstrapSetCoverings(bootstrapDf, bootstrapInfo, leftRange)
 
     // compute a single bloomfilter at join level if there is no bootstrap operation
-    val joinLevelBloomMapOpt = if (bootstrapDf.columns.contains(Constants.MatchedHashes)) {
+    lazy val joinLevelBloomMapOpt = if (bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // do not compute if any bootstrap is involved
       None
     } else {
@@ -288,8 +311,16 @@ class Join(joinConf: api.Join,
       }
     }
 
+    val parallellism = if (runSmallMode) {
+      // Max out parallelism
+      joinConf.getJoinParts.asScala.length
+    } else {
+      tableUtils.joinPartParallelism
+    }
+
     implicit val executionContext: ExecutionContextExecutorService =
-      ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(tableUtils.joinPartParallelism))
+      ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(parallellism))
+
 
     val joinedDfTry = tableUtils
       .wrapWithCache("Computing left parts for bootstrap table", bootstrapDf) {
@@ -323,10 +354,14 @@ class Join(joinConf: api.Join,
                     s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
                 }
 
-                // If left DF is small, hardcode the key filter into the joinPart's GroupBy's where clause.
-                if (unfilledLeftDf.isDefined && unfilledLeftDf.get.df.)
-                val df =
-                  computeRightTable(unfilledLeftDf, joinPart, leftRange, joinLevelBloomMapOpt).map(df => joinPart -> df)
+                val (bloomFilterOpt, skipFilter) = if (runSmallMode) {
+                  // If left DF is small, hardcode the key filter into the joinPart's GroupBy's where clause.
+                  injectKeyFilter(leftDf, joinPart)
+                  (None, true)
+                } else {
+                  (joinLevelBloomMapOpt, false)
+                }
+                val df = computeRightTable(unfilledLeftDf, joinPart, leftRange, bloomFilterOpt, skipFilter).map(df => joinPart -> df)
                 Thread.currentThread().setName(s"done-$threadName")
                 df
               }
