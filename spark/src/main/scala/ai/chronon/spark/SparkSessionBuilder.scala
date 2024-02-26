@@ -35,7 +35,8 @@ object SparkSessionBuilder {
   def build(name: String,
             local: Boolean = false,
             localWarehouseLocation: Option[String] = None,
-            additionalConfig: Option[Map[String, String]] = None): SparkSession = {
+            additionalConfig: Option[Map[String, String]] = None,
+            enforceKryoSerializer: Boolean = true): SparkSession = {
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
@@ -49,16 +50,20 @@ object SparkSessionBuilder {
       .config("spark.sql.session.timeZone", "UTC")
       //otherwise overwrite will delete ALL partitions, not just the ones it touches
       .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
-      .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
-      .config("spark.kryo.registrator", "ai.chronon.spark.ChrononKryoRegistrator")
-      .config("spark.kryoserializer.buffer.max", "2000m")
-      .config("spark.kryo.referenceTracking", "false")
       .config("hive.exec.dynamic.partition", "true")
       .config("hive.exec.dynamic.partition.mode", "nonstrict")
       .config("spark.sql.catalogImplementation", "hive")
       .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
       .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
+    // Staging queries don't benefit from the KryoSerializer and in fact may fail with buffer underflow in some cases.
+    if (enforceKryoSerializer) {
+      baseBuilder
+        .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
+        .config("spark.kryo.registrator", "ai.chronon.spark.ChrononKryoRegistrator")
+        .config("spark.kryoserializer.buffer.max", "2000m")
+        .config("spark.kryo.referenceTracking", "false")
+    }
     additionalConfig.foreach { configMap =>
       configMap.foreach { config => baseBuilder = baseBuilder.config(config._1, config._2) }
     }
