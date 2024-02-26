@@ -3,7 +3,7 @@ FROM openjdk:8-jre-slim
 
 # Set this manually before building the image, requires a local build of the jar
 
-ENV CHRONON_JAR_PATH=spark/target-embedded/scala-2.12/your_build.jar
+ENV CHRONON_JAR_PATH=spark/target/scala-2.12/your_build.jar
 
 # Update package lists and install necessary tools
 RUN apt-get update && apt-get install -y \
@@ -75,7 +75,7 @@ WORKDIR ${SPARK_HOME}
 # If doing a regular local spark box.
 WORKDIR /srv/chronon
 
-ENV DRIVER_JAR_PATH="/srv/spark/spark_embedded.jar"
+ENV DRIVER_JAR_PATH="/srv/spark/spark_uber.jar"
 
 COPY api/py/test/sample ./
 COPY quickstart/mongo-online-impl /srv/onlineImpl

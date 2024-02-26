@@ -1,9 +1,11 @@
-import sbt.Keys._
+import sbt.Keys.*
 import sbt.Test
 
 import scala.io.StdIn
-import scala.sys.process._
-import complete.DefaultParsers._
+import scala.sys.process.*
+import complete.DefaultParsers.*
+
+import scala.language.postfixOps
 
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
@@ -51,7 +53,7 @@ lazy val publishSettings = Seq(
 )
 
 // Release related configs
-import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations._
+import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations.*
 lazy val releaseSettings = Seq(
   releaseUseGlobalVersion := false,
   releaseVersionBump := sbtrelease.Version.Bump.Next,
@@ -80,13 +82,13 @@ enablePlugins(GitVersioning, GitBranchPrompt)
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded, flink)
+  .aggregate(api, aggregator, online, spark_uber, flink)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
     name := "chronon"
   )
-  .settings(releaseSettings: _*)
+  .settings(releaseSettings *)
 
 // Git related config
 git.useGitDescribe := true
@@ -96,10 +98,10 @@ git.gitTagToVersionNumber := { tag: String =>
   val branchTag = git.gitCurrentBranch.value.replace("/", "-")
   if (branchTag == "main" || branchTag == "master") {
     // For main branches, we tag the packages as <package-name>-<build-version>
-    Some(s"${versionStr}")
+    Some(versionStr)
   } else {
     // For user branches, we tag the packages as <package-name>-<user-branch>-<build-version>
-    Some(s"${branchTag}-${versionStr}")
+    Some(s"$branchTag-$versionStr")
   }
 }
 
@@ -203,7 +205,7 @@ lazy val api = project
       val outputJava = (Compile / sourceManaged).value
       Thrift.gen(inputThrift.getPath, outputJava.getPath, "java")
     }.taskValue,
-    sourceGenerators in Compile += python_api_build.taskValue,
+    Compile / sourceGenerators += python_api_build.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
       fromMatrix(scalaVersion.value, "spark-sql/provided") ++
@@ -240,8 +242,8 @@ python_api := {
   val s: TaskStreams = streams.value
   val versionStr = (api / version).value
   val branchStr = git.gitCurrentBranch.value.replace("/", "-")
-  s.log.info(s"Building Python API version: ${versionStr}, branch: ${branchStr}, action: ${action} ...")
-  if ((s"api/py/python-api-build.sh ${versionStr} ${branchStr} ${action}" !) == 0) {
+  s.log.info(s"Building Python API version: ${versionStr}, branch: $branchStr, action: $action ...")
+  if ((s"api/py/python-api-build.sh $versionStr $branchStr $action" !) == 0) {
     s.log.success("Built Python API")
   } else {
     throw new IllegalStateException("Python API build failed!")
@@ -286,21 +288,6 @@ lazy val aggregator = project
 lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
   .settings(
-    publishSettings,
-    crossScalaVersions := supportedVersions,
-    libraryDependencies ++= Seq(
-      "org.scala-lang.modules" %% "scala-java8-compat" % "0.9.0",
-      // statsd 3.0 has local aggregation - TODO: upgrade
-      "com.datadoghq" % "java-dogstatsd-client" % "2.7",
-      "org.rogach" %% "scallop" % "4.0.1",
-      "net.jodah" % "typetools" % "0.4.1"
-    ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer")
-  )
-
-lazy val online_unshaded = (project in file("online"))
-  .dependsOn(aggregator.%("compile->compile;test->test"))
-  .settings(
     target := target.value.toPath.resolveSibling("target-no-assembly").toFile,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
@@ -325,13 +312,14 @@ def cleanSparkMeta(): Unit = {
                file(tmp_warehouse) / "metastore_db")
 }
 
-val sparkBaseSettings: Seq[Setting[_]] = Seq(
+val sparkBaseSettings: Seq[Setting[?]] = Seq(
   assembly / test := {},
   assembly / artifact := {
     val art = (assembly / artifact).value
     art.withClassifier(Some("assembly"))
   },
-  mainClass in (Compile, run) := Some("ai.chronon.spark.Driver"),
+  Compile / mainClass := Some("ai.chronon.spark.Driver"),
+  run / mainClass := Some("ai.chronon.spark.Driver"),
   cleanFiles ++= Seq(file(tmp_warehouse)),
   Test / testOptions += Tests.Setup(() => cleanSparkMeta()),
   // compatibility for m1 chip laptop
@@ -339,21 +327,11 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
 ) ++ addArtifact(assembly / artifact, assembly) ++ publishSettings
 
 lazy val spark_uber = (project in file("spark"))
-  .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
+  .dependsOn(aggregator.%("compile->compile;test->test"), online)
   .settings(
     sparkBaseSettings,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "jackson", "spark-all/provided")
-  )
-
-lazy val spark_embedded = (project in file("spark"))
-  .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
-  .settings(
-    sparkBaseSettings,
-    crossScalaVersions := supportedVersions,
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
-    target := target.value.toPath.resolveSibling("target-embedded").toFile,
-    Test / test := {}
   )
 
 lazy val flink = (project in file("flink"))
@@ -385,10 +363,10 @@ sphinx := {
 
 ThisBuild / assemblyMergeStrategy := {
   case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
-  case PathList("META-INF", _ @_*)         => MergeStrategy.filterDistinctLines
+  case PathList("META-INF", _*)         => MergeStrategy.filterDistinctLines
   case "plugin.xml"                        => MergeStrategy.last
-  case PathList("com", "fasterxml", _ @_*) => MergeStrategy.last
-  case PathList("com", "google", _ @_*)    => MergeStrategy.last
+  case PathList("com", "fasterxml", _*) => MergeStrategy.last
+  case PathList("com", "google", _*)    => MergeStrategy.last
   case _                                   => MergeStrategy.first
 }
 exportJars := true
