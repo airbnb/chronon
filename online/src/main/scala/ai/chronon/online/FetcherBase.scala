@@ -231,8 +231,8 @@ class FetcherBase(kvStore: KVStore,
     * @param batchEndTs the new batchEndTs from the latest batch data
     * @param groupByServingInfo the current GroupByServingInfo
     */
-  private def updateServingInfo(batchEndTs: Long,
-                                groupByServingInfo: GroupByServingInfoParsed): GroupByServingInfoParsed = {
+  private[online] def updateServingInfo(batchEndTs: Long,
+                                        groupByServingInfo: GroupByServingInfoParsed): GroupByServingInfoParsed = {
     val name = groupByServingInfo.groupBy.metaData.name
     if (batchEndTs > groupByServingInfo.batchEndTsMillis) {
       logger.info(s"""$name's value's batch timestamp of $batchEndTs is
