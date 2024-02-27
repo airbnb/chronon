@@ -38,8 +38,7 @@ case class TimestampedIR(
   */
 class FlinkRowAggregationFunction(
     groupBy: GroupBy,
-    inputSchema: Seq[(String, DataType)],
-    debug: Boolean = false
+    inputSchema: Seq[(String, DataType)]
 ) extends AggregateFunction[Map[String, Any], TimestampedIR, TimestampedIR] {
   @transient private[flink] var rowAggregator: RowAggregator = _
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -72,20 +71,16 @@ class FlinkRowAggregationFunction(
 
     // Given that the rowAggregator is transient, it may be null when a job is restored from a checkpoint
     if (rowAggregator == null) {
-      if (debug) {
-        logger.info(
+      logger.debug(
           f"The Flink RowAggregator was null for groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills"
         )
-      }
       initializeRowAggregator()
     }
 
-    if (debug) {
-      logger.info(
+    logger.debug(
         f"Flink pre-aggregates BEFORE adding new element: accumulatorIr=[${accumulatorIr.ir
           .mkString(", ")}] groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
       )
-    }
 
     val partialAggregates = Try {
       rowAggregator.update(accumulatorIr.ir, row)
@@ -93,12 +88,10 @@ class FlinkRowAggregationFunction(
 
     partialAggregates match {
       case Success(v) => {
-        if (debug) {
-          logger.info(
+        logger.debug(
             f"Flink pre-aggregates AFTER adding new element [${v.mkString(", ")}] " +
               f"groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
           )
-        }
         TimestampedIR(v, Some(tsMills))
       }
       case Failure(e) =>
@@ -151,8 +144,7 @@ case class TimestampedTile(
 // This process function is only meant to be used downstream of the ChrononFlinkAggregationFunction
 class FlinkRowAggProcessFunction(
     groupBy: GroupBy,
-    inputSchema: Seq[(String, DataType)],
-    debug: Boolean = false
+    inputSchema: Seq[(String, DataType)]
 ) extends ProcessWindowFunction[TimestampedIR, TimestampedTile, List[Any], TimeWindow] {
 
   @transient private[flink] var tileCodec: TileCodec = _
@@ -193,14 +185,13 @@ class FlinkRowAggProcessFunction(
 
     tileBytes match {
       case Success(v) => {
-        if (debug) {
-          logger.info(
-            f"Flink aggregator processed element irEntry=$irEntry " +
-              f"tileBytes=${java.util.Base64.getEncoder.encodeToString(v)} " +
-              f"windowEnd=$windowEnd groupBy=${groupBy.getMetaData.getName} " +
-              f"keys=$keys isComplete=$isComplete tileAvroSchema=${tileCodec.tileAvroSchema}"
+        logger.debug(
+            s"""
+                |Flink aggregator processed element irEntry=$irEntry
+                |tileBytes=${java.util.Base64.getEncoder.encodeToString(v)}
+                |windowEnd=$windowEnd groupBy=${groupBy.getMetaData.getName}
+                |keys=$keys isComplete=$isComplete tileAvroSchema=${tileCodec.tileAvroSchema}"""
           )
-        }
         // The timestamp should never be None here.
         out.collect(TimestampedTile(keys, v, irEntry.latestTsMillis.get))
       }

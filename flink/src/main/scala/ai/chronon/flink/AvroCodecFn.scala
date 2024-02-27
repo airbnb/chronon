@@ -123,7 +123,7 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
   * @param groupByServingInfoParsed The GroupBy we are working with
   * @tparam T The input data type
   */
-case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed, debug: Boolean = false)
+case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
     extends BaseAvroCodecFn[TimestampedTile, PutRequest] {
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
@@ -156,8 +156,7 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
     val keyBytes = keyToBytes(in.keys.toArray)
     val valueBytes = in.tileBytes
 
-    if (debug) {
-      logger.info(
+    logger.debug(
         s"""
         |Avro converting tile to PutRequest - tile=${in}
         |groupBy=${groupByServingInfoParsed.groupBy.getMetaData.getName} tsMills=$tsMills keys=$keys
@@ -165,7 +164,6 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
         |valueBytes=${java.util.Base64.getEncoder.encodeToString(valueBytes)}
         |streamingDataset=$streamingDataset""".stripMargin
       )
-    }
 
     PutRequest(keyBytes, valueBytes, streamingDataset, Some(tsMills))
   }
