@@ -327,7 +327,7 @@ def set_runtime_env(args):
                         "chronon",
                         conf_type,
                         args.mode.replace("-", "_") if args.mode else None,
-                ]
+                    ]
                     if k is not None
                 ]
             )
