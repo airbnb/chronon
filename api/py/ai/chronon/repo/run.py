@@ -238,7 +238,7 @@ def set_runtime_env(args):
         - conf.metaData.modeToEnvMap for the mode (set on config)
         - team environment per context and mode set on teams.json
         - production team environment per mode set on teams.json
-        - default production team environment per context and mode set on teams.json
+        - default team environment per context and mode set on teams.json
         - Common Environment set in teams.json
     """
     environment = {
