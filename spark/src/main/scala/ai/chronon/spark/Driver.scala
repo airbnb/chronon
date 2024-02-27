@@ -558,6 +558,11 @@ object Driver {
         descr = "file path to json of the keys to fetch",
         short = 'f'
       )
+      val atMillis: ScallopOption[Long] = opt[Long](
+        required = false,
+        descr = "timestamp to fetch the data at",
+        default = None
+      )
       val interval: ScallopOption[Int] = opt[Int](
         required = false,
         descr = "interval between requests in seconds",
@@ -626,7 +631,7 @@ object Driver {
             fetchStats(args, objectMapper, keyMap, fetcher)
           } else {
             val startNs = System.nanoTime
-            val requests = Seq(Fetcher.Request(args.name(), keyMap))
+            val requests = Seq(Fetcher.Request(args.name(), keyMap, args.atMillis.toOption))
             val resultFuture = if (args.`type`() == "join") {
               fetcher.fetchJoin(requests)
             } else {
