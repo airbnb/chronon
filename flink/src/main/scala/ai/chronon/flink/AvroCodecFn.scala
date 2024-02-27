@@ -119,7 +119,7 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
 /**
   * A Flink function that is responsible for converting an array of pre-aggregates (aka a tile) to a form
   * that can be written out to the KV store (PutRequest object).
- * 
+  *
   * @param groupByServingInfoParsed The GroupBy we are working with
   * @tparam T The input data type
   */
@@ -146,7 +146,7 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
         eventProcessingErrorCounter.inc()
         avroConversionErrorCounter.inc()
     }
- 
+
   def avroConvertTileToPutRequest(in: TimestampedTile): PutRequest = {
     val tsMills = in.latestTsMillis
 
@@ -157,13 +157,13 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
     val valueBytes = in.tileBytes
 
     logger.debug(
-        s"""
+      s"""
         |Avro converting tile to PutRequest - tile=${in}
         |groupBy=${groupByServingInfoParsed.groupBy.getMetaData.getName} tsMills=$tsMills keys=$keys
-        |keyBytes=${java.util. Base64.getEncoder.encodeToString(keyBytes)}
+        |keyBytes=${java.util.Base64.getEncoder.encodeToString(keyBytes)}
         |valueBytes=${java.util.Base64.getEncoder.encodeToString(valueBytes)}
         |streamingDataset=$streamingDataset""".stripMargin
-      )
+    )
 
     PutRequest(keyBytes, valueBytes, streamingDataset, Some(tsMills))
   }

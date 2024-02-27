@@ -72,15 +72,15 @@ class FlinkRowAggregationFunction(
     // Given that the rowAggregator is transient, it may be null when a job is restored from a checkpoint
     if (rowAggregator == null) {
       logger.debug(
-          f"The Flink RowAggregator was null for groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills"
-        )
+        f"The Flink RowAggregator was null for groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills"
+      )
       initializeRowAggregator()
     }
 
     logger.debug(
-        f"Flink pre-aggregates BEFORE adding new element: accumulatorIr=[${accumulatorIr.ir
-          .mkString(", ")}] groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
-      )
+      f"Flink pre-aggregates BEFORE adding new element: accumulatorIr=[${accumulatorIr.ir
+        .mkString(", ")}] groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
+    )
 
     val partialAggregates = Try {
       rowAggregator.update(accumulatorIr.ir, row)
@@ -89,9 +89,9 @@ class FlinkRowAggregationFunction(
     partialAggregates match {
       case Success(v) => {
         logger.debug(
-            f"Flink pre-aggregates AFTER adding new element [${v.mkString(", ")}] " +
-              f"groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
-          )
+          f"Flink pre-aggregates AFTER adding new element [${v.mkString(", ")}] " +
+            f"groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
+        )
         TimestampedIR(v, Some(tsMills))
       }
       case Failure(e) =>
@@ -186,12 +186,12 @@ class FlinkRowAggProcessFunction(
     tileBytes match {
       case Success(v) => {
         logger.debug(
-            s"""
+          s""" 
                 |Flink aggregator processed element irEntry=$irEntry
                 |tileBytes=${java.util.Base64.getEncoder.encodeToString(v)}
                 |windowEnd=$windowEnd groupBy=${groupBy.getMetaData.getName}
                 |keys=$keys isComplete=$isComplete tileAvroSchema=${tileCodec.tileAvroSchema}"""
-          )
+        )
         // The timestamp should never be None here.
         out.collect(TimestampedTile(keys, v, irEntry.latestTsMillis.get))
       }
