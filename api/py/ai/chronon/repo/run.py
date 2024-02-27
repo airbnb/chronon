@@ -506,7 +506,7 @@ class Runner:
             online_jar=self.online_jar,
             online_class=self.online_class,
         )
-        override_start_partition_arg = "--start-partition-override=" + start_ds if start_ds else ""
+        override_start_partition_arg = " --start-partition-override=" + start_ds if start_ds else ""
         final_args = base_args + " " + str(self.args) + override_start_partition_arg
         return final_args
 
