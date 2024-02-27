@@ -19,6 +19,7 @@ package ai.chronon.aggregator.windowing
 import ai.chronon.api.Extensions.{WindowOps, WindowUtils}
 import ai.chronon.api.{GroupBy, TimeUnit, Window}
 
+import scala.util.ScalaJavaConversions.ListOps
 import scala.util.ScalaVersionSpecificCollectionsConverter.convertJavaListToScala
 
 trait Resolution extends Serializable {
@@ -68,9 +69,9 @@ object ResolutionUtils {
     * */
   def getSmallestWindowResolutionInMillis(groupBy: GroupBy): Option[Long] =
     Option(
-      convertJavaListToScala(groupBy.aggregations).toArray
+      groupBy.aggregations.toScala.toArray
         .flatMap(aggregation =>
-          if (aggregation.windows != null) convertJavaListToScala(aggregation.windows)
+          if (aggregation.windows != null) aggregation.windows.toScala
           else None)
         .map(FiveMinuteResolution.calculateTailHop)
     ).filter(_.nonEmpty).map(_.min)
