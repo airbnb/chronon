@@ -118,8 +118,8 @@ case class JoinCodec(conf: JoinOps,
 object JoinCodec {
 
   val timeFields: Array[StructField] = Array(
-    StructField("ts", LongType),
-    StructField("ds", StringType)
+    StructField(Constants.TimeColumn, LongType),
+    StructField(Constants.PartitionColumn, StringType)
   )
 
   // remove value fields of groupBys that have failed with exceptions

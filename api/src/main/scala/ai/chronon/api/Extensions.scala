@@ -94,19 +94,19 @@ object Extensions {
     def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
     def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
-    def loggedTable = s"${outputTable}_logged"
+    def loggedTable = s"${outputTable}_logged_v2"
 
     def bootstrapTable = getOutputTableMap(metaData)
       .map(_.get("output_bootstrap"))
       .getOrElse(s"${outputTable}_bootstrap")
 
-    private def comparisonPrefix = "comparison"
+    private def comparisonPrefix = "comparison_v2"
 
     def comparisonConfName = s"${metaData.getName}_$comparisonPrefix"
 
     def comparisonTable = s"${outputTable}_$comparisonPrefix"
 
-    def consistencyTable = s"${outputTable}_consistency"
+    def consistencyTable = s"${outputTable}_consistency_v2"
 
     def uploadTable = getOutputTableMap(metaData)
       .map(_.get("output"))

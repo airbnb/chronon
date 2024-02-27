@@ -29,7 +29,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, tab
     val loggedSource: Source = new Source()
     val loggedEvents: EventSource = new EventSource()
     val query = new Query()
-    val mapping = joinConf.leftKeyCols.map(k => k -> k)
+    val mapping = (joinConf.leftKeyCols.toList ++ joinConf.rowIds.asScala).map(k => k -> k)
     val selects = new util.HashMap[String, String]()
     mapping.foreach { case (key, value) => selects.put(key, value) }
     query.setSelects(selects)
@@ -107,7 +107,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, tab
       val loggedDfNoExternalCols = loggedDf.select(comparisonDfNoExternalCols.columns.map(org.apache.spark.sql.functions.col): _*)
       println("Starting compare job for stats")
       val joinKeys = if (joinConf.isSetRowIds) {
-        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.rowIds)
+        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(joinConf.rowIds) ++ JoinCodec.timeFields.map(_.name).toList
       } else {
         JoinCodec.timeFields.map(_.name).toList ++ joinConf.leftKeyCols
       }
@@ -117,7 +117,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, tab
                                                                    keys = joinKeys,
                                                                    tableUtils)
       println("Saving output.")
-      val outputDf = metricsDf.withTimeBasedColumn("ds")
+      val outputDf = metricsDf.withTimeBasedColumn(Constants.PartitionColumn)
       println(s"output schema ${outputDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
       tableUtils.insertPartitions(outputDf,
                                   joinConf.metaData.consistencyTable,

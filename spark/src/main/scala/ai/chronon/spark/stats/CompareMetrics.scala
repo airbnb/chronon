@@ -5,7 +5,7 @@ import ai.chronon.api.Extensions.{AggregationPartOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.{DataMetrics, SparkConversions}
 import ai.chronon.spark.Comparison
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.BaseTableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.expressions.UserDefinedFunction
@@ -134,9 +134,10 @@ object CompareMetrics {
   def compute(valueFields: Array[StructField],
               inputDf: DataFrame,
               keys: Seq[String],
+              tableUtils: BaseTableUtils,
               mapping: Map[String, String] = Map.empty,
-              timeBucketMinutes: Long = 60): (DataFrame, DataMetrics) = {
-    val tableUtils = TableUtils(inputDf.sparkSession)
+              timeBucketMinutes: Long = 60,
+              ): (DataFrame, DataMetrics) = {
     // spark maps cannot be directly compared, for now we compare the string representation
     // TODO 1: For Maps, we should find missing keys, extra keys and mismatched keys
     // TODO 2: Values should have type specific comparison
@@ -187,7 +188,7 @@ object CompareMetrics {
     val resultRowRdd: RDD[SparkRow] = resultRdd.map {
       case (bucketStart, metrics) => new GenericRow(bucketStart +: metrics)
     }
-    val resultChrononSchema = StructType.from("ooc_metrics", ("ts", LongType) +: rowAggregator.outputSchema)
+    val resultChrononSchema = StructType.from("ooc_metrics", (Constants.TimeColumn, LongType) +: rowAggregator.outputSchema)
     val resultSparkSchema = SparkConversions.fromChrononSchema(resultChrononSchema)
     val resultDf = inputDf.sparkSession.createDataFrame(resultRowRdd, resultSparkSchema)
 

@@ -110,7 +110,7 @@ class LogFlattenerJob(session: SparkSession,
     val outputSchema = StructType("", metadataFields ++ dataFields)
     val (keyBase64Idx, valueBase64Idx, tsIdx, dsIdx, schemaHashIdx) = (0, 1, 2, 3, 4)
     val outputRdd: RDD[Row] = rawDf
-      .select("key_base64", "value_base64", "ts_millis", "ds", Constants.SchemaHash)
+      .select("key_base64", "value_base64", "ts_millis", tableUtils.partitionColumn, Constants.SchemaHash)
       .rdd
       .flatMap { row =>
         if (row.isNullAt(schemaHashIdx)) {
