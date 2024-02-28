@@ -36,7 +36,7 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
 import scala.util.Try
 
-class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
+class FetcherBaseTest extends MockitoSugar with Matchers {
   val GroupBy = "relevance.short_term_user_features"
   val Column = "pdp_view_count_14d"
   val GuestKey = "guest"
@@ -177,8 +177,8 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
 
     val metaDataMock = mock[MetaData]
     val groupByOpsMock = mock[GroupByOps]
-    doReturn("test").when(metaDataMock).name
-    doReturn(metaDataMock).when(groupByOpsMock).metaData
+    metaDataMock.name = "test"
+    groupByOpsMock.metaData = metaDataMock
     doReturn(groupByOpsMock).when(oldServingInfo).groupByOps
 
     val cachedBatchResponses = BatchResponses(mock[FinalBatchIr])
