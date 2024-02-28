@@ -118,7 +118,7 @@ class FlinkJobIntegrationTest {
       FlinkTestUtils.makeTestGroupByServingInfoParsed(groupBy, encoder.schema, outputSchema)
     val mockApi = mock[Api](withSettings().serializable())
     val writerFn = new MockAsyncKVStoreWriter(Seq(true), mockApi, "testTiledFlinkJobEndToEndFG")
-    val job = new FlinkJob[E2ETestEvent](source, writerFn, groupByServingInfoParsed, encoder, 2, true)
+    val job = new FlinkJob[E2ETestEvent](source, writerFn, groupByServingInfoParsed, encoder, 2)
     job.runTiledGroupByJob(env).addSink(new CollectSink)
 
     env.execute("TiledFlinkJobIntegrationTest")
