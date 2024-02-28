@@ -32,6 +32,26 @@
                 "EXECUTOR_MEMORY": "4G",
                 "PARALLELISM": "16"
             }
+        },
+        "dev": {
+            "backfill" : {
+                "EXECUTOR_CORES": "1",
+                "DRIVER_MEMORY": "15G",
+                "EXECUTOR_MEMORY": "16G",
+                "PARALLELISM": "4000",
+                "MAX_EXECUTORS": "1000"
+            },
+            "upload" : {
+                "EXECUTOR_CORES": "1",
+                "EXECUTOR_MEMORY": "8G",
+                "PARALLELISM": "1000",
+                "MAX_EXECUTORS": "1000"
+            },
+            "streaming" : {
+                "EXECUTOR_CORES": "2",
+                "EXECUTOR_MEMORY": "4G",
+                "PARALLELISM": "16"
+            }
         }
     },
     "sample_team": {
@@ -41,6 +61,12 @@
         "production": {
             "backfill" : {
                 "EXECUTOR_CORES": "4"
+            }
+        },
+        "dev": {
+            "backfill" : {
+                "EXECUTOR_CORES": "2",
+                "DRIVER_MEMORY": "30G"
             }
         }
     },
