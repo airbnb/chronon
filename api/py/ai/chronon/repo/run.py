@@ -276,7 +276,10 @@ def set_runtime_env(args):
                     team = "default"
                 # context is the environment in which the job is running, which is provided from the args,
                 # default to be dev.
-                context = args.env
+                if args.env:
+                    context = args.env
+                else:
+                    context = "dev"
                 logging.info(
                     f"Context: {context} -- conf_type: {conf_type} -- team: {team}"
                 )
