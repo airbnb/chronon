@@ -1,43 +1,19 @@
 package ai.chronon.flink.test
 
-import ai.chronon.api.Extensions.{WindowOps, WindowUtils}
-import ai.chronon.api.{GroupBy, GroupByServingInfo, PartitionSpec}
-import ai.chronon.flink.{FlinkJob, FlinkSource, SparkExpressionEvalFn, WriteResponse}
-import ai.chronon.online.Extensions.StructTypeOps
+import ai.chronon.flink.window.{TimestampedIR, TimestampedTile}
+import ai.chronon.flink.{FlinkJob, SparkExpressionEvalFn}
 import ai.chronon.online.{Api, GroupByServingInfoParsed}
+import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration
-import org.apache.flink.streaming.api.scala.{DataStream, StreamExecutionEnvironment}
-import org.apache.flink.api.scala._
-import org.apache.flink.streaming.api.functions.sink.SinkFunction
+import org.apache.flink.streaming.api.scala.StreamExecutionEnvironment
 import org.apache.flink.test.util.MiniClusterWithClientResource
 import org.apache.spark.sql.Encoders
-import org.apache.spark.sql.types.StructType
 import org.junit.Assert.assertEquals
 import org.junit.{After, Before, Test}
 import org.mockito.Mockito.withSettings
 import org.scalatestplus.mockito.MockitoSugar.mock
 
-import java.util
-import java.util.Collections
 import scala.jdk.CollectionConverters.asScalaBufferConverter
-
-class E2EEventSource(mockEvents: Seq[E2ETestEvent]) extends FlinkSource[E2ETestEvent] {
-  override def getDataStream(topic: String, groupName: String)(env: StreamExecutionEnvironment,
-                                                               parallelism: Int): DataStream[E2ETestEvent] = {
-    env.fromCollection(mockEvents)
-  }
-}
-
-class CollectSink extends SinkFunction[WriteResponse] {
-  override def invoke(value: WriteResponse, context: SinkFunction.Context): Unit = {
-    CollectSink.values.add(value)
-  }
-}
-
-object CollectSink {
-  // must be static
-  val values: util.List[WriteResponse] = Collections.synchronizedList(new util.ArrayList())
-}
 
 class FlinkJobIntegrationTest {
 
@@ -46,6 +22,30 @@ class FlinkJobIntegrationTest {
       .setNumberSlotsPerTaskManager(8)
       .setNumberTaskManagers(1)
       .build)
+
+  // Decode a PutRequest into a TimestampedTile
+  def avroConvertPutRequestToTimestampedTile[T](
+      in: PutRequest,
+      groupByServingInfoParsed: GroupByServingInfoParsed
+  ): TimestampedTile = {
+    // Decode the key bytes into a GenericRecord
+    val tileBytes = in.valueBytes
+    val record = groupByServingInfoParsed.keyCodec.decode(in.keyBytes)
+
+    // Get all keys we expect to be in the GenericRecord
+    val decodedKeys: List[String] =
+      groupByServingInfoParsed.groupBy.keyColumns.asScala.map(record.get(_).toString).toList
+
+    val tsMills = in.tsMillis.get
+    TimestampedTile(decodedKeys, tileBytes, tsMills)
+  }
+
+  // Decode a TimestampedTile into a TimestampedIR
+  def avroConvertTimestampedTileToTimestampedIR(timestampedTile: TimestampedTile,
+                                                groupByServingInfoParsed: GroupByServingInfoParsed): TimestampedIR = {
+    val tileIR = groupByServingInfoParsed.tiledCodec.decodeTileIr(timestampedTile.tileBytes)
+    TimestampedIR(tileIR._1, Some(timestampedTile.latestTsMillis))
+  }
 
   @Before
   def setup(): Unit = {
@@ -56,45 +56,7 @@ class FlinkJobIntegrationTest {
   @After
   def teardown(): Unit = {
     flinkCluster.after()
-  }
-
-  private def makeTestGroupByServingInfoParsed(groupBy: GroupBy,
-                                               inputSchema: StructType,
-                                               outputSchema: StructType): GroupByServingInfoParsed = {
-    val groupByServingInfo = new GroupByServingInfo()
-    groupByServingInfo.setGroupBy(groupBy)
-
-    // Set input avro schema for groupByServingInfo
-    groupByServingInfo.setInputAvroSchema(
-      inputSchema.toAvroSchema("Input").toString(true)
-    )
-
-    // Set key avro schema for groupByServingInfo
-    groupByServingInfo.setKeyAvroSchema(
-      StructType(
-        groupBy.keyColumns.asScala.map { keyCol =>
-          val keyColStructType = outputSchema.fields.find(field => field.name == keyCol)
-          keyColStructType match {
-            case Some(col) => col
-            case None =>
-              throw new IllegalArgumentException(s"Missing key col from output schema: $keyCol")
-          }
-        }
-      ).toAvroSchema("Key")
-        .toString(true)
-    )
-
-    // Set value avro schema for groupByServingInfo
-    val aggInputColNames = groupBy.aggregations.asScala.map(_.inputColumn).toList
-    groupByServingInfo.setSelectedAvroSchema(
-      StructType(outputSchema.fields.filter(field => aggInputColNames.contains(field.name)))
-        .toAvroSchema("Value")
-        .toString(true)
-    )
-    new GroupByServingInfoParsed(
-      groupByServingInfo,
-      PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
-    )
+    CollectSink.values.clear()
   }
 
   @Test
@@ -113,9 +75,10 @@ class FlinkJobIntegrationTest {
 
     val outputSchema = new SparkExpressionEvalFn(encoder, groupBy).getOutputSchema
 
-    val groupByServingInfoParsed = makeTestGroupByServingInfoParsed(groupBy, encoder.schema, outputSchema)
+    val groupByServingInfoParsed =
+      FlinkTestUtils.makeTestGroupByServingInfoParsed(groupBy, encoder.schema, outputSchema)
     val mockApi = mock[Api](withSettings().serializable())
-    val writerFn = new MockAsyncKVStoreWriter(Seq(true), mockApi, "testFG")
+    val writerFn = new MockAsyncKVStoreWriter(Seq(true), mockApi, "testFlinkJobEndToEndFG")
     val job = new FlinkJob[E2ETestEvent](source, writerFn, groupByServingInfoParsed, encoder, 2)
 
     job.runGroupByJob(env).addSink(new CollectSink)
@@ -131,5 +94,68 @@ class FlinkJobIntegrationTest {
     assertEquals(writeEventCreatedDS.map(_.putRequest.tsMillis).map(_.get).toSet, elements.map(_.created).toSet)
     // check that all the writes were successful
     assertEquals(writeEventCreatedDS.map(_.status), Seq(true, true, true))
+  }
+
+  @Test
+  def testTiledFlinkJobEndToEnd(): Unit = {
+    implicit val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+
+    // Create some test events with multiple different ids so we can check if tiling/pre-aggregation works correctly
+    // for each of them.
+    val id1Elements = Seq(E2ETestEvent(id = "id1", int_val = 1, double_val = 1.5, created = 1L),
+                          E2ETestEvent(id = "id1", int_val = 1, double_val = 2.5, created = 2L))
+    val id2Elements = Seq(E2ETestEvent(id = "id2", int_val = 1, double_val = 10.0, created = 3L))
+    val elements: Seq[E2ETestEvent] = id1Elements ++ id2Elements
+    val source = new WatermarkedE2EEventSource(elements)
+
+    // Make a GroupBy that SUMs the double_val of the elements.
+    val groupBy = FlinkTestUtils.makeGroupBy(Seq("id"))
+
+    // Prepare the Flink Job
+    val encoder = Encoders.product[E2ETestEvent]
+    val outputSchema = new SparkExpressionEvalFn(encoder, groupBy).getOutputSchema
+    val groupByServingInfoParsed =
+      FlinkTestUtils.makeTestGroupByServingInfoParsed(groupBy, encoder.schema, outputSchema)
+    val mockApi = mock[Api](withSettings().serializable())
+    val writerFn = new MockAsyncKVStoreWriter(Seq(true), mockApi, "testTiledFlinkJobEndToEndFG")
+    val job = new FlinkJob[E2ETestEvent](source, writerFn, groupByServingInfoParsed, encoder, 2)
+    job.runTiledGroupByJob(env).addSink(new CollectSink)
+
+    env.execute("TiledFlinkJobIntegrationTest")
+
+    // capture the datastream of the 'created' timestamps of all the written out events
+    val writeEventCreatedDS = CollectSink.values.asScala
+
+    // BASIC ASSERTIONS
+    // All elements were processed
+    assert(writeEventCreatedDS.size == elements.size)
+    // check that the timestamps of the written out events match the input events
+    // we use a Set as we can have elements out of order given we have multiple tasks
+    assertEquals(writeEventCreatedDS.map(_.putRequest.tsMillis).map(_.get).toSet, elements.map(_.created).toSet)
+    // check that all the writes were successful
+    assertEquals(writeEventCreatedDS.map(_.status), Seq(true, true, true))
+
+    // Assert that the pre-aggregates/tiles are correct
+    // Get a list of the final IRs for each key.
+    val finalIRsPerKey: Map[List[Any], List[Any]] = writeEventCreatedDS
+      .map(writeEvent => {
+        // First, we work back from the PutRequest decode it to TimestampedTile and then TimestampedIR
+        val timestampedTile =
+          avroConvertPutRequestToTimestampedTile(writeEvent.putRequest, groupByServingInfoParsed)
+        val timestampedIR = avroConvertTimestampedTileToTimestampedIR(timestampedTile, groupByServingInfoParsed)
+
+        // We're interested in the the keys, Intermediate Result, and the timestamp for each processed event
+        (timestampedTile.keys, timestampedIR.ir.toList, writeEvent.putRequest.tsMillis.get)
+      })
+      .groupBy(_._1) // Group by the keys
+      .map((keys) => (keys._1, keys._2.maxBy(_._3)._2)) // pick just the events with largest timestamp
+
+    // Looking back at our test events, we expect the following Intermediate Results to be generated:
+    val expectedFinalIRsPerKey = Map(
+      List("id1") -> List(4.0), // Add up the double_val of the two 'id1' events
+      List("id2") -> List(10.0)
+    )
+
+    assertEquals(expectedFinalIRsPerKey, finalIRsPerKey)
   }
 }
