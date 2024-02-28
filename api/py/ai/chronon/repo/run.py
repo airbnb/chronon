@@ -246,7 +246,7 @@ def set_runtime_env(args):
         "conf_env": {},
         "default_env": {},
         "team_env": {},
-        "production_team_env ": {},
+        "production_team_env": {},
         "cli_args": {},
     }
     conf_type = None
