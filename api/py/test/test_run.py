@@ -125,7 +125,7 @@ def test_environment(teams_json, repo, parser, test_conf_location):
     # from team dev env.
     assert os.environ['DRIVER_MEMORY'] == '30G'
     # from default dev env.
-    assert os.environ['EXECUTOR_MEMORY'] == '16G'
+    assert os.environ['EXECUTOR_MEMORY'] == '8G'
 
     # Check conf set environment overrides most.
     reset_env(default_environment)
