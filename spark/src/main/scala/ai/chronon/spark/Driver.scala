@@ -232,6 +232,8 @@ object Driver {
         opt[String](required = false,
                     descr =
                       "Start date to compute join backfill, this start date will override start partition in conf.")
+      val selectedJoinParts: ScallopOption[List[String]] =
+        opt[List[String]](required = false, descr = "A list of join parts that require backfilling.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }
@@ -242,8 +244,15 @@ object Driver {
         args.joinConf,
         args.endDate(),
         args.buildTableUtils(),
-        !args.runFirstHole()
+        !args.runFirstHole(),
+        selectedJoinParts = args.selectedJoinParts.toOption
       )
+
+      if (args.selectedJoinParts.isDefined) {
+        join.computeJoinOpt(args.stepDays.toOption, args.startPartitionOverride.toOption)
+        return
+      }
+
       val df = join.computeJoin(args.stepDays.toOption, args.startPartitionOverride.toOption)
 
       if (args.shouldExport()) {
