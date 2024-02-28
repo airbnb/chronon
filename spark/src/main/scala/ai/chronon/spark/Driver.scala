@@ -16,7 +16,6 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.api.ThriftJsonCodec
@@ -36,6 +35,7 @@ import org.apache.spark.sql.streaming.StreamingQueryListener.{
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
+import org.slf4j.LoggerFactory
 
 import java.io.File
 import java.nio.file.{Files, Paths}
@@ -250,6 +250,9 @@ object Driver {
 
       if (args.selectedJoinParts.isDefined) {
         join.computeJoinOpt(args.stepDays.toOption, args.startPartitionOverride.toOption)
+        logger.info(
+          s"Backfilling selected join parts: ${args.selectedJoinParts()} is complete. Skipping the final join. Exiting."
+        )
         return
       }
 
