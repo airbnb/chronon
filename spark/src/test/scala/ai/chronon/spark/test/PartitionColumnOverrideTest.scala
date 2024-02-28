@@ -121,6 +121,67 @@ class PartitionColumnOverrideTest {
   }
 
   @Test
+  def queryDsBasedTimestampWithOverride(): Unit = {
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+    val viewsTable = s"$namespace.view_test"
+    val df = DataFrameGen.events(spark, viewsSchema, count = 10, partitions = 1)
+    spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
+    val partitionColumns = Seq("ds")
+    df.save(viewsTable, Map("tblProp1" -> "1"), partitionColumns = partitionColumns)
+
+    val selects = Builders.Selects.exprs(
+      ("sess_length", "sess_length"),
+      ("item", "item"),
+      // Partition override
+      ("ds", "concat_ws('', ds, '-23')")
+    )
+    val source = Builders.Source.events(
+      query = Builders.Query(
+        selects = selects,
+        startPartition = "2024-01-01",
+        timeColumn = null
+      ),
+      table = viewsTable,
+    )
+    val groupBy = Builders.GroupBy(
+      metaData = Builders.MetaData(
+        namespace = namespace,
+        name = "viewgroupby"
+      ),
+      sources = List(source),
+      keyColumns = List("item"),
+      aggregations = List(
+        Builders.Aggregation(
+          operation = Operation.SUM,
+          inputColumn = "sess_length",
+          windows = List(
+            new Window(2, TimeUnit.DAYS),
+          )
+        )
+      ),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val renderedQuery = GroupBy.renderDataSourceQuery(
+      groupBy,
+      source,
+      Seq("item"),
+      PartitionRange("2023-12-01-00", "2024-01-31-23")(tableUtils),
+      tableUtils,
+      groupBy.maxWindow,
+      groupBy.inferredAccuracy
+    )
+
+    // we should see concat_ws('', ds, '-23') in the ds-based timestamp in col ts
+    val expectedDsBasedTs = "((UNIX_TIMESTAMP(concat_ws('', ds, '-23'), 'yyyy-MM-dd') * 1000) + 86400000 - 1)"
+    assert(renderedQuery.contains(expectedDsBasedTs))
+  }
+
+  @Test
   def testEventsTemporalWithPartitionColumnOverrideOnLeftAndRightParts(): Unit = {
     val nameSuffix: String = "temporal_events_with_partition_column_overrides_on_left_and_right"
     val joinConf = getEventsTemporalJoin(usePartitionOverrideForLeft = true, usePartitionOverrideForRight = true, nameSuffix)

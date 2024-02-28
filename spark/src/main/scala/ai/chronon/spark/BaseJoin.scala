@@ -108,12 +108,8 @@ abstract class BaseJoin(joinConf: api.Join, endPartition: String, tableUtils: Ba
       val rightRange = leftRange.shift(shiftDays)
       try {
 
-        val tableToPartitionOverrideMap: Map[String, String] = Map(
-          joinConf.left.table -> {
-            if (joinConf.left.query.selects != null) joinConf.left.query.selects.getOrDefault(Constants.PartitionColumn, Constants.PartitionColumn)
-            else Constants.PartitionColumn
-          }
-        )
+        val tableToPartitionOverrideMap: Map[String, String] =
+          SourceUtils.makeTableToPartitionOverride(joinConf.left)
 
         val unfilledRanges = tableUtils
           .unfilledRanges(

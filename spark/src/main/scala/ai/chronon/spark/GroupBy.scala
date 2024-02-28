@@ -672,9 +672,13 @@ object GroupBy {
       if (accuracy == api.Accuracy.TEMPORAL) {
         Some(Constants.TimeColumn -> source.query.timeColumn)
       } else {
-        val dsBasedTimestamp = // 1 millisecond before start of next partition
-          s"((UNIX_TIMESTAMP(${tableUtils.partitionColumn}, '${tableUtils.partitionSpec.format}') * 1000) + ${tableUtils.partitionSpec.spanMillis} - 1)"
-
+        val maybeOverridePartitionCol = SourceUtils.makeTableToPartitionOverride(source)
+          .getOrElse(source.table, Constants.PartitionColumn)
+        // 1 millisecond before start of next partition. Apply this on the user-specified
+        // override on partition column, not the original column. Example: user using a
+        // daily-partitioned table in an hourly join, setting day="concat_ws('', day, '23')"
+        val dsBasedTimestamp =
+          s"((UNIX_TIMESTAMP($maybeOverridePartitionCol, '${tableUtils.partitionSpec.format}') * 1000) + ${tableUtils.partitionSpec.spanMillis} - 1)"
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
     }
@@ -720,8 +724,14 @@ object GroupBy {
     val timeMapping = accuracy match {
       case api.Accuracy.TEMPORAL => Some(Constants.TimeColumn -> source.query.timeColumn)
       case api.Accuracy.SNAPSHOT => {
-        val dsBasedTimestamp = // 1 millisecond before start of next partition
-          s"((UNIX_TIMESTAMP(${tableUtils.partitionColumn}, '${tableUtils.partitionSpec.format}') * 1000) + ${tableUtils.partitionSpec.spanMillis} - 1)"
+        val maybeOverridePartitionCol = SourceUtils.makeTableToPartitionOverride(source)
+          .getOrElse(tableUtils.partitionColumn, tableUtils.partitionColumn)
+        // 1 millisecond before start of next partition
+        // Apply this on the user-specified override on partition column, not the original column.
+        // Example: user using a daily-partitioned table in an hourly join, setting
+        // day="concat_ws('', day, '23')"
+        val dsBasedTimestamp =
+          s"((UNIX_TIMESTAMP($maybeOverridePartitionCol, '${tableUtils.partitionSpec.format}') * 1000) + ${tableUtils.partitionSpec.spanMillis} - 1)"
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
     }
@@ -754,14 +764,10 @@ object GroupBy {
       .orNull
     val inputTables = groupByConf.getSources.toScala.map(_.table)
 
-    val tableToPartitionOverrideMap: Map[String, String] = groupByConf.sources.toScala.map(s => {
-      val value = {
-        if (s.query != null && s.query.selects != null) s.query.selects.getOrDefault(Constants.PartitionColumn, Constants.PartitionColumn)
-        else Constants.PartitionColumn
-      }
-      s.table -> value
-    }
-    ).toMap
+    val tableToPartitionOverrideMap: Map[String, String] =
+      groupByConf.sources.toScala
+        .map(SourceUtils.makeTableToPartitionOverride)
+        .reduce(_ ++ _)
 
     val groupByUnfilledRangesOpt =
       tableUtils.unfilledRanges(
