@@ -184,7 +184,7 @@ def download_only_once(url, path):
 @retry_decorator(retries=3, backoff=50)
 def download_jar(version, jar_type="uber", release_tag=None, spark_version="2.4.0"):
     assert (
-            spark_version in SUPPORTED_SPARK
+        spark_version in SUPPORTED_SPARK
     ), f"Received unsupported spark version {spark_version}. Supported spark versions are {SUPPORTED_SPARK}"
     scala_version = SCALA_VERSION_FOR_SPARK[spark_version]
     maven_url_prefix = os.environ.get("CHRONON_MAVEN_MIRROR_PREFIX", None)
@@ -377,7 +377,7 @@ class Runner:
                 raise e
             possible_modes = list(ROUTES[self.conf_type].keys()) + UNIVERSAL_ROUTES
             assert (
-                    args.mode in possible_modes
+                args.mode in possible_modes
             ), "Invalid mode:{} for conf:{} of type:{}, please choose from {}".format(
                 args.mode, self.conf, self.conf_type, possible_modes
             )
@@ -453,7 +453,7 @@ class Runner:
                     )
                     if self.mode == "streaming":
                         assert (
-                                len(filtered_apps) == 1
+                            len(filtered_apps) == 1
                         ), "More than one found, please kill them all"
                         print("All good. No need to start a new app.")
                         return
@@ -605,7 +605,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--online-jar",
         help="Jar containing Online KvStore & Deserializer Impl. "
-             + "Used for streaming and metadata-upload mode.",
+        + "Used for streaming and metadata-upload mode.",
     )
     parser.add_argument(
         "--online-class",
@@ -622,7 +622,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--online-jar-fetch",
         help="Path to script that can pull online jar. "
-             + "This will run only when a file doesn't exist at location specified by online_jar",
+        + "This will run only when a file doesn't exist at location specified by online_jar",
     )
     parser.add_argument(
         "--sub-help",
@@ -647,7 +647,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--render-info",
         help="Path to script rendering additional information of the given config. "
-             + "Only applicable when mode is set to info",
+        + "Only applicable when mode is set to info",
     )
     set_defaults(parser)
     pre_parse_args, _ = parser.parse_known_args()
