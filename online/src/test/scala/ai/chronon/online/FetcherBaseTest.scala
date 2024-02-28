@@ -30,7 +30,6 @@ import org.mockito.stubbing.Answer
 import org.mockito.{Answers, ArgumentCaptor}
 import org.scalatest.matchers.should.Matchers
 import org.scalatestplus.mockito.MockitoSugar
-import org.junit.Assert.assertSame
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -149,41 +148,45 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     actualRequest.get.keys shouldBe query.keyMapping.get
   }
 
+  // updateServingInfo() is called when the batch response is from the KV store.
   @Test
   def test_getServingInfo_ShouldCallUpdateServingInfoIfBatchResponseIsFromKvStore(): Unit = {
-    val baseFetcher = new FetcherBase(mock[KVStore])
-    val spiedFetcherBase = spy(baseFetcher)
     val oldServingInfo = mock[GroupByServingInfoParsed]
     val updatedServingInfo = mock[GroupByServingInfoParsed]
+    doReturn(updatedServingInfo).when(fetcherBase).updateServingInfo(any(), any())
+
     val batchTimedValuesSuccess = Success(Seq(TimedValue(Array(1.toByte), 2000L)))
     val kvStoreBatchResponses = BatchResponses(batchTimedValuesSuccess)
-    doReturn(updatedServingInfo).when(spiedFetcherBase).updateServingInfo(any(), any())
+
+    val result = fetcherBase.getServingInfo(oldServingInfo, kvStoreBatchResponses)
 
     // updateServingInfo is called
-    val result = spiedFetcherBase.getServingInfo(oldServingInfo, kvStoreBatchResponses)
-    assertSame(result, updatedServingInfo)
-    verify(spiedFetcherBase).updateServingInfo(any(), any())
+    result shouldEqual updatedServingInfo
+    verify(fetcherBase).updateServingInfo(any(), any())
   }
 
+  // If a batch response is cached, the serving info should be refreshed. This is needed to prevent
+  // the serving info from becoming stale if all the requests are cached.
   @Test
   def test_getServingInfo_ShouldRefreshServingInfoIfBatchResponseIsCached(): Unit = {
-    val baseFetcher = new FetcherBase(mock[KVStore])
-    val spiedFetcherBase = spy(baseFetcher)
-    val oldServingInfo = mock[GroupByServingInfoParsed]
-    val metaData = mock[MetaData]
-    val groupByOpsMock = mock[GroupByOps]
-    val cachedBatchResponses = BatchResponses(mock[FinalBatchIr])
     val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
-    doReturn(ttlCache).when(spiedFetcherBase).getGroupByServingInfo
+    doReturn(ttlCache).when(fetcherBase).getGroupByServingInfo
+
+    val oldServingInfo = mock[GroupByServingInfoParsed]
     doReturn(Success(oldServingInfo)).when(ttlCache).refresh(any[String])
-    metaData.name = "test"
-    groupByOpsMock.metaData = metaData
-    when(oldServingInfo.groupByOps).thenReturn(groupByOpsMock)
+
+    val metaDataMock = mock[MetaData]
+    val groupByOpsMock = mock[GroupByOps]
+    doReturn("test").when(metaDataMock).name
+    doReturn(metaDataMock).when(groupByOpsMock).metaData
+    doReturn(groupByOpsMock).when(oldServingInfo).groupByOps
+
+    val cachedBatchResponses = BatchResponses(mock[FinalBatchIr])
+    val result = fetcherBase.getServingInfo(oldServingInfo, cachedBatchResponses)
 
     // FetcherBase.updateServingInfo is not called, but getGroupByServingInfo.refresh() is.
-    val result = spiedFetcherBase.getServingInfo(oldServingInfo, cachedBatchResponses)
-    assertSame(result, oldServingInfo)
+    result shouldEqual oldServingInfo
     verify(ttlCache).refresh(any())
-    verify(spiedFetcherBase, never()).updateServingInfo(any(), any())
+    verify(fetcherBase, never()).updateServingInfo(any(), any())
   }
 }
