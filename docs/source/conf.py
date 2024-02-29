@@ -60,8 +60,8 @@ html_theme_options = {
     "navbar_align": "right",
     "github_url": "https://github.com/airbnb/chronon",
     "logo": {
-        "image_light": "logo_curly.png",
-        "image_dark": "logo_curly_white.png",
+        "image_light": "_static/logo_curly.png",
+        "image_dark": "_static/logo_curly_white.png",
     },
     "favicons": [
         {
