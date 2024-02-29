@@ -75,6 +75,8 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
   // The context used for the future callbacks
   implicit lazy val executor: ExecutionContext = AsyncKVStoreWriter.ExecutionContextInstance
 
+  // One may want to use different KV stores depending on whether tiling is on.
+  // The untiled version of Chronon works on "append" store semantics, and the tiled version works on "overwrite".
   protected def getKVStore: KVStore = {
     onlineImpl.genKvStore
   }
