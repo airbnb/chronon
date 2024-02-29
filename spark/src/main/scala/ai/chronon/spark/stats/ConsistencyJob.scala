@@ -29,7 +29,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String, tab
     val loggedSource: Source = new Source()
     val loggedEvents: EventSource = new EventSource()
     val query = new Query()
-    val mapping = (joinConf.leftKeyCols.toList ++ joinConf.rowIds.asScala).map(k => k -> k)
+    val mapping = (joinConf.leftKeyCols.toList ++ (if (joinConf.rowIds == null) List() else joinConf.rowIds.asScala)).map(k => k -> k)
     val selects = new util.HashMap[String, String]()
     mapping.foreach { case (key, value) => selects.put(key, value) }
     query.setSelects(selects)

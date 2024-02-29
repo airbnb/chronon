@@ -134,7 +134,6 @@ object CompareMetrics {
   def compute(valueFields: Array[StructField],
               inputDf: DataFrame,
               keys: Seq[String],
-              tableUtils: BaseTableUtils,
               mapping: Map[String, String] = Map.empty,
               timeBucketMinutes: Long = 60,
               ): (DataFrame, DataMetrics) = {
@@ -149,8 +148,8 @@ object CompareMetrics {
     val metrics = buildMetrics(valueSchema, mapping)
     val timeColumn: String = if (keys.contains(Constants.TimeColumn)) {
       Constants.TimeColumn
-    } else if (keys.contains(tableUtils.partitionColumn)) {
-      tableUtils.partitionColumn
+    } else if (keys.contains(Constants.PartitionColumn)) {
+      Constants.PartitionColumn
     } else {
       throw new IllegalArgumentException("Keys doesn't contain the time column")
     }
@@ -174,8 +173,8 @@ object CompareMetrics {
     def sortedMap(vals: Seq[(String, Any)]) = SortedMap.empty[String, Any] ++ vals
     val resultRdd = secondPassDf.rdd
       .keyBy(row => {
-        val timeValue = if (timeColumn == tableUtils.partitionColumn) {
-          tableUtils.partitionSpec.epochMillis(row.getString(timeIndex))
+        val timeValue = if (timeColumn == Constants.PartitionColumn) {
+          Constants.Partition.epochMillis(row.getString(timeIndex))
         } else {
           row.getLong(timeIndex)
         }

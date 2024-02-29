@@ -156,7 +156,7 @@ object CompareBaseJob {
                                          .map(tup => StructField(tup._1, tup._2)))
 
     // 5. Run the consistency check
-    val (metricsDf, metrics) = CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, tableUtils, mapping)
+    val (metricsDf, metrics) = CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, mapping)
 
     // Return the data frame of the actual comparison table, metrics table and the metrics itself
     (compareDf, metricsDf, metrics)
