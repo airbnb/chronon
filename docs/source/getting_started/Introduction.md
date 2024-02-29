@@ -6,7 +6,8 @@ It's currently used to power all major ML applications within Airbnb, as well as
 
 ![Overview](../../images/chronon_high_level.png)
 
-## Key Features
+
+# Key Features
 
 * **Consume data from a variety of Sources** - Event streams, batch warehouse tables, production databases, change data streams, service endpoints, as well as data available in the request context can all be used as Chronon inputs.
 * **Easily define transformations and aggregations** - Raw data ingested from sources can be transformed into useful features using a flexible library.
