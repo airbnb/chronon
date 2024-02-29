@@ -65,7 +65,7 @@ Chronon is an open source end-to-end feature platform that allows Machine Learni
 
 It's currently used to power all major ML applications within Airbnb, as well as major use cases at Stripe. Airbnb and Stripe jointly manage and maintain the project, and welcome your usage and contributions!
 
-.. image:: ../images/intro.png
+.. image:: ../images/chronon_high_level.png
 
 |br|
 
