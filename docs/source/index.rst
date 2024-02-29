@@ -57,16 +57,22 @@
    Kaggle_Outbrain
 
 
+.. |br| raw:: html
+
+   <br />
+
 What is Chronon?
 =====================
-Chronon is a feature engineering framework is being used to power Machine Learning in every 
-organization within Airbnb. Chronon makes developing production-grade, 
-features at scale very easy. 
+Chronon is an open source end-to-end feature platform that allows Machine Learning (ML) teams to easily build, deploy, manage and monitor data pipelines for machine learning.
 
-With Chronon you can generate training data, serve features, monitor feature quality 
-and manage features with a unified feature definition.
+It's currently used to power all major ML applications within Airbnb, as well as major use cases at Stripe. Airbnb and Stripe jointly manage and maintain the project, and welcome your usage and contributions!
 
 .. image:: ../images/intro.png
+
+|br|
+
+Key Features
+=====================
 
 * **Consume data from a variety of Sources** - event streams, DB table snapshots, change data streams, service endpoints and warehouse tables modeled as either slowly changing dimensions, fact or dimension tables
 * **Produce results both online and offline contexts** - Online, as scalable low-latency end-points for feature serving, or offline as hive tables, for generating training data.
@@ -75,59 +81,61 @@ and manage features with a unified feature definition.
 * **Powerful python API** - data source types, freshness and contexts are API level abstractions that you compose with intuitive SQL primitives like group-by, join, select etc., with powerful enhancements.
 * **Automated feature monitoring** - auto-generate monitoring pipelines to understand training data quality, measure training-serving skew and monitor feature drift.
 
-Being able to flexibly compose these concepts to describe data processing is what makes feature engineering in Chronon productive.
+|br|
 
 Example
 =====================
-This is what a simple Chronon Group-By looks like. This definition is used to automatically 
-create offline datasets, feature serving end-points and data quality monitoring pipelines.
+Here is a code example showing what a simple Chronon GroupBy looks like. 
+
+This definition starts with purchase events as the raw input source, and creates user level features by aggregating the number of purchases and the purchase value in various windows, using various aggregations. This single definition can be used to automatically create offline datasets, feature serving end-points and data quality monitoring pipelines.
 
 .. code-block:: python
 
-    # same definition creates offline datasets and online end-points
-    view_features = GroupBy(
-       sources=[
-           EventSource(
-               # apply the transform on offline and streaming data
-               table="user_activity.user_views_table",
-               topic="user_views_stream",
-               query=query.Query(
-                   # specify any spark sql expression fragments
-                   # built-in functions, UDFs, arithmetic operations, inline-lambdas, struct types etc.
-                   selects={
-                       "view": "if(context['activity_type'] = 'item_view', 1 , 0)",
-                   },
-                   wheres=["user != null"]
-               ))
-       ],
-       # composite keys
-       keys=["user", "item"],
-       aggregations=[
-           Aggregation(
+   """
+   This GroupBy aggregates metrics about a user's previous purchases in various windows.
+   """
+
+   # This source is raw purchase events. Every time a user makes a purchase, it will be one entry in this source.
+   source = Source(
+      events=EventSource(
+         table="data.purchases", # This points to the log table in the warehouse with historical purchase events, updated in batch daily
+         topic= "events/purchases", # The streaming source topic that can be listened to for realtime events
+         query=Query(
+               selects=select(
+                  user="user_id",
+                  price="purchase_price * (1 - merchant_fee_percent/100)"
+               ), # Select the fields we care about
+               time_column="ts"  # The event time
+         ) 
+      )
+   )
+
+   window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]] # Define some window sizes to use below
+
+   v1 = GroupBy(
+      sources=[source],
+      keys=["user_id"], # We are aggregating by user
+      online=True,
+      aggregations=[Aggregation(
+               input_column="price",
+               operation=Operation.SUM,
+               windows=window_sizes
+         ), # The sum of purchases prices
+         Aggregation(
+               input_column="price",
                operation=Operation.COUNT,
-               # automatically explode aggregation list type input columns
-               input_column=view,
-               #multiple windows for the same input
-               windows=[Window(length=5, timeUnit=TimeUnit.HOURS)]),
-       ],
-       # toggle between fresh vs daily updated features
-       accuracy=Accuracy.TEMPORAL,
-    )
+               windows=window_sizes
+         ), # The count of purchases
+         Aggregation(
+               input_column="price",
+               operation=Operation.AVERAGE,
+               windows=window_sizes
+         ), # The average purchases
+         Aggregation(
+               input_column="price",
+               operation=Operation.LAST_K(10),
+         ), # The last 10 purchase prices, collected into a list
+      ], # All aggregations are performed over the window_sizes defined above
+   )
 
-Getting Started
-=====================
-If you wish to work in an existing chronon repo, simply run the command below.
-
-.. code-block:: bash
-
-   pip install chronon-ai
-
-If you wish to setup a chronon repo, for ease of orchestration, we recommend that you
-run the command below in an airflow repository.
-
-.. code-block:: bash
-
-   curl -s https://chronon.ai/init.sh | $SHELL
-
-Once you edit the spark_submit_path line in :code:`./chronon/teams.json` you will be able to run offline jobs.
-Find more details in the Getting Started section.
+To run this and other features and see the complete flow from generating training data to online serving, continue along to the `Quickstart Tutorial <https://chronon.ai/getting_started/Tutorial.html>`_, or for more documentation on how to author and use features, see the `Creating Training Data <https://chronon.ai/authoring_features/GroupBy.html>`_ section.
