@@ -16,7 +16,6 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.api.ThriftJsonCodec
@@ -36,6 +35,7 @@ import org.apache.spark.sql.streaming.StreamingQueryListener.{
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
+import org.slf4j.LoggerFactory
 
 import java.io.File
 import java.nio.file.{Files, Paths}
@@ -232,6 +232,8 @@ object Driver {
         opt[String](required = false,
                     descr =
                       "Start date to compute join backfill, this start date will override start partition in conf.")
+      val selectedJoinParts: ScallopOption[List[String]] =
+        opt[List[String]](required = false, descr = "A list of join parts that require backfilling.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }
@@ -242,8 +244,18 @@ object Driver {
         args.joinConf,
         args.endDate(),
         args.buildTableUtils(),
-        !args.runFirstHole()
+        !args.runFirstHole(),
+        selectedJoinParts = args.selectedJoinParts.toOption
       )
+
+      if (args.selectedJoinParts.isDefined) {
+        join.computeJoinOpt(args.stepDays.toOption, args.startPartitionOverride.toOption)
+        logger.info(
+          s"Backfilling selected join parts: ${args.selectedJoinParts()} is complete. Skipping the final join. Exiting."
+        )
+        return
+      }
+
       val df = join.computeJoin(args.stepDays.toOption, args.startPartitionOverride.toOption)
 
       if (args.shouldExport()) {
