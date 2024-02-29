@@ -406,7 +406,8 @@ case class TableUtils(sparkSession: SparkSession) {
                                   saveMode: SaveMode,
                                   stats: Option[DfStats]): Unit = {
     wrapWithCache(s"repartition & write to $tableName", df) {
-      if (shouldRepartition) {
+      // if (shouldRepartition) {
+      if (true) {
         logger.info(s"Repartitioning before writing...")
         repartitionAndWriteInternal(df, tableName, saveMode, stats)
       } else {
@@ -484,6 +485,7 @@ case class TableUtils(sparkSession: SparkSession) {
       saltedDf
         .repartition(shuffleParallelism, repartitionCols.map(saltedDf.col).toSeq: _*)
         .drop(saltCol)
+        .sortWithinPartitions(repartitionCols.map(col): _*)
         .write
         .mode(saveMode)
         .insertInto(tableName)
@@ -502,7 +504,7 @@ case class TableUtils(sparkSession: SparkSession) {
     val createFragment =
       s"""CREATE TABLE $tableName (
          |    ${fieldDefinitions.mkString(",\n    ")}
-         |)""".stripMargin
+         |) USING iceberg """.stripMargin
     val partitionFragment = if (partitionColumns != null && partitionColumns.nonEmpty) {
       val partitionDefinitions = schema
         .filter(field => partitionColumns.contains(field.name))
@@ -520,7 +522,7 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       ""
     }
-    Seq(createFragment, partitionFragment, s"STORED AS $fileFormat", propertiesFragment).mkString("\n")
+    Seq(createFragment, partitionFragment, propertiesFragment).mkString("\n")
   }
 
   private def alterTablePropertiesSql(tableName: String, properties: Map[String, String]): String = {

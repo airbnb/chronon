@@ -152,7 +152,12 @@ abstract class JoinBase(joinConf: api.Join,
           .getOrElse(Seq())
 
         // todo: undo this, just for debugging
-        val unfilledRangeCombined = Seq(PartitionRange(unfilledRanges.minBy(_.start).start, unfilledRanges.maxBy(_.end).end)(tableUtils))
+
+        val unfilledRangeCombined = if(unfilledRanges.isEmpty) {
+          unfilledRanges
+        } else {
+          Seq(PartitionRange(unfilledRanges.minBy(_.start).start, unfilledRanges.maxBy(_.end).end)(tableUtils))
+        }
 
         val partitionCount = unfilledRangeCombined.map(_.partitions.length).sum
         if (partitionCount > 0) {
@@ -319,7 +324,7 @@ abstract class JoinBase(joinConf: api.Join,
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val analyzer = new Analyzer(tableUtils, joinConf, today, today, silenceMode = true)
     try {
-      //analyzer.analyzeJoin(joinConf, validationAssert = true)
+      analyzer.analyzeJoin(joinConf, validationAssert = true)
       //metrics.gauge(Metrics.Name.validationSuccess, 1)
       logger.info("Join conf validation succeeded. No error found.")
     } catch {
