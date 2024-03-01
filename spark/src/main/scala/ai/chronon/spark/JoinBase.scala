@@ -217,12 +217,12 @@ abstract class JoinBase(joinConf: api.Join,
       None
     } else {
       JoinUtils.genBloomFilterIfNeeded(leftDf,
-        joinPart,
-        joinConf,
-        rowCount,
-        unfilledRange,
-        tableUtils,
-        joinLevelBloomMapOpt)
+                                       joinPart,
+                                       joinConf,
+                                       rowCount,
+                                       unfilledRange,
+                                       tableUtils,
+                                       joinLevelBloomMapOpt)
     }
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     def genGroupBy(partitionRange: PartitionRange) =
