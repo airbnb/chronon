@@ -34,7 +34,7 @@ Key points:
 2. There are `group_bys` and `joins` subdirectories inside the root directory, under which there are team directories. Note that the team directory names must match what is within `teams.json`
 3. Within each of these team directories are the actual user-written chronon files. Note that there can be sub-directories within each team directory for organization if desired.
 
-For an example setup of this directory, see the [Sample](https://github.com/airbnb/chronon/tree/master/api/py/test/sample) that is also mounted to the docker image that is used in the Quickstart guide.
+For an example setup of this directory, see the [Sample](https://github.com/airbnb/chronon/tree/main/api/py/test/sample) that is also mounted to the docker image that is used in the Quickstart guide.
 
 You can also use the following command to create a scratch directory from your `cwd`:
 

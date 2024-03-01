@@ -16,7 +16,6 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
@@ -28,6 +27,7 @@ import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import org.apache.spark.util.sketch.BloomFilter
+import org.slf4j.LoggerFactory
 
 import java.time.Instant
 import scala.collection.JavaConverters._
@@ -38,7 +38,8 @@ abstract class JoinBase(joinConf: api.Join,
                         tableUtils: TableUtils,
                         skipFirstHole: Boolean,
                         mutationScan: Boolean = true,
-                        showDf: Boolean = false) {
+                        showDf: Boolean = false,
+                        selectedJoinParts: Option[Seq[String]] = None) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
@@ -286,9 +287,13 @@ abstract class JoinBase(joinConf: api.Join,
     Some(rightDfWithDerivations)
   }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
+  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Option[DataFrame]
 
   def computeJoin(stepDays: Option[Int] = None, overrideStartPartition: Option[String] = None): DataFrame = {
+    computeJoinOpt(stepDays, overrideStartPartition).get
+  }
+
+  def computeJoinOpt(stepDays: Option[Int] = None, overrideStartPartition: Option[String] = None): Option[DataFrame] = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -337,7 +342,7 @@ abstract class JoinBase(joinConf: api.Join,
     def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     if (unfilledRanges.isEmpty) {
       logger.info(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
-      return finalResult
+      return Some(finalResult)
     }
 
     stepDays.foreach(metrics.gauge("step_days", _))
@@ -358,14 +363,23 @@ abstract class JoinBase(joinConf: api.Join,
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           if (showDf) leftDfInRange.prettyPrint()
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
-          computeRange(leftDfInRange, range, bootstrapInfo).save(outputTable, tableProps, autoExpand = true)
-          val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
-          metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
-          metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
-          logger.info(s"Wrote to table $outputTable, into partitions: ${range.toString} $progress in $elapsedMins mins")
+          val finalDf = computeRange(leftDfInRange, range, bootstrapInfo)
+          if (selectedJoinParts.isDefined) {
+            assert(finalDf.isEmpty,
+                   "The arg `selectedJoinParts` is defined, so no final join is required. `finalDf` should be empty")
+            logger.info(s"Skipping writing to the output table for range: ${range.toString}  $progress")
+            return None
+          } else {
+            finalDf.get.save(outputTable, tableProps, autoExpand = true)
+            val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
+            metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
+            metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
+            logger.info(
+              s"Wrote to table $outputTable, into partitions: ${range.toString} $progress in $elapsedMins mins")
+          }
         }
     }
     logger.info(s"Wrote to table $outputTable, into partitions: $unfilledRanges")
-    finalResult
+    Some(finalResult)
   }
 }

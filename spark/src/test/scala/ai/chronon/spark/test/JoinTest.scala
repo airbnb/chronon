@@ -27,9 +27,10 @@ import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
+import org.scalatest.Assertions.intercept
 
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.ListOps
@@ -1169,5 +1170,123 @@ class JoinTest {
     val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
     assertFalse(computed.isEmpty)
+  }
+
+  /**
+   * Create a event table as left side, 3 group bys as right side.
+   * Generate data using DataFrameGen and save to the tables.
+   * Create a join with only one join part selected.
+   * Run computeJoin().
+   * Check if the selected join part is computed and the other join parts are not computed.
+   */
+  @Test
+  def testSelectedJoinParts(): Unit = {
+    // Left
+    val itemQueries = List(
+      Column("item", api.StringType, 100),
+      Column("value", api.LongType, 100)
+    )
+    val itemQueriesTable = s"$namespace.item_queries_selected_join_parts"
+    spark.sql(s"DROP TABLE IF EXISTS $itemQueriesTable")
+    spark.sql(s"DROP TABLE IF EXISTS ${itemQueriesTable}_tmp")
+    DataFrameGen.events(spark, itemQueries, 10000, partitions = 30).save(s"${itemQueriesTable}_tmp")
+    val leftDf = tableUtils.sql(s"SELECT item, value, ts, ds FROM ${itemQueriesTable}_tmp")
+    leftDf.save(itemQueriesTable)
+    val start = monthAgo
+
+    // Right
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("value", api.LongType, 100)
+    )
+    val viewsTable = s"$namespace.view_selected_join_parts"
+    spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
+    DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 30).save(viewsTable)
+
+    // Group By
+    val gb1 = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.events(
+          table = viewsTable,
+          query = Builders.Query(startPartition = start)
+        )),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "10"), inputColumn = "user"),
+        Builders.Aggregation(operation = Operation.MAX, argMap = Map("k" -> "2"), inputColumn = "value")
+      ),
+      metaData =
+        Builders.MetaData(name = s"unit_test.item_views_selected_join_parts_1", namespace = namespace, team = "item_team"),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val gb2 = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.events(
+          table = viewsTable,
+          query = Builders.Query(startPartition = start)
+        )),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.MIN, argMap = Map("k" -> "1"), inputColumn = "value")
+      ),
+      metaData =
+        Builders.MetaData(name = s"unit_test.item_views_selected_join_parts_2", namespace = namespace, team = "item_team"),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val gb3 = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.events(
+          table = viewsTable,
+          query = Builders.Query(startPartition = start)
+        )),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "value")
+      ),
+      metaData =
+        Builders.MetaData(name = s"unit_test.item_views_selected_join_parts_3", namespace = namespace, team = "item_team"),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    // Join
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = gb1, prefix = "user1"),
+        Builders.JoinPart(groupBy = gb2, prefix = "user2"),
+        Builders.JoinPart(groupBy = gb3, prefix = "user3")
+      ),
+      metaData = Builders.MetaData(name = s"unit_test.item_temporal_features.selected_join_parts",
+        namespace = namespace,
+        team = "item_team",
+        online = true)
+    )
+
+    // Drop Join Part tables if any
+    val partTable1 = s"${joinConf.metaData.outputTable}_user1_unit_test_item_views_selected_join_parts_1"
+    val partTable2 = s"${joinConf.metaData.outputTable}_user2_unit_test_item_views_selected_join_parts_2"
+    val partTable3 = s"${joinConf.metaData.outputTable}_user3_unit_test_item_views_selected_join_parts_3"
+    spark.sql(s"DROP TABLE IF EXISTS $partTable1")
+    spark.sql(s"DROP TABLE IF EXISTS $partTable2")
+    spark.sql(s"DROP TABLE IF EXISTS $partTable3")
+
+    // Compute daily join.
+    val joinJob = new Join(joinConf, today, tableUtils, selectedJoinParts = Some(List("user1_unit_test_item_views_selected_join_parts_1")))
+
+    joinJob.computeJoinOpt()
+
+    val part1 = tableUtils.sql(s"SELECT * FROM $partTable1")
+    assertTrue(part1.count() > 0)
+
+    val thrown2 = intercept[AnalysisException] {
+      spark.sql(s"SELECT * FROM $partTable2")
+    }
+    val thrown3 = intercept[AnalysisException] {
+      spark.sql(s"SELECT * FROM $partTable3")
+    }
+    assert(thrown2.getMessage.contains("Table or view not found") && thrown3.getMessage.contains("Table or view not found"))
   }
 }

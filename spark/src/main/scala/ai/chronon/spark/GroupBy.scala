@@ -16,22 +16,21 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
+import org.slf4j.LoggerFactory
 
 import java.util
 import scala.collection.{Seq, mutable}

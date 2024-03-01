@@ -17,7 +17,10 @@
 package ai.chronon.aggregator.windowing
 
 import ai.chronon.api.Extensions.{WindowOps, WindowUtils}
-import ai.chronon.api.{TimeUnit, Window}
+import ai.chronon.api.{GroupBy, TimeUnit, Window}
+
+import scala.util.ScalaJavaConversions.ListOps
+import scala.util.ScalaVersionSpecificCollectionsConverter.convertJavaListToScala
 
 trait Resolution extends Serializable {
   // For a given window what is the resolution of the tail
@@ -56,4 +59,20 @@ object DailyResolution extends Resolution {
     }
 
   val hopSizes: Array[Long] = Array(WindowUtils.Day.millis)
+}
+
+object ResolutionUtils {
+
+  /**
+    * Find the smallest tail window resolution in a GroupBy. Returns None if the GroupBy does not define any windows.
+    * The window resolutions are: 5 min for a GroupBy a window < 12 hrs, 1 hr for < 12 days, 1 day for > 12 days.
+    * */
+  def getSmallestWindowResolutionInMillis(groupBy: GroupBy): Option[Long] =
+    Option(
+      groupBy.aggregations.toScala.toArray
+        .flatMap(aggregation =>
+          if (aggregation.windows != null) aggregation.windows.toScala
+          else None)
+        .map(FiveMinuteResolution.calculateTailHop)
+    ).filter(_.nonEmpty).map(_.min)
 }
