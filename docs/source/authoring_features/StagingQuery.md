@@ -57,9 +57,9 @@ v1 = Join(
 ```
 
 Note: The output namespace of the staging query is dependent on the metaData value for output_namespace. By default, the 
-metadata is extracted from [teams.json](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/teams.json) (or default team if one is not set).
+metadata is extracted from [teams.json](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/teams.json) (or default team if one is not set).
 
-**[See more configuration examples here](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/staging_queries)**
+**[See more configuration examples here](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/staging_queries)**
 
 ## Date Logic and Template Parameters
 

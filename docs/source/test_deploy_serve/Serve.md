@@ -4,15 +4,15 @@ The main way to serve production Chronon data online is with the Java or Scala F
 
 The main online Java Fetcher libraries can be found here:
 
-1. [`JavaFetcher`](https://github.com/airbnb/chronon/blob/master/online/src/main/java/ai/chronon/online/JavaFetcher.java)
-2. [`JavaRequest`](https://github.com/airbnb/chronon/blob/master/online/src/main/java/ai/chronon/online/JavaRequest.java)
-3. [`JavaResponse`](https://github.com/airbnb/chronon/blob/master/online/src/main/java/ai/chronon/online/JavaResponse.java)
+1. [`JavaFetcher`](https://github.com/airbnb/chronon/blob/main/online/src/main/java/ai/chronon/online/JavaFetcher.java)
+2. [`JavaRequest`](https://github.com/airbnb/chronon/blob/main/online/src/main/java/ai/chronon/online/JavaRequest.java)
+3. [`JavaResponse`](https://github.com/airbnb/chronon/blob/main/online/src/main/java/ai/chronon/online/JavaResponse.java)
 
 And their scala counterparts:
 
-1. [`Fetcher`](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/Fetcher.scala)
-2. [`Request`](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/Fetcher.scala#L39)
-3. [`Response`](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/Fetcher.scala#L48)
+1. [`Fetcher`](https://github.com/airbnb/chronon/blob/main/online/src/main/scala/ai/chronon/online/Fetcher.scala)
+2. [`Request`](https://github.com/airbnb/chronon/blob/main/online/src/main/scala/ai/chronon/online/Fetcher.scala#L39)
+3. [`Response`](https://github.com/airbnb/chronon/blob/main/online/src/main/scala/ai/chronon/online/Fetcher.scala#L48)
 
 Example Implementation
 

@@ -101,7 +101,7 @@ class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends Ri
     } catch {
       case e: Exception =>
         // To improve availability, we don't rethrow the exception. We just drop the event
-        // and track the errors in a metric. If there are too many errors we'll get alerted/paged.
+        // and track the errors in a metric. Alerts should be set up on this metric.
         logger.error(s"Error evaluating Spark expression - $e")
         exprEvalErrorCounter.inc()
     }
