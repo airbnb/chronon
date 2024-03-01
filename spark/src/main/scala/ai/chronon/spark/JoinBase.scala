@@ -401,7 +401,7 @@ abstract class JoinBase(joinConf: api.Join,
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           if (showDf) leftDfInRange.prettyPrint()
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
-          val finalDf = computeRange(leftDfInRange, range, bootstrapInfo)
+          val finalDf = computeRange(leftDfInRange, range, bootstrapInfo, runSmallMode)
           if (selectedJoinParts.isDefined) {
             assert(finalDf.isEmpty,
                    "The arg `selectedJoinParts` is defined, so no final join is required. `finalDf` should be empty")
@@ -415,11 +415,6 @@ abstract class JoinBase(joinConf: api.Join,
             logger.info(
               s"Wrote to table $outputTable, into partitions: ${range.toString} $progress in $elapsedMins mins")
           }
-          computeRange(leftDfInRange, range, bootstrapInfo, runSmallMode).save(outputTable, tableProps, autoExpand = true)
-          val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
-          metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
-          metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
-          logger.info(s"Wrote to table $outputTable, into partitions: ${range.toString} $progress in $elapsedMins mins")
         }
     }
     logger.info(s"Wrote to table $outputTable, into partitions: $unfilledRanges")
