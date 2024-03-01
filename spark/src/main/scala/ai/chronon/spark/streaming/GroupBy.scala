@@ -34,7 +34,7 @@ import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import scala.collection.JavaConverters._
 import scala.concurrent.duration.DurationInt
-import scala.util.{Success, Try}
+import scala.util.{Success, Failure}
 
 class GroupBy(inputStream: DataFrame,
               session: SparkSession,
@@ -78,11 +78,11 @@ class GroupBy(inputStream: DataFrame,
   def run(local: Boolean = false): StreamingQuery = {
     val fetcher = onlineImpl.buildFetcher(local)
     fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName) match {
-      case scala.util.Failure(exception) =>
+      case Failure(exception) =>
         logger.error(s"Failed to retrieve groupByServingInfo: ${exception.getMessage}")
         session.stop()
         sys.exit(1)
-      case scala.util.Success(groupByServingInfo) =>
+      case Success(groupByServingInfo) =>
         buildDataStream(groupByServingInfo).start()
     }
   }
