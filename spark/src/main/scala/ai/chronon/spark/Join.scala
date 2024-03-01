@@ -224,7 +224,6 @@ class Join(joinConf: api.Join,
 
   def injectKeyFilter(leftDf: DataFrame, joinPart: api.JoinPart): Unit = {
     // Modifies the joinPart to inject the key filter into the
-
     val groupByKeyNames = joinPart.groupBy.getKeyColumns.asScala
 
     // In case the joinPart uses a keymapping
@@ -242,14 +241,7 @@ class Join(joinConf: api.Join,
         key -> selectMap.getOrElse(key, key)
       }.toMap
 
-
-      val joinSelects: Map[String, String] = Option(joinConf.left.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
-
       groupByKeyExpressions.map{ case (keyName, groupByKeyExpression) =>
-        println("---------------------------------------")
-        println(s"Left side keynames ${leftSideKeyNames.mkString(",")}")
-        println(s"keyName: $keyName, expression: $groupByKeyExpressions")
-        println("---------------------------------------")
         val leftSideKeyName = leftSideKeyNames.get(keyName).get
         val values = leftDf.select(leftSideKeyName).collect().map(row => row(0))
 
@@ -311,15 +303,8 @@ class Join(joinConf: api.Join,
       }
     }
 
-    val parallellism = if (runSmallMode) {
-      // Max out parallelism
-      joinConf.getJoinParts.asScala.length
-    } else {
-      tableUtils.joinPartParallelism
-    }
-
     implicit val executionContext: ExecutionContextExecutorService =
-      ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(parallellism))
+      ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(tableUtils.joinPartParallelism))
 
 
     val joinedDfTry = tableUtils
@@ -354,14 +339,14 @@ class Join(joinConf: api.Join,
                     s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
                 }
 
-                val (bloomFilterOpt, skipFilter) = if (runSmallMode) {
+                val bloomFilterOpt = if (runSmallMode) {
                   // If left DF is small, hardcode the key filter into the joinPart's GroupBy's where clause.
                   injectKeyFilter(leftDf, joinPart)
-                  (None, true)
+                  None
                 } else {
-                  (joinLevelBloomMapOpt, false)
+                  joinLevelBloomMapOpt
                 }
-                val df = computeRightTable(unfilledLeftDf, joinPart, leftRange, bloomFilterOpt, skipFilter).map(df => joinPart -> df)
+                val df = computeRightTable(unfilledLeftDf, joinPart, leftRange, bloomFilterOpt, runSmallMode).map(df => joinPart -> df)
                 Thread.currentThread().setName(s"done-$threadName")
                 df
               }
