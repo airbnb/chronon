@@ -33,8 +33,8 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import scala.collection.JavaConverters._
-import scala.concurrent.duration.DurationInt
-import scala.util.{Success, Failure}
+import scala.concurrent.duration.{DurationInt}
+import scala.util.{Failure, Success}
 
 class GroupBy(inputStream: DataFrame,
               session: SparkSession,
@@ -76,25 +76,27 @@ class GroupBy(inputStream: DataFrame,
   }
 
   def run(local: Boolean = false): StreamingQuery = {
-    val fetcher = onlineImpl.buildFetcher(local)
-    fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName) match {
-      case Failure(exception) =>
-        logger.error(s"Failed to retrieve groupByServingInfo: ${exception.getMessage}")
-        session.stop()
-        sys.exit(1)
-      case Success(groupByServingInfo) =>
-        buildDataStream(groupByServingInfo).start()
-    }
+    buildDataStream(local).start()
   }
 
   // TODO: Support local by building gbServingInfo based on specified type hints when available.
-  def buildDataStream(groupByServingInfo: GroupByServingInfoParsed): DataStreamWriter[KVStore.PutRequest] = {
+  def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
     val streamingTable = groupByConf.metaData.cleanName + "_stream"
+    val fetcher = onlineImpl.buildFetcher(local)
+    val groupByServingInfoOpt = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName)
+    if (groupByServingInfoOpt.isFailure) {
+      logger.error(s"Failed to retrieve groupByServingInfo: ${groupByServingInfoOpt.failed.get.getMessage}")
+      session.stop()
+      sys.exit(1)
+    }
+    val groupByServingInfo = groupByServingInfoOpt.get
     val streamDecoder = onlineImpl.streamDecoder(groupByServingInfo)
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
     val streamingSource = groupByConf.streamingSource.get
+
     val streamingQuery = buildStreamingQuery(streamingTable)
+
     val context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
     val ingressContext = context.withSuffix("ingress")
     import session.implicits._
