@@ -48,8 +48,6 @@ case class TableUtils(sparkSession: SparkSession) {
     .withZone(ZoneId.systemDefault())
   val partitionColumn: String =
     sparkSession.conf.get("spark.chronon.partition.column", "ds")
-  var shouldRepartition: Boolean = false
-    //sparkSession.conf.get("spark.chronon.repartition", "true").toBoolean
   private val partitionFormat: String =
     sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
@@ -80,9 +78,6 @@ case class TableUtils(sparkSession: SparkSession) {
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
 
-  def setRepartition(setTo: Boolean): Unit = {
-    this.shouldRepartition = setTo
-  }
   def preAggRepartition(df: DataFrame): DataFrame =
     if (df.rdd.getNumPartitions < aggregationParallelism) {
       df.repartition(aggregationParallelism)
@@ -406,16 +401,8 @@ case class TableUtils(sparkSession: SparkSession) {
                                   saveMode: SaveMode,
                                   stats: Option[DfStats]): Unit = {
     wrapWithCache(s"repartition & write to $tableName", df) {
-      // if (shouldRepartition) {
-      if (true) {
-        logger.info(s"Repartitioning before writing...")
-        repartitionAndWriteInternal(df, tableName, saveMode, stats)
-      } else {
-        logger.info(s"Skipping repartition...")
-        df.write.mode(saveMode).insertInto(tableName)
-        logger.info(s"Finished writing to $tableName")
-      }
-
+      logger.info(s"Repartitioning before writing...")
+      repartitionAndWriteInternal(df, tableName, saveMode, stats)
     }.get
   }
 

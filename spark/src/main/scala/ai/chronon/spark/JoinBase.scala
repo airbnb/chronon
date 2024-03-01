@@ -327,7 +327,7 @@ abstract class JoinBase(joinConf: api.Join,
     val analyzer = new Analyzer(tableUtils, joinConf, today, today, silenceMode = true)
     try {
       analyzer.analyzeJoin(joinConf, validationAssert = true)
-      //metrics.gauge(Metrics.Name.validationSuccess, 1)
+      metrics.gauge(Metrics.Name.validationSuccess, 1)
       logger.info("Join conf validation succeeded. No error found.")
     } catch {
       case ex: AssertionError =>
