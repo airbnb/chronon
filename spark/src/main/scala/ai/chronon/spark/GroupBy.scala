@@ -515,7 +515,6 @@ object GroupBy {
         if (!tableUtils.isPartitioned(source.table)) {
           renderUnpartitionedDataSourceQuery(source,
             groupByConf.getKeyColumns.asScala,
-            tableUtils,
             groupByConf.inferredAccuracy)
         } else {
           renderDataSourceQuery(groupByConf,
@@ -717,7 +716,6 @@ object GroupBy {
 
   def renderUnpartitionedDataSourceQuery(source: api.Source,
                             keys: Seq[String],
-                            tableUtils: BaseTableUtils,
                             accuracy: api.Accuracy): String = {
     var metaColumns: Map[String, String] = Map()
 
@@ -725,13 +723,13 @@ object GroupBy {
       case api.Accuracy.TEMPORAL => Some(Constants.TimeColumn -> source.query.timeColumn)
       case api.Accuracy.SNAPSHOT => {
         val maybeOverridePartitionCol = SourceUtils.makeTableToPartitionOverride(source)
-          .getOrElse(tableUtils.partitionColumn, tableUtils.partitionColumn)
+          .getOrElse(Constants.PartitionColumn, Constants.PartitionColumn)
         // 1 millisecond before start of next partition
         // Apply this on the user-specified override on partition column, not the original column.
         // Example: user using a daily-partitioned table in an hourly join, setting
         // day="concat_ws('', day, '23')"
         val dsBasedTimestamp =
-          s"((UNIX_TIMESTAMP($maybeOverridePartitionCol, '${tableUtils.partitionSpec.format}') * 1000) + ${tableUtils.partitionSpec.spanMillis} - 1)"
+          s"((UNIX_TIMESTAMP($maybeOverridePartitionCol, '${Constants.Partition.format}') * 1000) + ${Constants.Partition.spanMillis} - 1)"
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
     }
@@ -747,8 +745,8 @@ object GroupBy {
   }
 
   // Required for pyspark support
-  def renderUnpartitionedDataSourceQueryWithArrayList(source: api.Source, keys: java.util.ArrayList[String], tableUtils: BaseTableUtils, accuracy: api.Accuracy): String = {
-    renderUnpartitionedDataSourceQuery(source, keys.asScala.toSeq, tableUtils, accuracy)
+  def renderUnpartitionedDataSourceQueryWithArrayList(source: api.Source, keys: java.util.ArrayList[String], accuracy: api.Accuracy): String = {
+    renderUnpartitionedDataSourceQuery(source, keys.asScala.toSeq, accuracy)
   }
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,

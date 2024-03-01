@@ -5,7 +5,7 @@ import ai.chronon.api
 import ai.chronon.api.{Accuracy, Builders, Constants, GroupBy, Join, LongType, Operation, Source, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.GroupBy.{renderDataSourceQuery, renderUnpartitionedDataSourceQuery}
+import ai.chronon.spark.GroupBy.renderDataSourceQuery
 import ai.chronon.spark._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, IntegerType => SparkIntegerType, LongType => SparkLongType, StringType => SparkStringType}
