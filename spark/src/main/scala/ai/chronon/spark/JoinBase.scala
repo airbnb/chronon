@@ -380,7 +380,6 @@ abstract class JoinBase(joinConf: api.Join,
       val result = thresholdCount <= SmallJoinCutoff
       if (result) {
         logger.info(s"Counted $thresholdCount rows, running join in small mode.")
-        tableUtils.shouldRepartition = false
       } else {
         logger.info(s"Counted greater than $SmallJoinCutoff rows, proceeding with normal computation.")
       }
