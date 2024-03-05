@@ -34,6 +34,7 @@
    setup/Developer_Setup
    setup/Online_Integration
    setup/Orchestration
+   setup/Flink
 
 .. toctree::
    :maxdepth: 2
@@ -51,6 +52,7 @@
    :caption: More References
 
    Python_API
+   Tiled_Architecture
    Code_Guidelines
    Kaggle_Outbrain
 
