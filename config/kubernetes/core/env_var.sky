@@ -3,7 +3,8 @@
 Plugin for adding additional environment variables to a container.
 """
 
-load("config/kubernetes/helpers/context.sky", "get_env", "get_name", "get_cluster", "get_henson_git_commit", "get_availability_tier")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_name", "get_cluster", "get_henson_git_commit", "get_availability_tier", "get_target_shard")
+load("config/kubernetes/helpers/msp_shard.sky", "get_account_for_shard", "get_account_id")
 load("config/kubernetes/plugins/types.sky", "container_plugin", "all_container_plugin")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "EnvVar", "EnvVarSource", "ObjectFieldSelector")
 load("config/kubernetes/networking/internal/common.sky", "POD_NETWORKING_BASEDIR")
@@ -42,7 +43,7 @@ def all_containers_env_vars(vars = {}, from_fields = {}, container_name = None):
         A plugin that adds the new environment variables to the container.
     """
     return all_container_plugin(
-        _add_env_vars_safe,
+        _add_env_vars,
         container_name = container_name,
         vars = vars,
         from_fields = from_fields,
@@ -89,19 +90,32 @@ def default_env_vars(ctx):
     ))
 
 def _add_env_vars(ctx, plugin, container_def):
-    container_def["env"].update(plugin.vars)
-    container_def["env_from_fields"].update(plugin.from_fields)
+    # NB: `plugin.vars` and `plugin.from_fields` can sometimes be the default values from
+    # the arguments of the plugin calls to `container_env_vars` or `all_containers_env_vars`.
+    # When that is the case, those default value dictionaries are frozen which prevents
+    # future updates to them. In order to avoid that problems we always create a default
+    # dictionary if one doesn't exist and update its contents with the values of `plugin.vars`
+    # or `plugin.from_fields` rather than using those values directly. This prevents setting
+    # those value to a frozen dictionary.
+    #
+    # Avoid doing something like the following:
+    #  container_def["env"] = plugin.vars # container_def["env"] can potentially be a frozen dict
+    #
+    # Instead by copying the contents into a default dictionary it prevents value from being forzen:
+    #  container_env = container_def.get("env", {})
+    #  container_env.update(plugin.vars)
+    #  container_def["env"] = container_env
+    #
+    # Docs with explanation:
+    # https://github.com/google/starlark-go/blob/f86470692795f8abcf9f837a3c53cf031c5a3d7e/doc/spec.md#L1065-L1085
 
-def _add_env_vars_safe(ctx, plugin, container_def):
-    if container_def.get("env", None) == None:
-        container_def["env"] = plugin.vars
-    else:
-        container_def["env"].update(plugin.vars)
+    container_env = container_def.get("env", {})
+    container_env.update(plugin.vars)
+    container_def["env"] = container_env
 
-    if container_def.get("env_from_fields", None) == None:
-        container_def["env_from_fields"] = plugin.from_fields
-    else:
-        container_def["env_from_fields"].update(plugin.from_fields)
+    container_env_from_fields = container_def.get("env_from_fields", {})
+    container_env_from_fields.update(plugin.from_fields)
+    container_def["env_from_fields"] = container_env_from_fields
 
 def _default_env_vars(ctx, container):
     env_var_dict = {}
@@ -124,6 +138,8 @@ def _default_env_vars(ctx, container):
     env_var_dict["STRIPE_SERVICE"] = get_name(ctx)
     env_var_dict["HENSON_SERVICE"] = get_name(ctx)
     env_var_dict["STRIPE_DOMAIN"] = "stripe.io"
+    env_var_dict["AWS_ACCOUNT_NAME"] = get_account_for_shard(ctx, get_target_shard(ctx))
+    env_var_dict["AWS_ACCOUNT_ID"] = get_account_id(ctx, env_var_dict["AWS_ACCOUNT_NAME"])
     env_var_dict["GIT_COMMIT"] = get_henson_git_commit(ctx)
     env_var_dict["NETWORK_LOG_DIR"] = POD_NETWORKING_BASEDIR
     if hasattr(container, 'name'):

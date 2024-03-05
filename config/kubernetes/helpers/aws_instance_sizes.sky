@@ -4085,175 +4085,216 @@ _X86_TO_GRAVITON_INSTANCE_TYPE_MAPPINGS = {
         "bom": "c6g.12xlarge"
     },
     "c6g.12xlarge": {
-        "default":"c6g.12xlarge",
-        "bom":"c6g.12xlarge"
+        "default": "c6g.12xlarge",
+        "default_6g": "c6g.12xlarge",
+        "bom": "c6g.12xlarge"
     },
     "c6g.16xlarge": {
-        "default":"c6g.16xlarge",
-        "bom":"c6g.16xlarge"
+        "default": "c6g.16xlarge",
+        "default_6g": "c6g.16xlarge",
+        "bom": "c6g.16xlarge"
     },
     "c6g.2xlarge": {
-        "default":"c6g.2xlarge",
-        "bom":"c6g.2xlarge"
+        "default": "c6g.2xlarge",
+        "default_6g": "c6g.2xlarge",
+        "bom": "c6g.2xlarge"
     },
     "c6g.4xlarge": {
-        "default":"c6g.4xlarge",
-        "bom":"c6g.4xlarge"
+        "default": "c6g.4xlarge",
+        "default_6g": "c6g.4xlarge",
+        "bom": "c6g.4xlarge"
     },
     "c6g.8xlarge": {
-        "default":"c6g.8xlarge",
-        "bom":"c6g.8xlarge"
+        "default": "c6g.8xlarge",
+        "default_6g": "c6g.8xlarge",
+        "bom": "c6g.8xlarge"
     },
     "c6g.xlarge": {
-        "default":"c6g.xlarge",
-        "bom":"c6g.xlarge"
+        "default": "c6g.xlarge",
+        "default_6g": "c6g.xlarge",
+        "bom": "c6g.xlarge"
     },
     "m6g.12xlarge": {
-        "default":"m6g.12xlarge",
-        "bom":"m6g.12xlarge"
+        "default": "m6g.12xlarge",
+        "default_6g": "m6g.12xlarge",
+        "bom": "m6g.12xlarge"
     },
     "m6g.16xlarge": {
-        "default":"m6g.16xlarge",
-        "bom":"m6g.16xlarge"
+        "default": "m6g.16xlarge",
+        "default_6g": "m6g.16xlarge",
+        "bom": "m6g.16xlarge"
     },
     "m6g.2xlarge": {
-        "default":"m6g.2xlarge",
-        "bom":"m6g.2xlarge"
+        "default": "m6g.2xlarge",
+        "default_6g": "m6g.2xlarge",
+        "bom": "m6g.2xlarge"
     },
     "m6g.4xlarge": {
-        "default":"m6g.4xlarge",
-        "bom":"m6g.4xlarge"
+        "default": "m6g.4xlarge",
+        "default_6g": "m6g.4xlarge",
+        "bom": "m6g.4xlarge"
     },
     "m6g.8xlarge": {
-        "default":"m6g.8xlarge",
-        "bom":"m6g.8xlarge"
+        "default": "m6g.8xlarge",
+        "default_6g": "m6g.8xlarge",
+        "bom": "m6g.8xlarge"
     },
     "m6g.xlarge": {
-        "default":"m6g.xlarge",
-        "bom":"m6g.xlarge"
+        "default": "m6g.xlarge",
+        "default_6g": "m6g.xlarge",
+        "bom": "m6g.xlarge"
     },
     "m6g.large": {
-        "default":"m6g.large",
-        "bom":"m6g.large"
+        "default": "m6g.large",
+        "default_6g": "m6g.large",
+        "bom": "m6g.large"
     },
     "r6g.12xlarge": {
-        "default":"r6g.12xlarge",
-        "bom":"r6g.12xlarge"
+        "default": "r6g.12xlarge",
+        "default_6g": "r6g.12xlarge",
+        "bom": "r6g.12xlarge"
     },
     "r6g.16xlarge": {
-        "default":"r6g.16xlarge",
-        "bom":"r6g.16xlarge"
+        "default": "r6g.16xlarge",
+        "default_6g": "r6g.16xlarge",
+        "bom": "r6g.16xlarge"
     },
     "r6g.2xlarge": {
-        "default":"r6g.2xlarge",
-        "bom":"r6g.2xlarge"
+        "default": "r6g.2xlarge",
+        "default_6g": "r6g.2xlarge",
+        "bom": "r6g.2xlarge"
     },
     "r6g.4xlarge": {
-        "default":"r6g.4xlarge",
-        "bom":"r6g.4xlarge"
+        "default": "r6g.4xlarge",
+        "default_6g": "r6g.4xlarge",
+        "bom": "r6g.4xlarge"
     },
     "r6g.8xlarge": {
-        "default":"r6g.8xlarge",
-        "bom":"r6g.8xlarge"
+        "default": "r6g.8xlarge",
+        "default_6g": "r6g.8xlarge",
+        "bom": "r6g.8xlarge"
     },
     "r6g.xlarge": {
-        "default":"r6g.xlarge",
-        "bom":"r6g.xlarge"
+        "default": "r6g.xlarge",
+        "default_6g": "r6g.xlarge",
+        "bom": "r6g.xlarge"
     },
     "r6g.large": {
-        "default":"r6g.large",
-        "bom":"r6g.large"
+        "default": "r6g.large",
+        "default_6g": "r6g.large",
+        "bom": "r6g.large"
     },
     "c7g.12xlarge": {
-        "default":"c7g.12xlarge",
-        "bom":"c6g.12xlarge"
+        "default": "c7g.12xlarge",
+        "default_6g": "c6g.12xlarge",
+        "bom": "c6g.12xlarge"
     },
     "c7g.16xlarge": {
-        "default":"c7g.16xlarge",
-        "bom":"c6g.16xlarge"
+        "default": "c7g.16xlarge",
+        "default_6g": "c6g.16xlarge",
+        "bom": "c6g.16xlarge"
     },
     "c7g.2xlarge": {
-        "default":"c7g.2xlarge",
-        "bom":"c6g.2xlarge"
+        "default": "c7g.2xlarge",
+        "default_6g": "c6g.2xlarge",
+        "bom": "c6g.2xlarge"
     },
     "c7g.4xlarge": {
-        "default":"c7g.4xlarge",
-        "bom":"c6g.4xlarge"
+        "default": "c7g.4xlarge",
+        "default_6g": "c6g.4xlarge",
+        "bom": "c6g.4xlarge"
     },
     "c7g.8xlarge": {
-        "default":"c7g.8xlarge",
-        "bom":"c6g.8xlarge"
+        "default": "c7g.8xlarge",
+        "default_6g": "c6g.8xlarge",
+        "bom": "c6g.8xlarge"
     },
     "c7g.xlarge": {
-        "default":"c7g.xlarge",
-        "bom":"c6g.xlarge"
+        "default": "c7g.xlarge",
+        "default_6g": "c6g.xlarge",
+        "bom": "c6g.xlarge"
     },
     "m7i.12xlarge": {
-        "default":"m7i.12xlarge",
-        "bom":"m6i.12xlarge"
+        "default": "m7i.12xlarge",
+        "default_6g": "m6i.12xlarge",
+        "bom": "m6i.12xlarge"
     },
     "m7a.12xlarge": {
-        "default":"m7a.12xlarge",
-        "bom":"m6a.12xlarge"
+        "default": "m7a.12xlarge",
+        "default_6g": "m6a.12xlarge",
+        "bom": "m6a.12xlarge"
     },
     "m7g.12xlarge": {
-        "default":"m7g.12xlarge",
-        "bom":"m6g.12xlarge"
+        "default": "m7g.12xlarge",
+        "default_6g": "m6g.12xlarge",
+        "bom": "m6g.12xlarge"
     },
     "m7g.16xlarge": {
-        "default":"m7g.16xlarge",
-        "bom":"m6g.16xlarge"
+        "default": "m7g.16xlarge",
+        "default_6g": "m6g.16xlarge",
+        "bom": "m6g.16xlarge"
     },
     "m7g.2xlarge": {
-        "default":"m7g.2xlarge",
-        "bom":"m6g.2xlarge"
+        "default": "m7g.2xlarge",
+        "default_6g": "m6g.2xlarge",
+        "bom": "m6g.2xlarge"
     },
     "m7g.4xlarge": {
-        "default":"m7g.4xlarge",
-        "bom":"m6g.4xlarge"
+        "default": "m7g.4xlarge",
+        "default_6g": "m6g.4xlarge",
+        "bom": "m6g.4xlarge"
     },
     "m7g.8xlarge": {
-        "default":"m7g.8xlarge",
-        "bom":"m6g.8xlarge"
+        "default": "m7g.8xlarge",
+        "default_6g": "m6g.8xlarge",
+        "bom": "m6g.8xlarge"
     },
     "m7g.xlarge": {
-        "default":"m7g.xlarge",
-        "bom":"m6g.xlarge"
+        "default": "m7g.xlarge",
+        "default_6g": "m6g.xlarge",
+        "bom": "m6g.xlarge"
     },
     "m7g.large": {
-        "default":"m7g.large",
-        "bom":"m6g.large"
+        "default": "m7g.large",
+        "default_6g": "m6g.large",
+        "bom": "m6g.large"
     },
     "r7g.12xlarge": {
-        "default":"r7g.12xlarge",
-        "bom":"r6g.12xlarge"
+        "default": "r7g.12xlarge",
+        "default_6g": "r6g.12xlarge",
+        "bom": "r6g.12xlarge"
     },
     "r7g.16xlarge": {
-        "default":"r7g.16xlarge",
-        "bom":"r6g.16xlarge"
+        "default": "r7g.16xlarge",
+        "default_6g": "r6g.16xlarge",
+        "bom": "r6g.16xlarge"
     },
     "r7g.2xlarge": {
-        "default":"r7g.2xlarge",
-        "bom":"r6g.2xlarge"
+        "default": "r7g.2xlarge",
+        "default_6g": "r6g.2xlarge",
+        "bom": "r6g.2xlarge"
     },
     "r7g.4xlarge": {
-        "default":"r7g.4xlarge",
-        "bom":"r6g.4xlarge"
+        "default": "r7g.4xlarge",
+        "default_6g": "r6g.4xlarge",
+        "bom": "r6g.4xlarge"
     },
     "r7g.8xlarge": {
-        "default":"r7g.8xlarge",
-        "bom":"r6g.8xlarge"
+        "default": "r7g.8xlarge",
+        "default_6g": "r6g.8xlarge",
+        "bom": "r6g.8xlarge"
     },
     "r7g.xlarge": {
-        "default":"r7g.xlarge",
-        "bom":"r6g.xlarge"
+        "default": "r7g.xlarge",
+        "default_6g": "r6g.xlarge",
+        "bom": "r6g.xlarge"
     },
     "r7g.large": {
-        "default":"r7g.large",
-        "bom":"r6g.large"
+        "default": "r7g.large",
+        "default_6g": "r6g.large",
+        "bom": "r6g.large"
     },
   }
-
 
 def get_instance_type_by_name(name):
     instance_type_from_name = _INSTANCE_TYPES_BY_NAME.get(name)

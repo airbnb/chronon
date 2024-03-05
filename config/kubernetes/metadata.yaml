@@ -64,3 +64,10 @@ review_requirements:
   reviewers:
   - codeowners-service-networking
   - codeowners-orchestration
+
+- files:
+  - sidecars/chromium.sky
+  assignees:
+  - codeowners-connections-fdp
+  reviewers:
+  - codeowners-orchestration

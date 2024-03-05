@@ -108,10 +108,6 @@ _CRONS = [
         "namespace": "threatpapermillbox"
     },
     {
-        "name": "alert-to-case-enrichment",
-        "namespace": "threatpapermillbox"
-    },
-    {
         "name": "aws-abnormal-s3-get-object-volume",
         "namespace": "threatpapermillbox"
     },
@@ -252,10 +248,6 @@ _CRONS = [
         "namespace": "threatpapermillbox"
     },
     {
-        "name": "exfil-by-curl-wget",
-        "namespace": "threatpapermillbox"
-    },
-    {
         "name": "external-drive-sharing",
         "namespace": "threatpapermillbox"
     },
@@ -264,19 +256,11 @@ _CRONS = [
         "namespace": "threatpapermillbox"
     },
     {
-        "name": "flashpoint-community-query-engine",
-        "namespace": "threatpapermillbox"
-    },
-    {
         "name": "historic-threat-intel-feed-dns-high",
         "namespace": "threatpapermillbox"
     },
     {
         "name": "historic-threat-intel-feed-dns-medium",
-        "namespace": "threatpapermillbox"
-    },
-    {
-        "name": "hosts-with-all-severities",
         "namespace": "threatpapermillbox"
     },
     {
@@ -776,11 +760,6 @@ _CRONS = [
         "namespace": "kubeacronnoegress"
     },
     {
-        # cron job that syncs changes to team names from Home to team name labels associated with SignalFX detectors/dashboards
-        "name": "observability--misc--sfx-update-teams",
-        "namespace": "kubeacronnoegress"
-    },
-    {
         # cron job that automatically detaches a payment instrument from a payment intent when it is stuck in processing
         # It does not touch financial or customer data.
         "name": "card-payment-intents-stuck-in-processing",
@@ -797,7 +776,12 @@ _CRONS = [
         "name": "msp-dataland-aurora-prune",
         "namespace": "mspdatalandcronbox"
     },
-    
+    {
+        # cronjob that monitors website uptime. Cronjob does not touch financial or customer data.
+        "name": "corpnetcronbox-alertrefiner",
+        "namespace": "corpnetcronbox",
+    },
+
 ]
 
 def cron_in_exceptions(namespace, name):

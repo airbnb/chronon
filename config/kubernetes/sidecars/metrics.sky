@@ -37,6 +37,16 @@ SERVICE_NAME = struct(
     field = "metadata.labels['metrics.stripe.io/metrics-service-name']",
 )
 
+# Defines how to extract the stripe.io/henson-service label and pass it to veneur-init
+# - `env_var` defines the environment variable within the pod runtime environment in which to store the value
+# - `tag_key` defines the key of the tag/dimension that will be added to metrics
+# - `field` defines what the value of the environment variable will be. It is a reference to fields from the [kubernetes downwards api](https://kubernetes.io/docs/tasks/inject-data-application/environment-variable-expose-pod-information/#use-pod-fields-as-values-for-environment-variables)
+HENSON_SERVICE_NAME = struct(
+    env_var = "HENSON_SERVICE_NAME",
+    tag_key = "henson_service",
+    field = "metadata.labels['stripe.io/henson-service']",
+)
+
 # Defines how to extract the pod ip and pass it to veneur-init
 # - `env_var` defines the environment variable within the pod runtime environment in which to store the value
 # - `tag_key` is unused -- this struct isn't used for tagging
@@ -290,6 +300,7 @@ def metrics(
                     NAMESPACE.env_var: NAMESPACE.field,
                     SERVICE_NAME.env_var: SERVICE_NAME.field,
                     POD_IP.env_var: POD_IP.field,
+                    HENSON_SERVICE_NAME.env_var: HENSON_SERVICE_NAME.field,
                 }),
                 probes(
                     liveness = http_probe(
@@ -455,6 +466,9 @@ def _tag_send_only_to_tsdb(ctx):
     value = "prometheus" if is_isolated_deploy(ctx) else None
     return struct(key="send_only_to_tsdb", value=value)
 
+def _tag_henson_service_name(ctx):
+    return struct(key=HENSON_SERVICE_NAME.tag_key, value="$(%s)" % HENSON_SERVICE_NAME.env_var)
+
 def _default_tags():
     return [getattr(tags, tagfn) for tagfn in dir(tags)]
 
@@ -468,6 +482,7 @@ def _default_tags():
 # - `blue_green`: adds `deploy_color:$COLOR`
 # - `namespace`: adds `namespace:$NAMESPACE`
 # - `service_name`: adds `service_name:$STRIPE_POD_NAME`
+# - `henson_service_name`: adds `henson_service:$HENSON_SERVICE_NAME`
 #
 # `$FOO` in the above examples is not a literal environment variable, it's
 # just a placeholder for "the value of this thing". Most of the values
@@ -482,6 +497,7 @@ tags = struct(
     service_name = _tag_service_name,
     isolated_deploy_workspace_id = _tag_isolated_deploy_workspace_id,
     send_only_to_tsdb = _tag_send_only_to_tsdb,
+    henson_service_name = _tag_henson_service_name,
 )
 
 def _render_tags(ctx, tags=[]):

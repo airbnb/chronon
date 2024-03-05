@@ -13,9 +13,11 @@ load("config/kubernetes/networking/public/networking.sky", "networking")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "job_plugin")
 load("config/kubernetes/sidecars/metrics.sky", "metrics")
-load("config/kubernetes/helpers/context.sky", "is_isolated_deploy", "get_env")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "is_isolated_deploy", "get_env")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Job", "JobSpec")
 load("config/kubernetes/helpers/shared_msp.sky", "shared_msp_experimental_job_support")
+load("config/kubernetes/helpers/binpacking.sky", "bin_packing")
+load("config/kubernetes/stripe.sky", "CONSUL_AGENT_ENABLED_LABEL", "CONSUL_AGENT_ENABLED_LABEL_DISABLED")
 
 def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, enable_shared_msp_experimental_job_support=False, **kwargs):
     """
@@ -80,6 +82,7 @@ def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, ena
             _apply_plugin(ctx, compose_plugins(grace_period(DEFAULT_GRACE_PERIOD_SECONDS, overwrite = False)), job)
             pod_termination_grace_period_seconds = job["pod"]["grace_period"]
 
+            consul_deprecated_in_pod = job["metadata"].get("labels", {}).get(CONSUL_AGENT_ENABLED_LABEL, "")
             networking_plugin = networking(
                 ctx,
                 namespace=namespace,
@@ -88,6 +91,8 @@ def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, ena
                 register_services=job['registered_services'],
                 config=job["networking_config"],
                 pod_termination_grace_period_seconds=pod_termination_grace_period_seconds,
+                consul_deprecated=(consul_deprecated_in_pod == CONSUL_AGENT_ENABLED_LABEL_DISABLED),
+                k8s_workload_name=job["metadata"]["name"],
             )
             _apply_plugin(ctx, networking_plugin, job)
             # NOTE: Include metrics-sidecar for networking plugin as envoy-config-srv needs it.
@@ -95,6 +100,9 @@ def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, ena
 
         if enable_shared_msp_experimental_job_support:
             _apply_plugin(ctx, compose_plugins(shared_msp_experimental_job_support()), job)
+
+        if is_bin_packing_enabled(ctx) == True:
+            _apply_plugin(ctx, compose_plugins(*bin_packing()), job)
 
     return job["render"](ctx, job)
 

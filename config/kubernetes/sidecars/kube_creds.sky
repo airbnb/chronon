@@ -12,10 +12,19 @@ load("config/kubernetes/helpers/quantities.sky", "mebibytes")
 load("config/kubernetes/helpers/warning.sky", "warn")
 load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled")
 
-_kubeconfig_path = "/kubeconfig"
-_certs_path = "/certs"
+# This sidecar is specifically for interop with third-party Kubernetes services. DO NOT use this with internal services. If you need certificates in your service,
+# use credentials-proxy.
 
-def use_kube_creds(ctx, shard):
+_kubeconfig_path = "/kubeconfig"
+
+def use_kube_creds(
+    ctx,
+    shard,
+    certs_path = "/certs",
+    ca_output_filename = "machine-cas.pem",
+    cert_output_filename = "service.crt",
+    private_key_output_filename = "service.key"
+):
     return compose_plugins(
         use_credentials_proxy(),
         mount_host_stripe_ca_certs(),
@@ -24,12 +33,16 @@ def use_kube_creds(ctx, shard):
             volume_args = { "medium": "Memory", "sizeLimit": mebibytes(ctx, 50)},
         ),
         mount_pod_volume(
-            path = _certs_path,
+            path = certs_path,
             volume_args = { "medium": "Memory", "sizeLimit": mebibytes(ctx, 50)},
         ),
         pod_plugin(
             _update_pod,
             shard = shard,
+            certs_path = certs_path,
+            ca_output_filename = ca_output_filename,
+            cert_output_filename = cert_output_filename,
+            private_key_output_filename = private_key_output_filename,
         ),
     )
 
@@ -42,7 +55,10 @@ def _update_pod(ctx, plugin, pod_def):
         "render": _kube_creds_container,
         "name": "kube-creds-init",
         "kubeconfig_path": _kubeconfig_path,
-        "certs_path": _certs_path,
+        "certs_path": plugin.certs_path,
+        "ca_output_filename": plugin.ca_output_filename,
+        "cert_output_filename": plugin.cert_output_filename,
+        "private_key_output_filename": plugin.private_key_output_filename,
         "sidecar_service": "kube-creds",
         "shard": plugin.shard,
     }
@@ -58,10 +74,12 @@ def _kube_creds_container(ctx, container_def, pod):
         container.shard,
         "--ca-path",
         "/etc/ssl/certs/stripe-cas/machine-cas.pem",
+        "--ca-output-path",
+        "%s/%s" % (container.certs_path, container.ca_output_filename),
         "--cert-output-path",
-        "%s/service.crt" % _certs_path,
+        "%s/%s" % (container.certs_path, container.cert_output_filename),
         "--private-key-output-path",
-        "%s/service.key" % _certs_path,
+        "%s/%s" % (container.certs_path, container.private_key_output_filename),
         "--kubeconfig-output-path",
         "%s/kubeconfig" % _kubeconfig_path,
     ]
@@ -87,7 +105,7 @@ def _kube_creds_container(ctx, container_def, pod):
             render_volume_mount(ctx, mount_credentials_proxy(read_only = is_bin_packing_enabled(ctx) == False)),
             render_volume_mount(ctx, volume_mount("/etc/ssl/certs/stripe-cas")),
             render_volume_mount(ctx, volume_mount(_kubeconfig_path, read_only = False)),
-            render_volume_mount(ctx, volume_mount(_certs_path, read_only = False)),
+            render_volume_mount(ctx, volume_mount(container.certs_path, read_only = False)),
         ],
         resources = resource_requirements(ctx),
     )

@@ -1,20 +1,30 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/networking/public/consul.sky", "consul_meta_envoy_priority_routing")
-load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config_legacy")
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
 load("config/kubernetes/helpers/context.sky", "get_compute_config")
 
 SUBSET_HEADER_NAME = "X-Stripe-Routing-Context-Priority-Tier"
+STANDARD_TIER_PB_PACKAGE = proto.package("com.stripe.gocode.service_config").StandardPriorityTier
 
 # This list should stay in sync with the list in Zoolander:
 # https://git.corp.stripe.com/stripe-internal/zoolander/blob/master/config/tiered-service-base.sky#L8-L15
 DEFAULT_TIERS = [
-    struct(name = "LIVEMODE_CRITICAL", receive_non_priority_traffic = True),
-    struct(name = "LIVEMODE", receive_non_priority_traffic = True),
-    struct(name = "API_TESTMODE", receive_non_priority_traffic = True),
-    struct(name = "BATCH_CRITICAL", receive_non_priority_traffic = True),
-    struct(name = "BATCH", receive_non_priority_traffic = True),
-    struct(name = "SYNTHETIC", receive_non_priority_traffic = True),
+    {"name": "LIVEMODE_CRITICAL", "receive_non_priority_traffic": True},
+    {"name": "LIVEMODE", "receive_non_priority_traffic": True},
+    {"name": "API_TESTMODE", "receive_non_priority_traffic": True},
+    {"name": "BATCH_CRITICAL", "receive_non_priority_traffic": True},
+    {"name": "BATCH", "receive_non_priority_traffic": True},
+    {"name": "SYNTHETIC", "receive_non_priority_traffic": True},
 ]
+
+STANDARD_TIER_MAPPING = {
+    STANDARD_TIER_PB_PACKAGE.LIVEMODE_CRITICAL: "LIVEMODE_CRITICAL",
+    STANDARD_TIER_PB_PACKAGE.LIVEMODE: "LIVEMODE",
+    STANDARD_TIER_PB_PACKAGE.API_TESTMODE: "API_TESTMODE",
+    STANDARD_TIER_PB_PACKAGE.BATCH_CRITICAL: "BATCH_CRITICAL",
+    STANDARD_TIER_PB_PACKAGE.BATCH: "BATCH",
+    STANDARD_TIER_PB_PACKAGE.SYNTHETIC: "SYNTHETIC",
+}
 
 def tiered_deployments(ctx, deployment_supplier):
     """ Helper function that creates a set of deployments based on the priority tier information specified in the service's compute.yaml.
@@ -29,25 +39,50 @@ def tiered_deployments(ctx, deployment_supplier):
     """
     deployments = []
     priority_tiers = None
+
+    tiers = DEFAULT_TIERS
+    subset_header = SUBSET_HEADER_NAME
+
+    # the logic is duplicated between the if and else since v1 compute deals with a proto message and v2 compute deals with a dictionary
+    # make sure to update both locations if you change anything
     if ctx.vars.get("service.config.compute"):
         v1_compute = get_compute_config(ctx)
         priority_tiers = v1_compute.priority_tiers
+
+        if not priority_tiers or not priority_tiers.enable_host_isolation:
+            fail("Must enable host isolation in order to use tiered_deployments")
+
+        subset_header = priority_tiers.custom_priority_tier_header if priority_tiers.custom_priority_tier_header != "" else SUBSET_HEADER_NAME
+
+        # Grab either custom or standard priority tiers. Only one should be set
+        # Transform from proto -> dict
+        if priority_tiers.custom_priority_tiers:
+            tiers = [{"name": tier.name, "receive_non_priority_traffic": tier.receive_non_priority_traffic} for tier in priority_tiers.custom_priority_tiers]
+        if priority_tiers.standard_priority_tiers:
+            tiers = [{"name": STANDARD_TIER_MAPPING[tier.name], "receive_non_priority_traffic": tier.receive_non_priority_traffic} for tier in priority_tiers.standard_priority_tiers]
+
     elif ctx.vars.get("service.config.compute_v2"):
-        v2_compute = get_merged_compute_v2_config_legacy(ctx)
-        priority_tiers = v2_compute.priority_tiers
+        v2_compute = get_merged_compute_v2_config(ctx)
+        priority_tiers = v2_compute["priority_tiers"]
 
-    if not priority_tiers or not priority_tiers.enable_host_isolation:
-        fail("Must enable host isolation in order to use tiered_deployments")
+        if not priority_tiers or not priority_tiers.get("enable_host_isolation"):
+            fail("Must enable host isolation in order to use tiered_deployments")
 
-    subset_header = priority_tiers.custom_priority_tier_header if priority_tiers.custom_priority_tier_header != "" else SUBSET_HEADER_NAME
-    priority_tiers = priority_tiers.custom_priority_tiers if priority_tiers.custom_priority_tiers else DEFAULT_TIERS
+        subset_header = priority_tiers.get("custom_priority_tier_header") if priority_tiers.get("custom_priority_tier_header") != "" else SUBSET_HEADER_NAME
 
-    for priority_tier in priority_tiers:
-        priority_name = priority_tier.name.lower().replace("_", "-")
+        # Grab either custom or standard priority tiers. Only one should be set
+        # get_merged_compute_v2_config already returns a dict
+        if priority_tiers.get("custom_priority_tiers"):
+            tiers = priority_tiers.get("custom_priority_tiers")
+        if priority_tiers.get("standard_priority_tiers"):
+            tiers = priority_tiers.get("standard_priority_tiers")
+
+    for priority_tier in tiers:
+        priority_name = priority_tier.get("name").lower().replace("_", "-")
         meta = consul_meta_envoy_priority_routing(
             subset_header,
             priority_name,
-            receive_non_priority_traffic = priority_tier.receive_non_priority_traffic,
+            receive_non_priority_traffic = priority_tier.get("receive_non_priority_traffic"),
         )
 
         deployments.append(deployment_supplier(ctx, priority_name, meta))

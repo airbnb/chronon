@@ -1,0 +1,94 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+# This allowlist serves as a ratchet to protect against potentially dangerous behaviors when enabling and disabling host isolation.
+# If you are enabling host isolation, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-enable-host-isolation-for-your-service).
+# If you are disabling host isolation, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-disable-host-isolation). Failure to do so can be EXTREMELY DANGEROUS, as
+# all requests to your service will begin to fail. Removing yourself from the allowlist is an acknowledgement that you have followed the guide.
+
+HOST_ISOLATION_ALLOWLIST = [
+    "grpc-upload-srv-p2",
+    "grpc-upload-srv-p3",
+    "grpc-upload-srv-p4",
+    "grpc-upload-srv-p5",
+
+    "manage-srv-p2",
+    "manage-srv-p3",
+    "manage-srv-p4",
+    "manage-srv-p5",
+
+    "user-auth-bridge-srv-production",
+
+    "sample-api-srv-p2",
+    "sample-api-srv-p5",
+
+    "apps-bapi-srv-p2",
+    "apps-bapi-srv-p5",
+
+    "policy-bridge-srv",
+    "policy-bridge-srv-async",
+
+    "accounts-bridge-srv-fallback",
+    "accounts-bridge-srv-replication",
+    "accounts-bridge-srv-batch",
+    "accounts-bridge-srv-backfill",
+
+    "capital-api-srv-p2",
+    "capital-api-srv-p5",
+
+    "ruby-grpc-test-srv-low",
+    "ruby-grpc-test-srv-high",
+
+    "crypto-onramp-api-srv-p2",
+    "crypto-onramp-api-srv-p5",
+
+    "mono-bapi-srv-p0-canary",
+    "mono-bapi-srv-p0-performance",
+    "mono-bapi-srv-p0-holdout",
+    "mono-bapi-srv-p0",
+    "mono-bapi-srv-p1",
+    "mono-bapi-srv-p1-canary",
+    "mono-bapi-srv-p1-performance",
+    "mono-bapi-srv-p1-holdout",
+    "mono-bapi-srv-p2",
+    "mono-bapi-srv-p2-canary",
+    "mono-bapi-srv-p2-performance",
+    "mono-bapi-srv-p2-holdout",
+    "mono-bapi-srv-p3",
+    "mono-bapi-srv-p3-canary",
+    "mono-bapi-srv-p3-performance",
+    "mono-bapi-srv-p3-holdout",
+    "mono-bapi-srv-p4",
+    "mono-bapi-srv-p4-canary",
+    "mono-bapi-srv-p4-performance",
+    "mono-bapi-srv-p4-holdout",
+    "mono-bapi-srv-p5",
+    "mono-bapi-srv-p5-canary",
+    "mono-bapi-srv-p5-performance",
+    "mono-bapi-srv-p5-heavy-preload",
+    "mono-bapi-srv-p5-holdout",
+
+    "billing-api-srv-p1",
+    "billing-api-srv-p2",
+    "billing-api-srv-p3",
+    "billing-api-srv-p4",
+    "billing-api-srv-p5",
+
+    "ruby-sample-grpc-srv-livemode-critical",
+    "ruby-sample-grpc-srv-livemode",
+    "ruby-sample-grpc-srv-api-testmode",
+    "ruby-sample-grpc-srv-batch-critical",
+    "ruby-sample-grpc-srv-batch",
+    "ruby-sample-grpc-srv-synthetic",
+
+    "api-platform-bapi-srv-p1",
+    "api-platform-bapi-srv-p2",
+    "api-platform-bapi-srv-p3",
+    "api-platform-bapi-srv-p4",
+    "api-platform-bapi-srv-p5",
+
+    # We can probably remove these gocode services.
+    "reldb-proxy-dev-srv",
+    "envoy-shape-srv",
+    "reldb-proxy-srv",
+    "echo-msp-srv",
+    # End go-code services
+]

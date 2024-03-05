@@ -3,8 +3,6 @@
 Functions for creating and configuring Workflow engine workers to run on MSP.
 """
 
-load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
-load("config/kubernetes/service-config/ruby_common.sky", "ruby_canary_suffix")
 load("config/kubernetes/apps/deployment.sky", "deployment")
 load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
@@ -13,10 +11,13 @@ load("config/kubernetes/core/probe.sky", "command_probe", "probes")
 load("config/kubernetes/helpers/availability_tiers.sky", "A100", "A400")
 load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size")
 load("config/kubernetes/helpers/context.sky", "get_env")
-load("config/kubernetes/pay-server.sky", "einhorn_service", "pay_server_pod")
-load("config/kubernetes/helpers/images.sky", "image_defaults")
 load("config/kubernetes/helpers/external_scaling_control.sky", "external_scaling_control")
+load("config/kubernetes/helpers/images.sky", "image_defaults")
 load("config/kubernetes/meta/metadata.sky", "labels")
+load("config/kubernetes/pay-server.sky", "einhorn_service", "pay_server_pod")
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
+load("config/kubernetes/service-config/ruby_common.sky", "ruby_canary_suffix")
+
 
 # Can't be overriden because the canary is always one node.
 def deployment_strategy_canary_func(ctx):
@@ -26,10 +27,17 @@ def deployment_strategy_canary_func(ctx):
     max_surge = 1,
   )
 
-def deployment_strategy_func(ctx):
+def deployment_strategy_regular_func(ctx):
   return rolling_update_strategy(
     ctx,
     max_unavailable = 1,
+    max_surge = 1,
+  )
+
+def deployment_strategy_serverless_func(ctx):
+  return rolling_update_strategy(
+    ctx,
+    max_unavailable = 0,
     max_surge = 1,
   )
 
@@ -41,7 +49,7 @@ def ruby_workflow_worker_shared_msp(
         namespace,
         instance_type,
         availability_tier = A400,
-        deployment_strategy_func = deployment_strategy_func,
+        deployment_strategy_func = deployment_strategy_regular_func,
         workers_per_replica = 4,
         replicas_func,
         plugins_func = None,
@@ -134,7 +142,9 @@ def ruby_workflow_worker_shared_msp(
             plugins = plugins.canary
 
         if serverless:
-            _validate_serverless_canary_replicas(ctx, replicas)
+            _maybe_enable_binpacking(ctx)
+            _validate_serverless_canary_replicas(replicas)
+
         elif replicas != 1:
             fail("Cannot set canary replicas to anything besides 1 when serverless is not enabled.")
 
@@ -176,8 +186,16 @@ def ruby_workflow_worker_shared_msp(
         if type(plugins) == 'struct':
             plugins = plugins.main
 
+        # This needs to be reassigned because we're not allowed to mutate the original.
+        main_deployment_strategy_func = deployment_strategy_func
+
         if serverless:
-            plugins = plugins + [external_scaling_control()]
+            _maybe_enable_binpacking(ctx)
+            plugins = plugins + [
+                external_scaling_control(),
+            ]
+
+            main_deployment_strategy_func = deployment_strategy_serverless_func
 
         if not strict_packaging and namespace not in TEMPORARY_PACKAGING_VALIDATION_OPT_OUT:
             memory_mib = aws_instance_size(instance_type.name).memory_mib
@@ -198,7 +216,7 @@ def ruby_workflow_worker_shared_msp(
             namespace = namespace,
             instance_type = instance_type,
             availability_tier = availability_tier,
-            deployment_strategy_func = deployment_strategy_func,
+            deployment_strategy_func = main_deployment_strategy_func,
             workers_per_replica = workers_per_replica,
             startup_timeout = startup_timeout,
             drain_timeout = drain_timeout,
@@ -228,7 +246,7 @@ def ruby_workflow_worker_dedicated_msp(
         cpu,
         memory,
         workers_per_replica = 4,
-        deployment_strategy_func = deployment_strategy_func,
+        deployment_strategy_func = deployment_strategy_regular_func,
         replicas_func,
         plugins_func = None,
         startup_timeout,
@@ -369,9 +387,9 @@ def _service_shared_msp(
 
     envs["WORKFLOW_ENGINE_WORKER"] = "true"
 
-    # The --remote flag configures this worker to listen on the deployed
-    # task queue rather than the local one (used on devboxes).
-    command = command + ["--remote"]
+    # Configure this worker to listen on the deployed task queue rather than the local one,
+    # which is used on devboxes.
+    command = command + ["--worker-location=remote"]
     if serverless:
         command = command + ["--serverless"]
 
@@ -471,9 +489,9 @@ def _service_dedicated_msp(
             cpu = cpu,
             memory = memory,
 
-            # The --remote flag configures this worker to listen on the deployed
-            # task queue rather than the local one (used on devboxes).
-            command = command + ["--remote"],
+            # Configure this worker to listen on the deployed task queue rather than the local one,
+            # which is used on devboxes.
+            command = command + ["--worker-location=remote"],
         ),
         einhorn_service(
             ctx,
@@ -541,7 +559,7 @@ def _validate_replicas(ctx, replicas):
     if get_env(ctx) != "preprod" and (not replicas or replicas <= 1):
         fail("Workers should be deployed with at least 2 replicas (%s replicas specified), to ensure no downtime when deploying workers." % (replicas))
 
-def _validate_serverless_canary_replicas(ctx, canary_replicas):
+def _validate_serverless_canary_replicas(canary_replicas):
     if canary_replicas == None or canary_replicas < 0 or canary_replicas > 1:
         fail("Serverless workers must be deployed with either 0 or 1 canary replicas (%s canary replicas specified)." % (canary_replicas))
 
@@ -567,3 +585,9 @@ def _compensate_drain_timeout(timeout):
     # the configured timeout. This gives 12s for the envoy healthcheck to propagate, and
     # then gives us 300s to drain our service.
     return timeout + DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME
+
+def _maybe_enable_binpacking(ctx):
+    if get_env(ctx) != "qa":
+        return
+
+    ctx.vars["msp.binpacking"] = True

@@ -14,40 +14,128 @@ MSP_CLUSTER_ANNOTATION = "stripe.io/msp-cluster"
 
 MSP_SHARD_ANNOTATION = "stripe.io/msp-shard"
 
-def _shard(name, *, shared_msp=True, cron=False, account="mainland"):
-    return struct(name=name, shared_msp=shared_msp, cron=cron, account=account)
+ACCOUNT_NAME_TO_ID = {
+    "mainland": "030465607062",
+    "mainland2": "108124432883",
+    "msp-shared-all-pink": "213343938293",
+}
+
+SHARD_TYPE = struct(
+    TEST="test",
+    SHARED_MSP_A400="shared_msp_a400",
+    SHARED_MSP_ALL_TIERS="shared_msp_all_tiers",
+    DEDICATED_MSP="dedicated_msp",
+    CANARY="canary",
+)
+
+SHARD_STATE = struct(
+    PROVISIONING="PROVISIONING",
+    GA="GA",
+    DECOMMISSIONING="DECOMMISSIONING",
+)
+
+def _shard(name, *, shared_msp=True, cron=False, account="mainland", shard_type=SHARD_TYPE.SHARED_MSP_ALL_TIERS, shard_state=SHARD_STATE.GA):
+    return struct(name=name, shared_msp=shared_msp, cron=cron, account=account, shard_type=shard_type, shard_state=shard_state)
 
 ENV_CLUSTER_SHARDS = {
     "qa": {
-        "bom": [_shard("kubemaster", cron=True)],
-        "cmh": [_shard("kubemaster", cron=True)],
-        "east": [_shard("kubemaster", cron=True)],
-        "northwest": [_shard("kubemaster", shared_msp=False, cron=True), _shard("kubeapiaa"), _shard("kubeapibb"), _shard("kubeapicc"), _shard("kubeapidd", cron=True), _shard("kubeapitest", cron=True), _shard("kubeapisktest")],
+        "bom": [
+            _shard("kubemaster", cron=True),
+        ],
+        "cmh": [
+            _shard("kubemaster", cron=True),
+        ],
+        "east": [
+            _shard("kubemaster", cron=True),
+        ],
+        "northwest": [
+            _shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
+            _shard("kubeapiaa"),
+            _shard("kubeapibb"),
+            _shard("kubeapicc"),
+            _shard("kubeapidd", cron=True),
+            _shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
+            _shard("msppink", account="msp-shared-all-pink", shard_type=SHARD_TYPE.TEST),
+        ],
     },
     "preprod": {
-        "cmh": [_shard("kubemaster", cron=True)]
+        "cmh": [
+            _shard("kubemaster", cron=True),
+        ]
     },
     "prod": {
-        "bom": [_shard("kubemaster", cron=True)],
-        "cmh": [_shard("kubemaster", cron=True)],
-        "east": [_shard("kubemaster", cron=True)],
-        "northwest": [_shard("kubemaster", shared_msp=False, cron=True), _shard("kubeapiaa"), _shard("kubeapibb"), _shard("kubeapicc"), _shard("kubeapidd", cron=True), _shard("kubeapiee"), _shard("kubeapitest", cron=True)],
+        "bom": [
+            _shard("kubemaster", cron=True),
+        ],
+        "cmh": [
+            _shard("kubemaster", cron=True),
+        ],
+        "east": [
+            _shard("kubemaster", cron=True),
+        ],
+        "northwest": [
+            _shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
+            _shard("kubeapiaa"),
+            _shard("kubeapibb"),
+            _shard("kubeapicc"),
+            _shard("kubeapidd", cron=True),
+            _shard("kubeapiee"),
+            _shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
+        ],
     },
 }
 
 
-def all_available_shards(ctx, shared_msp=None):
+# Fake shards map to be used in tests. This allows us to decouple test cases from real shards
+MOCK_SHARDS_MAP = {
+    "qa": {
+        "northwest": [
+            _shard("shard1", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
+            _shard("shard2"),
+            _shard("shard3", cron=True, shard_type=SHARD_TYPE.CANARY),
+            _shard("shard4", account="mainland2", shard_type=SHARD_TYPE.TEST),
+            _shard("shard5", account="mainland3", shard_state=SHARD_STATE.PROVISIONING),
+        ],
+    },
+}
+
+
+def all_available_shards(ctx, shared_msp=None, shard_states=None, shard_types=None, _override_shards_map=None):
     """
     Returns all available shards based on the current Henson context.
     Args:
       ctx: The Henson context.
       shared_msp: If specified, only return shards that do (True) or don't (False) support Shared MSP.
+      shard_states: If specified, only return shards that have one of the specified state.
+      shard_types: If specified, only return shards that have one of the specified type.
+      _override_shards_map: Only used for tests, overrides the default shard map to allow testing for custom shard combinations
     """
     clusters = ENV_CLUSTER_SHARDS.get(get_env(ctx), {})
+    # Only used in tests to provide a custom list of shards
+    if _override_shards_map != None:
+        clusters = _override_shards_map.get(get_env(ctx), {})
+
     shards = clusters.get(get_cluster(ctx), [])
-    if shared_msp == None:
-        return [s.name for s in shards]
-    return [s.name for s in shards if s.shared_msp == shared_msp]
+    if shared_msp != None:
+        shards = [s for s in shards if s.shared_msp == shared_msp]
+    if shard_states != None:
+        shards = [s for s in shards if s.shard_state in shard_states]
+    if shard_types != None:
+        shards = [s for s in shards if s.shard_type in shard_types]
+    return [s.name for s in shards]
+
+
+def all_canary_shards(ctx, _override_shards_map=None):
+    """
+    Returns all GA canary shards based on the current Henson context.
+    """
+    return all_available_shards(
+        ctx=ctx,
+        shard_states=SHARD_STATE.GA,
+        shard_types=[SHARD_TYPE.CANARY],
+        _override_shards_map=_override_shards_map,
+    )
+
 
 def account_for_shard(ctx, shard):
     """
@@ -174,3 +262,34 @@ def _shard_annotations(shard):
         MSP_CLUSTER_ANNOTATION: shard,
         MSP_SHARD_ANNOTATION: shard,
     }
+
+
+def get_account_for_shard(ctx, shard):
+    local_shards = ENV_CLUSTER_SHARDS.get(get_env(ctx), {}).get(get_cluster(ctx), [])
+    for s in local_shards:
+        if s.name == shard:
+            return s.account
+    return None
+
+
+def get_account_id(ctx, account_name):
+    return ACCOUNT_NAME_TO_ID.get(account_name)
+
+
+def maybe_enable_security_group_policy(ctx, shard_name):
+    """
+    Enable Security Group Policy if this shard uses the VPC CNI
+    for non-binpacked mspworkers. This function is only needed for
+    multi-shard services, since henson can't properly setup feature-flags
+    for them.
+    """
+    new_ctx = struct(vars = dict(ctx.vars))
+
+    local_shards = ENV_CLUSTER_SHARDS.get(get_env(ctx), {}).get(get_cluster(ctx), [])
+    for s in local_shards:
+        if s.name == shard_name:
+            if s.account != "mainland":
+                new_ctx.vars["msp.use_sgp"] = True
+            break
+
+    return new_ctx

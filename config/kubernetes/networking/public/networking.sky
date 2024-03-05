@@ -2,8 +2,11 @@
 load("config/kubernetes/core/container.sky", "init_container")
 load("config/kubernetes/core/lifecycle.sky", "pre_stop", "exec_action", "DEFAULT_NEW_ENDPOINT_PROPAGATION_SECONDS", "generate_infra_sidecar_prestop_command_args")
 load("config/kubernetes/core/probe.sky", "command_probe", "probes")
+load("config/kubernetes/core/env_var.sky", "all_containers_env_vars")
+load("config/kubernetes/meta/metadata.sky", "annotations")
 load(
     "config/kubernetes/core/volume.sky",
+    "pod_volume",
     "host_volume",
     "volume_mount_all_containers",
 )
@@ -13,6 +16,7 @@ load(
     "get_blue_green_color",
     "get_cluster",
     "get_name",
+    "get_henson_config",
 )
 load("config/kubernetes/helpers/images.sky", "image")
 load("config/kubernetes/helpers/constants.sky", "ENVOY_CONFIG_SRV_SIDECAR_NAME")
@@ -22,6 +26,7 @@ load(
 )
 load(
     "config/kubernetes/networking/internal/common.sky",
+    "PROXYLESS_ADMIN_SERVER_DIR",
     "POD_NETWORKING_HOST_VOLUME_PATH",
 )
 
@@ -32,12 +37,14 @@ load(
     "TAG_IGNORED_BY_HOST_ENVOY",
 )
 
-load("config/kubernetes/networking/internal/envoy-config-srv.sky", "envoy_config_srv_sidecar")
+load("config/kubernetes/networking/internal/envoy-config-srv.sky", "envoy_config_srv_sidecar", "henson_listener_config")
 load("config/kubernetes/networking/internal/config/envoy-config-srv-config.sky", "UNPRIVILEGED_ENVOY_PORT")
 load("config/kubernetes/networking/internal/config/override.sky", "target", "NOT_PROVIDED")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/sidecars/envoy_ratelimit.sky", "ratelimit_sidecar")
+
+PROXYLESS_METADATA_ANNOTATION_KEY = "networking.stripe.io/network-access-control-lists"
 
 # This array is responsible for keeping track of a list of Henson service names that can
 # explicitly declare inbound rate limiting configurations directly in their skycfg files
@@ -55,7 +62,7 @@ DEPRECTED_INBOUND_RATE_LIMITED_SERVICE_ALLOWLIST = [
     "taxengine",
 ]
 
-def networking(ctx, namespace, pod_termination_grace_period_seconds, availability_tier = "A400", host_network = True, register_services = [], config = None, consul_deprecated = False):
+def networking(ctx, namespace, pod_termination_grace_period_seconds, k8s_workload_name, availability_tier = "A400", host_network = True, register_services = [], config = None, consul_deprecated = False):
     """
     This plugin is the public API for configuring service-to-service networking for a pod.
 
@@ -81,10 +88,11 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
     Returns:
         A pod plugin that can be used with an entrypoint like `deployment`.
     """
+    if k8s_workload_name == "":
+        fail("k8s_workload_name must be provided to the networking plugin")
     plugins = []
     sn_stack_plugins = []
     use_network_isolation = not host_network
-
     consul_agent_services = []
     plugins_for_consul_sidecar = []
     for srv in register_services:
@@ -179,19 +187,13 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
         #
         # The long-term fix for this is to log-ship to an external service so we are
         # less reliant on punching holes through the filesystem.
-        sn_stack_plugins.append(
-            host_volume(
-                POD_NETWORKING_HOST_VOLUME_PATH,
-                type = "Directory",
-                reason = "Each per-pod SN stack has a subpath in this basedir scoped to the pod",
-            )
-        )
-        sn_stack_plugins.append(
-            volume_mount_all_containers(
-                POD_NETWORKING_HOST_VOLUME_PATH,
-                read_only = False,
-            )
-        )
+        sn_stack_plugins.extend([
+            mount_pod_networking(),
+            proxyless_mount_admin_server_dir(),
+            proxyless_annotations(ctx),
+            proxyless_container_env_vars(),
+        ])
+
 
         # This is safe to do as the networking_config implementation made sure
         # this field exists
@@ -230,7 +232,7 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, availabilit
                 ),
             ])
         sn_stack_plugins.extend([
-            envoy_config_srv_sidecar(ctx, namespace, xds_static_consul_config, config_target, config, consul_agent_services, host_network, consul_deprecated),
+            envoy_config_srv_sidecar(ctx, namespace, config_target, config, consul_agent_services, host_network, consul_deprecated, k8s_workload_name),
             pre_stop(exec_action(ctx, *envoy_config_srv_prestop_call), container_name = ENVOY_CONFIG_SRV_SIDECAR_NAME),
         ])
 
@@ -260,3 +262,40 @@ def _assert_host_network_matches_pod_def(ctx, networking_args, pod_def):
             "FATAL: conflicting values for `host_network`: `networking(host_network = %r)`" % from_networking,
             "conflicts with `host_network = %r` set by some other plugin" % from_pod,
         ]))
+
+def mount_pod_networking():
+    return compose_plugins(
+        host_volume(
+            POD_NETWORKING_HOST_VOLUME_PATH,
+            type= "Directory",
+            reason = "Each per-pod SN stack has a subpath in this basedir scoped to the pod",
+        ),
+        volume_mount_all_containers(
+            POD_NETWORKING_HOST_VOLUME_PATH,
+            read_only = False,
+        ))
+
+def proxyless_mount_admin_server_dir():
+    return compose_plugins(
+        pod_volume(
+            PROXYLESS_ADMIN_SERVER_DIR,
+            type = "Directory",
+            reason = "Provides write access for proxyless admin server",
+        ),
+        volume_mount_all_containers(PROXYLESS_ADMIN_SERVER_DIR, read_only = False)
+    )
+
+def proxyless_container_env_vars():
+    return all_containers_env_vars(
+        from_fields = {
+            "HENSON_CONFIG_JSON": ("metadata.annotations['%s']" % PROXYLESS_METADATA_ANNOTATION_KEY)
+        },
+    )
+
+def proxyless_annotations(ctx):
+    henson_acls_proto = get_henson_config(ctx).inbound_config
+    henson_acls = henson_listener_config(henson_acls_proto)
+
+    return annotations({
+        PROXYLESS_METADATA_ANNOTATION_KEY: json.marshal(henson_acls),
+    })

@@ -18,6 +18,8 @@ load("config/kubernetes/core/volume.sky", "volume_mount_all_containers")
 load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes", "LDAP_MOUNT_NAME")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "StatefulSet", "StatefulSetSpec")
 load("config/kubernetes/core/generic.sky", "is_security_group_policy_enabled")
+load("config/kubernetes/stripe.sky", "CONSUL_AGENT_ENABLED_LABEL", "CONSUL_AGENT_ENABLED_LABEL_DISABLED")
+load("config/kubernetes/core/env_var.sky", "all_containers_env_vars")
 
 def statefulset(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, **kwargs):
     """
@@ -76,10 +78,13 @@ def statefulset(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, **kwar
         if namespace == None:
             fail("Namespace not set for shared MSP statefulset. Perhaps missing a namespace param to your pod?")
 
+        # Determine if the user marked this pod as consul unaware
+        consul_deprecated_in_pod = statefulset['metadata'].get("labels", {}).get(CONSUL_AGENT_ENABLED_LABEL, "")
+
         # If no grace period is set, use the default
         _apply_plugin(ctx, compose_plugins(grace_period(DEFAULT_GRACE_PERIOD_SECONDS, overwrite = False)), statefulset)
         pod_termination_grace_period_seconds = statefulset["pod"]["grace_period"]
-
+        k8s_workload_name = statefulset["metadata"]["name"]
         networking_plugin = networking(
             ctx,
             namespace=namespace,
@@ -88,13 +93,15 @@ def statefulset(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, **kwar
             register_services=statefulset['registered_services'],
             config=statefulset["networking_config"],
             pod_termination_grace_period_seconds=pod_termination_grace_period_seconds,
+            k8s_workload_name=k8s_workload_name,
+            consul_deprecated=(consul_deprecated_in_pod == CONSUL_AGENT_ENABLED_LABEL_DISABLED),
         )
         _apply_plugin(ctx, networking_plugin, statefulset)
         # Automatically add the metrics sidecar to any statefulsets. If we encounter a service that
         # wants to disable this we can add a flag.
         _apply_plugin(ctx, metrics(ctx, config=statefulset["metrics_config"]), statefulset)
 
-        _apply_plugin(ctx, host_health_agent(ctx, statefulset["registered_services"]), statefulset)
+        _apply_plugin(ctx, host_health_agent(ctx, statefulset["registered_services"], k8s_workload_name), statefulset)
 
         _apply_plugin(ctx, compose_plugins(
             prestop_all_infra_sidecars(ctx, pod_termination_grace_period_seconds=pod_termination_grace_period_seconds),
@@ -104,6 +111,13 @@ def statefulset(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, **kwar
                 read_only=True,
             ),
         ), statefulset)
+
+        # If Consul is deprecated attach an env variable so various services using
+        # kube-prestart know to not wait on Consul
+        if consul_deprecated_in_pod == CONSUL_AGENT_ENABLED_LABEL_DISABLED:
+            _apply_plugin(ctx, compose_plugins(
+                all_containers_env_vars({"CONSUL_DEPRECATED": "true"}),
+            ), statefulset)
 
     # Mount ldap volumes to a container if a host mount named etc-lmscache does not exist.
     # Repeatedly mounting the same directory causes a failed deploy.

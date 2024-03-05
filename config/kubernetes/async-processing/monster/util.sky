@@ -2,7 +2,7 @@
 load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env")
 load(
     "config/kubernetes/helpers/aws_instance_sizes.sky",
-    "c5_2xlarge", "c5_4xlarge", "c5d_4xlarge", "m5_2xlarge", "m5d_4xlarge",
+    "c5_2xlarge", "c5_4xlarge", "c5d_4xlarge", "m5_2xlarge", "m5d_xlarge",
     "aws_instance_size"
 )
 load("config/kubernetes/async-processing/monster/config.sky", "AVAILABILITY_TIER_A100", "AVAILABILITY_TIER_A200", "AVAILABILITY_TIER_A400", "AVAILABILITY_TIER_A400_AUTO")
@@ -88,7 +88,7 @@ def get_instance_type(ctx, availability_tier, monster_service, host_set_name=Non
         }),
         "fanout": get_all_cluster(get_all_tier(c5_2xlarge)),
         "fanout-retry": get_all_cluster(get_all_tier(c5_2xlarge)),
-        "api": get_all_cluster(get_all_tier(m5d_4xlarge)),
+        "api": get_all_cluster(get_all_tier(m5d_xlarge)),
         "express": get_all_cluster(get_all_tier(m5_2xlarge)),
     }
 
@@ -178,12 +178,7 @@ def worker_type(monster_service):
     }.get(monster_service, monster_service)
 
 def get_gc_args(ctx, runtime_jdk, is_in_jdk17_migration):
-    if get_env(ctx) in ("preprod", "qa"):
-        return _get_shenandoah_args(runtime_jdk, is_in_jdk17_migration)
-
-    return ["-XX:+UseShenandoahGC",
-            "-XX:+AlwaysPreTouch",
-            "-XX:-UseBiasedLocking"]
+    return _get_shenandoah_args(runtime_jdk, is_in_jdk17_migration)
 
 
 def _get_shenandoah_args(runtime_jdk, is_in_jdk17_migration):

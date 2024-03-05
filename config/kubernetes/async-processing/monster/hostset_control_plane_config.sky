@@ -442,6 +442,24 @@ A200_HOST_SETS = struct(
             }
         ),
         host_set(
+            "tax-product",
+            qa={
+                "northwest":  cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":        cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":        cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            preprod={
+                "northwest":  cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":        cluster(fanout_replicas=2, feeder_replicas=2),
+                "cmh":        cluster(fanout_replicas=2, feeder_replicas=2),
+            },
+            prod={
+                "northwest":  cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "bom":        cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":        cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+            }
+        ),
+        host_set(
             "verifications",
             qa={
                 "northwest":    cluster(fanout_replicas=2, api_replicas=2, feeder_replicas=2),
@@ -483,7 +501,7 @@ A400_HOST_SETS = struct(
             "general",
             is_canary=True,
             qa={
-                "northwest":    cluster(api_replicas=2, fanout_replicas=10, feeder_replicas=5, express_replicas=2),
+                "northwest":    cluster(api_replicas=2, fanout_replicas=15, feeder_replicas=5, express_replicas=2),
                 "bom":          cluster(api_replicas=2, fanout_replicas=4, feeder_replicas=2, express_replicas=2),
                 "cmh":          cluster(api_replicas=2, fanout_replicas=4, feeder_replicas=3, express_replicas=2),
             },
@@ -509,6 +527,14 @@ A400_HOST_SETS = struct(
             prod={
                 "northwest":    cluster(fanout_replicas=8, fanout_retry_replicas=8, feeder_replicas=40),
                 "bom":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2),
+                "cmh":          no_replicas_cluster(),
+            }
+        ),
+        host_set(
+            "sigma-staging",
+            prod={
+                "northwest":    cluster(fanout_replicas=2, feeder_replicas=2),
+                "bom":          no_replicas_cluster(),
                 "cmh":          no_replicas_cluster(),
             }
         ),

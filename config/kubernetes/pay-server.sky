@@ -19,6 +19,7 @@ load("config/kubernetes/sidecars/mongo_caches.sky", "use_mongo_caches")
 load("config/kubernetes/sidecars/worker.sky", "add_worker_sidecar")
 load("config/kubernetes/helpers/context.sky", "get_env", "get_availability_tier", "has_availability_tier")
 load("config/kubernetes/helpers/images.sky", "image_defaults")
+load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
 
 
 default_pay_server_image = image_defaults(
@@ -241,6 +242,8 @@ def einhorn_service(
         meta = consul_meta,
     )
 
+    config_srv_sidecar_plugin = config_srv_sidecar(ctx)
+
     return compose_plugins(
         container_plugin(
             _einhornify_container,
@@ -267,6 +270,7 @@ def einhorn_service(
             plugin=deploy_safety_plugin,
         ),
         worker_plugin,
+        config_srv_sidecar_plugin,
     )
 
 def einhorn(
@@ -416,6 +420,7 @@ def puma_cluster_service(
     manage_workers = True,
     worker_availability_threshold = "0.7", # skycfg doesn't support floats
     startup_failure_threshold = 600,
+    include_config_srv_sidecar = True,
     **kwargs
 ):
     """
@@ -444,6 +449,9 @@ def puma_cluster_service(
         startup_failure_threshold: Optional number of requests that can fail during startup before
             the container is killed. Defaults to 600, which gives containers 10 minutes to start
             up as requests are made every 1 second by default.
+        include_config_srv_sidecar: Defaults to True. If you want to configure
+            config-srv-sidecar's ports yourself, set this to False and add the config-srv-sidecar
+            plugin yourself.
         **kwargs: Additional arguments to set up Puma cluster. See `puma_cluster` for possible
             options.
 
@@ -510,6 +518,10 @@ def puma_cluster_service(
         meta = consul_meta,
     )
 
+    config_srv_sidecar_plugin = compose_plugins()
+    if include_config_srv_sidecar:
+        config_srv_sidecar_plugin = config_srv_sidecar(ctx)
+
     return compose_plugins(
         container_plugin(
             _puma_clusterify_container,
@@ -536,6 +548,7 @@ def puma_cluster_service(
             plugin=deploy_safety_plugin,
         ),
         worker_plugin,
+        config_srv_sidecar_plugin,
     )
 
 def puma_cluster(

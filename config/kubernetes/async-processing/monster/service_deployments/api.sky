@@ -9,6 +9,7 @@ load("config/kubernetes/networking/public/config.sky", "networking_config", "glo
 load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
 load("config/kubernetes/sidecars/consul.sky", "consul_service", "consul_grpc_check")
 load("config/kubernetes/stripe.sky", "stripe_pod")
+load("config/kubernetes/helpers/context.sky", "get_env")
 
 
 load("config/kubernetes/async-processing/monster/config.sky", "get_msp_availability_tier")
@@ -73,6 +74,7 @@ def monster_api_deployment(ctx, config):
             container_name = "monster-api", # unified sourcetype field for Splunk
             image = image(ctx, artifact = "monster-api-image"),
             command = [el for arg in runtime_args for el in arg],
+            requires_consul = False,
         ),
         container_env_vars(
             vars = {

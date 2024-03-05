@@ -5,7 +5,7 @@ load("config/kubernetes/async-processing/monster/jmxfetch.sky", "add_jmxfetch_si
 load("config/kubernetes/core/container.sky", "container_port")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/helpers/bluegreen.sky", "add_blue_green_to_env_vars")
-load("config/kubernetes/helpers/context.sky", "get_cluster")
+load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env")
 load("config/kubernetes/helpers/healthcheck.sky", "healthchecked_service")
 load("config/kubernetes/helpers/images.sky", "image")
 load("config/kubernetes/helpers/security.sky", "add_security_groups")
@@ -96,6 +96,7 @@ def monster_express_deployment(ctx, unformatted_host_set, config):
             image = image(ctx, artifact = "monster-express-image"),
             # Empty lists are filtered out by this list comprehension
             command = [el for arg in runtime_args for el in arg],
+            requires_consul = False,
         ),
 
         # Add an environment variable to be able to distinguish blue vs. green pods

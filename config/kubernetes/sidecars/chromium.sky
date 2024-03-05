@@ -1,0 +1,20 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/core/container.sky", "container", "container_port")
+load("config/kubernetes/helpers/images.sky", "image")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+
+def chromium_sidecar(ctx):
+    return compose_plugins(
+        container(
+            "chromium",
+            command = [
+                "chromium",
+                "--headless",
+                "--disable-gpu",
+                "--remote-debugging-address=0.0.0.0",
+                "--remote-debugging-port=9222",
+            ],
+            image = image(ctx, artifact = "connections-talon-chromium-container-image"),
+        ),
+        container_port(9222, container_name = "chromium")
+    )

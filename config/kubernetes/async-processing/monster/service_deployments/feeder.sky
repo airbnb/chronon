@@ -13,6 +13,7 @@ load("config/kubernetes/stripe.sky", "stripe_pod")
 load("config/kubernetes/async-processing/monster/config.sky", "get_msp_availability_tier")
 load("config/kubernetes/async-processing/monster/util.sky", "format_isolation_group", "generate_consul_name", "get_jmx_java_options", "get_monster_env_cmd_arguments", "get_worker_envoy_address_from_consul", "monster_deployment_labels")
 load("config/kubernetes/async-processing/monster/jmxfetch.sky", "add_jmxfetch_sidecar")
+load("config/kubernetes/helpers/context.sky", "get_env")
 
 
 def generate_workers_per_shard(config):
@@ -153,6 +154,7 @@ def monster_feeder_deployment(ctx, config):
             container_name = "monster-feeder",
             image = image(ctx, artifact = "monster-feeder-image"),
             command = [el for arg in runtime_args for el in arg],
+            requires_consul = False,
         ),
         container_env_vars(
             vars = {

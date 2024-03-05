@@ -20,6 +20,7 @@ load(
     "get_worker_envoy_address_from_consul",
     "monster_deployment_labels",
 )
+load("config/kubernetes/helpers/context.sky", "get_env")
 
 def monster_sweeper_deployment(ctx, unformatted_host_set, config):
     """Generates a Sweeper deployment for a specific host_set (isolation group)
@@ -65,6 +66,7 @@ def monster_sweeper_deployment(ctx, unformatted_host_set, config):
             container_name = "monster-sweeper",  # unified sourcetype field for Splunk
             image = image(ctx, artifact = "monster-sweeper-image"),
             command = command,
+            requires_consul = False,
         ),
         container_env_vars(
             vars = {

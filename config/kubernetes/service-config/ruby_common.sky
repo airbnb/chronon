@@ -1,6 +1,7 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
 load("config/kubernetes/networking/internal/config/override.sky", "NOT_PROVIDED")
+load("config/kubernetes/networking/public/config.sky", "networking_config", "global_ratelimit")
 
 def ruby_canary_suffix(ctx, default="-canary"):
     # Has ComputeV2?
@@ -23,14 +24,36 @@ def ruby_canary_suffix(ctx, default="-canary"):
 
     return default
 
-def has_egress_proxy_tier(platform_options):
-    if platform_options and "egress_proxy_tier" in platform_options and platform_options["egress_proxy_tier"] != None:
-        return True
+def get_networking_config(ctx, platform_options):
+    global_ratelimit_val = NOT_PROVIDED
+    egress_proxy_tier = NOT_PROVIDED
+    enable_cross_domain_services = NOT_PROVIDED
 
-    return False
+    # handle enable_envoy_global_ratelimit
+    # The trick here is that if not present, as a protobuf bool
+    # enable_envoy_global_ratelimit defaults to False;
+    # check for presence, then verify that it is actually True
+    has_global_ratelimit = "enable_envoy_global_ratelimit" in platform_options and platform_options["enable_envoy_global_ratelimit"]
 
-def get_egress_proxy_tier(platform_options):
-    if has_egress_proxy_tier(platform_options):
-        return platform_options["egress_proxy_tier"]
+    if has_global_ratelimit:
+        global_ratelimit_val = global_ratelimit(enable=True)
 
-    return NOT_PROVIDED
+    # handle egress_proxy_tier
+    if "egress_proxy_tier" in platform_options and platform_options["egress_proxy_tier"] != None:
+        egress_proxy_tier = platform_options["egress_proxy_tier"]
+
+    # handle enable_cross_domain_services
+    if "enable_cross_domain_services" in platform_options and platform_options["enable_cross_domain_services"] != None:
+        enable_cross_domain_services = platform_options["enable_cross_domain_services"]
+
+    plugins = []
+    if global_ratelimit_val != NOT_PROVIDED or egress_proxy_tier != NOT_PROVIDED or enable_cross_domain_services != NOT_PROVIDED:
+        plugins.append(
+            networking_config(
+                global_ratelimit = global_ratelimit_val,
+                egress_proxy_tier = egress_proxy_tier,
+                enable_cross_domain_services = enable_cross_domain_services,
+            )
+        )
+
+    return plugins

@@ -23,6 +23,7 @@ load("config/kubernetes/helpers/cron.sky", "DEFAULT_SUCCESSFUL_JOB_HISTORY_LIMIT
 MAX_CRON_NAME_LEN = 52
 DEFAULT_TTL_SECS_AFTER_FINISH = 1209600
 DEFAULT_NAMESPACE = "kubeacronnoegress"
+CRONOPS_NAMESPACE = "cronops"
 DEFAULT_IAM_ROLE_PREFIX = "payserver-cron-default-role.kubecron"
 DEFAULT_CONCURRENCY_POLICY = "Forbid"
 DEFAULT_BACKOFF_LIMIT = 6
@@ -66,8 +67,8 @@ def pay_server_cronjob_wrapper(*cronjobs):
 def pay_server_cronjob(
     ctx,
     name,
-    command,
     schedule,
+    command=None,
     namespace=DEFAULT_NAMESPACE,
     image=DEFAULT_PAY_SERVER_IMAGE,
     clusters=None,
@@ -105,11 +106,11 @@ def pay_server_cronjob(
     Args:
         ctx: The Skycfg context from the `main` function.
         name: The name of the cron job.
+        schedule: The schedule to run the job in [crontab syntax](https://en.wikipedia.org/wiki/Cron).
+        command: An array containing the command and arguments that should run in the main container of the cron job. Can be ommitted when a zamboni_config is provided.
         namespace: The `host_type` to run the cronjob on. Defaults to `kubeacronnoegress`.
-        command: An array containing the command and arguments that should run in the main container of the cron job.
         clusters: A list of AWS clusters in which this CronJob must run. Defaults to ["northwest"]. Acceptable values in list are
                 "northwest", "bom", "cmh", "east".
-        schedule: The schedule to run the job in [crontab syntax](https://en.wikipedia.org/wiki/Cron).
         iam_role_prefix: The `iam.amazonaws.com/role` label to set in the pay-server cronjob. This is required for pay-server cronjobs.
                 Defaults to `payserver-cron-default-role.kubecron`
         secrets: A dictionary that describes the additional secrets configured for the cron job to function correctly.
@@ -236,8 +237,8 @@ def pay_server_cronjob(
         pc = _pay_server_cronjob(
                 ctx,
                 name,
-                command,
                 schedule,
+                command=command,
                 namespace=namespace,
                 image=image,
                 clusters=clusters,
@@ -273,8 +274,8 @@ def pay_server_cronjob(
 def _pay_server_cronjob(
     ctx,
     name,
-    command,
     schedule,
+    command=None,
     namespace=DEFAULT_NAMESPACE,
     image=DEFAULT_PAY_SERVER_IMAGE,
     clusters=None,
@@ -310,10 +311,10 @@ def _pay_server_cronjob(
         ctx: The Skycfg context from the `main` function.
         name: The name of the cron job.
         namespace: The `host_type` to run the cronjob on. Defaults to `kubeacronnoegress`.
-        command: An array containing the command and arguments that should run in the main container of the cron job.
+        schedule: The schedule to run the job in [crontab syntax](https://en.wikipedia.org/wiki/Cron).
+        command: An array containing the command and arguments that should run in the main container of the cron job. Can be ommitted when a zamboni_config is provided.
         clusters: A list of AWS clusters in which this CronJob must run. Defaults to ["northwest"]. Acceptable values in list are
                 "northwest", "bom", "cmh", "east".
-        schedule: The schedule to run the job in [crontab syntax](https://en.wikipedia.org/wiki/Cron).
         iam_role_prefix: The `iam.amazonaws.com/role` label to set in the pay-server cronjob. This is required for pay-server cronjobs.
                 Defaults to `payserver-cron-default-role.kubecron`
         secrets: A dictionary that describes the additional secrets configured for the cron job to function correctly.
@@ -456,10 +457,13 @@ def _pay_server_cronjob(
         "KUBE_CLUSTER": get_cluster(ctx),
         "KUBE_MSP_SHARD": shard,
         "DISABLE_PRELOAD": str(disable_ruby_preload).upper(),
-        "AWS_CONFIG_FILE": "/deploy/opsonic/current/cron/aws_credentials.ini",
         "STRIPE_BUNDLE_USE_SORBET_RUBY": "true",
         "STRIPE_CRON_TIER": cron_tier,
     }
+
+    if namespace == DEFAULT_NAMESPACE:
+        # aws_credentials.ini is only used for kubeacronnoegress cronjobs, not cronops
+        cron_env_variables["AWS_CONFIG_FILE"] = "/deploy/opsonic/current/cron/aws_credentials.ini"
 
     environment_variables_dict = {}
     if environment_variables != None and type(environment_variables) == "list":
@@ -489,6 +493,7 @@ def _pay_server_cronjob(
         _label_prefix("deploy-stage"): deploy_stage,
         _label_prefix("deploy-method"): "skycfg"
     }
+    _validate_iam_role_prefix(ctx, name, namespace, iam_role_prefix)
     cronjob_annotations = {
         "owner": get_owner(ctx),
         "iam.amazonaws.com/role": _pod_iam_role(ctx, iam_role_prefix),
@@ -558,6 +563,13 @@ def _pay_server_cronjob(
         **cron_options,
     )
     return cron
+
+def _validate_iam_role_prefix(ctx, name, namespace, iam_role_prefix):
+    if namespace != CRONOPS_NAMESPACE and "ops.kubecron" in iam_role_prefix:
+        _fail_with_message('Cannot use "ops.kubecron" IAM role outside of the "cronops" namespace: cronjob %s.%s set iam_role_prefix="%s"' % (namespace, name, iam_role_prefix))
+
+    if ".northwest" in iam_role_prefix:
+        _fail_with_message('Invalid IAM role prefix: cronjob %s.%s set iam_role_prefix="%s"' % (namespace, name, iam_role_prefix))
 
 # Takes in a list that contains a combination of objects and strs and join thier string representations together
 # to create a failure message and calls fails with that generated message
@@ -1010,7 +1022,15 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
     """
 
     # the confidant init container
-    aws_role_name = _pod_iam_role(ctx, iam_role_prefix)
+
+    # use the namespace instead of iam_role_prefix for non-kubeacronnoegress jobs in the secrets init container.
+    # this ensures that cronops uses the `cronops.northwest.prod` role instead of `ops.kubecron.northwest.prod`
+    if namespace == DEFAULT_NAMESPACE:
+        _iam_role_prefix = iam_role_prefix
+    else:
+        _iam_role_prefix = namespace
+    aws_role_name = _pod_iam_role(ctx, _iam_role_prefix)
+
 
     confidant_config = {
         "url": "https://confidant.{}.{}.stripe.io:446".format(get_cluster(ctx), get_env(ctx)),
@@ -1025,7 +1045,6 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
 
     computed_secrets = _calculate_confidant_secrets(ctx, namespace, secrets)
     DEFAULT_CONFIDANT_INIT_CONTAINER_NAME = "secret-templater"
-    CONFIDANT_CONTAINER_GIT_SHA = "sha256:70259bf6ad24f967c50dcdb40bf61db34f838c9a22ca1009e568575bd845fcbe"
 
     confidant_container_plugins = [
         volume_mount(
@@ -1210,7 +1229,8 @@ def _calculate_confidant_secrets(ctx, namespace, customized_secrets = None):
     # generate secret specs from the above secrets definitions
     secrets = []
     default_mode = "0640"
-    if namespace == "cronops":
+    if namespace == CRONOPS_NAMESPACE:
+        # setting explicit restricted mode for SSH secrets
         default_mode ="0600"
 
     # TODO we can potentially create helper function to simply the code, but will make it harder to understand.
@@ -1314,7 +1334,7 @@ def _build_command(command, zamboni_config):
         cmd.extend(zamboni_config['args'])
         return cmd
     else:
-        if len(command) == 0:
+        if not command or len(command) == 0:
             fail("main container command is empty")
         if command[0].startswith(CRONWRAPPER_PATH):
             return command

@@ -7,7 +7,7 @@ load("config/kubernetes/helpers/context.sky",
     "get_container_images"
 )
 load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
-load("config/kubernetes/service-config/ruby_common.sky", "get_egress_proxy_tier", "has_egress_proxy_tier")
+load("config/kubernetes/service-config/ruby_common.sky", "get_networking_config")
 load("config/kubernetes/public/workflow_engine/workflow_worker.sky", "ruby_workflow_worker_shared_msp")
 load("config/kubernetes/helpers/availability_tiers.sky", "get_pod_availability_tier_by_name")
 load("config/kubernetes/helpers/aws_instance_sizes.sky", "get_instance_type_by_name")
@@ -20,10 +20,9 @@ load("config/kubernetes/sidecars/confidant.sky", "raw_secret", "yaml_secret")
 load("config/kubernetes/sidecars/confidant_migration.sky", migration_raw_secret="raw_secret", migration_yaml_secret="yaml_secret")
 load("config/kubernetes/sidecars/pandora.sky", pandora_raw_secret="raw_secret", pandora_yaml_secret="yaml_secret")
 load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
-load("config/kubernetes/networking/public/config.sky", "networking_config", "global_ratelimit")
-load("config/kubernetes/networking/internal/config/override.sky", "NOT_PROVIDED")
 load("config/kubernetes/helpers/resource_requirements.sky", "attempt_to_get_pod_sizing_from_compute_config")
 load("config/kubernetes/helpers/images.sky", "image_defaults")
+load("config/kubernetes/helpers/graviton.sky", "is_graviton_instance", "smart_graviton_instance")
 
 compute_pb = proto.package("com.stripe.gocode.service_config")
 
@@ -97,28 +96,6 @@ def deployment_strategy_func(ctx):
         **args,
     )
 
-def get_networking_config(ctx, compute_config):
-    plugins = []
-    global_ratelimit_val = NOT_PROVIDED
-    platform_options = _platform_options(compute_config)
-    # The trick here is that if not present, as a protobuf bool
-    # enable_envoy_global_ratelimit defaults to False;
-    # check for presence, then verify that it is actually True
-    has_global_ratelimit = platform_options and "enable_envoy_global_ratelimit" in platform_options and platform_options["enable_envoy_global_ratelimit"]
-
-    if has_global_ratelimit:
-        global_ratelimit_val = global_ratelimit(enable=True)
-
-    if has_egress_proxy_tier(platform_options) or has_global_ratelimit:
-        plugins.append(
-            networking_config(
-                global_ratelimit = global_ratelimit_val,
-                egress_proxy_tier = get_egress_proxy_tier(platform_options),
-            )
-        )
-
-    return plugins
-
 def _hack_kick_interval(compute_config):
     if (
         compute_config["ruby_process"] and
@@ -142,11 +119,13 @@ def requires_consul_in_computev2_config(compute_config):
 
 def _build_args(ctx, compute_config):
     args = {}
-    plugins = get_networking_config(ctx, compute_config)
+    plugins = []
 
     platform_options = _platform_options(compute_config)
 
     if platform_options:
+        plugins += get_networking_config(ctx, platform_options)
+
         if len(platform_options["add_security_groups"]) > 0:
             plugins.append(add_security_groups(*platform_options["add_security_groups"]))
 
@@ -208,6 +187,8 @@ def deployments(ctx):
     name = get_name(ctx)
     namespace = get_identity(ctx)
     instance_type = get_instance_type_by_name(compute_config["resources"]["instance_type"])
+    if is_graviton_instance(instance_type):
+        instance_type = smart_graviton_instance(ctx, instance_type)
     availability_tier = get_pod_availability_tier_by_name(get_availability_tier(ctx))
     command = list(compute_config["ruby_process"]["command"])
     manage_workers = get_manage_workers(compute_config)

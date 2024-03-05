@@ -5,13 +5,13 @@ load("config/kubernetes/async-processing/monster/jmxfetch.sky", "add_jmxfetch_si
 load("config/kubernetes/async-processing/monster/util.sky", "format_isolation_group", "generate_consul_name", "get_jmx_java_options", "get_monster_env_cmd_arguments", "get_worker_envoy_address_from_consul", "monster_deployment_labels")
 load("config/kubernetes/core/container.sky", "container_port")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
-load("config/kubernetes/helpers/context.sky", "get_cluster")
+load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env")
 load("config/kubernetes/helpers/healthcheck.sky", "healthchecked_service")
 load("config/kubernetes/helpers/images.sky", "image")
 load("config/kubernetes/helpers/security.sky", "add_security_groups")
 load("config/kubernetes/networking/public/config.sky", "networking_config", "global_ratelimit")
 load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
-load("config/kubernetes/sidecars/consul.sky", "consul_service")
+load("config/kubernetes/sidecars/consul.sky", "consul_service", "consul_http_check")
 load("config/kubernetes/stripe.sky", "stripe_pod")
 
 def is_fanout_retry(config):
@@ -285,6 +285,7 @@ def monster_fanout_deployment(ctx, config):
             container_name = "monster-{}".format(config.monster_service), # unified sourcetype field for Splunk
             image = image(ctx, artifact = "monster-{}-image".format(config.monster_service)),
             command = [el for arg in runtime_args for el in arg],
+            requires_consul = False,
         ),
         container_env_vars(
             vars = {
@@ -324,6 +325,7 @@ def monster_fanout_deployment(ctx, config):
         consul_service(
             port = port,
             name = consul_service_name,
+            checks = [consul_http_check(path = "/healthcheck", port = port)],
         ),
 
         add_security_groups(

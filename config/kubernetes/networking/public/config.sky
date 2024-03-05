@@ -135,10 +135,9 @@ def networking_config(
             inbound filter chain.
         envoy_concurrency: Integer; sets the concurrency (number of workers) of the envoy sidecar container.
             By default, if not set, envoy will set concurrency to nproc of underlying host.
-        allowed_machine_orgs: Allowed Amazon account IDs for ingress into this pod. Client certificates
-            must present a matching org (`O` field) for inbound requests to be authorized. This field
-            should be specified as a list of strings. This sets the --allowed-machine-orgs command line
-            flag for envoy-config-srv.
+        allowed_machine_orgs: Allowed Stripe domains (e.g. "stripe.io", "manage.stripe.net") for ingress into this pod. Amazon account IDs are also supported, but discouraged.
+            Client certificates must present a matching org (`CN` field suffix) for inbound requests to be authorized. This field
+            should be specified as a list of strings. This sets the --allowed-machine-orgs command line flag for envoy-config-srv.
         enable_cross_domain_services: The names of services to enable cross domain networking with
             from this service
         enable_envoy_config_srv_debug_sidecar: Boolean value indicating whether to use envoy-config-srv-debug-sidecar container

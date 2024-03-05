@@ -1,9 +1,9 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/core/container.sky", "sidecar_container", "resource_requirements")
 load("config/kubernetes/core/env_var.sky", "default_env_vars")
-load("config/kubernetes/core/generic.sky", "is_shared_msp")
+load("config/kubernetes/core/generic.sky", "is_shared_msp", "is_dedicated_msp")
 load("config/kubernetes/core/lifecycle.sky", "render_lifecycle")
-load("config/kubernetes/core/volume.sky", "render_volume_mount", "volume_mount")
+load("config/kubernetes/core/volume.sky", "mount_host_volume", "render_volume_mount", "volume_mount")
 load("config/kubernetes/helpers/images.sky", "image")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
 load("config/kubernetes/helpers/security.sky", "mount_host_stripe_ca_certs")
@@ -52,6 +52,14 @@ def _config_srv_sidecar_unpinned(*, http_port = 10104, grpc_port = 10105):
         conditional_plugin(
             is_shared_msp,
             mount_host_stripe_ca_certs(container_name = sidecar_name),
+        ),
+        # config-srv-sidecar reads certs and keys from these directories for mTLS
+        conditional_plugin(
+            is_dedicated_msp,
+            compose_plugins(
+                mount_host_volume("/etc/ssl/certs", container_name = sidecar_name, volume_args = {"type": "Directory"}),
+                mount_host_volume("/etc/ssl/private", container_name = sidecar_name, volume_args = {"type": "Directory"}),
+            ),
         ),
         conditional_plugin(
             _if_not_present,

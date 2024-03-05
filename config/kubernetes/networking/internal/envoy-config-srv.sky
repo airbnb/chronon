@@ -35,7 +35,6 @@ load(
     "ENVOY_OUTBOUND_UNIX_SOCKETS_DIR",
     "ENVOY_RUNTIME_DIR",
     "LDS_PORT",
-    "PROXYLESS_ADMIN_SERVER_DIR",
     "UNPRIVILEGED_ENVOY_PORT",
     "XDS_DEBUG_BASEDIR",
     "apply_user_config_ratchets",
@@ -59,6 +58,10 @@ load(
     "config/kubernetes/networking/internal/config/envoy-sidecar-config.sky",
     "generate_cli_args",
 )
+load(
+    "config/kubernetes/networking/internal/proxyless.sky",
+    "proxyless_service_registration",
+)
 
 ENVOY_MONITOR_PORT = 18300
 ENVOYCONTROL_V2_CIRCUIT_BREAKER_LIMITS = 4096
@@ -70,7 +73,10 @@ ENVOY_CONFIG_SRV_IMAGE_NAME = "stripe/traffic/envoy-config-srv"
 ENVOY_CONFIG_SRV_SIDECAR_SERVICE_NAME = "envoy-config-srv-sidecar"
 ENVOY_CONFIG_SRV_DEBUG_SIDECAR_SERVICE_NAME = "envoy-config-srv-debug-sidecar"
 
-def envoy_config_srv_sidecar(ctx, namespace, local_consul_services, config_target, user_overrides, consul_agent_services, host_network, consul_deprecated):
+def envoy_config_srv_sidecar(ctx, namespace, config_target, user_overrides, consul_agent_services, host_network, consul_deprecated, k8s_workload_name):
+    proxyless_services = proxyless_service_registration(ctx, consul_agent_services, k8s_workload_name)
+    consul_agent_services += proxyless_services
+    local_consul_services = _consul_agent_services_to_sidecar_consul_config(consul_agent_services)
     apply_user_config_ratchets(config_target, user_overrides)
     name = "envoy-config-srv"
     plugins = []
@@ -123,7 +129,6 @@ def envoy_config_srv_sidecar(ctx, namespace, local_consul_services, config_targe
         # envoy-config-srv writes a drain file here when it is signalled to be drained
         # in order to preserve the drain signal across restarts
         pod_mount(name, ENVOY_CONFIG_SRV_RUNTIME_DIR),
-        pod_mount(name, PROXYLESS_ADMIN_SERVER_DIR),
         pod_mount(name, _veneur_sock_dir),
         # envoy-config-srv obtains service credentials from creds-proxy in order
         # to mTLS connect to envoy-control-srv
@@ -224,8 +229,6 @@ def envoy_config_srv_container(ctx, self, namespace, local_consul_services, conf
 
     command.append("--envoy-monitor-proxy-upstream-addr=unixgram://%s" % upstream_stats_sock)
     command.append("--envoy-monitor-proxy-listen-addr=udp://localhost:%s" % ENVOY_MONITOR_PORT)
-    command.append("--envoy-monitor-log-gauge")
-    command.append("--envoy-monitor-gauge-log-destination=%s/envoy-config-srv/envoy-gauge-metrics.log" % POD_NETWORKING_BASEDIR)
 
     if not host_network:
         command.append("--consul-sidecar-services-json=" + json.marshal(consul_agent_services))
@@ -503,3 +506,16 @@ def envoy_config_srv_sidecar_service(user_overrides):
     if use_debug_sidecar_container(user_overrides):
         return ENVOY_CONFIG_SRV_DEBUG_SIDECAR_SERVICE_NAME
     return ENVOY_CONFIG_SRV_SIDECAR_SERVICE_NAME
+
+
+# Convert consul agent services struct (known to consul-sidecar) to sidecar_consul_config struct (known to envoy-config-srv-sidecar)
+def _consul_agent_services_to_sidecar_consul_config(consul_agent_services):
+    sidecar_consul_config = []
+    for srv in consul_agent_services:
+        copy = dict(srv)
+        name = copy.pop("name")
+        copy["service"] = name
+        copy["id"] = name
+        copy.pop("checks")
+        sidecar_consul_config.append(copy)
+    return sidecar_consul_config

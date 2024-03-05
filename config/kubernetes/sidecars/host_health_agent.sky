@@ -15,9 +15,17 @@ load("config/kubernetes/sidecars/config_file.sky", "config_file")
 load("config/kubernetes/networking/public/consul.sky", "register_service")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Container", "Quantity")
 load("config/kubernetes/helpers/security.sky", "mount_credentials_proxy", "mount_host_stripe_ca_certs", "use_credentials_proxy")
+load("config/kubernetes/networking/internal/proxyless.sky", "proxyless_service_registration")
 
-def host_health_agent(ctx, registered_services):
+def add_proxyless_registration(ctx, registerd_services, k8s_workload_name):
+    consul_agent_services = [s["service"] for s in registerd_services]
+    proxyless_services = proxyless_service_registration(ctx, consul_agent_services, k8s_workload_name)
+    consul_agent_services += proxyless_services
+    return [{"service": s} for s in consul_agent_services]
+
+def host_health_agent(ctx, registered_services, k8s_workload_name):
     registered_services_no_plugins = [{"service": s["service"]} for s in registered_services]
+    registered_services_no_plugins = add_proxyless_registration(ctx, registered_services_no_plugins, k8s_workload_name)
     return compose_plugins(
         use_credentials_proxy(),
         mount_host_stripe_ca_certs(container_name = HOST_HEALTH_AGENT_SIDECAR_NAME),

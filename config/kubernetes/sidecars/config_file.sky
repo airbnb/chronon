@@ -11,14 +11,13 @@ use information from the Henson deploy context. For instance, if you deploy to m
 clusters in different regions, and you need a config file with different values for each
 cluster, you can generate that in Skycfg using `config_file`.
 """
-
 load("config/kubernetes/core/volume.sky", "render_volume_mount", "volume_mount")
 load("config/kubernetes/helpers/images.sky", "image")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
 load("config/kubernetes/core/container.sky", "resource_requirements")
 
-def config_file(path, content, volume):
+def config_file(path, content, volume, no_new_line = False):
     """
     Write a config file to a volume using an init container.
 
@@ -30,7 +29,7 @@ def config_file(path, content, volume):
         path: The path to the file to write to.
         content: The string that will be written to the file.
         volume: The path of the volume the file will be written to.
-
+        no_new_line: If true, don't append new line.
     Returns:
         A plugin that will cause the file to be written.
     """
@@ -39,6 +38,7 @@ def config_file(path, content, volume):
         path = path,
         content = content,
         volume = volume,
+        no_new_line = no_new_line,
     )
 
 def _update_pod(ctx, plugin, pod_def):
@@ -72,7 +72,10 @@ def _render_container(ctx, container_def, pod):
     volumes = {}
 
     for idx, file in enumerate(container.config["files"]):
-        commands.append("echo \"$%s\" > %s" % (idx + 1, file.path))
+        if file.no_new_line:
+            commands.append("echo -n \"$%s\" > %s" % (idx + 1, file.path))
+        else:
+            commands.append("echo \"$%s\" > %s" % (idx + 1, file.path))
 
         content = file.content
         # trim white space from beginning of file so it can be embedded correctly

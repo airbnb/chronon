@@ -145,11 +145,6 @@ def is_network_config_updater(value):
             getattr(value, "_networking_user_override", None) == True)
 
 def _update_if_provided(cfg, key, val):
-    if cfg.get(key, NOT_PROVIDED) == NOT_PROVIDED:
-        fail("".join([
-            "FATAL: Cannot update '%s' because it is not a field in the " % key,
-            "underlying config schema (valid keys: %s)" % cfg.keys(),
-        ]))
     if val != NOT_PROVIDED:
         if is_network_config_updater(val):
             fail("".join([

@@ -5,7 +5,7 @@
 load("config/kubernetes/async-processing/monster/util.sky", "ALL_CLUSTERS")
 load(
     "config/kubernetes/helpers/aws_instance_sizes.sky",
-    "m5_2xlarge", "m5_16xlarge", "r5_8xlarge", "r5_xlarge", "m6g_2xlarge", "m6g_16xlarge", "r6g_8xlarge", "r6g_xlarge", "r7g_xlarge"
+    "m5_2xlarge", "m6g_2xlarge", "m6g_16xlarge", "r6g_8xlarge", "r6g_xlarge", "r7g_xlarge", "r7g_8xlarge"
 )
 
 DEFAULT_WORKER_COUNT = 2
@@ -26,22 +26,22 @@ DEFAULT_WORKER_MEM_SCALES = {
 # Default instance type per env/cluster
 DEFAULT_INSTANCE_TYPE_BY_ENV_CLUSTER = {
     "prod": {
-        "northwest": r5_8xlarge,
+        "northwest": r6g_8xlarge,
     },
 }
 # Any env/cluster not specified will use this by default
-DEFAULT_DEFAULT_INSTANCE_TYPE = r5_xlarge
+DEFAULT_DEFAULT_INSTANCE_TYPE = r6g_xlarge
 
 ALLOWED_INSTANCE_TYPES = [
     # Default option for clusters with low traffic
-    r5_xlarge, r6g_xlarge, r7g_xlarge,
+    r6g_xlarge, r7g_xlarge, r7g_8xlarge,
     # Default option for clusters with higher traffic
-    r5_8xlarge, r6g_8xlarge,
+    r6g_8xlarge,
 
     # For workers that need more CPU, low traffic
     m5_2xlarge, m6g_2xlarge,
     # For workers that need more CPU, higher traffic
-    m5_16xlarge, m6g_16xlarge,
+    m6g_16xlarge,
 ]
 
 def get_default_instance_type(env, cluster):

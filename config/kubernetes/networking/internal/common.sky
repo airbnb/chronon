@@ -1,3 +1,4 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 POD_NETWORKING_HOST_VOLUME_PATH= "/pay/log/pod-networking"
 POD_NETWORKING_BASEDIR = "%s/$(STRIPE_POD_NAMESPACE)/$(STRIPE_POD_NAME)" % POD_NETWORKING_HOST_VOLUME_PATH
+PROXYLESS_ADMIN_SERVER_DIR = "/etc/stripe/networking/proxyless/admin"

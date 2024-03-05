@@ -13,6 +13,7 @@ def consul_agent_init(ctx):
     cmd = [
         "/bin/consul-agent-init",
         "--consul-agent-check-interval=1s",
+        "--consul-agent-checks-before-fail=100",
     ]
 
     # Bin packed services will be scheduled as microVMs and the communication with the host

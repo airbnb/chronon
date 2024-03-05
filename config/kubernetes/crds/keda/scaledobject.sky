@@ -1,0 +1,190 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/types.sky", "deployment_plugin")
+load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/helpers/context.sky", "get_env")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+
+_scaledobject_scheme = {
+    "apiVersion": "keda.sh/v1alpha1",
+    "kind": "ScaledObject",
+    "metadata": {},
+    "spec": {},
+}
+
+_spec_scheme = {
+    "maxReplicaCount": None,
+    "minReplicaCount": None,
+    "scaleTargetRef": {},
+    "triggers": [],
+}
+
+_scale_target_ref_scheme = {
+    "name": None,
+    "kind": "Deployment",
+    "apiVersion": "apps/v1"
+}
+
+_qa_prom_proxy_address = "http://promproxybox.northwest.qa.stripe.io/workspaces/ws-a4646237-800c-4429-a9a4-7f48a57821ee"
+
+_prom_trigger_scheme = {
+    "type": "prometheus",
+    "metadata": {}
+}
+
+_prom_trigger_metadata_scheme = {
+    "query": None,
+    "threshold": None,
+    "serverAddress": _qa_prom_proxy_address,
+}
+
+_cron_trigger_scheme = {
+    "type": "cron",
+    "metadata": {}
+}
+
+_cron_trigger_metadata_scheme = {
+    "timezone": "UTC",
+    "end": None,
+    "start": None,
+    "desiredReplicas": None,
+}
+
+def schedule_trigger(start, end, timezone = None, desired_replicas = None):
+    """
+    Returns a Schedule (Cron) Trigger. See https://keda.sh/docs/2.13/scalers/cron/
+
+    Args:
+        start: Cron expression indicating the start of the cron schedule.
+
+        end: Cron expression indicating the end of the cron schedule.
+
+        timezone: One of the acceptable values from the IANA Time Zone Database.
+
+        desired_replicas: Number of replicas to which the resource has to be scaled between the start and end of the cron schedule. (Can
+            be different but less than max_replicas of the deployment)
+    Returns:
+        A Schedule Trigger to be passed into scaledObject
+    """
+    return {
+        "timezone": timezone,
+        "end": end,
+        "start": start,
+        "desired_replicas": desired_replicas,
+    }
+
+def prometheus_trigger(query, threshold):
+    """
+    Returns a Prometheus Trigger. See https://keda.sh/docs/2.13/scalers/prometheus/
+
+    Args:
+        query: PromQL query to run
+
+        threshold: Value to start scaling for.
+    Returns:
+        A Prometheus Trigger to be passed into scaledObject
+    """
+    return {
+        "query": query,
+        "threshold": threshold,
+    }
+
+def is_qa(ctx, resource):
+    return get_env(ctx) == "qa"
+
+def scaled_object(
+    min_replicas = None,
+    max_replicas = None,
+    schedule_triggers = [],
+    prometheus_triggers = []
+):
+    """
+    Returns a plugin that creates an KEDA ScaledObject CRD in QA only.
+
+    Args:
+        min_replicas: Min replica count for the deployment that the HPA can scale to.
+
+        max_replicas: (Optional) Max replica count for the deployment that the HPA can scale to. If not set, we use the replica count of the deployment.
+
+        schedule_triggers: Array of Schedule Triggers. These trigger the targetted deployment to scale on a Schedule. See schedule_trigger
+
+        prometheus_triggers: Array of Prometheus Triggers. These trigger the targetted deployment to scale based on Prometheus Metrics.
+    Returns:
+        A plugin to add a ScaledObject to a resource
+    """
+    return conditional_plugin(
+        condition=is_qa,
+        plugin=deployment_plugin(
+            _update_resource,
+            min_replicas=min_replicas,
+            max_replicas=max_replicas,
+            schedule_triggers = schedule_triggers,
+            prometheus_triggers = prometheus_triggers,
+        ),
+    )
+
+def _update_resource(ctx, args, resource_def):
+    resource_def["scaledobject"] = {
+        "render": _render_scaledobject,
+        "metadata": resource_def["metadata"],
+        "min_replicas": args.min_replicas,
+        "max_replicas": args.max_replicas,
+        "schedule_triggers": args.schedule_triggers,
+        "prometheus_triggers": args.prometheus_triggers,
+    }
+
+def _render_scaledobject(ctx, so_mapping, max_replicas):
+    if get_env(ctx) != "qa":
+        fail("Custom Metrics Scaling is only support in QA")
+
+    so_mapping = struct(**so_mapping)
+    metadata = struct(**so_mapping.metadata)
+
+    so_obj = dict(_scaledobject_scheme)
+    spec = dict(_spec_scheme)
+
+    metadata_obj = render_metadata(
+        ctx,
+        metadata,
+    )
+
+    spec["minReplicaCount"] = so_mapping.min_replicas
+    if so_mapping.max_replicas != None:
+        spec["maxReplicaCount"] = so_mapping.max_replicas
+    else:
+        spec["maxReplicaCount"] = max_replicas
+
+    scaling_target = dict(_scale_target_ref_scheme)
+    scaling_target["name"] = metadata_obj["name"] # get target from rendered metadata as that will account for b/g color
+    spec["scaleTargetRef"] = scaling_target
+
+    triggers = []
+    for schedule_trigger in so_mapping.schedule_triggers:
+        trigger = dict(_cron_trigger_scheme)
+        trigger["metadata"] = dict(_cron_trigger_metadata_scheme)
+
+        trigger["metadata"]["start"] = schedule_trigger["start"]
+        trigger["metadata"]["end"] = schedule_trigger["end"]
+        if schedule_trigger["timezone"] != None:
+            trigger["metadata"]["timezone"] = schedule_trigger["timezone"]
+
+        if schedule_trigger["desired_replicas"] != None:
+            trigger["metadata"]["desiredReplicas"] = schedule_trigger["desired_replicas"]
+        else:
+            trigger["metadata"]["desiredReplicas"] = max_replicas
+
+        triggers.append(trigger)
+
+    for prometheus_trigger in so_mapping.prometheus_triggers:
+        trigger = dict(_prom_trigger_scheme)
+        trigger["metadata"] = dict(_prom_trigger_metadata_scheme)
+
+        trigger["metadata"]["query"] = prometheus_trigger["query"]
+        trigger["metadata"]["threshold"] = prometheus_trigger["threshold"]
+        triggers.append(trigger)
+
+    spec["triggers"] = triggers
+
+    so_obj["spec"] = spec
+    so_obj["metadata"] = metadata_obj
+
+    return yaml.marshal(so_obj)

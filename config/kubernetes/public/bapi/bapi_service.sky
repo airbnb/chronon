@@ -1,0 +1,202 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/apps/deployment.sky", "deployment_options")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/pay-server.sky", "pay_server_pod", "einhorn_service", "bapi_gc_config", "default_pay_server_image")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+# ruleid: no-auto-secrets-usage
+load("config/kubernetes/sidecars/geoip.sky", "use_geoip_databases")
+load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
+load("config/kubernetes/helpers/availability_tiers.sky", "get_pod_availability_tier_by_name")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_puma_port", "get_puma_worker_shutdown_timeout_seconds", "get_name", "get_identity", "get_entrypoint_command", "get_puma_tags", "get_availability_tier", "get_cluster")
+load("config/kubernetes/helpers/failure_threshold.sky", "failure_threshold")
+load("config/kubernetes/helpers/bluegreen.sky", "add_blue_green_metrics_tagging")
+# Choose your instance type. See go/shared-msp/skycfg-changes.
+load("config/kubernetes/helpers/healthcheck.sky", "healthchecked_service")
+load("config/kubernetes/helpers/images.sky", "image_defaults")
+load("config/kubernetes/helpers/msp_shard.sky", "msp_shard", "autoset_shard")
+load("config/kubernetes/helpers/security.sky", "add_security_groups")
+load("config/kubernetes/networking/public/config.sky", "networking_config")
+load("config/kubernetes/networking/public/consul.sky", "consul_meta_envoy_priority_routing")
+load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
+load("config/kubernetes/helpers/scheduling.sky", "msp_fleet_manager_scheduling_delay")
+load("config/kubernetes/sidecars/offload_profiles.sky", "use_offload_profiles")
+
+P0 = struct(
+  name="p0",
+  mproxy_tier="bapi-p1-p0"
+)
+P1 = struct(
+  name="p1",
+  mproxy_tier="bapi-p1-p0"
+)
+P2 = struct(
+  name="p2",
+  mproxy_tier="bapi-p4-p2"
+)
+P3 = struct(
+  name="p3",
+  mproxy_tier="bapi-p4-p2"
+)
+P4 = struct(
+  name="p4",
+  mproxy_tier="bapi-p4-p2"
+)
+P5 = struct(
+  name="p5",
+  mproxy_tier="bapi-p5"
+)
+
+PRIORITIES_BY_NAME = {
+  P0.name: P0,
+  P1.name: P1,
+  P2.name: P2,
+  P3.name: P3,
+  P4.name: P4,
+  P5.name: P5,
+}
+
+def priority_by_name(name):
+    priority_from_name = PRIORITIES_BY_NAME.get(name)
+    if priority_from_name != None:
+        return priority_from_name
+
+    fail("Invalid API priority: {}".format(name))
+
+def max_surge(ctx, replicas):
+    """
+    Allows a certain percentage of hosts beyond the specified capacity to be provisioned temporarily
+    for the purpose of deployment. Keep low for prod as we should instead be killing off-color and reusing
+    """
+    if get_env(ctx) == "qa" or get_env(ctx) == "preprod" or replicas <= 3:
+        return "100%"
+
+    if replicas <= 20:
+        return "50%"
+
+    return "0%"
+
+def build_failure_threshold(ctx, replicas, default_threshold_pct=95, min_replicas_unavailable=1):
+    """
+    Build the failure threshold value to allow for a certain number of replicas to be unavailable during a deploy.
+
+    Args:
+        replicas: The number of replicas in the deployment
+        default_threshold_pct: Default percentage of replicas that can be unavailable for a deploy to advance
+        min_replicas_unavailable: Alternatively, if `default_threshold_pct * replicas < 1`, min_replicas to target.
+
+    Returns:
+        An int representing the failure threshold value
+    """
+    # in preprod we're okay with waiting for one replica to be available. We have some deployments of 2 hosts and
+    # we don't need to wait for the other to finish provisioning if one is ready to go.
+    if get_env(ctx) == "preprod" and replicas > 0 and replicas <= 3:
+        return int(1 / replicas * 100)
+
+    # We don't want to allow a very small number of replicas to advance without all being ready.
+    if replicas <= 3:
+        return 100
+
+    if (1 - default_threshold_pct / 100) * replicas >= min_replicas_unavailable:
+        return default_threshold_pct
+
+    return int((1 - min_replicas_unavailable / replicas) * 100)
+
+def bapi_service(ctx,
+  priority,
+  instance_type,
+  replicas,
+  workers, 
+  image_artifact = None, 
+  override_msp_shard = "kubeapicc", # only kubeapicc has m6i instances so use that shard
+):
+  if image_artifact:
+    image = image_defaults(
+      name = None,
+      artifact = image_artifact
+    )
+  else:
+    image = default_pay_server_image
+  env_vars = {
+      "STRIPE_BAPI_MSP_PRIORITY_TIER": priority.name,
+  }
+  env_vars.update(bapi_gc_config())
+
+  # only northwest has multiple MSP shards
+  if get_cluster(ctx) == "northwest":
+    shard = override_msp_shard
+  else:
+    shard = "kubemaster"
+
+
+  return compose_plugins(
+    pay_server_pod(
+      ctx,
+      name = get_name(ctx) + "-" + priority.name,
+      namespace = get_identity(ctx),
+      command = get_entrypoint_command(ctx),
+      # Choose your instance type. See go/shared-msp/skycfg-changes.
+      instance_type = instance_type,
+      use_shared_msp_service_account = True,
+      availability_tier = get_pod_availability_tier_by_name(get_availability_tier(ctx)),
+      image = image,
+      requires_consul = False,
+    ),
+    container_env_vars(env_vars),
+    add_blue_green_metrics_tagging(),
+    use_offload_profiles(),
+
+    einhorn_service(
+      ctx,
+      port = get_puma_port(ctx),
+      name = get_name(ctx),
+      tags = get_puma_tags(ctx),
+      workers = workers,
+      max_unacked = 1,
+      max_upgrade_additional = 1,
+      gc_before_fork = True,
+      signal_timeout = get_puma_worker_shutdown_timeout_seconds(ctx),
+      meta = consul_meta_envoy_priority_routing(
+          "X-Stripe-Api-Path-Priority",
+          priority.name,
+          # Keep test-mode traffic isolated
+          receive_non_priority_traffic = priority != P5,
+      ),
+      hack_kick_interval = "60m",
+      hack_kick_start_delay = "30m",
+      hack_kick_restart_only = True,
+    ),
+    networking_config(
+        enable_global_ratelimit = True,
+        mproxy_tier = priority.mproxy_tier
+    ),
+
+    msp_shard(shard),
+    use_geoip_databases(),
+    config_srv_sidecar(ctx),
+    add_security_groups(
+        "apibox",
+        "s3_us_cidrs",
+    ),
+
+    # Add scheduling delay to allow pods to terminate and allow nodes to be reused
+    # before provisioning a new node.
+    # Note: This does add a lag to kubernetes deployment scale ups - a tradeoff we're willing to make
+    # in favor of much faster deploy speed and better node reuse.
+    msp_fleet_manager_scheduling_delay("70s"),
+    # Allow deploys to advance when (replicas * failure threshold / 100) pods are available
+    failure_threshold(build_failure_threshold(ctx, replicas)),
+
+    deployment_options(
+      replicas = replicas,
+
+      # Require pods to not crashloop for at least 10 seconds
+      # before completing the MSP deploy stage
+      minReadySeconds = 10,
+      # Wait a maximum of 30 minutes with no progress before failing
+      # the MSP deploy stage
+      progressDeadlineSeconds = 1800,
+
+      # allow spinning down entire off-color at once
+      strategy = rolling_update_strategy(ctx, max_unavailable="100%", max_surge=max_surge(ctx, replicas))
+    )
+  )

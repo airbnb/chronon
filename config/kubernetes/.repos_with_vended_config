@@ -4,7 +4,6 @@ stripe-internal/corpeng
 stripe-internal/corpnet
 stripe-internal/gocode
 stripe-internal/gtm-ui-automation
-stripe-internal/henson-test-subject
 stripe-internal/it-chef
 stripe-internal/jss-shell
 stripe-internal/livegrep
@@ -17,8 +16,6 @@ stripe-internal/sources
 stripe-internal/stripe-extension
 stripe-internal/stripe-js-v3
 stripe-internal/third-party-containers
-stripe-internal/verificator
-stripe-internal/viz
 stripe-internal/zoolander
 stripe-private-oss-forks/SudachiDict
 stripe-private-oss-forks/airflow

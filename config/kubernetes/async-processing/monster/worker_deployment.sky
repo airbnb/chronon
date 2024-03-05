@@ -184,6 +184,7 @@ def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
             command = ["/deploy/pay-server/current/{}".format(config.script)],
             instance_type = config.aws_instance_size,
             availability_tier = get_msp_availability_tier(config.monster_availability_tier),
+            requires_consul = False,
         ),
 
         einhorn_service(

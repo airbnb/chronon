@@ -31,7 +31,6 @@ ENVOY_SYSTEM_FLAGS_PATH = "%s/envoy_file_system_flags" % ENVOY_RUNTIME_DIR
 ENVOY_CONFIG_SRV_RUNTIME_DIR = "/run/stripe/envoy-config-srv"
 ENVOY_CONFIG_SRV_PERSISTENT_DRAIN_FILE = "%s/draining" % ENVOY_CONFIG_SRV_RUNTIME_DIR
 ENVOY_CONFIG_SRV_SERVICE_REGISTRATIONS_DIR = "/etc/serviceregistry/services"
-PROXYLESS_ADMIN_SERVER_DIR = "/etc/stripe/networking/proxyless/admin"
 DEFAULT_CROSS_DOMAIN_SERVICES_BY_ENV = {
     "qa": ["pandoradecrypt"],
     "preprod": ["pandoradecrypt"],
@@ -84,9 +83,7 @@ def _default_sidecar_cli_args(target):
         "enable_grpc_web": False,
         "cluster_watch_addr": _designated_envoy_control_srv_addr(target.availability_tier, target.env),
         "allowed_machine_orgs": [
-            "030465607062", # mainland
-            "108124432883", # mainland2
-            "213343938293", # msp-shared-all-pink
+            "stripe.io",
         ],
     }
 
@@ -128,7 +125,6 @@ def _default_sidecar_config(target):
             False,
             when(env="qa", role="envoy-shape", value = True)
         ),
-        "max_headers_count": 100,
         "egress_proxy": match(
             target,
             egress_proxy(tier="", enable_unix_socket=True),

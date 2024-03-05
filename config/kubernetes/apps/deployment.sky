@@ -19,7 +19,7 @@ load("config/kubernetes/plugins/types.sky", "deployment_plugin")
 load("config/kubernetes/sidecars/metrics.sky", "metrics")
 load("config/kubernetes/sidecars/sansshell.sky", "sansshell_sidecar")
 load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
-load("config/kubernetes/helpers/context.sky", "get_blue_green_color", "get_env", "is_bin_packing_enabled", "is_horizontal_pod_autoscaling_enabled", "is_isolated_deploy", "is_vertical_pod_autoscaling_enabled")
+load("config/kubernetes/helpers/context.sky", "get_blue_green_color", "get_env", "is_bin_packing_enabled", "is_horizontal_pod_autoscaling_enabled", "is_isolated_deploy", "is_vertical_pod_autoscaling_enabled", "get_name", "get_repo")
 load("config/kubernetes/core/volume.sky", "volume_mount_all_containers")
 load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes", "LDAP_MOUNT_NAME")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Deployment", "DeploymentSpec")
@@ -35,8 +35,9 @@ load("config/kubernetes/helpers/multi_arch_deployment_transition.sky", "calculat
 load("config/kubernetes/helpers/aws_instance_sizes.sky","get_graviton_eq_instance_type","aws_instance_size")
 load("config/kubernetes/core/env_var.sky", "container_env_vars", "all_containers_env_vars")
 load("config/kubernetes/helpers/binpacking.sky", "bin_packing")
+load("config/kubernetes/priority-tiers/host_isolation_allowlist.sky", "HOST_ISOLATION_ALLOWLIST")
 
-def deployment(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False, graviton_migration_enabled=False, graviton_migration_size=0, graviton_migration_target_6g=False, set_require_zone_balance_with_skew=-1, set_require_node_balance_with_skew=-1,**kwargs):
+def deployment(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False, graviton_migration_enabled=False, graviton_migration_size=0, graviton_migration_target_6g=False, set_require_zone_balance_with_skew=1, set_require_node_balance_with_skew=-1,**kwargs):
     """
     Schedule one or more instances of a stateless service.
 
@@ -105,6 +106,11 @@ def deployment(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, disable
 
     if graviton_migration_enabled:
         original_instance_type = deployment.get("pod").get("node_selectors").get("stripe.io/aws-instance-type")
+        if original_instance_type == None:
+            metadata = deployment.get("pod").get("resource").get("metadata")
+            if metadata != None and metadata.annotations != None:
+                original_instance_type = metadata.annotations.get("stripe.io/requested-instance-type")
+
         graviton_deployment =_graviton_deployment(
             ctx = ctx,
             plugins=plugins,
@@ -159,6 +165,10 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
         if namespace == None:
             fail("Namespace not set for shared MSP deployment. Perhaps missing a namespace param to your pod?")
 
+        k8s_workload_name = deployment["metadata"].get("name", None)
+        if k8s_workload_name == None:
+            fail("A Kubernetes workload name was not found for this shared MSP deployment.")
+
         # If the service is using host isolation, we set an environment variable
         # that contains the pod's priority tier as well as the priority tier
         # header (which can be a custom header). We use this environment
@@ -168,6 +178,19 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
             metadata = registered_services[0].get("service", {}).get("meta", {})
             priority_tier = metadata.get("envoy-lb_subsets-header_value", None)
             priority_tier_header = metadata.get("envoy-lb_subsets-header_name", None)
+
+            # This file is often vendored to gocode, which results in this
+            # ratchet getting applied to gocode services and blocking PR's.  To
+            # remediate this, we just check if the repo of the service is
+            # pay-server.
+            if get_repo(ctx) == "stripe-internal/pay-server":
+                # Check that the service is added to the host isolation allowlist if enabling for the first time.
+                if priority_tier and priority_tier_header and k8s_workload_name not in HOST_ISOLATION_ALLOWLIST:
+                    fail(k8s_workload_name + " must be added to host_isolation_allowlist.sky")
+
+                # Check that the service is removed from the host isolation allowlist if disabling.
+                if not priority_tier and not priority_tier_header and k8s_workload_name in HOST_ISOLATION_ALLOWLIST:
+                    fail(k8s_workload_name + " must be removed from host_isolation_allowlist.sky")
 
             # These will either both be set OR both be unset.
             if priority_tier and priority_tier_header:
@@ -189,6 +212,7 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
             config=deployment["networking_config"],
             pod_termination_grace_period_seconds=pod_termination_grace_period_seconds,
             consul_deprecated=(consul_deprecated_in_pod == CONSUL_AGENT_ENABLED_LABEL_DISABLED),
+            k8s_workload_name=k8s_workload_name,
         )
         _apply_plugin(ctx, networking_plugin, deployment)
         # Automatically add the metrics sidecar to any deployments. If we encounter a service that
@@ -197,7 +221,7 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
             _apply_plugin(ctx, metrics(ctx, config=deployment["metrics_config"]), deployment)
         _apply_plugin(ctx, sansshell_sidecar(ctx), deployment)  # go/sod:sansshell
 
-        _apply_plugin(ctx, host_health_agent(ctx, deployment["registered_services"]), deployment)
+        _apply_plugin(ctx, host_health_agent(ctx, deployment["registered_services"], k8s_workload_name), deployment)
         _apply_plugin(ctx, compose_plugins(
             prestop_all_infra_sidecars(ctx, pod_termination_grace_period_seconds=pod_termination_grace_period_seconds),
             prestop_all_containers(generate_prestop_sleep_action(ctx, DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME)),
@@ -225,8 +249,8 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
             # Feature flag opt in is only available for services with 3 or more replicas.
             _apply_plugin(ctx, compose_plugins(horizontal_pod_autoscaler()), deployment)
 
-        # We want to get a recommendation for any MSP workload
-        if is_vertical_pod_autoscaling_enabled(ctx) and is_bin_packing_enabled(ctx) == True:
+        # Whether to add the VPA plugin to get recommendations for this workload
+        if _should_add_vpa_plugin(ctx):
             _apply_plugin(ctx, compose_plugins(vertical_pod_autoscaler()), deployment)
 
     # Mount ldap volumes to a container if a host mount named etc-lmscache does not exist.
@@ -268,6 +292,15 @@ def _apply_plugin(ctx, plugin, deployment):
     plugin.update_pod(ctx, plugin, deployment["pod"])
     for container in all_containers(deployment["pod"]):
         plugin.update_containers(ctx, plugin, container)
+
+def _should_add_vpa_plugin(ctx):
+    # Allow global disable via feature flag
+    # https://amp.corp.stripe.com/feature-flags/flag/gocode.henson.enable_vpa
+    if not is_vertical_pod_autoscaling_enabled(ctx):
+        return False
+
+    # default to adding VPA plugin for services in qa/preprod/prod
+    return True
 
 def deployment_options(**kwargs):
     """
@@ -314,6 +347,7 @@ def _render_deployment(ctx, deployment_def):
     sgp_yaml = None
     hpa_obj = None
     vpa_obj = None
+    so_obj = None
 
     if deployment_def.get("securitygrouppolicy", "") and is_security_group_policy_enabled(ctx, deployment_def):
         sgp_obj = deployment.securitygrouppolicy["render"](ctx, deployment.securitygrouppolicy)
@@ -328,7 +362,11 @@ def _render_deployment(ctx, deployment_def):
     if "verticalpodautoscaler" in deployment_def and "pod" in deployment_def:
         vpa_obj = deployment.verticalpodautoscaler["render"](ctx, deployment.verticalpodautoscaler, shared_msp, main_container(deployment.pod))
 
-    if sgp_yaml == None and hpa_obj == None and vpa_obj == None:
+    if "scaledobject" in deployment_def and get_env(ctx) == "qa":
+        # Custom Scaling is currently in POC in QA only
+        so_obj = deployment.scaledobject["render"](ctx, deployment.scaledobject, deployment.kwargs["replicas"])
+
+    if sgp_yaml == None and hpa_obj == None and vpa_obj == None and so_obj == None:
         return rendered_deployment
 
     obj_list = []
@@ -343,6 +381,9 @@ def _render_deployment(ctx, deployment_def):
 
     if vpa_obj != None:
         obj_list.append(vpa_obj)
+
+    if so_obj != None:
+        obj_list.append(so_obj)
 
     return obj_list
 

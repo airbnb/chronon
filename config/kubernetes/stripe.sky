@@ -25,7 +25,7 @@ load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env
 load("config/kubernetes/sidecars/consul_agent_init.sky", "consul_agent_init")
 load("config/kubernetes/helpers/tolerations.sky", "add_toleration")
 load("config/kubernetes/networking/internal/envoy-config-srv.sky", "henson_listener_config")
-load("config/kubernetes/networking/internal/config/envoy-config-srv-config.sky", "PROXYLESS_ADMIN_SERVER_DIR")
+load("config/kubernetes/networking/public/networking.sky", "mount_pod_networking", "proxyless_mount_admin_server_dir", "proxyless_container_env_vars")
 load("config/kubernetes/helpers/graviton.sky", "is_graviton_instance")
 load("config/kubernetes/helpers/warning.sky", "warn")
 load("config/kubernetes/helpers/isolated_deploys.sky", "isolated_deploy_aware_resource_name")
@@ -51,7 +51,6 @@ def stripe_pod(
         use_shared_msp_service_account = True,
         requires_consul = None,
         command_required = True,
-        proxyless = False,
         resource_requirements_spec = None,
 ):
     """
@@ -98,9 +97,6 @@ def stripe_pod(
             stripe_pod call should pass command which should be non none. However there are certain pods that require command
             to be empty. Only those callers should set command_required = false. At the time of adding this only karpenter
             pods require this param. All other pods should use the default behavior.
-        proxyless: Whether the main container uses sn-proxyless library which bypasses client-side or server-side Envoy
-            and talkes to the other side directly via mTLS.
-            This flag instructs HENSON_CONFIG_JSON environment to be set for the proxyless library to consume Envoy ACLs.
         resource_requirements_spec: Specifies the resource limits for the main container (usually only the main container specifies
             limit values). These resource limits will override any values in the 'cpu' and 'memory' parameters. These
             limits will be provided by the Orchestration team through rightsizing recommendations.
@@ -176,7 +172,6 @@ def stripe_pod(
                     availability_tier=defaulted_availability_tier,
                     requires_consul=requires_consul,
                     container_resource_spec=container_resource_spec,
-                    proxyless = proxyless,
                 ),
             )
         ),
@@ -194,7 +189,13 @@ def stripe_pod(
                 labels({'stripe.io/shared-msp': 'false'}),
                 labels(dedicated_msp_atier),
                 annotations(dedicated_msp_atier),
-                node_selectors(dedicated_msp_atier)
+                node_selectors(dedicated_msp_atier),
+
+                ## Below plugins duplicate with the ones from networking plugin which is unused by dedicated MSP.
+                ## We will remove them once we don't support proxyless in dedicated MSP.
+                mount_pod_networking(),
+                proxyless_mount_admin_server_dir(),
+                proxyless_container_env_vars(),
             ),
         ),
     ]
@@ -202,46 +203,12 @@ def stripe_pod(
         plugins.append(shared_msp_service_account_plugin())
     if using_vpa_rec:
         plugins.append(labels({'stripe.io/right-sized': 'true'}))
-    if proxyless:
-        plugins.append(_proxyless_mount_host_volume())
-        plugins.append(_proxyless_mount_pod_volume())
 
     return compose_plugins(*plugins)
 
-def _proxyless_mount_host_volume():
-    return mount_host_volume(
-        "/pay/log/pod-networking",
-        volume_args = {
-            "type": "Directory",
-            "reason": "Provides write access for proxyless access logs",
-        },
-        mount_args = {
-            "read_only": False,
-        },
-    )
 
-def _proxyless_mount_pod_volume():
-    return mount_pod_volume(
-        PROXYLESS_ADMIN_SERVER_DIR,
-        volume_args = {
-            "type": "Directory",
-            "reason": "Provides write access for proxyless admin server",
-        },
-        mount_args = {
-            "read_only": False,
-        },
-    )
 
-def _proxyless_container_env_vars(ctx, proxyless=False):
-    if proxyless:
-        henson_acls_proto = get_henson_config(ctx).inbound_config
-        henson_acls = henson_listener_config(henson_acls_proto)
-        return container_env_vars(
-            vars = {"HENSON_CONFIG_JSON": json.marshal(henson_acls)},
-        )
-    return container_env_vars()
-
-def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, requires_consul = None, container_resource_spec = None, proxyless = False):
+def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, requires_consul = None, container_resource_spec = None):
     """
     Plugin for enabling a pod to run on Shared MSP.
     """
@@ -322,7 +289,6 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         # TODO(ORCH-2190) Remove kube-iam-credentials bind mount for Shared MSP
         container_env_vars({"AWS_CONFIG_FILE": "/pay/aws-config/kube_iam_aws_credentials.ini"}),
         container_env_vars({"AWS_SDK_LOAD_CONFIG": "true"}), # necessary for go/js AWS SDK's (possibly more) to use the config file
-        _proxyless_container_env_vars(ctx, proxyless),
         mount_host_volume(path="/pay/aws-config/kube_iam_aws_credentials.ini", volume_args = {"type": "File"}),
         mount_host_volume(path="/usr/stripe/bin/kube-iam-credentials", volume_args={"type": "File"}),
 
