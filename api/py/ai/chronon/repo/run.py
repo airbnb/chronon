@@ -311,7 +311,7 @@ def set_runtime_env(args):
                 environment["production_team_env"] = (
                     teams_json[team].get("production", {}).get(effective_mode, {})
                 )
-                # For default env we can alwasy use production env.
+                # By default use production env.
                 environment["default_env"] = (
                     teams_json.get("default", {})
                     .get("production", {})
