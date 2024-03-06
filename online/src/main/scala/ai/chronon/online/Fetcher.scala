@@ -79,7 +79,7 @@ class Fetcher(val kvStore: KVStore,
               metaDataSet: String,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
-              debug: Boolean = false,
+              debug: Boolean = true,
               val externalSourceRegistry: ExternalSourceRegistry = null)
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
 

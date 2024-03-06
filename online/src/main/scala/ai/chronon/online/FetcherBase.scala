@@ -41,7 +41,7 @@ import scala.util.{Failure, Success, Try}
 class FetcherBase(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
-                  debug: Boolean = false)
+                  debug: Boolean = true)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(
@@ -110,6 +110,7 @@ class FetcherBase(kvStore: KVStore,
                  |streamingIrs: ${gson.toJson(streamingIrs)}
                  |batchEnd in millis: ${servingInfo.batchEndTsMillis}
                  |queryTime in millis: $queryTimeMs
+                 |servingInfo: $servingInfo
                  |""".stripMargin)
           }
 
@@ -132,6 +133,7 @@ class FetcherBase(kvStore: KVStore,
                  |streamingRows: ${gson.toJson(streamingRows)}
                  |batchEnd in millis: ${servingInfo.batchEndTsMillis}
                  |queryTime in millis: $queryTimeMs
+                 |servingInfo: $servingInfo
                  |""".stripMargin)
           }
 
@@ -141,6 +143,7 @@ class FetcherBase(kvStore: KVStore,
       }
     }
     context.distribution("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
+    logger.info(s"[test] ${responseMap}")
     responseMap
   }
 
@@ -199,10 +202,8 @@ class FetcherBase(kvStore: KVStore,
           var streamingKeyBytes: Array[Byte] = null
           // todo: update the logic here when we are ready to support groupby online derivations
           if (groupByServingInfo.groupBy.hasDerivations) {
-            val ex = new IllegalArgumentException("GroupBy does not support for online derivations yet")
-            context.incrementException(ex)
-            throw ex
-          }
+            logger.info(s"[test yuli1] ${groupByServingInfo.groupBy}")
+          } else logger.info(s"[test yuli2] ${groupByServingInfo.groupBy}")
           try {
             // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
             // on the KVStore implementation, so we encode each distinctly.
