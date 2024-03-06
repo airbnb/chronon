@@ -53,11 +53,12 @@ extends BaseKvRdd {
   val withTime = false
 
   override def toAvroDf: DataFrame = {
+    val jsonSamplingPercent = sparkSession.conf.get(SparkConstants.ChrononJsonSamplingPercent, ".01").toDouble
     val avroRdd: RDD[Row] = data.map {
       case (keys: Array[Any], values: Array[Any]) =>
         // json encoding is very expensive (50% of entire job).
         // Only do it for a small fraction to retain debuggability.
-        val (keyJson, valueJson) = if (math.random < 0.01) {
+        val (keyJson, valueJson) = if (math.random < jsonSamplingPercent) {
           (keyToJson(keys), valueToJson(values))
         } else {
           (null, null)
@@ -92,9 +93,10 @@ extends BaseKvRdd {
   val withTime = true
 
   override def toAvroDf: DataFrame = {
+    val jsonSamplingPercent = sparkSession.conf.get(SparkConstants.ChrononJsonSamplingPercent, ".01").toDouble
     val avroRdd: RDD[Row] = data.map {
       case (keys, values, ts) =>
-        val (keyJson, valueJson) = if (math.random < 0.01) {
+        val (keyJson, valueJson) = if (math.random < jsonSamplingPercent) {
           (keyToJson(keys), valueToJson(values))
         } else {
           (null, null)
