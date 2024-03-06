@@ -184,6 +184,7 @@ class Fetcher(val kvStore: KVStore,
             val joinName = internalResponse.request.name
             val ctx = Metrics.Context(Environment.JoinFetching, join = joinName)
             val joinCodec = getJoinCodecs(internalResponse.request.name).get
+            logger.info(s"[test join yuli] ${joinCodec}")
             ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
             val requestTs = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
             val requestDs = TsUtils.toStr(requestTs).substring(0, 10)
