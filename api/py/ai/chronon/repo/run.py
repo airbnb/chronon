@@ -306,8 +306,7 @@ def set_runtime_env(args):
                 environment["team_env"] = (
                     teams_json[team].get(context, {}).get(effective_mode, {})
                 )
-                # If the job is running in dev environment but no dev environment is defined in teams.json,
-                # use production environment.
+                # fall-back to prod env even in dev mode when dev env is undefined.
                 environment["production_team_env"] = (
                     teams_json[team].get("production", {}).get(effective_mode, {})
                 )
