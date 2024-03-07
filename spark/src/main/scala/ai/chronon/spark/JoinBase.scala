@@ -28,11 +28,11 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.LoggerFactory
-
 import java.time.Instant
 
 import scala.collection.JavaConverters._
 import scala.collection.Seq
+import scala.util.ScalaJavaConversions.ListOps
 
 import ai.chronon.api.Constants.SmallJoinCutoff
 
@@ -173,7 +173,7 @@ abstract class JoinBase(joinConf: api.Join,
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
-                filledDf.get.save(partTable, tableProps, stats = prunedLeft.map(_.stats))
+                filledDf.get.save(partTable, tableProps, stats = prunedLeft.map(_.stats), sortByCols = joinPart.groupBy.keyColumns.toScala)
               }
             })
           val elapsedMins = (System.currentTimeMillis() - start) / 60000
@@ -376,14 +376,18 @@ abstract class JoinBase(joinConf: api.Join,
     val wholeRange = PartitionRange(unfilledRanges.minBy(_.start).start, unfilledRanges.maxBy(_.end).end)(tableUtils)
 
     val runSmallMode = {
-      val thresholdCount = leftDf(joinConf, wholeRange, tableUtils, limit = Some(SmallJoinCutoff + 1)).get.count()
-      val result = thresholdCount <= SmallJoinCutoff
-      if (result) {
-        logger.info(s"Counted $thresholdCount rows, running join in small mode.")
+      if (tableUtils.smallModelEnabled) {
+        val thresholdCount = leftDf(joinConf, wholeRange, tableUtils, limit = Some(SmallJoinCutoff + 1)).get.count()
+        val result = thresholdCount <= SmallJoinCutoff
+        if (result) {
+          logger.info(s"Counted $thresholdCount rows, running join in small mode.")
+        } else {
+          logger.info(s"Counted greater than $SmallJoinCutoff rows, proceeding with normal computation.")
+        }
+        result
       } else {
-        logger.info(s"Counted greater than $SmallJoinCutoff rows, proceeding with normal computation.")
+        false
       }
-      result
     }
 
     val effectiveRanges = if (runSmallMode) {
@@ -421,3 +425,4 @@ abstract class JoinBase(joinConf: api.Join,
     Some(finalResult)
   }
 }
+

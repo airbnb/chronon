@@ -226,14 +226,7 @@ class Join(joinConf: api.Join,
     // Modifies the joinPart to inject the key filter into the
     val groupByKeyNames = joinPart.groupBy.getKeyColumns.asScala
 
-    // In case the joinPart uses a keymapping
-    val leftSideKeyNames: Map[String, String] = if (joinPart.keyMapping != null) {
-      joinPart.rightToLeft
-    } else {
-      groupByKeyNames.map { k =>
-        (k, k)
-      }.toMap
-    }
+    val collectedLeft = leftDf.collect()
 
     joinPart.groupBy.sources.asScala.foreach { source =>
       val selectMap = Option(source.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
@@ -242,9 +235,9 @@ class Join(joinConf: api.Join,
       }.toMap
 
       groupByKeyExpressions.map{ case (keyName, groupByKeyExpression) =>
-        val leftSideKeyName = leftSideKeyNames.get(keyName).get
-        val values = leftDf.select(leftSideKeyName).collect().map(row => row(0))
-
+        val leftSideKeyName = joinPart.rightToLeft.get(keyName).get
+        logger.info(s"KeyName: $keyName, leftSide KeyName: $leftSideKeyName , Join right to left: ${joinPart.rightToLeft.mkString(", ")}")
+        val values = collectedLeft.map(row => row.getAs[Any](leftSideKeyName))
         // Check for null keys, warn if found, err if all null
         val (notNullValues, nullValues) = values.partition(_ != null)
         if (notNullValues.isEmpty) {
