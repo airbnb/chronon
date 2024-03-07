@@ -85,8 +85,15 @@ class BaseFetcher(kvStore: KVStore,
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
 
-      // Missing data
-      if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
+      // If there's neither batch nor streaming data, we return null; there's nothing to aggregate.
+      if (
+        // Check if there's no batch data. This is only possible if we made a request to the KV Store
+        // (KvStoreBatchResponse) and it returned null bytes. If instead of a KV store response, we have cached data
+        // (CachedBatchResponse), we automatically know that the data is non-null as we only cache non-null data.
+        (batchResponses.isInstanceOf[KvStoreBatchResponse] && batchBytes == null)
+        // Check if there's no streaming data.
+        && (streamingResponses == null || streamingResponses.isEmpty)
+      ) {
         if (debug) println("Both batch and streaming data are null")
         context.histogramTagged("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
         return null
