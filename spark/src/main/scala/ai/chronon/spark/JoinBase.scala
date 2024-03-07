@@ -151,7 +151,7 @@ abstract class JoinBase(joinConf: api.Join,
           )
           .getOrElse(Seq())
 
-        val unfilledRangeCombined = if(!unfilledRanges.isEmpty && smallMode) {
+        val unfilledRangeCombined = if (!unfilledRanges.isEmpty && smallMode) {
           // For small mode we want to "un-chunk" the unfilled ranges, because left side can be sparse
           // in dates, and it often ends up being less efficient to run more jobs in an effort to
           // avoid computing unnecessary left range. In the future we can look for more intelligent chunking
@@ -173,7 +173,10 @@ abstract class JoinBase(joinConf: api.Join,
               // Cache join part data into intermediate table
               if (filledDf.isDefined) {
                 logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
-                filledDf.get.save(partTable, tableProps, stats = prunedLeft.map(_.stats), sortByCols = joinPart.groupBy.keyColumns.toScala)
+                filledDf.get.save(partTable,
+                                  tableProps,
+                                  stats = prunedLeft.map(_.stats),
+                                  sortByCols = joinPart.groupBy.keyColumns.toScala)
               }
             })
           val elapsedMins = (System.currentTimeMillis() - start) / 60000
@@ -306,7 +309,10 @@ abstract class JoinBase(joinConf: api.Join,
     Some(rightDfWithDerivations)
   }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo, runSmallMode: Boolean = false): Option[DataFrame]
+  def computeRange(leftDf: DataFrame,
+                   leftRange: PartitionRange,
+                   bootstrapInfo: BootstrapInfo,
+                   runSmallMode: Boolean = false): Option[DataFrame]
 
   def computeJoin(stepDays: Option[Int] = None, overrideStartPartition: Option[String] = None): DataFrame = {
     computeJoinOpt(stepDays, overrideStartPartition).get
@@ -425,4 +431,3 @@ abstract class JoinBase(joinConf: api.Join,
     Some(finalResult)
   }
 }
-

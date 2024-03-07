@@ -333,7 +333,11 @@ case class TableUtils(sparkSession: SparkSession) {
     val pw = new PrintWriter(sw)
     new Throwable().printStackTrace(pw)
     val stackTraceString = sw.toString
-    val stackTraceStringPretty = stackTraceString.split("\n").filter(_.contains("chronon")).map(_.replace("at ai.chronon.spark.", "")).mkString("\n")
+    val stackTraceStringPretty = stackTraceString
+      .split("\n")
+      .filter(_.contains("chronon"))
+      .map(_.replace("at ai.chronon.spark.", ""))
+      .mkString("\n")
 
     logger.info(
       s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n\n Query call path (not an error stack trace): \n$stackTraceStringPretty \n\n --------")

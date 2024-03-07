@@ -16,6 +16,8 @@
 
 package ai.chronon.spark
 
+import java.util
+
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
@@ -26,9 +28,11 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 import org.apache.spark.util.sketch.BloomFilter
-
 import scala.collection.Seq
+import scala.jdk.CollectionConverters.asScalaBufferConverter
 import scala.util.ScalaJavaConversions.MapOps
+
+import ai.chronon.api
 
 object JoinUtils {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -326,6 +330,52 @@ object JoinUtils {
            |  groupBy: ${joinPart.groupBy.toString}
            |""".stripMargin)
       Some(rightBloomMap)
+    }
+  }
+
+  def injectKeyFilter(leftDf: DataFrame, joinPart: api.JoinPart): Unit = {
+    // Modifies the joinPart to inject the key filter into the
+    val groupByKeyNames = joinPart.groupBy.getKeyColumns.asScala
+
+    val collectedLeft = leftDf.collect()
+
+    joinPart.groupBy.sources.asScala.foreach { source =>
+      val selectMap = Option(source.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
+      val groupByKeyExpressions = groupByKeyNames.map { key =>
+        key -> selectMap.getOrElse(key, key)
+      }.toMap
+
+      groupByKeyExpressions
+        .map {
+          case (keyName, groupByKeyExpression) =>
+            val leftSideKeyName = joinPart.rightToLeft.get(keyName).get
+            logger.info(
+              s"KeyName: $keyName, leftSide KeyName: $leftSideKeyName , Join right to left: ${joinPart.rightToLeft
+                .mkString(", ")}")
+            val values = collectedLeft.map(row => row.getAs[Any](leftSideKeyName))
+            // Check for null keys, warn if found, err if all null
+            val (notNullValues, nullValues) = values.partition(_ != null)
+            if (notNullValues.isEmpty) {
+              throw new RuntimeException(
+                s"No not-null keys found for key: $keyName. Check source table or where clauses.")
+            } else if (!nullValues.isEmpty) {
+              logger.warn(s"Found ${nullValues.length} null keys for key: $keyName.")
+            }
+
+            // String manipulate to form valid SQL
+            val valueSet = notNullValues.map {
+              case s: String => s"'$s'" // Add single quotes for string values
+              case other     => other.toString // Keep other types (like Int) as they are
+            }.toSet
+
+            // Form the final WHERE clause for injection
+            s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
+        }
+        .foreach { whereClause =>
+          val currentWheres = Option(source.rootQuery.getWheres).getOrElse(new util.ArrayList[String]())
+          currentWheres.add(whereClause)
+          source.rootQuery.setWheres(currentWheres)
+        }
     }
   }
 

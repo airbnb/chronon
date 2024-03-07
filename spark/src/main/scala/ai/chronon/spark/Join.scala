@@ -16,7 +16,6 @@
 
 package ai.chronon.spark
 
-
 import java.util
 
 import org.slf4j.LoggerFactory
@@ -222,46 +221,6 @@ class Join(joinConf: api.Join,
     }
   }
 
-  def injectKeyFilter(leftDf: DataFrame, joinPart: api.JoinPart): Unit = {
-    // Modifies the joinPart to inject the key filter into the
-    val groupByKeyNames = joinPart.groupBy.getKeyColumns.asScala
-
-    val collectedLeft = leftDf.collect()
-
-    joinPart.groupBy.sources.asScala.foreach { source =>
-      val selectMap = Option(source.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
-      val groupByKeyExpressions = groupByKeyNames.map { key =>
-        key -> selectMap.getOrElse(key, key)
-      }.toMap
-
-      groupByKeyExpressions.map{ case (keyName, groupByKeyExpression) =>
-        val leftSideKeyName = joinPart.rightToLeft.get(keyName).get
-        logger.info(s"KeyName: $keyName, leftSide KeyName: $leftSideKeyName , Join right to left: ${joinPart.rightToLeft.mkString(", ")}")
-        val values = collectedLeft.map(row => row.getAs[Any](leftSideKeyName))
-        // Check for null keys, warn if found, err if all null
-        val (notNullValues, nullValues) = values.partition(_ != null)
-        if (notNullValues.isEmpty) {
-          throw new RuntimeException(s"No not-null keys found for key: $keyName. Check source table or where clauses.")
-        } else if (!nullValues.isEmpty) {
-          logger.warn(s"Found ${nullValues.length} null keys for key: $keyName.")
-        }
-
-        // String manipulate to form valid SQL
-        val valueSet = notNullValues.map {
-          case s: String => s"'$s'" // Add single quotes for string values
-          case other => other.toString // Keep other types (like Int) as they are
-        }.toSet
-
-        // Form the final WHERE clause for injection
-        s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
-      }.foreach { whereClause =>
-        val currentWheres = Option(source.rootQuery.getWheres).getOrElse(new util.ArrayList[String]())
-        currentWheres.add(whereClause)
-        source.rootQuery.setWheres(currentWheres)
-      }
-    }
-  }
-
   override def computeRange(leftDf: DataFrame,
                             leftRange: PartitionRange,
                             bootstrapInfo: BootstrapInfo,
@@ -299,7 +258,6 @@ class Join(joinConf: api.Join,
 
     implicit val executionContext: ExecutionContextExecutorService =
       ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(tableUtils.joinPartParallelism))
-
 
     val joinedDfTry = tableUtils
       .wrapWithCache("Computing left parts for bootstrap table", bootstrapDf) {
@@ -340,7 +298,8 @@ class Join(joinConf: api.Join,
                 } else {
                   joinLevelBloomMapOpt
                 }
-                val df = computeRightTable(unfilledLeftDf, joinPart, leftRange, bloomFilterOpt, runSmallMode).map(df => joinPart -> df)
+                val df = computeRightTable(unfilledLeftDf, joinPart, leftRange, bloomFilterOpt, runSmallMode).map(df =>
+                  joinPart -> df)
                 Thread.currentThread().setName(s"done-$threadName")
                 df
               }
