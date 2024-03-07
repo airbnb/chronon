@@ -16,7 +16,6 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
@@ -27,13 +26,11 @@ import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 
-import java.util.concurrent.{Callable, ExecutorCompletionService, ExecutorService, Executors}
-import scala.collection.Seq
-import scala.collection.mutable
-import scala.collection.parallel.ExecutionContextTaskSupport
-import scala.concurrent.duration.{Duration, DurationInt}
+import java.util.concurrent.Executors
+import scala.collection.{Seq, mutable}
+import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
-import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.{Failure, Success}
 
 /*
@@ -65,8 +62,9 @@ class Join(joinConf: api.Join,
            tableUtils: TableUtils,
            skipFirstHole: Boolean = true,
            mutationScan: Boolean = true,
-           showDf: Boolean = false)
-    extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf) {
+           showDf: Boolean = false,
+           selectedJoinParts: Option[List[String]] = None)
+    extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf, selectedJoinParts) {
 
   private val bootstrapTable = joinConf.metaData.bootstrapTable
 
@@ -154,8 +152,22 @@ class Join(joinConf: api.Join,
         }.toSeq
       }
 
-    val coveringSetsPerJoinPart: Seq[(JoinPartMetadata, Seq[CoveringSet])] = bootstrapInfo.joinParts.map {
-      joinPartMetadata =>
+    val partsToCompute: Seq[JoinPartMetadata] = {
+      if (selectedJoinParts.isEmpty) {
+        bootstrapInfo.joinParts
+      } else {
+        bootstrapInfo.joinParts.filter(part => selectedJoinParts.get.contains(part.joinPart.fullPrefix))
+      }
+    }
+
+    if (selectedJoinParts.isDefined && partsToCompute.isEmpty) {
+      throw new IllegalArgumentException(
+        s"Selected join parts are not found. Available ones are: ${bootstrapInfo.joinParts.map(_.joinPart.fullPrefix).prettyInline}")
+    }
+
+    val coveringSetsPerJoinPart: Seq[(JoinPartMetadata, Seq[CoveringSet])] = bootstrapInfo.joinParts
+      .filter(part => selectedJoinParts.isEmpty || partsToCompute.contains(part))
+      .map { joinPartMetadata =>
         val coveringSets = distinctBootstrapSets.map {
           case (hashes, rowCount) =>
             val schema = hashes.toSet.flatMap(bootstrapInfo.hashToSchema.apply)
@@ -169,7 +181,7 @@ class Join(joinConf: api.Join,
             CoveringSet(hashes, rowCount, isCovering)
         }
         (joinPartMetadata, coveringSets)
-    }
+      }
 
     logger.info(
       s"\n======= CoveringSet for JoinPart ${joinConf.metaData.name} for PartitionRange(${leftRange.start}, ${leftRange.end}) =======\n")
@@ -185,7 +197,9 @@ class Join(joinConf: api.Join,
     coveringSetsPerJoinPart
   }
 
-  override def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame = {
+  override def computeRange(leftDf: DataFrame,
+                            leftRange: PartitionRange,
+                            bootstrapInfo: BootstrapInfo): Option[DataFrame] = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
     } else {
@@ -259,6 +273,9 @@ class Join(joinConf: api.Join,
           }
           val rightResults = Await.result(Future.sequence(rightResultsFuture), Duration.Inf).flatten
 
+          // early exit if selectedJoinParts is defined. Otherwise, we combine all join parts
+          if (selectedJoinParts.isDefined) return None
+
           // combine bootstrap table and join part tables
           // sequentially join bootstrap table and each join part table. some column may exist both on left and right because
           // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
@@ -287,7 +304,7 @@ class Join(joinConf: api.Join,
                                           bootstrapInfo,
                                           leftDf.columns)
     finalDf.explain()
-    finalDf
+    Some(finalDf)
   }
 
   def applyDerivation(baseDf: DataFrame, bootstrapInfo: BootstrapInfo, leftColumns: Seq[String]): DataFrame = {

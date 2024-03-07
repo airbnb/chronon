@@ -128,7 +128,8 @@ object StagingQuery {
     val stagingQueryJob = new StagingQuery(
       stagingQueryConf,
       parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"staging_query_${stagingQueryConf.metaData.name}"))
+      TableUtils(
+        SparkSessionBuilder.build(s"staging_query_${stagingQueryConf.metaData.name}", enforceKryoSerializer = false))
     )
     stagingQueryJob.computeStagingQuery(parsedArgs.stepDays.toOption)
   }

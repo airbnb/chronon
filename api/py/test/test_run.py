@@ -31,7 +31,7 @@ DEFAULT_ENVIRONMENT = os.environ.copy()
 def parser():
     """ Basic parser for tests relative to the main arguments of run.py """
     parser = argparse.ArgumentParser()
-    args = ['repo', 'conf', 'mode', 'app-name', 'chronon-jar', 'online-jar', 'online-class', 'render-info', 'sub-help']
+    args = ['repo', 'conf', 'mode', 'env', 'app-name', 'chronon-jar', 'online-jar', 'online-class', 'render-info', 'sub-help']
     for arg in args:
         parser.add_argument(f"--{arg}")
     run.set_defaults(parser)
@@ -98,6 +98,7 @@ def test_environment(teams_json, repo, parser, test_conf_location):
         '--mode', 'backfill',
         '--conf', test_conf_location,
         '--repo', repo,
+        '--env', 'production',
         '--online-jar', test_conf_location,
     ]))
     # from team env.
@@ -111,12 +112,28 @@ def test_environment(teams_json, repo, parser, test_conf_location):
     # from additional_args
     assert os.environ['CHRONON_CONFIG_ADDITIONAL_ARGS'] == '--step-days 14'
 
+    # Check dev backfill for a team sets parameters accordingly.
+    reset_env(default_environment)
+    run.set_runtime_env(parser.parse_args(args=[
+        '--mode', 'backfill',
+        '--conf', test_conf_location,
+        '--repo', repo,
+        '--online-jar', test_conf_location,
+    ]))
+    # from team dev env.
+    assert os.environ['EXECUTOR_CORES'] == '2'
+    # from team dev env.
+    assert os.environ['DRIVER_MEMORY'] == '30G'
+    # from default dev env.
+    assert os.environ['EXECUTOR_MEMORY'] == '8G'
+
     # Check conf set environment overrides most.
     reset_env(default_environment)
     run.set_runtime_env(parser.parse_args(args=[
         '--mode', 'backfill',
         '--conf', 'production/joins/sample_team/sample_join.v1',
-        '--repo', repo
+        '--repo', repo,
+        '--env', 'production',
     ]))
     # from conf env.
     assert os.environ['EXECUTOR_MEMORY'] == '9G'
