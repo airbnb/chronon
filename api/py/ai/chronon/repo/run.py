@@ -236,7 +236,8 @@ def set_runtime_env(args):
         - Environment variables existing already.
         - Environment variables derived from args (like app_name)
         - conf.metaData.modeToEnvMap for the mode (set on config)
-        - team environment per context and mode set on teams.json
+        - team's dev environment for each mode set on teams.json    
+        - team's prod environment for each mode set on teams.json
         - default team environment per context and mode set on teams.json
         - Common Environment set in teams.json
     """
@@ -245,6 +246,7 @@ def set_runtime_env(args):
         "conf_env": {},
         "default_env": {},
         "team_env": {},
+        "production_team_env": {},
         "cli_args": {},
     }
     conf_type = None
@@ -262,7 +264,7 @@ def set_runtime_env(args):
             )
             if args.conf and effective_mode:
                 try:
-                    context, conf_type, team, _ = args.conf.split("/")[-4:]
+                    _, conf_type, team, _ = args.conf.split("/")[-4:]
                 except Exception as e:
                     logging.error(
                         "Invalid conf path: {}, please ensure to supply the relative path to zipline/ folder".format(
@@ -272,6 +274,12 @@ def set_runtime_env(args):
                     raise e
                 if not team:
                     team = "default"
+                # context is the environment in which the job is running, which is provided from the args,
+                # default to be dev.
+                if args.env:
+                    context = args.env
+                else:
+                    context = "dev"
                 logging.info(
                     f"Context: {context} -- conf_type: {conf_type} -- team: {team}"
                 )
@@ -298,9 +306,14 @@ def set_runtime_env(args):
                 environment["team_env"] = (
                     teams_json[team].get(context, {}).get(effective_mode, {})
                 )
+                # fall-back to prod env even in dev mode when dev env is undefined.
+                environment["production_team_env"] = (
+                    teams_json[team].get("production", {}).get(effective_mode, {})
+                )
+                # By default use production env.
                 environment["default_env"] = (
                     teams_json.get("default", {})
-                    .get(context, {})
+                    .get("production", {})
                     .get(effective_mode, {})
                 )
                 environment["cli_args"]["CHRONON_CONF_PATH"] = conf_path
@@ -326,7 +339,7 @@ def set_runtime_env(args):
     environment["cli_args"]["CHRONON_DRIVER_JAR"] = args.chronon_jar
     environment["cli_args"]["CHRONON_ONLINE_JAR"] = args.online_jar
     environment["cli_args"]["CHRONON_ONLINE_CLASS"] = args.online_class
-    order = ["conf_env", "team_env", "default_env", "common_env", "cli_args"]
+    order = ["conf_env", "team_env", "production_team_env", "default_env", "common_env", "cli_args"]
     print("Setting env variables:")
     for key in os.environ:
         if any([key in environment[set_key] for set_key in order]):
@@ -567,6 +580,12 @@ if __name__ == "__main__":
         "--conf",
         required=False,
         help="Conf param - required for every mode except fetch",
+    )
+    parser.add_argument(
+        "--env",
+        required=False,
+        default='dev',
+        help="Running environment - default to be dev"
     )
     parser.add_argument("--mode", choices=MODE_ARGS.keys())
     parser.add_argument("--ds", help="the end partition to backfill the data")
