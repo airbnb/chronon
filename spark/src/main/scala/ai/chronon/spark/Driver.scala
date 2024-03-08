@@ -127,6 +127,8 @@ object Driver {
         LocalDataLoader.loadDataRecursively(dir, localSession)
         localSession
       } else {
+        // We use the KryoSerializer for group bys and joins since we serialize the IRs. 
+        // But since staging query is fairly freeform, it's better to stick to the java serializer.
         SparkSessionBuilder.build(subcommandName(), enforceKryoSerializer = !subcommandName().contains("staging_query"))
       }
     }
