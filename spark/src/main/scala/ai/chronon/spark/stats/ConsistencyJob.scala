@@ -24,9 +24,11 @@ import ai.chronon.online._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{PartitionRange, TableUtils}
 import org.apache.spark.sql.SparkSession
-
 import java.util
+
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
+
+import ai.chronon.online.OnlineDerivationUtil.timeFields
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -114,7 +116,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
       val joinKeys = if (joinConf.isSetRowIds) {
         joinConf.rowIds.toScala
       } else {
-        JoinCodec.timeFields.map(_.name).toList ++ joinConf.leftKeyCols
+        timeFields.map(_.name).toList ++ joinConf.leftKeyCols
       }
       logger.info(s"Using ${joinKeys.mkString("[", ",", "]")} as join keys between log and backfill.")
       val (compareDf, metricsKvRdd, metrics) =
