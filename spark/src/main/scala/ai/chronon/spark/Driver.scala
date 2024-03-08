@@ -127,7 +127,7 @@ object Driver {
         LocalDataLoader.loadDataRecursively(dir, localSession)
         localSession
       } else {
-        SparkSessionBuilder.build(subcommandName())
+        SparkSessionBuilder.build(subcommandName(), enforceKryoSerializer = !subcommandName().contains("staging_query"))
       }
     }
 
