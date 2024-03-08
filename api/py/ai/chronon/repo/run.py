@@ -86,6 +86,7 @@ ROUTES = {
         "local-streaming": "group-by-streaming",
         "fetch": "fetch",
         "analyze": "analyze",
+        "metadata-upload": "metadata-upload",
         "metadata-export": "metadata-export",
         "streaming-client": "group-by-streaming",
     },

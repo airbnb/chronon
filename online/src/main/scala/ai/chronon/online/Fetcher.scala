@@ -192,6 +192,8 @@ class Fetcher(val kvStore: KVStore,
             // used for derivation based on ts/ds
             val tsDsMap: Map[String, AnyRef] =
               Map("ts" -> (requestTs).asInstanceOf[AnyRef], "ds" -> (requestDs).asInstanceOf[AnyRef])
+            logger.info(s"[test join yuli2] ${internalResponse.request.keys}")
+            logger.info(s"[test join yuli3] ${baseMap ++ tsDsMap}")
             val derivedMap: Map[String, AnyRef] = Try(
               joinCodec
                 .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)

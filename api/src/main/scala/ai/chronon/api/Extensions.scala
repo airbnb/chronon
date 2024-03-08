@@ -616,7 +616,6 @@ object Extensions {
         case DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
       }
     }
-
   }
 
   implicit class StringOps(string: String) {

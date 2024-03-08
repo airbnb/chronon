@@ -25,10 +25,10 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.{JoinOps, ThrowableOps, GroupByOps}
+import ai.chronon.api.Extensions.{DerivationOps, GroupByOps, JoinOps, ThrowableOps}
 import com.google.gson.Gson
-
 import java.util
+
 import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.concurrent.Future
@@ -294,7 +294,11 @@ class FetcherBase(kvStore: KVStore,
                   logger.info(
                     s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
                       s"for keys: ${request.keys}")
-                constructGroupByResponse(batchResponseTryAll,
+                logger.info(s"[test] outputchrononschema = ${groupByServingInfo.outputChrononSchema}")
+                logger.info(s"[test] valueChrononSchema = ${groupByServingInfo.valueChrononSchema}")
+                logger.info(s"[test] keyChrononSchema = ${groupByServingInfo.keyChrononSchema}")
+                logger.info(s"[test] selectedChrononSchema = ${groupByServingInfo.selectedChrononSchema}")
+                val responseMapTry = constructGroupByResponse(batchResponseTryAll,
                                          streamingResponsesOpt,
                                          groupByServingInfo,
                                          queryTs,
@@ -302,6 +306,26 @@ class FetcherBase(kvStore: KVStore,
                                          multiGetMillis,
                                          context,
                                          totalResponseValueBytes)
+                if (groupByServingInfo.groupBy.hasDerivations) {
+                  val schemaAndDeriveFunc = buildValueSchemaAndDeriveFunc(
+                    groupByConf = groupByServingInfo.groupBy,
+                    keySchema = groupByServingInfo.keyChrononSchema,
+                    baseValueSchema = groupByServingInfo.outputChrononSchema
+                  )
+                  val derivedMap: Map[String, AnyRef] = Try(
+                    schemaAndDeriveFunc
+                      .derivationFunc(request.keys, responseMapTry)
+                      .mapValues(_.asInstanceOf[AnyRef])
+                      .toMap) match {
+                    case Success(derivedMap) => derivedMap
+                    case Failure(exception) => {
+                      throw exception
+                    }
+                  }
+                  derivedMap
+                } else {
+                  responseMapTry
+                }
               } catch {
                 case ex: Exception =>
                   // not all exceptions are due to stale schema, so we want to control how often we hit kv store
@@ -311,11 +335,70 @@ class FetcherBase(kvStore: KVStore,
                   throw ex
               }
             }
-
             Response(request, responseMapTry)
         }.toList
         responses
       }
+  }
+
+  case class SchemaAndDeriveFunc(valueSchema: StructType,
+    derivationFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any])
+
+  type DerivationFunc = (Map[String, Any], Map[String, Any]) => Map[String, Any]
+
+  def adjustExceptions(derived: Map[String, Any], preDerivation: Map[String, Any]): Map[String, Any] = {
+    val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
+    if (exceptions.isEmpty) {
+      return derived
+    }
+    val exceptionParts: Array[String] = exceptions.keys.map(_.dropRight("_exception".length)).toArray
+    derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
+  }
+
+  def build(fields: Seq[StructField], deriveFunc: DerivationFunc, groupByConf: GroupBy) =
+    SchemaAndDeriveFunc(StructType(s"group_by_derived_${groupByConf.metaData.name}", fields.toArray), deriveFunc)
+  def buildValueSchemaAndDeriveFunc(
+    groupByConf: GroupBy,
+    keySchema: StructType,
+    baseValueSchema: StructType
+  ): SchemaAndDeriveFunc= {
+    if (groupByConf.areDerivationsRenameOnly) {
+      val baseExpressions = if (groupByConf.derivationsContainStar) {
+        baseValueSchema.filterNot { groupByConf.derivationExpressionSet contains _.name }
+      } else {
+        Seq.empty
+      }
+      val expressions = baseExpressions ++ groupByConf.derivationsWithoutStar.map { d =>
+        StructField(d.name, baseValueSchema.typeOf(d.expression).get)
+      }
+      build(
+        expressions,
+        {
+          case (_: Map[String, Any], values: Map[String, Any]) =>
+            adjustExceptions(groupByConf.derivationsScala.applyRenameOnlyDerivation(values), values)
+        },
+        groupByConf
+      )
+    } else {
+      val baseExpressions = if (groupByConf.derivationsContainStar) {
+        baseValueSchema
+          .filterNot { groupByConf.derivationExpressionSet contains _.name }
+          .map(sf => sf.name -> sf.name)
+      } else { Seq.empty }
+      val expressions = baseExpressions ++ groupByConf.derivationsWithoutStar.map { d => d.name -> d.expression }
+      val catalystUtil = {
+        new PooledCatalystUtil(expressions,
+          StructType("all", (keySchema ++ baseValueSchema).toArray ++ JoinCodec.timeFields))
+      }
+      build(
+        catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
+        {
+          case (keys: Map[String, Any], values: Map[String, Any]) =>
+            adjustExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
+        },
+        groupByConf
+      )
+    }
   }
 
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {
