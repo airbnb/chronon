@@ -18,18 +18,18 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.row.ColumnAggregator
-import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr, TsUtils}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.{JoinOps, ThrowableOps, GroupByOps}
+import ai.chronon.api.Extensions.{DerivationOps, GroupByOps, JoinOps, ThrowableOps}
 import com.google.gson.Gson
-
 import java.util
+
 import scala.collection.JavaConverters._
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
@@ -200,12 +200,6 @@ class FetcherBase(kvStore: KVStore,
           context.increment("group_by_request.count")
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
-          // todo: update the logic here when we are ready to support groupby online derivations
-          if (groupByServingInfo.groupBy.hasDerivations) {
-            val ex = new IllegalArgumentException("GroupBy does not support for online derivations yet")
-            context.incrementException(ex)
-            throw ex
-          }
           try {
             // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
             // on the KVStore implementation, so we encode each distinctly.
@@ -276,7 +270,7 @@ class FetcherBase(kvStore: KVStore,
             .sum
         val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
           case (request, requestMetaTry) =>
-            val responseMapTry = requestMetaTry.map { requestMeta =>
+            val responseMapTry: Try[Map[String, AnyRef]] = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
               context.count("multi_get.batch.size", allRequests.length)
               context.distribution("multi_get.bytes", totalResponseValueBytes)
@@ -291,7 +285,7 @@ class FetcherBase(kvStore: KVStore,
               val streamingResponsesOpt =
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
-              try {
+              val groupByResponse: Map[String, AnyRef] = try {
                 if (debug)
                   logger.info(
                     s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
@@ -312,12 +306,98 @@ class FetcherBase(kvStore: KVStore,
                   ex.printStackTrace()
                   throw ex
               }
+              logger.info(s"[test] groupByServingInfo ${groupByServingInfo}")
+              logger.info(s"[test] groupByServingInfo ${groupByServingInfo.groupBy.derivationsScala}")
+              if (groupByServingInfo.groupBy.hasDerivations) {
+                logger.info("[test] groupBy has derivations")
+                val keySchema = groupByServingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
+                val baseValueSchema = if (groupByServingInfo.groupBy.aggregations == null) {
+                  groupByServingInfo.selectedChrononSchema
+                } else {
+                  groupByServingInfo.outputChrononSchema
+                }
+                logger.info(s"[test] baseValueSchema ${baseValueSchema}")
+                logger.info(s"[test] keySchema ${keySchema}")
+                logger.info(s"[test] baseMap ${groupByResponse}")
+                constructGroupByResponseWithDerivation(
+                  groupByServingInfo,
+                  request,
+                  keySchema,
+                  baseValueSchema,
+                  groupByResponse
+                )
+              } else {
+                logger.info("[test] groupBy has no derivations")
+                groupByResponse
+              }
             }
-
             Response(request, responseMapTry)
         }.toList
         responses
       }
+  }
+
+  private[online] def adjustExceptions(derived: Map[String, Any], preDerivation: Map[String, Any]): Map[String, Any] = {
+    val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
+    if (exceptions.isEmpty) {
+      return derived
+    }
+    val exceptionParts: Array[String] = exceptions.keys.map(_.dropRight("_exception".length)).toArray
+    derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
+  }
+
+  private def constructGroupByResponseWithDerivation(
+      groupByServingInfo: GroupByServingInfo,
+      request: Request,
+      keySchema: StructType,
+      baseValueSchema: StructType,
+      baseMap: Map[String, AnyRef]
+  ): Map[String, AnyRef] = {
+    val requestTs = request.atMillis.getOrElse(System.currentTimeMillis())
+    val requestDs = TsUtils.toStr(requestTs).substring(0, 10)
+    // used for derivation based on ts/ds
+    val tsDsMap: Map[String, AnyRef] =
+      Map("ts" -> (requestTs).asInstanceOf[AnyRef], "ds" -> (requestDs).asInstanceOf[AnyRef])
+    val timeFields: Array[StructField] = Array(
+      StructField("ts", LongType),
+      StructField("ds", StringType)
+    )
+    val conf = groupByServingInfo.groupBy
+    def deriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] = {
+      if (conf.areDerivationsRenameOnly) {
+        {
+          case (_: Map[String, Any], values: Map[String, Any]) =>
+            adjustExceptions(conf.derivationsScala.applyRenameOnlyDerivation(values), values)
+        }
+      } else {
+        val baseExpressions = if (conf.derivationsContainStar) {
+          baseValueSchema
+            .filterNot { conf.derivationExpressionSet contains _.name }
+            .map(sf => sf.name -> sf.name)
+        } else { Seq.empty }
+        val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
+        val catalystUtil = {
+          new PooledCatalystUtil(expressions,
+            StructType("all", (keySchema ++ baseValueSchema).toArray ++ timeFields))
+        }
+        {
+          case (keys: Map[String, Any], values: Map[String, Any]) =>
+            adjustExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
+        }
+      }
+    }
+
+    val derivedMap: Map[String, AnyRef] = Try(
+        deriveFunc(request.keys, baseMap ++ tsDsMap)
+        .mapValues(_.asInstanceOf[AnyRef])
+        .toMap) match {
+      case Success(derivedMap) => derivedMap
+      case Failure(exception) => {
+        throw exception
+      }
+    }
+    val derivedMapCleaned = derivedMap -- tsDsMap.keys
+    derivedMapCleaned
   }
 
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {
