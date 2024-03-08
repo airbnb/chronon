@@ -57,15 +57,15 @@
 
 What is Chronon?
 =====================
-Chronon is a feature engineering framework is being used to power Machine Learning in every 
-organization within Airbnb. Chronon makes developing production-grade, 
-features at scale very easy. 
+Chronon is a feature engineering framework used to power Machine Learning at Airbnb and Stripe. Chronon aims to make creating
+production-grade features easy. 
 
-With Chronon you can generate training data, serve features, monitor feature quality 
-and manage features with a unified feature definition.
+With a simple feature definition, Chronon automatically creates infrastructure for generating training data, serving features and monitoring feature quality 
+at scale. 
 
 .. image:: ../images/intro.png
 
+With Chronon you can -
 * **Consume data from a variety of Sources** - event streams, DB table snapshots, change data streams, service endpoints and warehouse tables modeled as either slowly changing dimensions, fact or dimension tables
 * **Produce results both online and offline contexts** - Online, as scalable low-latency end-points for feature serving, or offline as hive tables, for generating training data.
 * **Real-time or batch accuracy** - You can configure the result to be either *Temporal* or *Snapshot* accurate. Temporal refers to updating feature values in real-time in online context and producing point-in-time correct features in the offline context. Snapshot accuracy refers to features being updated once a day at midnight.
