@@ -136,8 +136,11 @@ object SparkInternalRowConversions {
         val elementConverter = to(elementType, structToMap)
 
         def arrayConverter(x: Any): Any = {
-          val arrayData = x.asInstanceOf[util.ArrayList[Any]]
-          new GenericArrayData(arrayData.iterator().toScala.map(elementConverter).toArray)
+          val arrayData = x match {
+            case listValue: util.ArrayList[_] => listValue.iterator().toScala.map(elementConverter).toArray
+            case arrayValue: Array[_]         => arrayValue.iterator.map(elementConverter).toArray
+          }
+          new GenericArrayData(arrayData)
         }
 
         arrayConverter
