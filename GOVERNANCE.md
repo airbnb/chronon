@@ -56,7 +56,7 @@ Votes are clearly indicated by the subject line starting with [VOTE]. Votes may 
 
 
 | Vote | Meaning |
-|  ___ | ________ |
+|  ---- | ----- |
 |  +1  |  'Yes,' 'Agree,' or 'the action should be performed.' |
 |  +0  | Neutral about the proposed action (or mildly negative but not enough so to want to block it). |
 |  -1  | This is a negative vote. On issues where consensus is required, this vote counts as a veto. All vetoes must contain an explanation of why the veto is appropriate. Vetoes with no explanation are void. It may also be appropriate for a -1 vote to include an alternative course of action.
@@ -76,7 +76,7 @@ Only active (i.e. non-emeritus) committers and PMC members have binding votes.
 
 
 | Approval Type |Definition |
-| ______________|___________|
+| ------------- | ---------- |
 |   Consensus   | Consensus requires 3 binding +1 votes and no -1 binding vetoes. |
 | Lazy Majority |  A lazy majority vote requires 3 binding +1 votes and more binding +1 votes than -1 votes. |
 | Lazy Approval |  An action with lazy approval is implicitly allowed unless a -1 vote is received, at which time, depending on the type of action, either lazy majority or consensus approval must be obtained. |
@@ -94,7 +94,7 @@ Only active members of the PMC have the ability to veto, and all active PMC memb
 
 
 | Actions | Description | Approval | Binding Votes | Minimum Length (days) | Mailing List |
-| ________|_____________|__________|_______________|_______________________|______________|
+| ------- | ----------- | -------- | ------------- | --------------------- | ------------ |
 | Code Change | A change made to a codebase of the project and committed by a committer. This includes source code, documentation, website content, etc. | A +1 from a committer (Github approval counts as a +1).
 Moving to a lazy majority if a -1 is received (github rejection counts as a -1).
 A -1 from a committer counts as a veto. It must come with an explanation, and ideally it should be resolved through code change and petition. If it fails to be resolved through dialogue after 3 days, the on-call, or another PMC member, will intervene to try to reach consensus. If that also fails, then the veto can be overturned by a lazy majority vote amongst PMC voters. |  Active committers |  0 | Github Pull Request (automated notification sent to dev@chronon.ai) |
@@ -126,9 +126,9 @@ Including bug fixes, small features and extensions.
 1. Contributor opens up a PR
 2. If the PR gets at least one +1 from an active committer without any -1, then it’s merged.
 3. If the PR gets a -1 from an active committer or a PMC member (the -1 must come with an explanation)
-    a. Ideally the rejection is resolved through code change/discussion amongst the parties involved (initial committer as well as vetoer)
-    b. If after 3 days the discussion hasn’t yielded any progress, the on-call or another PMC member will get involved to try and guide the conversation to a productive consensus
-    c. Should that fail, then the on-call or PMC member will inform the rest of the PMC that debate has failed and then we will move ahead with a lazy majority vote amongst PMC members to resolve the issue.
+    1. Ideally the rejection is resolved through code change/discussion amongst the parties involved (initial committer as well as vetoer)
+    2. If after 3 days the discussion hasn’t yielded any progress, the on-call or another PMC member will get involved to try and guide the conversation to a productive consensus
+    3. Should that fail, then the on-call or PMC member will inform the rest of the PMC that debate has failed and then we will move ahead with a lazy majority vote amongst PMC members to resolve the issue.
 
 ## Major code change
 
