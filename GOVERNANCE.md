@@ -28,13 +28,12 @@ Commit access can be revoked by a unanimous vote of all the active PMC members (
 ## Project Management Committee (PMC)
 
 The PMC is responsible for the management and oversight of the Chronon codebase. These responsibilities include:
-
-Deciding what is distributed as part of the Chronon project. In particular all releases must be approved by the PMC.
-Maintaining the project's shared resources, including the codebase repository, mailing lists, websites.
-Speaking on behalf of the project.
-Resolving license disputes regarding products of the project.
-Nominating new PMC members and committers.
-Maintaining these bylaws and other guidelines of the project.
+* Deciding what is distributed as part of the Chronon project. In particular all releases must be approved by the PMC.
+* Maintaining the project's shared resources, including the codebase repository, mailing lists, websites.
+* Speaking on behalf of the project.
+* Resolving license disputes regarding products of the project.
+* Nominating new PMC members and committers.
+* Maintaining these bylaws and other guidelines of the project.
 
 ### PMC Seat Allocation
 
@@ -50,7 +49,7 @@ Major decisions requiring PMC voting should ideally be held off until the PMC is
 
 ## Voting
 
-Decisions regarding the project are made by votes on the primary project development mailing list <dev@chronon.ai>.
+Decisions regarding the project are made by votes on the primary project development mailing list dev@chronon.ai.
 
 Votes are clearly indicated by the subject line starting with [VOTE]. Votes may contain multiple items for approval and these should be clearly separated. Voting is carried out by replying to the vote mail. Voting may take three flavors
 
@@ -110,10 +109,9 @@ Only active members of the PMC have the ability to veto, and all active PMC memb
 ## Reverting
 
 The on-call is free to use their discretion to revert any PR, even if it fulfills the conditions outlined above for merging. The cases where the on-call may elect to do this include, but are not limited to:
-
-The PR breaks the pipeline/CI
-The conditions under which it was merged did not allow for proper review (for example very late PR time with quick stamps and merging)
-The PR was merged as a minor change, but the on-call determines that it more closely resembles a major change
+* The PR breaks the pipeline/CI
+* The conditions under which it was merged did not allow for proper review (for example very late PR time with quick stamps and merging)
+* The PR was merged as a minor change, but the on-call determines that it more closely resembles a major change
 
 # Examples
 
@@ -132,21 +130,21 @@ Including bug fixes, small features and extensions.
 
 These should have an associated CHIP (see contributor guide) that is already approved by a Consensus vote of PMC members.
 
-Contributor opens up a PR
-If the PR gets at least three +1s from active committers without any -1s, then it’s merged.
-If the PR gets a -1 from an active committer or a PMC member (the -1 must come with an explanation)
-Then we follow the same process as for a minor change, however without any guidelines as to how long the debate will continue for. The on-call or PMC member(s) resolving the debate are free to let it go on for longer before calling for a vote to resolve the issue, especially if the change is consequential for the future direction of the project.
+1. Contributor opens up a PR
+2. If the PR gets at least three +1s from active committers without any -1s, then it’s merged.
+3.  If the PR gets a -1 from an active committer or a PMC member (the -1 must come with an explanation)
+    1. Then we follow the same process as for a minor change, however without any guidelines as to how long the debate will continue for. The on-call or PMC member(s) resolving the debate are free to let it go on for longer before calling for a vote to resolve the issue, especially if the change is consequential for the future direction of the project.
 
 ## Major vs Minor Changes
 
 We do not have a formal definition of major, but as a rough guideline any change that fulfills any of the below criteria could be considered major:
-Touches 10+ files in a significant way
-Sensitive changes such as:
-Edit, add, or remove major libraries or components, for example introducing a new dependency
-Any change to APIs, even backwards compatible changes like adding optional arguments
-Any change to core aggregation libraries
-Changing the default configurations of any parameters
-More than ~500 lines of code
+* Touches 10+ files in a significant way
+* Sensitive changes such as:
+    * Edit, add, or remove major libraries or components, for example introducing a new dependency
+    * Any change to APIs, even backwards compatible changes like adding optional arguments
+    * Any change to core aggregation libraries
+    * Changing the default configurations of any parameters
+* More than ~500 lines of code
 
 The final decision on what constitutes a major change will be left up to the on-call at the time that the PR is merged.
 
@@ -160,11 +158,9 @@ Once the CHIP is approved, the PRs that comprise the change follow the normal  a
 
 # Licensing, Copyright / Ownership
 
-The code will be licensed under the standard Apache v2 license without any modifications. This is the most popular, permissive, liability-and-warranty-voiding open-source license. Apache v2 on github also simultaneously covers the “Contributor License Agreement (CLA)” - which is to say we won’t be creating another CLA. Combined with github’s policy on contributions the CLA is inferred by the clause below.
+The code will be licensed under the standard Apache v2 license without any modifications. This is the most popular, permissive, liability-and-warranty-voiding open-source license.
 
-“Whenever you add Content to a repository containing notice of a license, you license that Content under the same terms, and you agree that you have the right to license that Content under those terms.”
-
-The ownership/copyright of the project will belong to “The Chronon Authors” which is a collective group of people that have contributed code and documentation to the project - any one with a github PR that’s been committed. This is standard industry practice and is followed by companies such as Google and Organizations such as Linux foundation - more details here and here.
+The ownership/copyright of the project will belong to “The Chronon Authors” which is a collective group of people that have contributed code and documentation to the project - any one with a github PR that’s been committed. This is standard industry practice and is followed by companies such as Google and Organizations such as Linux foundation - more details [here](https://opensource.google/documentation/reference/releasing/authors) and [here](https://www.linuxfoundation.org/blog/blog/copyright-notices-in-open-source-software-projects).
 
 # Appendix
 
