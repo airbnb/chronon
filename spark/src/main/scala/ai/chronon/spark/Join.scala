@@ -45,7 +45,6 @@ import scala.jdk.CollectionConverters.{asJavaIterableConverter, asScalaBufferCon
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
 import scala.util.{Failure, Success}
 
-import ai.chronon.api.Constants.SmallJoinCutoff
 
 /*
  * hashes: a list containing bootstrap hashes that represent the list of bootstrap parts that a record has matched

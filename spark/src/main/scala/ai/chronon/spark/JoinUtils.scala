@@ -334,7 +334,7 @@ object JoinUtils {
   }
 
   def injectKeyFilter(leftDf: DataFrame, joinPart: api.JoinPart): Unit = {
-    // Modifies the joinPart to inject the key filter into the
+    // Modifies the joinPart to inject the key filter into the where Clause of GroupBys by hardcoding the keyset
     val groupByKeyNames = joinPart.groupBy.getKeyColumns.asScala
 
     val collectedLeft = leftDf.collect()

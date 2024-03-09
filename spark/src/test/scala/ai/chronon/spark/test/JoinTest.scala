@@ -32,6 +32,9 @@ import org.junit.Assert._
 import org.junit.Test
 import org.scalatest.Assertions.intercept
 
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.Row
+
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.ListOps
 
@@ -578,6 +581,27 @@ class JoinTest {
   }
 
   @Test
+  def testInjectKeyFilter(): Unit = {
+
+    // Create Left Side DF
+    val schema = StructType(Array(
+      StructField("item_id", IntegerType, nullable = false)
+    ))
+    val userData = Seq(Row(123), Row(456), Row(789), Row(234))
+    val userRDD = spark.sparkContext.parallelize(userData)
+    val userDF = spark.createDataFrame(userRDD, schema)
+
+    println("===============")
+    userDF.show()
+    val joinPart = Builders.JoinPart(groupBy = getViewsGroupBy("abc"), keyMapping = Map("item_id" -> "itm"), prefix = "user")
+    println("+++++++++")
+    println(s"JOIN PART BEFORE: ${joinPart.groupBy.sources.asScala.head.rootQuery.wheres.asScala.mkString(",")} ")
+    JoinUtils.injectKeyFilter(userDF, joinPart)
+    println(s"JOIN PART After: ${joinPart.groupBy.sources.asScala.head.rootQuery.wheres.asScala.mkString(",")} ")
+    assertEquals(1, 1)
+  }
+
+  @Test
   def testEventsEventsCumulative(): Unit = {
     // Create a cumulative source GroupBy
     val viewsTable = s"$namespace.view_cumulative"
@@ -634,6 +658,19 @@ class JoinTest {
       diff.show()
     }
     assertEquals(diff.count(), 0)
+
+    val schema = StructType(Array(
+      StructField("user_id", IntegerType, nullable = false)
+    ))
+    val userData = Seq(Row(123), Row(456), Row(789), Row(234))
+    val userRDD = spark.sparkContext.parallelize(userData)
+    val userDF = spark.createDataFrame(userRDD, schema)
+
+    println(s"-----------------=================0----===========000000")
+    val joinPart = Builders.JoinPart(groupBy = getViewsGroupBy("some"), keyMapping = Map("user_id" -> "user"), prefix = "user")
+    println(s"JOIN PART BEFORE: ${joinPart.groupBy.sources.asScala.head.rootQuery.wheres.asScala.mkString(",")} ")
+    JoinUtils.injectKeyFilter(userDF, joinPart)
+    println(s"JOIN PART After: ${joinPart.groupBy.sources.asScala.head.rootQuery.wheres.asScala.mkString(",")} ")
   }
 
   def getGroupByForIncrementalSourceTest() = {

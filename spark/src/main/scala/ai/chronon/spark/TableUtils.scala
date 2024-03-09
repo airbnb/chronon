@@ -53,6 +53,8 @@ case class TableUtils(sparkSession: SparkSession) {
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
   val smallModelEnabled: Boolean =
     sparkSession.conf.get("spark.chronon.backfill.small_mode.enabled", "true").toBoolean
+  val smallModeNumRowsCutoff: Int =
+    sparkSession.conf.get("spark.chronon.backfill.small_mode_cutoff", "5000").toInt
   val backfillValidationEnforced: Boolean =
     sparkSession.conf.get("spark.chronon.backfill.validation.enabled", "true").toBoolean
   // Threshold to control whether or not to use bloomfilter on join backfill. If the backfill row approximate count is under this threshold, we will use bloomfilter.
