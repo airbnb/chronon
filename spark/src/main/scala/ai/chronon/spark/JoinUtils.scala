@@ -388,6 +388,7 @@ object JoinUtils {
   def tablesToRecompute(joinConf: ai.chronon.api.Join,
                         outputTable: String,
                         tableUtils: TableUtils): collection.Seq[String] = {
+    // Finds all join output tables (join parts and final table) that need recomputing (in monolithic spark job mode)
     val gson = new Gson()
     (for (
       props <- tableUtils.getTableProperties(outputTable);
@@ -397,5 +398,18 @@ object JoinUtils {
       logger.info(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
       joinConf.tablesToDrop(oldSemanticHash)
     }).getOrElse(collection.Seq.empty)
+  }
+
+  def shouldRecomputeLeft(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: TableUtils): Boolean = {
+    // Determines if the saved left table of the join needs
+    if (tableUtils.tableExists(outputTable)) {
+      val gson = new Gson()
+      val props = tableUtils.getTableProperties(outputTable);
+      val oldSemanticJson = props.get(Constants.SemanticHashKey);
+      val oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
+      joinConf.leftChanged(oldSemanticHash)
+    } else {
+      false
+    }
   }
 }

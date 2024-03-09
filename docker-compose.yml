@@ -53,6 +53,8 @@ services:
       - CHRONON_LOG_TABLE=default.chronon_log_table
       - CHRONON_ONLINE_CLASS=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
       - CHRONON_ONLINE_ARGS=-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin
+    volumes:
+      - /Users/varant_zanoyan/repos/chronon:/srv/chronon_jar
 
 
 volumes:

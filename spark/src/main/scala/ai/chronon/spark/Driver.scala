@@ -279,6 +279,68 @@ object Driver {
     }
   }
 
+  object JoinBackfillLeft {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("join-left")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      val runFirstHole: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     default = Some(false),
+                     descr = "Skip the first unfilled partition range if some future partitions have been populated.")
+      val startPartitionOverride: ScallopOption[String] =
+        opt[String](required = false,
+                    descr =
+                      "Start date to compute join backfill, this start date will override start partition in conf.")
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"join_left_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        !args.runFirstHole()
+      )
+      join.computeLeft(args.startPartitionOverride.toOption)
+    }
+  }
+
+  object JoinBackfillFinal {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("join-final")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      val runFirstHole: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     default = Some(false),
+                     descr = "Skip the first unfilled partition range if some future partitions have been populated.")
+      val startPartitionOverride: ScallopOption[String] =
+        opt[String](required = false,
+                    descr =
+                      "Start date to compute join backfill, this start date will override start partition in conf.")
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"join_final_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        !args.runFirstHole()
+      )
+      join.computeFinal(args.startPartitionOverride.toOption)
+    }
+  }
+
   object GroupByBackfill {
     @transient lazy val logger = LoggerFactory.getLogger(getClass)
     class Args
@@ -833,6 +895,10 @@ object Driver {
     addSubcommand(CompareJoinQueryArgs)
     object MetadataExportArgs extends MetadataExport.Args
     addSubcommand(MetadataExportArgs)
+    object JoinBackfillLeftArgs extends JoinBackfillLeft.Args
+    addSubcommand(JoinBackfillLeftArgs)
+    object JoinBackfillFinalArgs extends JoinBackfillFinal.Args
+    addSubcommand(JoinBackfillFinalArgs)
     object LabelJoinArgs extends LabelJoin.Args
     addSubcommand(LabelJoinArgs)
     requireSubcommand()
@@ -872,6 +938,8 @@ object Driver {
           case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
           case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
+          case args.JoinBackfillLeftArgs   => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
+          case args.JoinBackfillFinalArgs  => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
           case _                           => logger.info(s"Unknown subcommand: $x")
         }
       case None => logger.info(s"specify a subcommand please")

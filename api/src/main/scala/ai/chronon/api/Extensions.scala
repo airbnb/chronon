@@ -833,7 +833,7 @@ object Extensions {
      * semanticHash contains hashes of left side and each join part, and is used to detect join definition
      * changes and determine whether any intermediate/final tables of the join need to be recomputed.
      */
-    def semanticHash: Map[String, String] = {
+    val semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
       val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
       val derivedHashMap = Option(join.derivations)
@@ -882,6 +882,12 @@ object Extensions {
       externalPartHashes ++ semanticHash
     }
 
+    def leftChanged(oldSemanticHash: Map[String, String]): Boolean = {
+      // Checks for semantic changes in left or bootstrap, because those are saved together
+      oldSemanticHash(leftSourceKey) != semanticHash(leftSourceKey) || oldSemanticHash(
+        join.metaData.bootstrapTable) != semanticHash(join.metaData.bootstrapTable)
+    }
+
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
       val newSemanticHash = semanticHash
       // only right join part hashes for convenience
@@ -890,7 +896,7 @@ object Extensions {
       }
 
       // drop everything if left source changes
-      val partsToDrop = if (oldSemanticHash(leftSourceKey) != newSemanticHash(leftSourceKey)) {
+      val partsToDrop = if (leftChanged(oldSemanticHash)) {
         partHashes(oldSemanticHash).keys.toSeq
       } else {
         val changed = partHashes(newSemanticHash).flatMap {
