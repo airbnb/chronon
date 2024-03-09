@@ -7,7 +7,6 @@ import ai.chronon.api.Extensions.DerivationOps
 import ai.chronon.api.{Constants, Derivation, LongType, StringType, StructField, StructType}
 import ai.chronon.online.Fetcher.Request
 
-
 object OnlineDerivationUtil {
   type DerivationFunc = (Map[String, Any], Map[String, Any]) => Map[String, Any]
 
@@ -36,7 +35,7 @@ object OnlineDerivationUtil {
   }
 
   def buildDerivationFunctionWithSql(
-    catalystUtil: PooledCatalystUtil
+      catalystUtil: PooledCatalystUtil
   ): DerivationFunc = {
     {
       case (keys: Map[String, Any], values: Map[String, Any]) =>
@@ -45,9 +44,9 @@ object OnlineDerivationUtil {
   }
 
   def buildDerivationFunction(
-    derivationsScala: List[Derivation],
-    keySchema: StructType,
-    baseValueSchema: StructType
+      derivationsScala: List[Derivation],
+      keySchema: StructType,
+      baseValueSchema: StructType
   ): DerivationFunc = {
     if (derivationsScala.areDerivationsRenameOnly) {
       buildRenameOnlyDerivationFunction(derivationsScala.derivationsWithoutStar)
@@ -59,17 +58,16 @@ object OnlineDerivationUtil {
       } else { Seq.empty }
       val expressions = baseExpressions ++ derivationsScala.derivationsWithoutStar.map { d => d.name -> d.expression }
       val catalystUtil = {
-        new PooledCatalystUtil(expressions,
-          StructType("all", (keySchema ++ baseValueSchema).toArray ++ timeFields))
+        new PooledCatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray ++ timeFields))
       }
       buildDerivationFunctionWithSql(catalystUtil)
     }
   }
 
   def applyDeriveFunc(
-    deriveFunc: DerivationFunc,
-    request: Request,
-    baseMap: Map[String, AnyRef]
+      deriveFunc: DerivationFunc,
+      request: Request,
+      baseMap: Map[String, AnyRef]
   ): Map[String, AnyRef] = {
     val requestTs = request.atMillis.getOrElse(System.currentTimeMillis())
     val requestDs = TsUtils.toStr(requestTs).substring(0, 10)

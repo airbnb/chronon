@@ -33,7 +33,13 @@ import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
-import ai.chronon.online.OnlineDerivationUtil.{DerivationFunc, applyDeriveFunc, buildDerivationFunction, buildRenameOnlyDerivationFunction, timeFields}
+import ai.chronon.online.OnlineDerivationUtil.{
+  DerivationFunc,
+  applyDeriveFunc,
+  buildDerivationFunction,
+  buildRenameOnlyDerivationFunction,
+  timeFields
+}
 
 // Does internal facing fetching
 //   1. takes join request or groupBy requests
@@ -287,27 +293,28 @@ class FetcherBase(kvStore: KVStore,
               val streamingResponsesOpt =
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
-              val groupByResponse: Map[String, AnyRef] = try {
-                if (debug)
-                  logger.info(
-                    s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
-                      s"for keys: ${request.keys}")
-                constructGroupByResponse(batchResponseTryAll,
-                                         streamingResponsesOpt,
-                                         groupByServingInfo,
-                                         queryTs,
-                                         startTimeMs,
-                                         multiGetMillis,
-                                         context,
-                                         totalResponseValueBytes)
-              } catch {
-                case ex: Exception =>
-                  // not all exceptions are due to stale schema, so we want to control how often we hit kv store
-                  getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
-                  context.incrementException(ex)
-                  ex.printStackTrace()
-                  throw ex
-              }
+              val groupByResponse: Map[String, AnyRef] =
+                try {
+                  if (debug)
+                    logger.info(
+                      s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
+                        s"for keys: ${request.keys}")
+                  constructGroupByResponse(batchResponseTryAll,
+                                           streamingResponsesOpt,
+                                           groupByServingInfo,
+                                           queryTs,
+                                           startTimeMs,
+                                           multiGetMillis,
+                                           context,
+                                           totalResponseValueBytes)
+                } catch {
+                  case ex: Exception =>
+                    // not all exceptions are due to stale schema, so we want to control how often we hit kv store
+                    getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
+                    context.incrementException(ex)
+                    ex.printStackTrace()
+                    throw ex
+                }
               logger.info(s"[test] groupByServingInfo ${groupByServingInfo}")
               logger.info(s"[test] groupByServingInfo ${groupByServingInfo.groupBy.derivationsScala}")
               if (groupByServingInfo.groupBy.hasDerivations) {

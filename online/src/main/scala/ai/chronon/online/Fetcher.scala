@@ -506,7 +506,8 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
-    * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the drift for
+    * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the drift
+   * for
     * the approx percentile metrics.
     * TODO: Extend to larger periods of time by merging the Sketches from a larger slice.
     * TODO: Allow for non sequential time intervals. i.e. this week against the same week last year.
