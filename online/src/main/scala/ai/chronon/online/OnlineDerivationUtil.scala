@@ -27,14 +27,14 @@ object OnlineDerivationUtil {
     derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
   }
 
-  def buildRenameOnlyDerivationFunction(derivationsScala: List[Derivation]): DerivationFunc = {
+  private def buildRenameOnlyDerivationFunction(derivationsScala: List[Derivation]): DerivationFunc = {
     {
       case (_: Map[String, Any], values: Map[String, Any]) =>
         reintroduceExceptions(derivationsScala.applyRenameOnlyDerivation(values), values)
     }
   }
 
-  def buildDerivationFunctionWithSql(
+  private def buildDerivationFunctionWithSql(
       catalystUtil: PooledCatalystUtil
   ): DerivationFunc = {
     {

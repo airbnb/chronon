@@ -315,10 +315,7 @@ class FetcherBase(kvStore: KVStore,
                     ex.printStackTrace()
                     throw ex
                 }
-              logger.info(s"[test] groupByServingInfo ${groupByServingInfo}")
-              logger.info(s"[test] groupByServingInfo ${groupByServingInfo.groupBy.derivationsScala}")
               if (groupByServingInfo.groupBy.hasDerivations) {
-                logger.info(s"[test] baseMap ${groupByResponse}")
                 val deriveFunc: DerivationFunc = getGroupByServingInfo(request.name).get.deriveFunc
                 applyDeriveFunc(deriveFunc, request, groupByResponse)
               } else {
