@@ -637,19 +637,6 @@ class JoinTest {
       diff.show()
     }
     assertEquals(diff.count(), 0)
-
-    val schema = StructType(Array(
-      StructField("user_id", IntegerType, nullable = false)
-    ))
-    val userData = Seq(Row(123), Row(456), Row(789), Row(234))
-    val userRDD = spark.sparkContext.parallelize(userData)
-    val userDF = spark.createDataFrame(userRDD, schema)
-
-    println(s"-----------------=================0----===========000000")
-    val joinPart = Builders.JoinPart(groupBy = getViewsGroupBy("some"), keyMapping = Map("user_id" -> "user"), prefix = "user")
-    println(s"JOIN PART BEFORE: ${joinPart.groupBy.sources.asScala.head.rootQuery.wheres.asScala.mkString(",")} ")
-    JoinUtils.injectKeyFilter(userDF, joinPart)
-    println(s"JOIN PART After: ${joinPart.groupBy.sources.asScala.head.rootQuery.wheres.asScala.mkString(",")} ")
   }
 
   def getGroupByForIncrementalSourceTest() = {
