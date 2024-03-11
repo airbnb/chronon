@@ -581,27 +581,6 @@ class JoinTest {
   }
 
   @Test
-  def testInjectKeyFilter(): Unit = {
-
-    // Create Left Side DF
-    val schema = StructType(Array(
-      StructField("item_id", IntegerType, nullable = false)
-    ))
-    val userData = Seq(Row(123), Row(456), Row(789), Row(234))
-    val userRDD = spark.sparkContext.parallelize(userData)
-    val userDF = spark.createDataFrame(userRDD, schema)
-
-    println("===============")
-    userDF.show()
-    val joinPart = Builders.JoinPart(groupBy = getViewsGroupBy("abc"), keyMapping = Map("item_id" -> "itm"), prefix = "user")
-    println("+++++++++")
-    println(s"JOIN PART BEFORE: ${joinPart.groupBy.sources.asScala.head.rootQuery.wheres.asScala.mkString(",")} ")
-    JoinUtils.injectKeyFilter(userDF, joinPart)
-    println(s"JOIN PART After: ${joinPart.groupBy.sources.asScala.head.rootQuery.wheres.asScala.mkString(",")} ")
-    assertEquals(1, 1)
-  }
-
-  @Test
   def testEventsEventsCumulative(): Unit = {
     // Create a cumulative source GroupBy
     val viewsTable = s"$namespace.view_cumulative"
