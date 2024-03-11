@@ -41,10 +41,9 @@ import scala.collection.mutable
 import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.duration.{Duration, DurationInt}
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
-import scala.jdk.CollectionConverters.{asJavaIterableConverter, asScalaBufferConverter, mapAsScalaMapConverter}
+import scala.collection.compat._
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
 import scala.util.{Failure, Success}
-
 
 /*
  * hashes: a list containing bootstrap hashes that represent the list of bootstrap parts that a record has matched
@@ -208,16 +207,6 @@ class Join(joinConf: api.Join,
     }
 
     coveringSetsPerJoinPart
-  }
-
-  def getAllLeftSideKeyNames(): Seq[String] = {
-    joinConf.getJoinParts.asScala.flatMap { joinPart =>
-      if (joinPart.keyMapping != null) {
-        joinPart.keyMapping.asScala.keys.toSeq
-      } else {
-        joinPart.groupBy.getKeyColumns.asScala
-      }
-    }
   }
 
   override def computeRange(leftDf: DataFrame,

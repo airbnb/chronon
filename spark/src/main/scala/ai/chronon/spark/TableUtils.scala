@@ -36,6 +36,7 @@ import java.time.{Instant, ZoneId}
 import java.util.concurrent.{ExecutorService, Executors}
 
 import scala.collection.{Seq, mutable}
+import scala.collection.immutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.{Failure, Success, Try}
 
@@ -478,7 +479,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
       logger.info(
         s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
-      val (repartitionCols: Seq[String], partitionSortCols: Seq[String]) =
+      val (repartitionCols: immutable.Seq[String], partitionSortCols: immutable.Seq[String]) =
         if (df.schema.fieldNames.contains(partitionColumn)) {
           (Seq(partitionColumn, saltCol), Seq(partitionColumn) ++ sortByCols)
         } else { (Seq(saltCol), sortByCols) }

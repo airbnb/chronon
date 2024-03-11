@@ -28,8 +28,8 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 import org.apache.spark.util.sketch.BloomFilter
-import scala.collection.Seq
-import scala.jdk.CollectionConverters.asScalaBufferConverter
+import scala.collection.compat._
+import scala.jdk.CollectionConverters._
 import scala.util.ScalaJavaConversions.MapOps
 
 import ai.chronon.api
