@@ -34,7 +34,7 @@ class JoinCodecTest {
       "derived2" -> "val2"
     )
 
-    val result = JoinCodec.adjustExceptions(derived, preDerived)
+    val result = JoinCodec.reintroduceExceptions(derived, preDerived)
     val expected = Map(
       "group_by_3_feature1" -> "val1",
       "derived1" -> "val1",

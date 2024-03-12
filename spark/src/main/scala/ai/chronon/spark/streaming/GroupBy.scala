@@ -41,7 +41,7 @@ class GroupBy(inputStream: DataFrame,
               onlineImpl: Api,
               debug: Boolean = false)
     extends Serializable {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
+  @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   private def buildStreamingQuery(inputTable: String): String = {
     val streamingSource = groupByConf.streamingSource.get

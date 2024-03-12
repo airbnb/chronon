@@ -56,7 +56,7 @@ case class JoinCodec(conf: JoinOps,
           expressions,
           {
             case (_: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.adjustExceptions(conf.derivationsScala.applyRenameOnlyDerivation(values), values)
+              JoinCodec.reintroduceExceptions(conf.derivationsScala.applyRenameOnlyDerivation(values), values)
           }
         )
       } else {
@@ -67,14 +67,13 @@ case class JoinCodec(conf: JoinOps,
         } else { Seq.empty }
         val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
         val catalystUtil = {
-          new PooledCatalystUtil(expressions,
-                                 StructType("all", (keySchema ++ baseValueSchema).toArray ++ JoinCodec.timeFields))
+          new PooledCatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray ++ JoinCodec.timeFields))
         }
         build(
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
           {
             case (keys: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.adjustExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
+              JoinCodec.reintroduceExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
           }
         )
       }
@@ -128,7 +127,9 @@ object JoinCodec {
   )
 
   // remove value fields of groupBys that have failed with exceptions
-  private[online] def adjustExceptions(derived: Map[String, Any], preDerivation: Map[String, Any]): Map[String, Any] = {
+  // and reintroduce the exceptions back
+  private[online] def reintroduceExceptions(derived: Map[String, Any],
+                                            preDerivation: Map[String, Any]): Map[String, Any] = {
     val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
     if (exceptions.isEmpty) {
       return derived

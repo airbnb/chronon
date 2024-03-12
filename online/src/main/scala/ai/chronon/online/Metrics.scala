@@ -174,7 +174,7 @@ object Metrics {
 
     def increment(metric: String): Unit = stats.increment(prefix(metric), tags)
 
-    def incrementException(exception: Throwable): Unit = {
+    def incrementException(exception: Throwable)(implicit logger: org.slf4j.Logger): Unit = {
       val stackTrace = exception.getStackTrace
       val exceptionSignature = if (stackTrace.isEmpty) {
         exception.getClass.toString
@@ -185,6 +185,7 @@ object Metrics {
         val method = stackRoot.getMethodName
         s"[$method@$file:$line]${exception.getClass.toString}"
       }
+      logger.error(s"Exception: $exceptionSignature", exception.getStackTrace.mkString("\n"))
       stats.increment(prefix(Name.Exception), s"$tags,${Metrics.Name.Exception}:${exceptionSignature}")
     }
 

@@ -190,23 +190,39 @@ class Fetcher(val kvStore: KVStore,
             val baseMap = internalMap ++ externalMap
             // used for derivation based on ts/ds
             val tsDsMap: Map[String, AnyRef] =
-              Map("ts" -> (requestTs).asInstanceOf[AnyRef], "ds" -> (requestDs).asInstanceOf[AnyRef])
-            val derivedMap: Map[String, AnyRef] = Try(
+              Map("ts" -> requestTs, "ds" -> requestDs)
+                .mapValues(_.asInstanceOf[AnyRef])
+            val derivedMapTry: Try[Map[String, AnyRef]] = Try {
               joinCodec
                 .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
                 .mapValues(_.asInstanceOf[AnyRef])
-                .toMap) match {
-              case Success(derivedMap) => derivedMap
-              case Failure(exception) => {
-                ctx.incrementException(exception)
-                throw exception
+            }
+
+            val (derivedMapCleaned, baseMapCleaned) = if (derivedMapTry.isSuccess) {
+              val derivedMap = derivedMapTry.get -- tsDsMap.keys
+              (derivedMap, baseMap)
+            } else {
+              ctx.incrementException(derivedMapTry.failed.get)
+              val derivedExceptionMap = Map("derivation_fetch_exception" -> derivedMapTry.failed.get.traceString)
+                .mapValues(_.asInstanceOf[AnyRef])
+              val joinTry: Try[JoinOps] = getJoinConf(joinName)
+              if (joinTry.isFailure) {
+                // joinTry can only be successful if the code can reach here
+                ctx.incrementException(joinTry.failed.get)
+                (Map.empty[String, AnyRef], Map.empty[String, AnyRef])
+              } else {
+                val join = joinTry.get
+                if (join.derivationsContainStar && !join.areDerivationsRenameOnly) {
+                  (Map.empty[String, AnyRef], baseMap)
+                } else {
+                  (derivedExceptionMap, Map.empty[String, AnyRef])
+                }
               }
             }
-            val derivedMapCleaned = derivedMap -- tsDsMap.keys
             val requestEndTs = System.currentTimeMillis()
             ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
             ctx.distribution("overall.latency.millis", requestEndTs - ts)
-            ResponseWithContext(internalResponse.request, derivedMapCleaned, baseMap)
+            ResponseWithContext(internalResponse.request, derivedMapCleaned, baseMapCleaned)
         }
     }
 
