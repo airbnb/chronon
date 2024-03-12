@@ -198,27 +198,26 @@ class Fetcher(val kvStore: KVStore,
                 .mapValues(_.asInstanceOf[AnyRef])
             }
 
-            val (derivedMapCleaned, baseMapCleaned) = if (derivedMapTry.isSuccess) {
-              val derivedMap = derivedMapTry.get -- tsDsMap.keys
-              (derivedMap, baseMap)
-            } else {
-              ctx.incrementException(derivedMapTry.failed.get)
-              val derivedExceptionMap = Map("derivation_fetch_exception" -> derivedMapTry.failed.get.traceString)
-                .mapValues(_.asInstanceOf[AnyRef])
-              val joinTry: Try[JoinOps] = getJoinConf(joinName)
-              if (joinTry.isFailure) {
-                // joinTry can only be successful if the code can reach here
-                ctx.incrementException(joinTry.failed.get)
-                (Map.empty[String, AnyRef], Map.empty[String, AnyRef])
-              } else {
-                val join = joinTry.get
-                if (join.derivationsContainStar && !join.areDerivationsRenameOnly) {
-                  // if it is not rename only with a star in it, we need to return the base map
-                  (Map.empty[String, AnyRef], baseMap)
-                } else {
-                  (derivedExceptionMap, Map.empty[String, AnyRef])
+            val (derivedMapCleaned, baseMapCleaned) = derivedMapTry match {
+              case Success(derivedMap) =>
+                val cleanedDerivedMap = derivedMap -- tsDsMap.keys
+                (cleanedDerivedMap, baseMap)
+              case Failure(exception) =>
+                ctx.incrementException(exception)
+                val derivedExceptionMap = Map("derivation_fetch_exception" -> exception.traceString)
+                  .mapValues(_.asInstanceOf[AnyRef])
+                getJoinConf(joinName) match {
+                  case Failure(joinException) =>
+                    ctx.incrementException(joinException)
+                    (Map.empty[String, AnyRef], Map.empty[String, AnyRef])
+
+                  case Success(join) =>
+                    if (join.derivationsContainStar) {
+                      (derivedExceptionMap, baseMap)
+                    } else {
+                      (derivedExceptionMap, Map.empty[String, AnyRef])
+                    }
                 }
-              }
             }
             val requestEndTs = System.currentTimeMillis()
             ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
