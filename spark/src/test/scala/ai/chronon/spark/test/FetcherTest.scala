@@ -334,6 +334,11 @@ class FetcherTest extends TestCase {
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test/vendor_credit", namespace = namespace)
     )
+    val creditDerivationGroupBy = creditGroupBy.deepCopy().setDerivations(
+      Seq(
+        Builders.Derivation("credit_sum_2d", "credit_sum_2d_test_rename"),
+        Builders.Derivation("*", "*")
+      ).toJava)
 
     // temporal-entities
     val vendorReviewCols =
@@ -384,7 +389,8 @@ class FetcherTest extends TestCase {
         Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = reviewGroupBy),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
-        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
+        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a"),
+        Builders.JoinPart(groupBy = creditDerivationGroupBy, prefix = "c")
       ),
       metaData = Builders.MetaData(name = "test/payments_join",
                                    namespace = namespace,
@@ -693,6 +699,11 @@ class FetcherTest extends TestCase {
     logger.info("====== Empty request response map ======")
     assertEquals(joinConf.joinParts.size() + joinConf.derivations.toScala.derivationsWithoutStar.size, responseMap.size)
     assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
+  }
+
+  def testGroupByDerivation(): Unit = {
+    val namespace = "groupby_derivation"
+    val joinConf = generateRandomData(namespace)
   }
 }
 
