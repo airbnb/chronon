@@ -190,8 +190,8 @@ class Fetcher(val kvStore: KVStore,
             val baseMap = internalMap ++ externalMap
             // used for derivation based on ts/ds
             val tsDsMap: Map[String, AnyRef] =
-              Map("ts" -> requestTs, "ds" -> requestDs)
-                .mapValues(_.asInstanceOf[AnyRef])
+              Map("ts" -> requestTs.asInstanceOf[AnyRef], "ds" -> requestDs.asInstanceOf[AnyRef])
+
             val derivedMapTry: Try[Map[String, AnyRef]] = Try {
               joinCodec
                 .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
@@ -204,13 +204,12 @@ class Fetcher(val kvStore: KVStore,
                 (cleanedDerivedMap, baseMap)
               case Failure(exception) =>
                 ctx.incrementException(exception)
-                val derivedExceptionMap = Map("derivation_fetch_exception" -> exception.traceString)
-                  .mapValues(_.asInstanceOf[AnyRef])
+                val derivedExceptionMap =
+                  Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
                 getJoinConf(joinName) match {
                   case Failure(joinException) =>
                     ctx.incrementException(joinException)
                     (Map.empty[String, AnyRef], Map.empty[String, AnyRef])
-
                   case Success(join) =>
                     if (join.derivationsContainStar) {
                       (derivedExceptionMap, baseMap)
