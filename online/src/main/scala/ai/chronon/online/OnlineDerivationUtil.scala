@@ -53,15 +53,7 @@ object OnlineDerivationUtil {
     } else if (derivationsScala.areDerivationsRenameOnly) {
       buildRenameOnlyDerivationFunction(derivationsScala)
     } else {
-      val baseExpressions = if (derivationsScala.derivationsContainStar) {
-        baseValueSchema
-          .filterNot { derivationsScala.derivationExpressionSet contains _.name }
-          .map(sf => sf.name -> sf.name)
-      } else { Seq.empty }
-      val expressions = baseExpressions ++ derivationsScala.derivationsWithoutStar.map { d => d.name -> d.expression }
-      val catalystUtil = {
-        new PooledCatalystUtil(expressions, StructType("all", (keySchema ++ baseValueSchema).toArray ++ timeFields))
-      }
+      val catalystUtil = buildCatalystUtil(derivationsScala, keySchema, baseValueSchema)
       buildDerivationFunctionWithSql(catalystUtil)
     }
   }
