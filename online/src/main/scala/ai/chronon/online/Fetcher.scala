@@ -213,6 +213,7 @@ class Fetcher(val kvStore: KVStore,
               } else {
                 val join = joinTry.get
                 if (join.derivationsContainStar && !join.areDerivationsRenameOnly) {
+                  // if it is not rename only with a star in it, we need to return the base map
                   (Map.empty[String, AnyRef], baseMap)
                 } else {
                   (derivedExceptionMap, Map.empty[String, AnyRef])
