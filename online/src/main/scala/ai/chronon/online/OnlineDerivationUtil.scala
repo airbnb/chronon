@@ -83,9 +83,9 @@ object OnlineDerivationUtil {
   }
 
   def buildCatalystUtil(
-    derivationsScala: List[Derivation],
-    keySchema: StructType,
-    baseValueSchema: StructType
+      derivationsScala: List[Derivation],
+      keySchema: StructType,
+      baseValueSchema: StructType
   ): PooledCatalystUtil = {
     val baseExpressions = if (derivationsScala.derivationsContainStar) {
       baseValueSchema
