@@ -2,3 +2,4 @@
 tox
 pytest-cov
 black
+pre-commit
