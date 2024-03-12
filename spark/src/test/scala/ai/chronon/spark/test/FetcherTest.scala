@@ -336,7 +336,7 @@ class FetcherTest extends TestCase {
     )
     val creditDerivationGroupBy = creditGroupBy.deepCopy().setDerivations(
       Seq(
-        Builders.Derivation("credit_sum_2d", "credit_sum_2d_test_rename"),
+        Builders.Derivation("credit_sum_2d_test_rename", "credit_sum_2d"),
         Builders.Derivation("*", "*")
       ).toJava)
 
