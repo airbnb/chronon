@@ -48,7 +48,9 @@ object OnlineDerivationUtil {
       keySchema: StructType,
       baseValueSchema: StructType
   ): DerivationFunc = {
-    if (derivationsScala.areDerivationsRenameOnly) {
+    if (derivationsScala.isEmpty) {
+      return { case (_, values: Map[String, Any]) => values }
+    } else if (derivationsScala.areDerivationsRenameOnly) {
       buildRenameOnlyDerivationFunction(derivationsScala.derivationsWithoutStar)
     } else {
       val baseExpressions = if (derivationsScala.derivationsContainStar) {
