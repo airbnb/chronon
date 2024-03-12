@@ -50,9 +50,9 @@ elif [[ "${ACTION}" == "release" ]]; then
     if [[ $? -eq 0 ]]; then
       set -e
       echo "Building"
-      python -m build
+      python3 -m build
       echo "Releasing to PyPi repository: ${PYPI_REPOSITORY}"
-      python -m twine upload --repository ${PYPI_REPOSITORY} dist/*
+      python3 -m twine upload --repository ${PYPI_REPOSITORY} dist/*
     else
       echo "Found straggling git files. Run git status for details."
       exit 1
