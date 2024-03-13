@@ -653,7 +653,6 @@ object Driver {
             }
             val result = Await.result(resultFuture, 5.seconds)
             val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
-            logger.info(s"[test yuli 1] ${result}")
 
             // treeMap to produce a sorted result
             val tMap = new java.util.TreeMap[String, AnyRef]()
@@ -664,7 +663,6 @@ object Driver {
                     logger.info("No data present for the provided key.")
                   } else {
                     valMap.foreach { case (k, v) => tMap.put(k, v) }
-                    logger.info(s"[test yuli 2] ${tMap}")
                     logger.info(
                       s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
                   }
