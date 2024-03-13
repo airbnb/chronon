@@ -139,7 +139,7 @@ def retry_decorator(retries=3, backoff=20):
 
 
 def custom_json(conf):
-    """ Extract the json stored in customJson for a conf. """
+    """Extract the json stored in customJson for a conf."""
     if conf.get("metaData", {}).get("customJson"):
         return json.loads(conf["metaData"]["customJson"])
     return {}
@@ -294,9 +294,9 @@ def set_runtime_env(args):
                     )
                     # Load additional args used on backfill.
                     if custom_json(conf_json) and effective_mode == "backfill":
-                        environment["conf_env"][
-                            "CHRONON_CONFIG_ADDITIONAL_ARGS"
-                        ] = " ".join(custom_json(conf_json).get("additional_args", []))
+                        environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = (
+                            " ".join(custom_json(conf_json).get("additional_args", []))
+                        )
                     environment["cli_args"]["APP_NAME"] = APP_NAME_TEMPLATE.format(
                         mode=effective_mode,
                         conf_type=conf_type,
@@ -339,7 +339,14 @@ def set_runtime_env(args):
     environment["cli_args"]["CHRONON_DRIVER_JAR"] = args.chronon_jar
     environment["cli_args"]["CHRONON_ONLINE_JAR"] = args.online_jar
     environment["cli_args"]["CHRONON_ONLINE_CLASS"] = args.online_class
-    order = ["conf_env", "team_env", "production_team_env", "default_env", "common_env", "cli_args"]
+    order = [
+        "conf_env",
+        "team_env",
+        "production_team_env",
+        "default_env",
+        "common_env",
+        "cli_args",
+    ]
     print("Setting env variables:")
     for key in os.environ:
         if any([key in environment[set_key] for set_key in order]):
@@ -386,9 +393,15 @@ class Runner:
             )
         else:
             self.conf_type = args.conf_type
-        self.ds = args.end_ds if hasattr(args, 'end_ds') and args.end_ds else args.ds
-        self.start_ds = args.start_ds if hasattr(args, 'start_ds') and args.start_ds else None
-        self.parallelism = int(args.parallelism) if hasattr(args, 'parallelism') and args.parallelism else 1
+        self.ds = args.end_ds if hasattr(args, "end_ds") and args.end_ds else args.ds
+        self.start_ds = (
+            args.start_ds if hasattr(args, "start_ds") and args.start_ds else None
+        )
+        self.parallelism = (
+            int(args.parallelism)
+            if hasattr(args, "parallelism") and args.parallelism
+            else 1
+        )
         self.jar_path = jar_path
         self.args = args.args if args.args else ""
         self.online_class = args.online_class
@@ -407,9 +420,11 @@ class Runner:
     def run(self):
         command_list = []
         if self.mode == "info":
-            command_list.append("python3 {script} --conf {conf} --ds {ds} --repo {repo}".format(
-                script=self.render_info, conf=self.conf, ds=self.ds, repo=self.repo
-            ))
+            command_list.append(
+                "python3 {script} --conf {conf} --ds {ds} --repo {repo}".format(
+                    script=self.render_info, conf=self.conf, ds=self.ds, repo=self.repo
+                )
+            )
         elif self.sub_help or (self.mode not in SPARK_MODES):
             command_list.append(
                 "java -cp {jar} ai.chronon.spark.Driver {subcommand} {args}".format(
@@ -472,17 +487,22 @@ class Runner:
                     jar=self.jar_path,
                     subcommand=ROUTES[self.conf_type][self.mode],
                     args=self._gen_final_args(),
-                    additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
+                    additional_args=os.environ.get(
+                        "CHRONON_CONFIG_ADDITIONAL_ARGS", ""
+                    ),
                 )
                 command_list.append(command)
             else:
                 # offline mode
                 if self.parallelism > 1:
-                    assert self.start_ds is not None and self.ds is not None, \
-                        "To use parallelism, please specify --start-ds and --end-ds to " \
+                    assert self.start_ds is not None and self.ds is not None, (
+                        "To use parallelism, please specify --start-ds and --end-ds to "
                         "break down into multiple backfill jobs"
-                    date_ranges = split_date_range(self.start_ds, self.ds, self.parallelism)
-                    for (start_ds, end_ds) in date_ranges:
+                    )
+                    date_ranges = split_date_range(
+                        self.start_ds, self.ds, self.parallelism
+                    )
+                    for start_ds, end_ds in date_ranges:
                         command = (
                             "bash {script} --class ai.chronon.spark.Driver {jar} {subcommand} {args} {additional_args}"
                         ).format(
@@ -490,7 +510,9 @@ class Runner:
                             jar=self.jar_path,
                             subcommand=ROUTES[self.conf_type][self.mode],
                             args=self._gen_final_args(start_ds=start_ds, end_ds=end_ds),
-                            additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
+                            additional_args=os.environ.get(
+                                "CHRONON_CONFIG_ADDITIONAL_ARGS", ""
+                            ),
                         )
                         command_list.append(command)
                 else:
@@ -501,13 +523,19 @@ class Runner:
                         jar=self.jar_path,
                         subcommand=ROUTES[self.conf_type][self.mode],
                         args=self._gen_final_args(self.start_ds),
-                        additional_args=os.environ.get("CHRONON_CONFIG_ADDITIONAL_ARGS", ""),
+                        additional_args=os.environ.get(
+                            "CHRONON_CONFIG_ADDITIONAL_ARGS", ""
+                        ),
                     )
                     command_list.append(command)
         if len(command_list) > 1:
             # parallel backfill mode
             with multiprocessing.Pool(processes=int(self.parallelism)) as pool:
-                logging.info("Running args list {} with pool size {}".format(command_list, self.parallelism))
+                logging.info(
+                    "Running args list {} with pool size {}".format(
+                        command_list, self.parallelism
+                    )
+                )
                 pool.map(check_call, command_list)
         elif len(command_list) == 1:
             check_call(command_list[0])
@@ -519,7 +547,9 @@ class Runner:
             online_jar=self.online_jar,
             online_class=self.online_class,
         )
-        override_start_partition_arg = " --start-partition-override=" + start_ds if start_ds else ""
+        override_start_partition_arg = (
+            " --start-partition-override=" + start_ds if start_ds else ""
+        )
         final_args = base_args + " " + str(self.args) + override_start_partition_arg
         return final_args
 
@@ -529,7 +559,9 @@ def split_date_range(start_date, end_date, parallelism):
     end_date = datetime.strptime(end_date, "%Y-%m-%d")
     if start_date > end_date:
         raise ValueError("Start date should be earlier than end date")
-    total_days = (end_date - start_date).days + 1  # +1 to include the end_date in the range
+    total_days = (
+        end_date - start_date
+    ).days + 1  # +1 to include the end_date in the range
 
     # Check if parallelism is greater than total_days
     if parallelism > total_days:
@@ -544,7 +576,9 @@ def split_date_range(start_date, end_date, parallelism):
             split_end = end_date
         else:
             split_end = split_start + timedelta(days=split_size - 1)
-        date_ranges.append((split_start.strftime("%Y-%m-%d"), split_end.strftime("%Y-%m-%d")))
+        date_ranges.append(
+            (split_start.strftime("%Y-%m-%d"), split_end.strftime("%Y-%m-%d"))
+        )
     return date_ranges
 
 
@@ -584,8 +618,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--env",
         required=False,
-        default='dev',
-        help="Running environment - default to be dev"
+        default="dev",
+        help="Running environment - default to be dev",
     )
     parser.add_argument("--mode", choices=MODE_ARGS.keys())
     parser.add_argument("--ds", help="the end partition to backfill the data")
@@ -593,16 +627,16 @@ if __name__ == "__main__":
         "--app-name", help="app name. Default to {}".format(APP_NAME_TEMPLATE)
     )
     parser.add_argument(
-        "--start-ds", help="override the original start partition for a range backfill. "
-                           "It only supports staging query, group by backfill and join jobs. "
-                           "It could leave holes in your final output table due to the override date range."
+        "--start-ds",
+        help="override the original start partition for a range backfill. "
+        "It only supports staging query, group by backfill and join jobs. "
+        "It could leave holes in your final output table due to the override date range.",
     )
+    parser.add_argument("--end-ds", help="the end ds for a range backfill")
     parser.add_argument(
-        "--end-ds", help="the end ds for a range backfill"
-    )
-    parser.add_argument(
-        "--parallelism", help="break down the backfill range into this number of tasks in parallel. "
-                              "Please use it along with --start-ds and --end-ds and only in manual mode"
+        "--parallelism",
+        help="break down the backfill range into this number of tasks in parallel. "
+        "Please use it along with --start-ds and --end-ds and only in manual mode",
     )
     parser.add_argument("--repo", help="Path to chronon repo")
     parser.add_argument(
