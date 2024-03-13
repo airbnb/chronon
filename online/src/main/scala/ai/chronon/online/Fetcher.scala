@@ -201,10 +201,10 @@ class Fetcher(val kvStore: KVStore,
                 .toMap
             }
 
-            val derivedMapCleaned = derivedMapTry match {
+            val derivedMap = derivedMapTry match {
               case Success(derivedMap) =>
-                val cleanedDerivedMap = derivedMap -- tsDsMap.keys
-                cleanedDerivedMap
+                val derivedCleanedMap = derivedMap -- tsDsMap.keys
+                derivedCleanedMap
               case Failure(exception) =>
                 ctx.incrementException(exception)
                 val derivedExceptionMap =
@@ -215,7 +215,7 @@ class Fetcher(val kvStore: KVStore,
             ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
             ctx.distribution("overall.latency.millis", requestEndTs - ts)
             // log should always include baseMap
-            ResponseWithContext(internalResponse.request, derivedMapCleaned, baseMap)
+            ResponseWithContext(internalResponse.request, derivedMap, baseMap)
         }
     }
 
