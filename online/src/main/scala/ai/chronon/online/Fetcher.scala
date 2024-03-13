@@ -190,38 +190,32 @@ class Fetcher(val kvStore: KVStore,
             val baseMap = internalMap ++ externalMap
             // used for derivation based on ts/ds
             val tsDsMap: Map[String, AnyRef] =
-              Map("ts" -> requestTs.asInstanceOf[AnyRef], "ds" -> requestDs.asInstanceOf[AnyRef])
+              Map("ts" -> requestTs, "ds" -> requestDs)
+                .mapValues(_.asInstanceOf[AnyRef])
+                .toMap
 
             val derivedMapTry: Try[Map[String, AnyRef]] = Try {
               joinCodec
                 .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
                 .mapValues(_.asInstanceOf[AnyRef])
+                .toMap
             }
 
-            val (derivedMapCleaned, baseMapCleaned) = derivedMapTry match {
+            val derivedMapCleaned = derivedMapTry match {
               case Success(derivedMap) =>
                 val cleanedDerivedMap = derivedMap -- tsDsMap.keys
-                (cleanedDerivedMap, baseMap)
+                cleanedDerivedMap
               case Failure(exception) =>
                 ctx.incrementException(exception)
                 val derivedExceptionMap =
                   Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
-                getJoinConf(joinName) match {
-                  case Failure(joinException) =>
-                    ctx.incrementException(joinException)
-                    (Map.empty[String, AnyRef], Map.empty[String, AnyRef])
-                  case Success(join) =>
-                    if (join.derivationsContainStar) {
-                      (derivedExceptionMap, baseMap)
-                    } else {
-                      (derivedExceptionMap, Map.empty[String, AnyRef])
-                    }
-                }
+                derivedExceptionMap
             }
             val requestEndTs = System.currentTimeMillis()
             ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
             ctx.distribution("overall.latency.millis", requestEndTs - ts)
-            ResponseWithContext(internalResponse.request, derivedMapCleaned, baseMapCleaned)
+            // log should always include baseMap
+            ResponseWithContext(internalResponse.request, derivedMapCleaned, baseMap)
         }
     }
 
@@ -323,7 +317,7 @@ class Fetcher(val kvStore: KVStore,
       // to handle GroupByServingInfo staleness that results in encoding failure
       getJoinCodecs.refresh(resp.request.name)
       joinContext.foreach(_.incrementException(exception))
-      logger.info(s"logging failed due to ${exception.traceString}")
+      logger.error(s"logging failed due to ${exception.traceString}")
     }
     Response(resp.request, Success(resp.derivedValues))
   }
