@@ -16,6 +16,9 @@
 
 package ai.chronon.spark
 
+import java.util
+
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
@@ -31,6 +34,15 @@ import scala.collection.{Seq, mutable}
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import java.util.concurrent.{Callable, ExecutorCompletionService, ExecutorService, Executors}
+
+import scala.collection.Seq
+import scala.collection.mutable
+import scala.collection.parallel.ExecutionContextTaskSupport
+import scala.concurrent.duration.{Duration, DurationInt}
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
+import scala.collection.compat._
+import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
 import scala.util.{Failure, Success}
 
 /*
@@ -199,7 +211,8 @@ class Join(joinConf: api.Join,
 
   override def computeRange(leftDf: DataFrame,
                             leftRange: PartitionRange,
-                            bootstrapInfo: BootstrapInfo): Option[DataFrame] = {
+                            bootstrapInfo: BootstrapInfo,
+                            runSmallMode: Boolean = false): Option[DataFrame] = {
     val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
       leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
     } else {
@@ -216,7 +229,7 @@ class Join(joinConf: api.Join,
     val bootstrapCoveringSets = findBootstrapSetCoverings(bootstrapDf, bootstrapInfo, leftRange)
 
     // compute a single bloomfilter at join level if there is no bootstrap operation
-    val joinLevelBloomMapOpt = if (bootstrapDf.columns.contains(Constants.MatchedHashes)) {
+    lazy val joinLevelBloomMapOpt = if (bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // do not compute if any bootstrap is involved
       None
     } else {
@@ -265,8 +278,16 @@ class Join(joinConf: api.Join,
                     leftRange.isSingleDay,
                     s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
                 }
-                val df =
-                  computeRightTable(unfilledLeftDf, joinPart, leftRange, joinLevelBloomMapOpt).map(df => joinPart -> df)
+
+                val bloomFilterOpt = if (runSmallMode) {
+                  // If left DF is small, hardcode the key filter into the joinPart's GroupBy's where clause.
+                  injectKeyFilter(leftDf, joinPart)
+                  None
+                } else {
+                  joinLevelBloomMapOpt
+                }
+                val df = computeRightTable(unfilledLeftDf, joinPart, leftRange, bloomFilterOpt, runSmallMode).map(df =>
+                  joinPart -> df)
                 Thread.currentThread().setName(s"done-$threadName")
                 df
               }

@@ -127,3 +127,16 @@ v1 = Join(
     env={"backfill": {"PARALLELISM": "10"}, "streaming": {"STREAMING_ENV_VAR": "VALUE"}},
 )
 ```
+
+##### Pre-commit Setup
+
+1. Install pre-commit and other dev libraries: 
+```
+pip install -r requirements/dev.txt
+```
+2. Run the following command under `api/py` to install the git hook scripts: 
+```
+pre-commit install
+```
+
+To support more pre-commit hooks, add them to the `.pre-commit-config.yaml` file.
