@@ -21,7 +21,7 @@ import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps, DerivationOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
@@ -218,9 +218,22 @@ class Fetcher(val kvStore: KVStore,
                     derivedCleanedMap
                   case Failure(exception) =>
                     ctx.incrementException(exception)
+                    val renameOnlyDerivedMapTry = Try {
+                      joinCodec
+                        .renameOnlyDeriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
+                        .mapValues(_.asInstanceOf[AnyRef])
+                        .toMap
+                    }
+                    val renameOnlyDerivedMap = renameOnlyDerivedMapTry match {
+                      case Success(renameOnlyDerivedMap) =>
+                        renameOnlyDerivedMap -- tsDsMap.keys
+                      case Failure(exception) =>
+                        ctx.incrementException(exception)
+                        Map("derivation_rename_exception" -> exception.traceString.asInstanceOf[AnyRef])
+                    }
                     val derivedExceptionMap =
                       Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
-                    derivedExceptionMap
+                    renameOnlyDerivedMap ++ derivedExceptionMap
                 }
                 val requestEndTs = System.currentTimeMillis()
                 ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
@@ -228,6 +241,7 @@ class Fetcher(val kvStore: KVStore,
                 // log should always include baseMap
                 ResponseWithContext(internalResponse.request, derivedMap, baseMap)
               case Failure(exception) =>
+                // more validation logic will be covered in compile.py to avoid this case
                 ctx.incrementException(exception)
                 ResponseWithContext(internalResponse.request,
                                     Map("join_codec_fetch_exception" -> exception.traceString),

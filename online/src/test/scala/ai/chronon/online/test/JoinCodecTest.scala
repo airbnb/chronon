@@ -22,7 +22,7 @@ import org.junit.Test
 
 class JoinCodecTest {
   @Test
-  def testAdjustException(): Unit = {
+  def testReintroduceException(): Unit = {
 
     val preDerived = Map("group_by_2_exception" -> "ex", "group_by_1_exception" -> "ex", "group_by_4_exception" -> "ex")
     val derived = Map(

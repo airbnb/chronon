@@ -1043,6 +1043,8 @@ object Extensions {
     lazy val derivationExpressionSet: Set[String] = derivations.iterator.map(_.expression).toSet
     lazy val derivationExpressionFlippedMap: Map[String, String] =
       derivationsWithoutStar.map(d => d.expression -> d.name).toMap
+    lazy val renameOnlyDerivations: List[Derivation] =
+      derivationsWithoutStar.filter(d => JoinOps.isIdentifier(d.expression))
 
     // Used during offline spark job and this method preserves ordering of derivations
     def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
