@@ -16,6 +16,8 @@
 
 package ai.chronon.online
 
+import org.slf4j.LoggerFactory
+
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap, ThreadPoolExecutor, TimeUnit}
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function
@@ -34,7 +36,7 @@ class TTLCache[I, O](f: I => O,
                      refreshIntervalMillis: Long = 8 * 1000 // 8 seconds
 ) {
   case class Entry(value: O, updatedAtMillis: Long, var markedForUpdate: AtomicBoolean = new AtomicBoolean(false))
-
+  @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
   private val updateWhenNull =
     new function.BiFunction[I, Entry, Entry] {
       override def apply(t: I, u: Entry): Entry = {

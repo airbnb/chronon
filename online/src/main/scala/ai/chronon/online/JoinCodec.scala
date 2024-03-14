@@ -36,35 +36,51 @@ case class JoinCodec(conf: JoinOps,
 
   // We want the same branch logic to construct both schema and derivation
   // Conveniently, this also removes branching logic from hot path of derivation
-  @transient lazy private val valueSchemaAndDeriveFunc: SchemaAndDeriveFunc =
+  @transient lazy private val valueSchemaAndDeriveFunc: SchemaAndDeriveFunc = getValueSchemaAndDeriveFunc()
+
+  @transient lazy private val valueSchemaAndRenameOnlyDeriveFunc: SchemaAndDeriveFunc = getValueSchemaAndDeriveFunc(
+    true)
+
+  private def getValueSchemaAndDeriveFunc(keepRenameOnly: Boolean = false): SchemaAndDeriveFunc = {
     if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
       SchemaAndDeriveFunc(baseValueSchema, { case (_: Map[String, Any], values: Map[String, Any]) => values })
     } else {
       def build(fields: Seq[StructField], deriveFunc: DerivationFunc) =
         SchemaAndDeriveFunc(StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray), deriveFunc)
       // if spark catalyst is not necessary, and all the derivations are just renames, we don't invoke catalyst
-      if (conf.areDerivationsRenameOnly) {
+      if (conf.areDerivationsRenameOnly || keepRenameOnly) {
         val baseExpressions = if (conf.derivationsContainStar) {
-          baseValueSchema.filterNot { conf.derivationExpressionSet contains _.name }
+          baseValueSchema.filterNot {
+            conf.derivationExpressionSet contains _.name
+          }
         } else {
           Seq.empty
         }
-        val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d =>
+        val renameDerivations = if (keepRenameOnly) {
+          conf.derivationsScala.renameOnlyDerivations
+        } else {
+          conf.derivationsWithoutStar
+        }
+        val expressions = baseExpressions ++ renameDerivations.map { d =>
           StructField(d.name, baseValueSchema.typeOf(d.expression).get)
         }
         build(
           expressions,
           {
             case (_: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.adjustExceptions(conf.derivationsScala.applyRenameOnlyDerivation(values), values)
+              JoinCodec.reintroduceExceptions(conf.derivationsScala.applyRenameOnlyDerivation(values), values)
           }
         )
       } else {
         val baseExpressions = if (conf.derivationsContainStar) {
           baseValueSchema
-            .filterNot { conf.derivationExpressionSet contains _.name }
+            .filterNot {
+              conf.derivationExpressionSet contains _.name
+            }
             .map(sf => sf.name -> sf.name)
-        } else { Seq.empty }
+        } else {
+          Seq.empty
+        }
         val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
         val catalystUtil = {
           new PooledCatalystUtil(expressions,
@@ -74,14 +90,18 @@ case class JoinCodec(conf: JoinOps,
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
           {
             case (keys: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.adjustExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
+              JoinCodec.reintroduceExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
           }
         )
       }
     }
+  }
 
   @transient lazy val deriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
     valueSchemaAndDeriveFunc.derivationFunc
+
+  @transient lazy val renameOnlyDeriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
+    valueSchemaAndRenameOnlyDeriveFunc.derivationFunc
 
   @transient lazy val valueSchema: StructType = {
     val derivedSchema = valueSchemaAndDeriveFunc.valueSchema
@@ -128,7 +148,9 @@ object JoinCodec {
   )
 
   // remove value fields of groupBys that have failed with exceptions
-  private[online] def adjustExceptions(derived: Map[String, Any], preDerivation: Map[String, Any]): Map[String, Any] = {
+  // and reintroduce the exceptions back
+  private[online] def reintroduceExceptions(derived: Map[String, Any],
+                                            preDerivation: Map[String, Any]): Map[String, Any] = {
     val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
     if (exceptions.isEmpty) {
       return derived
