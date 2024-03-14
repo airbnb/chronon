@@ -316,7 +316,7 @@ class FetcherBase(kvStore: KVStore,
                     throw ex
                 }
               if (groupByServingInfo.groupBy.hasDerivations) {
-                val derivedMapTry: Try[Map[String, AnyRef]] = Try{
+                val derivedMapTry: Try[Map[String, AnyRef]] = Try {
                   val deriveFunc: DerivationFunc = getGroupByServingInfo(request.name).get.deriveFunc
                   applyDeriveFunc(deriveFunc, request, groupByResponse)
                 }
