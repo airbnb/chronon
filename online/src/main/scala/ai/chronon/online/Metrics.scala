@@ -185,7 +185,7 @@ object Metrics {
         val method = stackRoot.getMethodName
         s"[$method@$file:$line]${exception.getClass.toString}"
       }
-      logger.error(s"Exception: $exceptionSignature")
+      logger.error(s"Exception Message: ${exception.getMessage}")
       stats.increment(prefix(Name.Exception), s"$tags,${Metrics.Name.Exception}:${exceptionSignature}")
     }
 

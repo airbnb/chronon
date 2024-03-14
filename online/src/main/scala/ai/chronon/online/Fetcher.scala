@@ -333,8 +333,8 @@ class Fetcher(val kvStore: KVStore,
     loggingTry.failed.map { exception =>
       // to handle GroupByServingInfo staleness that results in encoding failure
       getJoinCodecs.refresh(resp.request.name)
-      joinContext.foreach(_.incrementException(exception))
-      logger.error(s"logging failed due to ${exception.traceString}")
+      joinContext.foreach(
+        _.incrementException(new Exception(s"Logging failed due to: ${exception.traceString}", exception)))
     }
     Response(resp.request, Success(resp.derivedValues))
   }
