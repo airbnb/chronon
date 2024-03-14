@@ -4,6 +4,8 @@ Chronon is a platform that abstracts away the complexity of data computation and
 
 It allows you to utilize all of the data within your organization, from batch tables, event streams or services to power your AI/ML projects, without needing to worry about all the complex orchestration that this would usually entail.
 
+More information about Chronon can be found at [chronon.ai](https://chronon.ai/).
+
 ![High Level](https://chronon.ai/_images/intro.png)
 
 
