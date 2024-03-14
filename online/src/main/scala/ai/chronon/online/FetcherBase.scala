@@ -323,10 +323,11 @@ class FetcherBase(kvStore: KVStore,
                 val derivedMap = derivedMapTry match {
                   case Success(derivedMap) =>
                     derivedMap
+                  // If the derivation failed we want to return the exception map only
                   case Failure(exception) => {
                     val derivedExceptionMap =
                       Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
-                    derivedExceptionMap ++ groupByResponse
+                    derivedExceptionMap
                   }
                 }
                 derivedMap
