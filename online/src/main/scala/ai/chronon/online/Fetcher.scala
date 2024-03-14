@@ -144,15 +144,17 @@ class Fetcher(val kvStore: KVStore,
   // key and value schemas
   lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]](
     { joinName: String =>
-      getJoinConf(joinName).map(_.join).map(buildJoinCodec)
+      getJoinConf(joinName)
+        .map(_.join)
+        .map(buildJoinCodec)
         .recoverWith {
-        case th: Throwable =>
-          Failure(
-            new RuntimeException(
-              s"Couldn't fetch joinName = ${joinName} or build join codec due to ${th.traceString}",
-              th
-            ))
-      }
+          case th: Throwable =>
+            Failure(
+              new RuntimeException(
+                s"Couldn't fetch joinName = ${joinName} or build join codec due to ${th.traceString}",
+                th
+              ))
+        }
     },
     { join: String => Metrics.Context(environment = "join.codec.fetch", join = join) })
 
@@ -227,7 +229,9 @@ class Fetcher(val kvStore: KVStore,
                 ResponseWithContext(internalResponse.request, derivedMap, baseMap)
               case Failure(exception) =>
                 ctx.incrementException(exception)
-                ResponseWithContext(internalResponse.request, Map("join_codec_fetch_exception" -> exception.traceString), Map.empty)
+                ResponseWithContext(internalResponse.request,
+                                    Map("join_codec_fetch_exception" -> exception.traceString),
+                                    Map.empty)
             }
         }
     }
