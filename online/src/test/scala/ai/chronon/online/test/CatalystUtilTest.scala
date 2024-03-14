@@ -109,6 +109,15 @@ trait CatalystUtilTestSparkSQLStructs {
     "bytess" -> makeArrayList("hello".getBytes(), "world".getBytes())
   )
 
+  val ArrayContainersRow: Map[String, Any] = Map(
+    "bools" -> Array(false, true, false),
+    "int32s" -> Array(1, 2, 3),
+    "int64s" -> Array(4L, 5L, 6L),
+    "float64s" -> Array(7.7, 8.7, 9.9),
+    "strings" -> Array("hello", "world"),
+    "bytess" -> Array("hello".getBytes(), "world".getBytes())
+  )
+
   val MapContainersStruct: StructType = StructType(
     "MapContainersStruct",
     Array(
@@ -448,6 +457,34 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     )
     val cu = new CatalystUtil(selects, ListContainersStruct)
     val res = cu.performSql(ListContainersRow)
+    assertEquals(res.get.size, 6)
+    assertEquals(res.get("bools"), makeArrayList(false, true, false))
+    assertEquals(res.get("int32s"), makeArrayList(1, 2, 3))
+    assertEquals(res.get("int64s"), makeArrayList(4L, 5L, 6L))
+    assertEquals(res.get("float64s"), makeArrayList(7.7, 8.7, 9.9))
+    assertEquals(res.get("strings"), makeArrayList("hello", "world"))
+    val res_bytess = res.get("bytess").asInstanceOf[util.ArrayList[Any]]
+    assertEquals(res_bytess.size, 2)
+    assertArrayEquals(res_bytess.get(0).asInstanceOf[Array[Byte]], "hello".getBytes())
+    assertArrayEquals(res_bytess.get(1).asInstanceOf[Array[Byte]], "world".getBytes())
+  }
+
+  // Test that we're able to run CatalystUtil eval when we're working with
+  // Array inputs passed to the performSql method. This takes place when
+  // we're dealing with Derivations in GroupBys that contain aggregations such
+  // as ApproxPercentiles.
+  @Test
+  def testSelectStarWithListArrayContainersShouldReturnAsIs(): Unit = {
+    val selects = Seq(
+      "bools" -> "bools",
+      "int32s" -> "int32s",
+      "int64s" -> "int64s",
+      "float64s" -> "float64s",
+      "strings" -> "strings",
+      "bytess" -> "bytess"
+    )
+    val cu = new CatalystUtil(selects, ListContainersStruct)
+    val res = cu.performSql(ArrayContainersRow)
     assertEquals(res.get.size, 6)
     assertEquals(res.get("bools"), makeArrayList(false, true, false))
     assertEquals(res.get("int32s"), makeArrayList(1, 2, 3))
