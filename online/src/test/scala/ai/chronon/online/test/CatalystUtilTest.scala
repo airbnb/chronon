@@ -194,8 +194,8 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "a" -> "4 + 5 * 32 - 2",
       "b" -> "(int32_x - 1) / 6 * 3 + 7 % 3",
       "c" -> "(int64_x / int32_x) + 7 * 3",
-      "d" -> "2 / 2 + 1",
-      "e" -> "1 / 2 + 1"
+      "d" -> "2 + 'a'",
+      "e" -> "1 / 0 + 1"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
     val res = cu.performSql(CommonScalarsRow)
