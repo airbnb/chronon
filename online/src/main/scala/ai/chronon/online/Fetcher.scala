@@ -145,6 +145,14 @@ class Fetcher(val kvStore: KVStore,
   lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]](
     { joinName: String =>
       getJoinConf(joinName).map(_.join).map(buildJoinCodec)
+        .recoverWith {
+        case th: Throwable =>
+          Failure(
+            new RuntimeException(
+              s"Couldn't fetch joinName = ${joinName} or build join codec due to ${th.traceString}",
+              th
+            ))
+      }
     },
     { join: String => Metrics.Context(environment = "join.codec.fetch", join = join) })
 
@@ -183,39 +191,44 @@ class Fetcher(val kvStore: KVStore,
             val derivationStartTs = System.currentTimeMillis()
             val joinName = internalResponse.request.name
             val ctx = Metrics.Context(Environment.JoinFetching, join = joinName)
-            val joinCodec = getJoinCodecs(internalResponse.request.name).get
-            ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
-            val requestTs = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
-            val requestDs = TsUtils.toStr(requestTs).substring(0, 10)
-            val baseMap = internalMap ++ externalMap
-            // used for derivation based on ts/ds
-            val tsDsMap: Map[String, AnyRef] =
-              Map("ts" -> requestTs, "ds" -> requestDs)
-                .mapValues(_.asInstanceOf[AnyRef])
-                .toMap
+            val joinCodecTry = getJoinCodecs(internalResponse.request.name)
+            joinCodecTry match {
+              case Success(joinCodec) =>
+                ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
+                val requestTs = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
+                val requestDs = TsUtils.toStr(requestTs).substring(0, 10)
+                val baseMap = internalMap ++ externalMap
+                // used for derivation based on ts/ds
+                val tsDsMap: Map[String, AnyRef] =
+                  Map(Constants.TimeColumn -> requestTs, "ds" -> requestDs)
+                    .mapValues(_.asInstanceOf[AnyRef])
+                    .toMap
+                val derivedMapTry: Try[Map[String, AnyRef]] = Try {
+                  joinCodec
+                    .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
+                    .mapValues(_.asInstanceOf[AnyRef])
+                    .toMap
+                }
 
-            val derivedMapTry: Try[Map[String, AnyRef]] = Try {
-              joinCodec
-                .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
-                .mapValues(_.asInstanceOf[AnyRef])
-                .toMap
-            }
-
-            val derivedMap = derivedMapTry match {
-              case Success(derivedMap) =>
-                val derivedCleanedMap = derivedMap -- tsDsMap.keys
-                derivedCleanedMap
+                val derivedMap = derivedMapTry match {
+                  case Success(derivedMap) =>
+                    val derivedCleanedMap = derivedMap -- tsDsMap.keys
+                    derivedCleanedMap
+                  case Failure(exception) =>
+                    ctx.incrementException(exception)
+                    val derivedExceptionMap =
+                      Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
+                    derivedExceptionMap
+                }
+                val requestEndTs = System.currentTimeMillis()
+                ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
+                ctx.distribution("overall.latency.millis", requestEndTs - ts)
+                // log should always include baseMap
+                ResponseWithContext(internalResponse.request, derivedMap, baseMap)
               case Failure(exception) =>
                 ctx.incrementException(exception)
-                val derivedExceptionMap =
-                  Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
-                derivedExceptionMap
+                ResponseWithContext(internalResponse.request, Map("join_codec_fetch_exception" -> exception.traceString), Map.empty)
             }
-            val requestEndTs = System.currentTimeMillis()
-            ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
-            ctx.distribution("overall.latency.millis", requestEndTs - ts)
-            // log should always include baseMap
-            ResponseWithContext(internalResponse.request, derivedMap, baseMap)
         }
     }
 
