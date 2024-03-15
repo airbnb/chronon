@@ -32,7 +32,7 @@ The Flink job contains five main operators
 
 1. Source - Reads events of type `T` from a source, generally a Kafka topic. The generic type `T` could be a POJO, Scala
    case class, [Thrift](https://thrift.apache.org/), [Proto](https://protobuf.dev/), etc.
-   - Note: currently, the Source and Job do not adhere to the mutation interface of chronon.
+    - Note: currently, the Source and Job do not adhere to the mutation interface of chronon.
 2. Spark expression evaluation - Evaluates the Spark SQL expression in the GroupBy and projects and filters the input
    data. This operator runs Spark inside the Flink app using CatalystUtil.
 3. Window/tiling - This is the main tiling operator. It uses a window to aggregate incoming events and keep track of the
@@ -55,34 +55,32 @@ A GroupBy might look like this:
 
 ```python
 ice_cream_group_by = GroupBy(
-   sources=Source(
-      events=ttypes.EventSource(
-         query=Query(
-            selects=select(
-               customer_id="customer_id",
-               flavor="ice_cream_flavor",
-            ),
-            time_column="created",
-…
-)
-)
-),
-keys = ["customer_id"],
-aggregations = [
-   Aggregation(
-      input_column="customer_id",
-      operation=Operation.COUNT,
-      windows=[Window(length=6, timeUnit=TimeUnit.HOURS)],
-   ),
-   Aggregation(
-      input_column="flavor",
-      operation=Operation.LAST,
-      windows=[Window(length=6, timeUnit=TimeUnit.HOURS)],
-   ),
-],
-accuracy = Accuracy.TEMPORAL,
-online = True,
-…
+    sources=Source(
+        events=ttypes.EventSource(
+            query=Query(
+                selects=select(
+                    customer_id="customer_id",
+                    flavor="ice_cream_flavor",
+                ),
+                time_column="created",
+            )
+        )
+    ),
+    keys=["customer_id"],
+    aggregations=[
+        Aggregation(
+            input_column="customer_id",
+            operation=Operation.COUNT,
+            windows=[Window(length=6, timeUnit=TimeUnit.HOURS)],
+        ),
+        Aggregation(
+            input_column="flavor",
+            operation=Operation.LAST,
+            windows=[Window(length=6, timeUnit=TimeUnit.HOURS)],
+        ),
+    ],
+    accuracy=Accuracy.TEMPORAL,
+    online=True
 )
 ```
 
@@ -93,17 +91,10 @@ we have this Proto:
 
 ```Scala
 IceCreamEventProto(
-   customer_id: _root_.scala.Predef.String = ""
-,
-created: _root_.scala.Long
-= 0L
-,
-ice_cream_flavor: _root_.scala.Predef.String
-= ""
-,
-ice_cream_cone_size: _root_.scala.Predef.String
-= ""
-,
+  customer_id: String,
+  created: Long,
+  ice_cream_flavor: String,
+  ice_cream_cone_size: String
 )
 ```
 
@@ -115,16 +106,16 @@ Map[String, Any].
 ```scala
 // Input
 IceCreamEventProto(
-   customer_id = "Alice",
-   created = 1000L,
-   ice_cream_flavor = "chocolate",
-   ice_cream_cone_size = "large" // Not used in the GroupBy definition
+  customer_id = "Alice",
+  created = 1000L,
+  ice_cream_flavor = "chocolate",
+  ice_cream_cone_size = "large" // Not used in the GroupBy definition
 )
 // Output
 Map(
-   "customer_id" -> "Alice",
-   "created" -> 1000L,
-   "flavor" -> "chocolate"
+  "customer_id" -> "Alice",
+  "created" -> 1000L,
+  "flavor" -> "chocolate"
 )
 ```
 
