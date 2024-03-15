@@ -34,6 +34,7 @@ import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import scala.collection.JavaConverters._
 import scala.concurrent.duration.{DurationInt}
+import scala.util.{Failure, Success}
 
 class GroupBy(inputStream: DataFrame,
               session: SparkSession,
@@ -82,8 +83,13 @@ class GroupBy(inputStream: DataFrame,
   def buildDataStream(local: Boolean = false): DataStreamWriter[KVStore.PutRequest] = {
     val streamingTable = groupByConf.metaData.cleanName + "_stream"
     val fetcher = onlineImpl.buildFetcher(local)
-    val groupByServingInfo = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName).get
-
+    val groupByServingInfoOpt = fetcher.getGroupByServingInfo(groupByConf.getMetaData.getName)
+    if (groupByServingInfoOpt.isFailure) {
+      logger.error(s"Failed to retrieve groupByServingInfo: ${groupByServingInfoOpt.failed.get.getMessage}")
+      session.stop()
+      sys.exit(1)
+    }
+    val groupByServingInfo = groupByServingInfoOpt.get
     val streamDecoder = onlineImpl.streamDecoder(groupByServingInfo)
     assert(groupByConf.streamingSource.isDefined,
            "No streaming source defined in GroupBy. Please set a topic/mutationTopic.")
