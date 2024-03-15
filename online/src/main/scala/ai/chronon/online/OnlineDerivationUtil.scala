@@ -51,7 +51,7 @@ object OnlineDerivationUtil {
     if (derivationsScala.isEmpty) {
       return { case (_, values: Map[String, Any]) => values }
     } else if (derivationsScala.areDerivationsRenameOnly) {
-      buildRenameOnlyDerivationFunction(derivationsScala.derivationsWithoutStar)
+      buildRenameOnlyDerivationFunction(derivationsScala)
     } else {
       val baseExpressions = if (derivationsScala.derivationsContainStar) {
         baseValueSchema
@@ -74,8 +74,9 @@ object OnlineDerivationUtil {
     val requestTs = request.atMillis.getOrElse(System.currentTimeMillis())
     val requestDs = TsUtils.toStr(requestTs).substring(0, 10)
     // used for derivation based on ts/ds
-    val tsDsMap: Map[String, AnyRef] =
+    val tsDsMap: Map[String, AnyRef] = {
       Map("ts" -> (requestTs).asInstanceOf[AnyRef], "ds" -> (requestDs).asInstanceOf[AnyRef])
+    }
     val derivedMap: Map[String, AnyRef] = Try(
       deriveFunc(request.keys, baseMap ++ tsDsMap)
         .mapValues(_.asInstanceOf[AnyRef])
