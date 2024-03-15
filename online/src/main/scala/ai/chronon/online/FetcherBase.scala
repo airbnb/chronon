@@ -33,6 +33,8 @@ import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
+import ai.chronon.online.OnlineDerivationUtil.{buildDerivationFunction, buildRenameOnlyDerivationFunction}
+
 // Does internal facing fetching
 //   1. takes join request or groupBy requests
 //   2. does the fan out and fan in from kv store in a parallel fashion
@@ -337,15 +339,6 @@ class FetcherBase(kvStore: KVStore,
       }
   }
 
-  private[online] def adjustExceptions(derived: Map[String, Any], preDerivation: Map[String, Any]): Map[String, Any] = {
-    val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
-    if (exceptions.isEmpty) {
-      return derived
-    }
-    val exceptionParts: Array[String] = exceptions.keys.map(_.dropRight("_exception".length)).toArray
-    derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
-  }
-
   private def constructGroupByResponseWithDerivation(
       groupByServingInfo: GroupByServingInfo,
       request: Request,
@@ -365,10 +358,7 @@ class FetcherBase(kvStore: KVStore,
     val conf = groupByServingInfo.groupBy
     def deriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] = {
       if (conf.areDerivationsRenameOnly) {
-        {
-          case (_: Map[String, Any], values: Map[String, Any]) =>
-            adjustExceptions(conf.derivationsScala.applyRenameOnlyDerivation(values), values)
-        }
+        buildRenameOnlyDerivationFunction(conf.derivationsWithoutStar)
       } else {
         val baseExpressions = if (conf.derivationsContainStar) {
           baseValueSchema
@@ -380,10 +370,7 @@ class FetcherBase(kvStore: KVStore,
           new PooledCatalystUtil(expressions,
             StructType("all", (keySchema ++ baseValueSchema).toArray ++ timeFields))
         }
-        {
-          case (keys: Map[String, Any], values: Map[String, Any]) =>
-            adjustExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
-        }
+        buildDerivationFunction(catalystUtil)
       }
     }
 

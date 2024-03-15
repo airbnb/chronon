@@ -16,13 +16,13 @@
 
 package ai.chronon.online
 
-import ai.chronon.api.Extensions.{JoinOps, DerivationOps, MetadataOps}
-import ai.chronon.api.{DataType, HashUtils, LongType, StringType, StructField, StructType, Constants}
+import ai.chronon.api.Extensions.{DerivationOps, JoinOps, MetadataOps}
+import ai.chronon.api.{DataType, HashUtils, StructField, StructType}
 import com.google.gson.Gson
-
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.JMapOps
-import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
+
+import ai.chronon.online.OnlineDerivationUtil.{DerivationFunc, buildDerivationFunction, buildRenameOnlyDerivationFunction, timeFields}
 
 case class JoinCodec(conf: JoinOps,
                      keySchema: StructType,
@@ -30,7 +30,6 @@ case class JoinCodec(conf: JoinOps,
                      keyCodec: AvroCodec,
                      baseValueCodec: AvroCodec)
     extends Serializable {
-  type DerivationFunc = (Map[String, Any], Map[String, Any]) => Map[String, Any]
   case class SchemaAndDeriveFunc(valueSchema: StructType,
                                  derivationFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any])
 
@@ -66,10 +65,7 @@ case class JoinCodec(conf: JoinOps,
         }
         build(
           expressions,
-          {
-            case (_: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.reintroduceExceptions(conf.derivationsScala.applyRenameOnlyDerivation(values), values)
-          }
+          buildRenameOnlyDerivationFunction(conf.derivationsWithoutStar)
         )
       } else {
         val baseExpressions = if (conf.derivationsContainStar) {
@@ -84,14 +80,11 @@ case class JoinCodec(conf: JoinOps,
         val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
         val catalystUtil = {
           new PooledCatalystUtil(expressions,
-                                 StructType("all", (keySchema ++ baseValueSchema).toArray ++ JoinCodec.timeFields))
+                                 StructType("all", (keySchema ++ baseValueSchema).toArray ++ timeFields))
         }
         build(
           catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
-          {
-            case (keys: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.reintroduceExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
-          }
+          buildDerivationFunction(catalystUtil)
         )
       }
     }
@@ -141,11 +134,6 @@ case class JoinCodec(conf: JoinOps,
 }
 
 object JoinCodec {
-
-  val timeFields: Array[StructField] = Array(
-    StructField("ts", LongType),
-    StructField("ds", StringType)
-  )
 
   // remove value fields of groupBys that have failed with exceptions
   // and reintroduce the exceptions back
