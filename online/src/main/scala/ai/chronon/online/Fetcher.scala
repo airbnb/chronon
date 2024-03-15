@@ -19,7 +19,7 @@ package ai.chronon.online
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, GroupByOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
@@ -35,7 +35,7 @@ import scala.collection.immutable.Map
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
-import ai.chronon.online.OnlineDerivationUtil.applyDeriveFunc
+import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildDerivedFields}
 
 object Fetcher {
   case class Request(name: String,
@@ -100,10 +100,17 @@ class Fetcher(val kvStore: KVStore,
                 val keyField = StructField(name, dType)
                 keyFields.add(keyField)
             }
-          val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
+          val groupBySchemaBeforeDerivation: StructType = if (servingInfo.groupBy.aggregations == null) {
             servingInfo.selectedChrononSchema
           } else {
             servingInfo.outputChrononSchema
+          }
+          val baseValueSchema: StructType = if (servingInfo.groupBy.derivations == null) {
+            groupBySchemaBeforeDerivation
+          } else {
+            val fields =
+              buildDerivedFields(servingInfo.groupBy.derivationsScala, keySchema, groupBySchemaBeforeDerivation)
+            StructType(s"groupby_derived_${servingInfo.groupBy.metaData.cleanName}", fields.toArray)
           }
           baseValueSchema.fields.foreach { sf =>
             valueFields.append(joinPart.constructJoinPartSchema(sf))
