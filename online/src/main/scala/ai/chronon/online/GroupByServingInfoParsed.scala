@@ -23,8 +23,9 @@ import ai.chronon.api.Extensions.{GroupByOps, MetadataOps}
 import ai.chronon.api._
 import org.apache.avro.Schema
 import org.apache.spark.sql.SparkSession
-
 import scala.collection.JavaConverters.asScalaBufferConverter
+
+import ai.chronon.online.OnlineDerivationUtil.{DerivationFunc, buildDerivationFunction}
 
 // mixin class - with schema
 class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, partitionSpec: PartitionSpec)
@@ -49,6 +50,16 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
 
   lazy val irChrononSchema: StructType =
     StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
+
+  @transient lazy val deriveFunc: DerivationFunc = {
+    val keySchema = keyCodec.chrononSchema.asInstanceOf[StructType]
+    val baseValueSchema = if (groupBy.aggregations == null) {
+      selectedChrononSchema
+    } else {
+      outputChrononSchema
+    }
+    buildDerivationFunction(groupBy.derivationsScala, keySchema, baseValueSchema)
+  }
 
   def keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)
   @transient lazy val keyChrononSchema: StructType =

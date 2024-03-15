@@ -33,7 +33,7 @@ import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
-import ai.chronon.online.OnlineDerivationUtil.{buildDerivationFunction, buildRenameOnlyDerivationFunction}
+import ai.chronon.online.OnlineDerivationUtil.{DerivationFunc, applyDeriveFunc, buildDerivationFunction, buildRenameOnlyDerivationFunction, timeFields}
 
 // Does internal facing fetching
 //   1. takes join request or groupBy requests
@@ -311,25 +311,10 @@ class FetcherBase(kvStore: KVStore,
               logger.info(s"[test] groupByServingInfo ${groupByServingInfo}")
               logger.info(s"[test] groupByServingInfo ${groupByServingInfo.groupBy.derivationsScala}")
               if (groupByServingInfo.groupBy.hasDerivations) {
-                logger.info("[test] groupBy has derivations")
-                val keySchema = groupByServingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
-                val baseValueSchema = if (groupByServingInfo.groupBy.aggregations == null) {
-                  groupByServingInfo.selectedChrononSchema
-                } else {
-                  groupByServingInfo.outputChrononSchema
-                }
-                logger.info(s"[test] baseValueSchema ${baseValueSchema}")
-                logger.info(s"[test] keySchema ${keySchema}")
                 logger.info(s"[test] baseMap ${groupByResponse}")
-                constructGroupByResponseWithDerivation(
-                  groupByServingInfo,
-                  request,
-                  keySchema,
-                  baseValueSchema,
-                  groupByResponse
-                )
+                val deriveFunc: DerivationFunc = getGroupByServingInfo(request.name).get.deriveFunc
+                applyDeriveFunc(deriveFunc, request, groupByResponse)
               } else {
-                logger.info("[test] groupBy has no derivations")
                 groupByResponse
               }
             }
@@ -337,54 +322,6 @@ class FetcherBase(kvStore: KVStore,
         }.toList
         responses
       }
-  }
-
-  private def constructGroupByResponseWithDerivation(
-      groupByServingInfo: GroupByServingInfo,
-      request: Request,
-      keySchema: StructType,
-      baseValueSchema: StructType,
-      baseMap: Map[String, AnyRef]
-  ): Map[String, AnyRef] = {
-    val requestTs = request.atMillis.getOrElse(System.currentTimeMillis())
-    val requestDs = TsUtils.toStr(requestTs).substring(0, 10)
-    // used for derivation based on ts/ds
-    val tsDsMap: Map[String, AnyRef] =
-      Map("ts" -> (requestTs).asInstanceOf[AnyRef], "ds" -> (requestDs).asInstanceOf[AnyRef])
-    val timeFields: Array[StructField] = Array(
-      StructField("ts", LongType),
-      StructField("ds", StringType)
-    )
-    val conf = groupByServingInfo.groupBy
-    def deriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] = {
-      if (conf.areDerivationsRenameOnly) {
-        buildRenameOnlyDerivationFunction(conf.derivationsWithoutStar)
-      } else {
-        val baseExpressions = if (conf.derivationsContainStar) {
-          baseValueSchema
-            .filterNot { conf.derivationExpressionSet contains _.name }
-            .map(sf => sf.name -> sf.name)
-        } else { Seq.empty }
-        val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
-        val catalystUtil = {
-          new PooledCatalystUtil(expressions,
-            StructType("all", (keySchema ++ baseValueSchema).toArray ++ timeFields))
-        }
-        buildDerivationFunction(catalystUtil)
-      }
-    }
-
-    val derivedMap: Map[String, AnyRef] = Try(
-        deriveFunc(request.keys, baseMap ++ tsDsMap)
-        .mapValues(_.asInstanceOf[AnyRef])
-        .toMap) match {
-      case Success(derivedMap) => derivedMap
-      case Failure(exception) => {
-        throw exception
-      }
-    }
-    val derivedMapCleaned = derivedMap -- tsDsMap.keys
-    derivedMapCleaned
   }
 
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {

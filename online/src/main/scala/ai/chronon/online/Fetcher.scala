@@ -16,7 +16,6 @@
 
 package ai.chronon.online
 
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
@@ -28,13 +27,15 @@ import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
-
 import java.util.function.Consumer
+
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
+
+import ai.chronon.online.OnlineDerivationUtil.applyDeriveFunc
 
 object Fetcher {
   case class Request(name: String,
@@ -197,55 +198,39 @@ class Fetcher(val kvStore: KVStore,
             joinCodecTry match {
               case Success(joinCodec) =>
                 ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
-                val requestTs = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
-                val requestDs = TsUtils.toStr(requestTs).substring(0, 10)
                 val baseMap = internalMap ++ externalMap
-                // used for derivation based on ts/ds
-                val tsDsMap: Map[String, AnyRef] =
-                  Map(Constants.TimeColumn -> requestTs, "ds" -> requestDs)
-                    .mapValues(_.asInstanceOf[AnyRef])
-                    .toMap
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
-                  joinCodec
-                    .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
-                    .mapValues(_.asInstanceOf[AnyRef])
-                    .toMap
+                  applyDeriveFunc(joinCodec.deriveFunc, internalResponse.request, baseMap)
                 }
-
-                val derivedMap = derivedMapTry match {
-                  case Success(derivedMap) =>
-                    val derivedCleanedMap = derivedMap -- tsDsMap.keys
-                    derivedCleanedMap
+                val derivedMap: Map[String, AnyRef] = derivedMapTry match {
+                  case Success(derivedMap) => derivedMap
                   case Failure(exception) =>
                     ctx.incrementException(exception)
-                    val renameOnlyDerivedMapTry = Try {
-                      joinCodec
-                        .renameOnlyDeriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
+                    val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
+                      joinCodec.renameOnlyDeriveFunc(internalResponse.request.keys, baseMap)
                         .mapValues(_.asInstanceOf[AnyRef])
-                        .toMap
                     }
-                    val renameOnlyDerivedMap = renameOnlyDerivedMapTry match {
+                    val renameOnlyDerivedMap: Map[String, AnyRef] = renameOnlyDerivedMapTry match {
                       case Success(renameOnlyDerivedMap) =>
-                        renameOnlyDerivedMap -- tsDsMap.keys
+                        renameOnlyDerivedMap
                       case Failure(exception) =>
                         ctx.incrementException(exception)
                         Map("derivation_rename_exception" -> exception.traceString.asInstanceOf[AnyRef])
                     }
-                    val derivedExceptionMap =
+                    val derivedExceptionMap: Map[String, AnyRef] =
                       Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
                     renameOnlyDerivedMap ++ derivedExceptionMap
                 }
                 val requestEndTs = System.currentTimeMillis()
                 ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
                 ctx.distribution("overall.latency.millis", requestEndTs - ts)
-                // log should always include baseMap
                 ResponseWithContext(internalResponse.request, derivedMap, baseMap)
               case Failure(exception) =>
                 // more validation logic will be covered in compile.py to avoid this case
                 ctx.incrementException(exception)
                 ResponseWithContext(internalResponse.request,
-                                    Map("join_codec_fetch_exception" -> exception.traceString),
-                                    Map.empty)
+                  Map("join_codec_fetch_exception" -> exception.traceString),
+                  Map.empty)
             }
         }
     }
