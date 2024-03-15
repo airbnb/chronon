@@ -22,7 +22,13 @@ import com.google.gson.Gson
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.JMapOps
 
-import ai.chronon.online.OnlineDerivationUtil.{DerivationFunc, buildDerivationFunction, buildDerivedFields, buildRenameOnlyDerivationFunction, timeFields}
+import ai.chronon.online.OnlineDerivationUtil.{
+  DerivationFunc,
+  buildDerivationFunction,
+  buildDerivedFields,
+  buildRenameOnlyDerivationFunction,
+  timeFields
+}
 
 case class JoinCodec(conf: JoinOps,
                      keySchema: StructType,
@@ -53,7 +59,8 @@ case class JoinCodec(conf: JoinOps,
     }
   }
 
-  @transient lazy val deriveFunc: DerivationFunc = buildDerivationFunction(conf.derivationsScala, keySchema, baseValueSchema)
+  @transient lazy val deriveFunc: DerivationFunc =
+    buildDerivationFunction(conf.derivationsScala, keySchema, baseValueSchema)
 
   @transient lazy val renameOnlyDeriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
     buildRenameOnlyDerivationFunction(conf.derivationsScala)

@@ -207,7 +207,8 @@ class Fetcher(val kvStore: KVStore,
                   case Failure(exception) =>
                     ctx.incrementException(exception)
                     val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
-                      joinCodec.renameOnlyDeriveFunc(internalResponse.request.keys, baseMap)
+                      joinCodec
+                        .renameOnlyDeriveFunc(internalResponse.request.keys, baseMap)
                         .mapValues(_.asInstanceOf[AnyRef])
                     }
                     val renameOnlyDerivedMap: Map[String, AnyRef] = renameOnlyDerivedMapTry match {
@@ -229,8 +230,8 @@ class Fetcher(val kvStore: KVStore,
                 // more validation logic will be covered in compile.py to avoid this case
                 ctx.incrementException(exception)
                 ResponseWithContext(internalResponse.request,
-                  Map("join_codec_fetch_exception" -> exception.traceString),
-                  Map.empty)
+                                    Map("join_codec_fetch_exception" -> exception.traceString),
+                                    Map.empty)
             }
         }
     }

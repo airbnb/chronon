@@ -19,7 +19,7 @@ object OnlineDerivationUtil {
   // remove value fields of groupBys that have failed with exceptions
   // and reintroduce the exceptions back
   private[online] def reintroduceExceptions(derived: Map[String, Any],
-    preDerivation: Map[String, Any]): Map[String, Any] = {
+                                            preDerivation: Map[String, Any]): Map[String, Any] = {
     val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
     if (exceptions.isEmpty) {
       return derived
@@ -98,9 +98,9 @@ object OnlineDerivationUtil {
   }
 
   def buildDerivedFields(
-    derivationsScala: List[Derivation],
-    keySchema: StructType,
-    baseValueSchema: StructType
+      derivationsScala: List[Derivation],
+      keySchema: StructType,
+      baseValueSchema: StructType
   ): Seq[StructField] = {
     if (derivationsScala.areDerivationsRenameOnly) {
       val baseExpressions = if (derivationsScala.derivationsContainStar) {
@@ -109,15 +109,15 @@ object OnlineDerivationUtil {
         Seq.empty
       }
       val expressions: Seq[StructField] = baseExpressions ++ derivationsScala.derivationsWithoutStar.map { d =>
-      {
-        if (baseValueSchema.typeOf(d.expression).isEmpty) {
-          throw new IllegalArgumentException(
-            s"Failed to run expression ${d.expression} for ${d.name}. Please ensure the derivation is " +
-              s"correct.")
-        } else {
-          StructField(d.name, baseValueSchema.typeOf(d.expression).get)
+        {
+          if (baseValueSchema.typeOf(d.expression).isEmpty) {
+            throw new IllegalArgumentException(
+              s"Failed to run expression ${d.expression} for ${d.name}. Please ensure the derivation is " +
+                s"correct.")
+          } else {
+            StructField(d.name, baseValueSchema.typeOf(d.expression).get)
+          }
         }
-      }
       }
       expressions
     } else {
