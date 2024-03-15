@@ -27,7 +27,7 @@ object OnlineDerivationUtil {
     derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
   }
 
-  private def buildRenameOnlyDerivationFunction(derivationsScala: List[Derivation]): DerivationFunc = {
+  def buildRenameOnlyDerivationFunction(derivationsScala: List[Derivation]): DerivationFunc = {
     {
       case (_: Map[String, Any], values: Map[String, Any]) =>
         reintroduceExceptions(derivationsScala.applyRenameOnlyDerivation(values), values)
