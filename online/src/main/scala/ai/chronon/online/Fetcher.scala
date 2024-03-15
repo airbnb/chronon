@@ -17,10 +17,9 @@
 package ai.chronon.online
 
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
-import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps, DerivationOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
@@ -32,6 +31,7 @@ import java.util.function.Consumer
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
+import scala.collection.immutable.Map
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
@@ -210,6 +210,7 @@ class Fetcher(val kvStore: KVStore,
                       joinCodec
                         .renameOnlyDeriveFunc(internalResponse.request.keys, baseMap)
                         .mapValues(_.asInstanceOf[AnyRef])
+                        .toMap
                     }
                     val renameOnlyDerivedMap: Map[String, AnyRef] = renameOnlyDerivedMapTry match {
                       case Success(renameOnlyDerivedMap) =>

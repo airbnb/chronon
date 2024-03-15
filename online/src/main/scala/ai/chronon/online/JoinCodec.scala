@@ -37,7 +37,7 @@ case class JoinCodec(conf: JoinOps,
                      baseValueCodec: AvroCodec)
     extends Serializable {
 
-  @transient private lazy val valueSchema: StructType = {
+  @transient lazy val valueSchema: StructType = {
     val fields = if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
       baseValueSchema
     } else {
