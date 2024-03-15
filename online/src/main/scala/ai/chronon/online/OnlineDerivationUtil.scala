@@ -1,10 +1,11 @@
 package ai.chronon.online
 
 import scala.util.{Failure, Success, Try}
+import scala.collection.Seq
 
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.Extensions.DerivationOps
-import ai.chronon.api.{Constants, Derivation, LongType, StringType, StructField, StructType}
+import ai.chronon.api.{Derivation, LongType, StringType, StructField, StructType}
 import ai.chronon.online.Fetcher.Request
 
 object OnlineDerivationUtil {
@@ -99,8 +100,7 @@ object OnlineDerivationUtil {
   def buildDerivedFields(
     derivationsScala: List[Derivation],
     keySchema: StructType,
-    baseValueSchema: StructType,
-    keepRenameOnly: Boolean = false
+    baseValueSchema: StructType
   ): Seq[StructField] = {
     if (derivationsScala.areDerivationsRenameOnly) {
       val baseExpressions = if (derivationsScala.derivationsContainStar) {

@@ -30,11 +30,12 @@ case class JoinCodec(conf: JoinOps,
                      keyCodec: AvroCodec,
                      baseValueCodec: AvroCodec)
     extends Serializable {
-  @transient private def getValueSchema(keepRenameOnly: Boolean = false): StructType = {
+
+  @transient private lazy val valueSchema: StructType = {
     val fields = if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
       baseValueSchema
     } else {
-      buildDerivedFields(conf.derivationsScala, keySchema, baseValueSchema, keepRenameOnly)
+      buildDerivedFields(conf.derivationsScala, keySchema, baseValueSchema)
     }
     val derivedSchema: StructType = StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray)
     if (conf.logFullValues) {
@@ -56,10 +57,6 @@ case class JoinCodec(conf: JoinOps,
 
   @transient lazy val renameOnlyDeriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
     buildRenameOnlyDerivationFunction(conf.derivationsScala)
-
-  @transient lazy val renamedOnlyValueSchema: StructType =  getValueSchema(keepRenameOnly = true)
-
-  @transient lazy val valueSchema: StructType = getValueSchema()
 
   @transient lazy val valueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
 
