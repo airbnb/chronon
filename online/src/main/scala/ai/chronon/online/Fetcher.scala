@@ -80,8 +80,20 @@ class Fetcher(val kvStore: KVStore,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
-              val externalSourceRegistry: ExternalSourceRegistry = null)
+              val externalSourceRegistry: ExternalSourceRegistry = null,
+              callerName: String = null)
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
+
+  private def reportCallerNameFetcherVersion(): Unit = {
+    val version = super.reportFetcherVersion()
+    val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${version}"
+    println(s"Chronon debug $message")
+    val ctx = Metrics.Context(Environment.Fetcher)
+    ctx.gauge("caller_name_fetcher_version", version)
+    ctx.recordSetValue("caller_name_fetcher_version", message)
+  }
+
+  reportCallerNameFetcherVersion()
 
   def buildJoinCodec(joinConf: api.Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]

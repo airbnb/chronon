@@ -82,6 +82,7 @@ class FetcherBase(kvStore: KVStore,
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
+
       if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         if (debug) logger.info("Both batch and streaming data are null")
         null
@@ -313,6 +314,15 @@ class FetcherBase(kvStore: KVStore,
         }.toList
         responses
       }
+  }
+
+  def reportFetcherVersion(): String = {
+    val version = getClass.getPackage.getImplementationVersion
+    if (version == null) {
+      "0.0.0"
+    } else {
+      version
+    }
   }
 
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {
