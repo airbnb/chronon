@@ -16,7 +16,6 @@
 
 package ai.chronon.online
 
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
@@ -62,7 +61,6 @@ class FetcherBase(kvStore: KVStore,
                                        overallLatency: Long,
                                        context: Metrics.Context,
                                        totalResponseValueBytes: Int): Map[String, AnyRef] = {
-    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     val latestBatchValue = batchResponsesTry.map(_.maxBy(_.millis))
     val servingInfo =
       latestBatchValue.map(timedVal => updateServingInfo(timedVal.millis, oldServingInfo)).getOrElse(oldServingInfo)
@@ -84,7 +82,12 @@ class FetcherBase(kvStore: KVStore,
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
-      if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
+      if (aggregator.batchEndTs > queryTimeMs) {
+        context.incrementException(
+          new IllegalArgumentException(
+            s"Request time of $queryTimeMs is less than batch time ${aggregator.batchEndTs}"))
+        null
+      } else if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         if (debug) logger.info("Both batch and streaming data are null")
         null
       } else {

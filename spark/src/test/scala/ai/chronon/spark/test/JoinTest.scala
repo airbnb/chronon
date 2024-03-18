@@ -32,6 +32,9 @@ import org.junit.Assert._
 import org.junit.Test
 import org.scalatest.Assertions.intercept
 
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.Row
+
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.ListOps
 
