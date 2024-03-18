@@ -82,7 +82,12 @@ class FetcherBase(kvStore: KVStore,
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
       val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
-      if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
+      if (aggregator.batchEndTs > queryTimeMs) {
+        context.incrementException(
+          new IllegalArgumentException(
+            s"Request time of $queryTimeMs is less than batch time ${aggregator.batchEndTs}"))
+        null
+      } else if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         if (debug) logger.info("Both batch and streaming data are null")
         null
       } else {
