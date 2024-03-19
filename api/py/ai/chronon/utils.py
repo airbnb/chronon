@@ -219,7 +219,7 @@ def join_part_output_table_name(join, jp, full_name: bool = False):
             component
             for component in [
                 output_table_name(join, full_name),
-                join_part_name(join, jp),
+                join_part_name(jp),
             ]
             if component is not None
         ]
