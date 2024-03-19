@@ -317,17 +317,29 @@ class FetcherBase(kvStore: KVStore,
                 }
               if (groupByServingInfo.groupBy.hasDerivations) {
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
-                  val deriveFunc: DerivationFunc = getGroupByServingInfo(request.name).get.deriveFunc
-                  applyDeriveFunc(deriveFunc, request, groupByResponse)
+                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, groupByResponse)
                 }
                 val derivedMap = derivedMapTry match {
                   case Success(derivedMap) =>
                     derivedMap
-                  // If the derivation failed we want to return the exception map only
+                  // If the derivation failed we want to return the exception map and rename only derivation
                   case Failure(exception) => {
                     val derivedExceptionMap =
                       Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
-                    derivedExceptionMap
+                    val renameOnlyDeriveFunction = buildRenameOnlyDerivationFunction(groupByServingInfo.groupBy.derivationsScala)
+                    val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
+                      renameOnlyDeriveFunction(request.keys, groupByResponse)
+                        .mapValues(_.asInstanceOf[AnyRef])
+                        .toMap
+                    }
+                    // if the rename only derivation also failed we want to return the exception map
+                    val renameOnlyDerivedMap: Map[String, AnyRef] = renameOnlyDerivedMapTry match {
+                      case Success(renameOnlyDerivedMap) =>
+                        renameOnlyDerivedMap
+                      case Failure(exception) =>
+                        Map("derivation_rename_exception" -> exception.traceString.asInstanceOf[AnyRef])
+                    }
+                    renameOnlyDerivedMap ++ derivedExceptionMap
                   }
                 }
                 derivedMap

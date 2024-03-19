@@ -70,15 +70,9 @@ object OnlineDerivationUtil {
     val tsDsMap: Map[String, AnyRef] = {
       Map("ts" -> (requestTs).asInstanceOf[AnyRef], "ds" -> (requestDs).asInstanceOf[AnyRef])
     }
-    val derivedMap: Map[String, AnyRef] = Try(
-      deriveFunc(request.keys, baseMap ++ tsDsMap)
+    val derivedMap: Map[String, AnyRef] = deriveFunc(request.keys, baseMap ++ tsDsMap)
         .mapValues(_.asInstanceOf[AnyRef])
-        .toMap) match {
-      case Success(derivedMap) => derivedMap
-      case Failure(exception) => {
-        throw exception
-      }
-    }
+        .toMap
     val derivedMapCleaned = derivedMap -- tsDsMap.keys
     derivedMapCleaned
   }
