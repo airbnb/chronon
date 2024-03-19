@@ -326,7 +326,8 @@ class FetcherBase(kvStore: KVStore,
                   case Failure(exception) => {
                     val derivedExceptionMap =
                       Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
-                    val renameOnlyDeriveFunction = buildRenameOnlyDerivationFunction(groupByServingInfo.groupBy.derivationsScala)
+                    val renameOnlyDeriveFunction =
+                      buildRenameOnlyDerivationFunction(groupByServingInfo.groupBy.derivationsScala)
                     val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
                       renameOnlyDeriveFunction(request.keys, groupByResponse)
                         .mapValues(_.asInstanceOf[AnyRef])
