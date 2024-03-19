@@ -85,7 +85,8 @@ class FetcherBase(kvStore: KVStore,
       if (aggregator.batchEndTs > queryTimeMs) {
         context.incrementException(
           new IllegalArgumentException(
-            s"Request time of $queryTimeMs is less than batch time ${aggregator.batchEndTs}"))
+            s"Request time of $queryTimeMs is less than batch time ${aggregator.batchEndTs}" +
+              s" for groupBy ${servingInfo.groupByOps.metaData.getName}"))
         null
       } else if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
         if (debug) logger.info("Both batch and streaming data are null")
