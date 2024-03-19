@@ -211,7 +211,7 @@ python3 -m pip install -U tox build twine
 # Chronon Release Process
 
 ## Publishing all the artifacts of Chronon
-1. Run release command in the right HEAD of chronon repository.
+1. Run release command in the right HEAD of chronon repository. Before running this, you may want to activate your Python venv or install the required Python packages on the laptop. Otherwise, the Python release will fail due to missing deps.
 ```
 GPG_TTY=$(tty) sbt -mem 8192 release
 ```
