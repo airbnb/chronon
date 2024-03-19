@@ -105,7 +105,7 @@ class Fetcher(val kvStore: KVStore,
           } else {
             servingInfo.outputChrononSchema
           }
-          val baseValueSchema: StructType = if (servingInfo.groupBy.hasDerivations) {
+          val baseValueSchema: StructType = if (!servingInfo.groupBy.hasDerivations) {
             groupBySchemaBeforeDerivation
           } else {
             val fields =
