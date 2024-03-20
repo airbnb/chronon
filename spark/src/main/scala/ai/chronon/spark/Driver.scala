@@ -407,7 +407,8 @@ object Driver {
       )
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
                                           args.enableAutoExpand.toOption,
-                                          args.startPartitionOverride.toOption)
+                                          args.startPartitionOverride.toOption,
+                                          !args.runFirstHole())
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)
