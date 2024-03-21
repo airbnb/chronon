@@ -16,13 +16,19 @@
 
 package ai.chronon.online
 
-import ai.chronon.api.Extensions.{JoinOps, DerivationOps, MetadataOps}
-import ai.chronon.api.{DataType, HashUtils, LongType, StringType, StructField, StructType, Constants}
+import ai.chronon.api.Extensions.{DerivationOps, JoinOps, MetadataOps}
+import ai.chronon.api.{DataType, HashUtils, StructField, StructType}
 import com.google.gson.Gson
-
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.JMapOps
-import scala.util.ScalaJavaConversions.{IterableOps, ListOps}
+
+import ai.chronon.online.OnlineDerivationUtil.{
+  DerivationFunc,
+  buildDerivationFunction,
+  buildDerivedFields,
+  buildRenameOnlyDerivationFunction,
+  timeFields
+}
 
 case class JoinCodec(conf: JoinOps,
                      keySchema: StructType,
@@ -30,81 +36,14 @@ case class JoinCodec(conf: JoinOps,
                      keyCodec: AvroCodec,
                      baseValueCodec: AvroCodec)
     extends Serializable {
-  type DerivationFunc = (Map[String, Any], Map[String, Any]) => Map[String, Any]
-  case class SchemaAndDeriveFunc(valueSchema: StructType,
-                                 derivationFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any])
-
-  // We want the same branch logic to construct both schema and derivation
-  // Conveniently, this also removes branching logic from hot path of derivation
-  @transient lazy private val valueSchemaAndDeriveFunc: SchemaAndDeriveFunc = getValueSchemaAndDeriveFunc()
-
-  @transient lazy private val valueSchemaAndRenameOnlyDeriveFunc: SchemaAndDeriveFunc = getValueSchemaAndDeriveFunc(
-    true)
-
-  private def getValueSchemaAndDeriveFunc(keepRenameOnly: Boolean = false): SchemaAndDeriveFunc = {
-    if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
-      SchemaAndDeriveFunc(baseValueSchema, { case (_: Map[String, Any], values: Map[String, Any]) => values })
-    } else {
-      def build(fields: Seq[StructField], deriveFunc: DerivationFunc) =
-        SchemaAndDeriveFunc(StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray), deriveFunc)
-      // if spark catalyst is not necessary, and all the derivations are just renames, we don't invoke catalyst
-      if (conf.areDerivationsRenameOnly || keepRenameOnly) {
-        val baseExpressions = if (conf.derivationsContainStar) {
-          baseValueSchema.filterNot {
-            conf.derivationExpressionSet contains _.name
-          }
-        } else {
-          Seq.empty
-        }
-        val renameDerivations = if (keepRenameOnly) {
-          conf.derivationsScala.renameOnlyDerivations
-        } else {
-          conf.derivationsWithoutStar
-        }
-        val expressions = baseExpressions ++ renameDerivations.map { d =>
-          StructField(d.name, baseValueSchema.typeOf(d.expression).get)
-        }
-        build(
-          expressions,
-          {
-            case (_: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.reintroduceExceptions(conf.derivationsScala.applyRenameOnlyDerivation(values), values)
-          }
-        )
-      } else {
-        val baseExpressions = if (conf.derivationsContainStar) {
-          baseValueSchema
-            .filterNot {
-              conf.derivationExpressionSet contains _.name
-            }
-            .map(sf => sf.name -> sf.name)
-        } else {
-          Seq.empty
-        }
-        val expressions = baseExpressions ++ conf.derivationsWithoutStar.map { d => d.name -> d.expression }
-        val catalystUtil = {
-          new PooledCatalystUtil(expressions,
-                                 StructType("all", (keySchema ++ baseValueSchema).toArray ++ JoinCodec.timeFields))
-        }
-        build(
-          catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2)),
-          {
-            case (keys: Map[String, Any], values: Map[String, Any]) =>
-              JoinCodec.reintroduceExceptions(catalystUtil.performSql(keys ++ values).orNull, values)
-          }
-        )
-      }
-    }
-  }
-
-  @transient lazy val deriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
-    valueSchemaAndDeriveFunc.derivationFunc
-
-  @transient lazy val renameOnlyDeriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
-    valueSchemaAndRenameOnlyDeriveFunc.derivationFunc
 
   @transient lazy val valueSchema: StructType = {
-    val derivedSchema = valueSchemaAndDeriveFunc.valueSchema
+    val fields = if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
+      baseValueSchema
+    } else {
+      buildDerivedFields(conf.derivationsScala, keySchema, baseValueSchema)
+    }
+    val derivedSchema: StructType = StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray)
     if (conf.logFullValues) {
       def toMap(schema: StructType): Map[String, DataType] = schema.map(field => (field.name, field.fieldType)).toMap
       val (baseMap, derivedMap) = (toMap(baseValueSchema), toMap(derivedSchema))
@@ -119,6 +58,13 @@ case class JoinCodec(conf: JoinOps,
       derivedSchema
     }
   }
+
+  @transient lazy val deriveFunc: DerivationFunc =
+    buildDerivationFunction(conf.derivationsScala, keySchema, baseValueSchema)
+
+  @transient lazy val renameOnlyDeriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
+    buildRenameOnlyDerivationFunction(conf.derivationsScala)
+
   @transient lazy val valueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
 
   /*
@@ -141,23 +87,6 @@ case class JoinCodec(conf: JoinOps,
 }
 
 object JoinCodec {
-
-  val timeFields: Array[StructField] = Array(
-    StructField("ts", LongType),
-    StructField("ds", StringType)
-  )
-
-  // remove value fields of groupBys that have failed with exceptions
-  // and reintroduce the exceptions back
-  private[online] def reintroduceExceptions(derived: Map[String, Any],
-                                            preDerivation: Map[String, Any]): Map[String, Any] = {
-    val exceptions: Map[String, Any] = preDerivation.iterator.filter(_._1.endsWith("_exception")).toMap
-    if (exceptions.isEmpty) {
-      return derived
-    }
-    val exceptionParts: Array[String] = exceptions.keys.map(_.dropRight("_exception".length)).toArray
-    derived.filterKeys(key => !exceptionParts.exists(key.startsWith)).toMap ++ exceptions
-  }
 
   def buildLoggingSchema(joinName: String, keyCodec: AvroCodec, valueCodec: AvroCodec): String = {
     val schemaMap = Map(

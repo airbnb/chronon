@@ -18,20 +18,28 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.row.ColumnAggregator
-import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr, TsUtils}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.{JoinOps, ThrowableOps, GroupByOps}
+import ai.chronon.api.Extensions.{DerivationOps, GroupByOps, JoinOps, ThrowableOps}
 import com.google.gson.Gson
-
 import java.util
+
 import scala.collection.JavaConverters._
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
+
+import ai.chronon.online.OnlineDerivationUtil.{
+  DerivationFunc,
+  applyDeriveFunc,
+  buildDerivationFunction,
+  buildRenameOnlyDerivationFunction,
+  timeFields
+}
 
 // Does internal facing fetching
 //   1. takes join request or groupBy requests
@@ -201,12 +209,6 @@ class FetcherBase(kvStore: KVStore,
           context.increment("group_by_request.count")
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
-          // todo: update the logic here when we are ready to support groupby online derivations
-          if (groupByServingInfo.groupBy.hasDerivations) {
-            val ex = new IllegalArgumentException("GroupBy does not support for online derivations yet")
-            context.incrementException(ex)
-            throw ex
-          }
           try {
             // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
             // on the KVStore implementation, so we encode each distinctly.
@@ -277,7 +279,7 @@ class FetcherBase(kvStore: KVStore,
             .sum
         val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
           case (request, requestMetaTry) =>
-            val responseMapTry = requestMetaTry.map { requestMeta =>
+            val responseMapTry: Try[Map[String, AnyRef]] = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
               context.count("multi_get.batch.size", allRequests.length)
               context.distribution("multi_get.bytes", totalResponseValueBytes)
@@ -292,29 +294,63 @@ class FetcherBase(kvStore: KVStore,
               val streamingResponsesOpt =
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
-              try {
-                if (debug)
-                  logger.info(
-                    s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
-                      s"for keys: ${request.keys}")
-                constructGroupByResponse(batchResponseTryAll,
-                                         streamingResponsesOpt,
-                                         groupByServingInfo,
-                                         queryTs,
-                                         startTimeMs,
-                                         multiGetMillis,
-                                         context,
-                                         totalResponseValueBytes)
-              } catch {
-                case ex: Exception =>
-                  // not all exceptions are due to stale schema, so we want to control how often we hit kv store
-                  getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
-                  context.incrementException(ex)
-                  ex.printStackTrace()
-                  throw ex
+              val groupByResponse: Map[String, AnyRef] =
+                try {
+                  if (debug)
+                    logger.info(
+                      s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
+                        s"for keys: ${request.keys}")
+                  constructGroupByResponse(batchResponseTryAll,
+                                           streamingResponsesOpt,
+                                           groupByServingInfo,
+                                           queryTs,
+                                           startTimeMs,
+                                           multiGetMillis,
+                                           context,
+                                           totalResponseValueBytes)
+                } catch {
+                  case ex: Exception =>
+                    // not all exceptions are due to stale schema, so we want to control how often we hit kv store
+                    getGroupByServingInfo.refresh(groupByServingInfo.groupByOps.metaData.name)
+                    context.incrementException(ex)
+                    ex.printStackTrace()
+                    throw ex
+                }
+              if (groupByServingInfo.groupBy.hasDerivations) {
+                val derivedMapTry: Try[Map[String, AnyRef]] = Try {
+                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, groupByResponse)
+                }
+                val derivedMap = derivedMapTry match {
+                  case Success(derivedMap) =>
+                    derivedMap
+                  // If the derivation failed we want to return the exception map and rename only derivation
+                  case Failure(exception) => {
+                    context.incrementException(exception)
+                    val derivedExceptionMap =
+                      Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
+                    val renameOnlyDeriveFunction =
+                      buildRenameOnlyDerivationFunction(groupByServingInfo.groupBy.derivationsScala)
+                    val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
+                      renameOnlyDeriveFunction(request.keys, groupByResponse)
+                        .mapValues(_.asInstanceOf[AnyRef])
+                        .toMap
+                    }
+                    // if the rename only derivation also failed we want to return the exception map
+                    val renameOnlyDerivedMap: Map[String, AnyRef] = renameOnlyDerivedMapTry match {
+                      case Success(renameOnlyDerivedMap) =>
+                        renameOnlyDerivedMap
+                      case Failure(exception) =>
+                        context.incrementException(exception)
+                        Map("derivation_rename_exception" -> exception.traceString.asInstanceOf[AnyRef])
+                    }
+                    renameOnlyDerivedMap ++ derivedExceptionMap
+                  }
+                }
+                derivedMap
+              } else {
+                groupByResponse
               }
             }
-
             Response(request, responseMapTry)
         }.toList
         responses

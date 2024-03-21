@@ -16,7 +16,7 @@
 
 package ai.chronon.online.test
 
-import ai.chronon.online.JoinCodec
+import ai.chronon.online.OnlineDerivationUtil.reintroduceExceptions
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -34,7 +34,8 @@ class JoinCodecTest {
       "derived2" -> "val2"
     )
 
-    val result = JoinCodec.reintroduceExceptions(derived, preDerived)
+    val result = reintroduceExceptions(derived, preDerived)
+
     val expected = Map(
       "group_by_3_feature1" -> "val1",
       "derived1" -> "val1",

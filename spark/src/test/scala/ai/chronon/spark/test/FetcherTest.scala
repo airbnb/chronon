@@ -334,6 +334,19 @@ class FetcherTest extends TestCase {
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test/vendor_credit", namespace = namespace)
     )
+    val creditDerivationGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.entities(query = Builders.Query(), snapshotTable = creditTable)),
+      keyColumns = Seq("vendor_id"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM,
+          inputColumn = "credit",
+          windows = Seq(new Window(3, TimeUnit.DAYS)))),
+      metaData = Builders.MetaData(name = "unit_test/vendor_credit_derivation", namespace = namespace),
+      derivations = Seq(
+        Builders.Derivation("credit_sum_3d_test_rename", "credit_sum_3d"),
+        Builders.Derivation("*", "*")
+      )
+    )
 
     // temporal-entities
     val vendorReviewCols =
@@ -384,7 +397,8 @@ class FetcherTest extends TestCase {
         Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = reviewGroupBy),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
-        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
+        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a"),
+        Builders.JoinPart(groupBy = creditDerivationGroupBy, prefix = "c")
       ),
       metaData = Builders.MetaData(name = "test/payments_join",
                                    namespace = namespace,
