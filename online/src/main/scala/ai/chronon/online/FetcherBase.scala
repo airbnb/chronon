@@ -324,6 +324,7 @@ class FetcherBase(kvStore: KVStore,
                     derivedMap
                   // If the derivation failed we want to return the exception map and rename only derivation
                   case Failure(exception) => {
+                    context.incrementException(exception)
                     val derivedExceptionMap =
                       Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
                     val renameOnlyDeriveFunction =
@@ -338,6 +339,7 @@ class FetcherBase(kvStore: KVStore,
                       case Success(renameOnlyDerivedMap) =>
                         renameOnlyDerivedMap
                       case Failure(exception) =>
+                        context.incrementException(exception)
                         Map("derivation_rename_exception" -> exception.traceString.asInstanceOf[AnyRef])
                     }
                     renameOnlyDerivedMap ++ derivedExceptionMap
