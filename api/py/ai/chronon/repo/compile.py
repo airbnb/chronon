@@ -107,10 +107,10 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
             num_written_objs += 1
 
             if obj_class is Join:
-                _print_highlighted(f"Output Join Features", get_join_output_columns(obj))
+                _print_highlighted("Output Join Features", get_join_output_columns(obj))
 
             if obj_class is GroupBy:
-                _print_highlighted(f"Output GroupBy Features", get_group_by_output_columns(obj))
+                _print_highlighted("Output GroupBy Features", get_group_by_output_columns(obj))
 
             # In case of online join, we need to materialize the underlying online group_bys.
             if obj_class is Join and obj.metaData.online:

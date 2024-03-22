@@ -18,6 +18,7 @@
 import json
 import logging
 import os
+import re
 from ai.chronon.api.ttypes import \
     GroupBy, Join, Source
 from ai.chronon.group_by import get_output_col_names
