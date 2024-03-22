@@ -253,9 +253,16 @@ class Join(joinConf: api.Join,
                             leftRange: PartitionRange,
                             bootstrapInfo: BootstrapInfo,
                             runSmallMode: Boolean = false): Option[DataFrame] = {
+
+    val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
+      leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
+    } else {
+      leftDf
+    }
+
     // compute bootstrap table - a left outer join between left source and various bootstrap source table
     // this becomes the "new" left for the following GB backfills
-    val bootstrapDf = computeBootstrapTable(leftDf, leftRange, bootstrapInfo)
+    val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
     val bootStrapWithStats = bootstrapDf.withStats
 
     // for each join part, find the bootstrap sets that can fully "cover" the required fields. Later we will use this
@@ -467,12 +474,6 @@ class Join(joinConf: api.Join,
                                      range: PartitionRange,
                                      bootstrapInfo: BootstrapInfo): DataFrame = {
 
-    val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
-      leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
-    } else {
-      leftDf
-    }
-
     def validateReservedColumns(df: DataFrame, table: String, columns: Seq[String]): Unit = {
       val reservedColumnsContained = columns.filter(df.schema.fieldNames.contains)
       assert(
@@ -484,7 +485,7 @@ class Join(joinConf: api.Join,
     val startMillis = System.currentTimeMillis()
 
     // verify left table does not have reserved columns
-    validateReservedColumns(leftTaggedDf, joinConf.left.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
+    validateReservedColumns(leftDf, joinConf.left.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
 
     tableUtils
       .unfilledRanges(bootstrapTable, range, skipFirstHole = skipFirstHole)
@@ -494,7 +495,7 @@ class Join(joinConf: api.Join,
           .map(_.toScala)
           .getOrElse(Seq())
 
-        val initDf = leftTaggedDf
+        val initDf = leftDf
           .prunePartition(unfilledRange)
           // initialize an empty matched_hashes column for the purpose of later processing
           .withColumn(Constants.MatchedHashes, typedLit[Array[String]](null))

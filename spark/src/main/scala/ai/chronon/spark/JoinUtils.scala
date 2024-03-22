@@ -401,7 +401,7 @@ object JoinUtils {
   }
 
   def shouldRecomputeLeft(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: TableUtils): Boolean = {
-    // Determines if the saved left table of the join needs
+    // Determines if the saved left table of the join (includes bootstrap) needs to be recomputed due to semantic changes since last run
     if (tableUtils.tableExists(outputTable)) {
       val gson = new Gson()
       val props = tableUtils.getTableProperties(outputTable);

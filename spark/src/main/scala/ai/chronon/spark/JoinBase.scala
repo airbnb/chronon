@@ -47,7 +47,6 @@ abstract class JoinBase(joinConf: api.Join,
   val outputTable = joinConf.metaData.outputTable
 
   // Used for parallelized JoinPart execution
-  private val outputLeftTable = s"${joinConf.metaData.outputTable}_left"
   val bootstrapTable = joinConf.metaData.bootstrapTable
 
   // Get table properties from config
@@ -129,79 +128,73 @@ abstract class JoinBase(joinConf: api.Join,
 
     val partTable = joinConf.partOutputTable(joinPart)
     val partMetrics = Metrics.Context(metrics, joinPart)
-    //if (joinPart.groupBy.aggregations == null) {
-    if (false) {
-      // for non-aggregation cases, we directly read from the source table and there is no intermediate join part table
-      computeJoinPart(leftDf, joinPart, joinLevelBloomMapOpt, smallMode)
-    } else {
-      // in Events <> batch GB case, the partition dates are offset by 1
-      val shiftDays =
-        if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
-          -1
-        } else {
-          0
-        }
-      val rightRange = leftRange.shift(shiftDays)
-      try {
-        val unfilledRanges = tableUtils
-          .unfilledRanges(
-            partTable,
-            rightRange,
-            Some(Seq(joinConf.left.table)),
-            inputToOutputShift = shiftDays,
-            // never skip hole during partTable's range determination logic because we don't want partTable
-            // and joinTable to be out of sync. skipping behavior is already handled in the outer loop.
-            skipFirstHole = false
-          )
-          .getOrElse(Seq())
-
-        val unfilledRangeCombined = if (!unfilledRanges.isEmpty && smallMode) {
-          // For small mode we want to "un-chunk" the unfilled ranges, because left side can be sparse
-          // in dates, and it often ends up being less efficient to run more jobs in an effort to
-          // avoid computing unnecessary left range. In the future we can look for more intelligent chunking
-          // as an alternative/better way to handle this.
-          Seq(PartitionRange(unfilledRanges.minBy(_.start).start, unfilledRanges.maxBy(_.end).end)(tableUtils))
-        } else {
-          unfilledRanges
-        }
-
-        val partitionCount = unfilledRangeCombined.map(_.partitions.length).sum
-        if (partitionCount > 0) {
-          val start = System.currentTimeMillis()
-          unfilledRangeCombined
-            .foreach(unfilledRange => {
-              val leftUnfilledRange = unfilledRange.shift(-shiftDays)
-              val prunedLeft = leftDf.flatMap(_.prunePartitions(leftUnfilledRange))
-              val filledDf =
-                computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt, smallMode)
-              // Cache join part data into intermediate table
-              if (filledDf.isDefined) {
-                logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
-                filledDf.get.save(partTable,
-                                  tableProps,
-                                  stats = prunedLeft.map(_.stats),
-                                  sortByCols = joinPart.groupBy.keyColumns.toScala)
-              } else {
-                logger.info(s"Skipping  $partTable")
-              }
-            })
-          val elapsedMins = (System.currentTimeMillis() - start) / 60000
-          partMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
-          partMetrics.gauge(Metrics.Name.PartitionCount, partitionCount)
-          logger.info(s"Wrote ${partitionCount} partitions to join part table: $partTable in $elapsedMins minutes")
-        }
-      } catch {
-        case e: Exception =>
-          logger.error(
-            s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
-          throw e
-      }
-      if (tableUtils.tableExists(partTable)) {
-        Some(tableUtils.sql(rightRange.genScanQuery(query = null, partTable)))
+    // in Events <> batch GB case, the partition dates are offset by 1
+    val shiftDays =
+      if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+        -1
       } else {
-        // Happens when everything is handled by bootstrap
-        None
+        0
       }
+    val rightRange = leftRange.shift(shiftDays)
+    try {
+      val unfilledRanges = tableUtils
+        .unfilledRanges(
+          partTable,
+          rightRange,
+          Some(Seq(joinConf.left.table)),
+          inputToOutputShift = shiftDays,
+          // never skip hole during partTable's range determination logic because we don't want partTable
+          // and joinTable to be out of sync. skipping behavior is already handled in the outer loop.
+          skipFirstHole = false
+        )
+        .getOrElse(Seq())
+
+      val unfilledRangeCombined = if (!unfilledRanges.isEmpty && smallMode) {
+        // For small mode we want to "un-chunk" the unfilled ranges, because left side can be sparse
+        // in dates, and it often ends up being less efficient to run more jobs in an effort to
+        // avoid computing unnecessary left range. In the future we can look for more intelligent chunking
+        // as an alternative/better way to handle this.
+        Seq(PartitionRange(unfilledRanges.minBy(_.start).start, unfilledRanges.maxBy(_.end).end)(tableUtils))
+      } else {
+        unfilledRanges
+      }
+
+      val partitionCount = unfilledRangeCombined.map(_.partitions.length).sum
+      if (partitionCount > 0) {
+        val start = System.currentTimeMillis()
+        unfilledRangeCombined
+          .foreach(unfilledRange => {
+            val leftUnfilledRange = unfilledRange.shift(-shiftDays)
+            val prunedLeft = leftDf.flatMap(_.prunePartitions(leftUnfilledRange))
+            val filledDf =
+              computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt, smallMode)
+            // Cache join part data into intermediate table
+            if (filledDf.isDefined) {
+              logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
+              filledDf.get.save(partTable,
+                                tableProps,
+                                stats = prunedLeft.map(_.stats),
+                                sortByCols = joinPart.groupBy.keyColumns.toScala)
+            } else {
+              logger.info(s"Skipping $partTable because no data in computed joinPart.")
+            }
+          })
+        val elapsedMins = (System.currentTimeMillis() - start) / 60000
+        partMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
+        partMetrics.gauge(Metrics.Name.PartitionCount, partitionCount)
+        logger.info(s"Wrote ${partitionCount} partitions to join part table: $partTable in $elapsedMins minutes")
+      }
+    } catch {
+      case e: Exception =>
+        logger.error(
+          s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
+        throw e
+    }
+    if (tableUtils.tableExists(partTable)) {
+      Some(tableUtils.sql(rightRange.genScanQuery(query = null, partTable)))
+    } else {
+      // Happens when everything is handled by bootstrap
+      None
     }
   }
 
