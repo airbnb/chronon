@@ -20,6 +20,7 @@ import logging
 import os
 from ai.chronon.api.ttypes import \
     GroupBy, Join, Source
+from ai.chronon.group_by import get_output_col_names
 from ai.chronon.logger import get_logger
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME
@@ -65,6 +66,70 @@ def is_batch_upload_needed(group_by: GroupBy) -> bool:
         return True
     else:
         return False
+
+
+def is_identifier(s: str) -> bool:
+    identifier_regex = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
+    return re.fullmatch(identifier_regex, s) is not None
+
+
+def get_pre_derived_group_by_columns(group_by: GroupBy) -> List[str]:
+    output_columns = []
+    if group_by.aggregations:
+        for agg in group_by.aggregations:
+            output_columns.extend(get_output_col_names(agg))
+    return output_columns
+
+
+def get_group_by_output_columns(group_by: GroupBy) -> List[str]:
+    """
+    From the group_by object, get the final output columns after derivations.
+    """
+    output_columns = set(get_pre_derived_group_by_columns(group_by))
+
+    if group_by.derivations:
+        # if derivations contain star, then all columns are included except the columns which are renamed
+        found = any(derivation.expression == "*" for derivation in group_by.derivations)
+        if not found:
+            output_columns.clear()
+        for derivation in group_by.derivations:
+            if found and is_identifier(derivation.expression):
+                output_columns.remove(derivation.expression)
+            if derivation.name != "*":
+                output_columns.add(derivation.name)
+
+    return list(output_columns)
+
+
+def get_pre_derived_join_columns(join: Join) -> List[str]:
+    output_columns = []
+    for jp in join.joinParts:
+        group_by_cols = get_group_by_output_columns(jp.groupBy)
+        for col in group_by_cols:
+            prefix = jp.prefix + "_" if jp.prefix else ""
+            gb_prefix = jp.groupBy.metaData.name.replace(".", "_")
+            output_columns.append(prefix + gb_prefix + "_" + col)
+    return output_columns
+
+
+def get_join_output_columns(join: Join) -> List[str]:
+    """
+    From the join object, get the final output columns after derivations.
+    """
+    output_columns = set(get_pre_derived_join_columns(join))
+
+    if join.derivations:
+        # if derivations contain star, then all columns are included except the columns which are renamed
+        found = any(derivation.expression == "*" for derivation in join.derivations)
+        if not found:
+            output_columns.clear()
+        for derivation in join.derivations:
+            if found and is_identifier(derivation.expression):
+                output_columns.remove(derivation.expression)
+            if derivation.name != "*":
+                output_columns.add(derivation.name)
+
+    return list(output_columns)
 
 
 class ChrononRepoValidator(object):
@@ -187,6 +252,22 @@ class ChrononRepoValidator(object):
             group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
             errors += [f"join {join.metaData.name}'s underlying {error}"
                        for errors in group_by_errors for error in errors]
+        if join.derivations:
+            columns = set(get_pre_derived_join_columns(join))
+            derived_columns = set()
+            for derivation in join.derivations:
+                if derivation.name in derived_columns:
+                    errors.append("Incorrect derivation name {} due to output column name conflict".format(derivation.name))
+                else:
+                    derived_columns.add(derivation.name)
+            for derivation in join.derivations:
+                dev_name = derivation.name
+                dev_exp = derivation.expression
+                if dev_name in columns:
+                    errors.append("Incorrect derivation name {} due to output column name conflict".format(dev_name))
+                if dev_exp != "*" and is_identifier(dev_exp):
+                    if dev_exp not in columns:
+                        errors.append("Incorrect derivation expression {}, please check the derivation expression".format(dev_exp))
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
@@ -220,6 +301,24 @@ class ChrononRepoValidator(object):
             # set it to production in the materialized output.
             else:
                 group_by.metaData.production = True
+
+        # validate the derivations are defined correctly
+        if group_by.derivations:
+            columns = set(get_pre_derived_group_by_columns(group_by))
+            derived_columns = set()
+            for derivation in group_by.derivations:
+                if derivation.name in derived_columns:
+                    errors.append("Incorrect derivation name {} due to output column name conflict".format(derivation.name))
+                else:
+                    derived_columns.add(derivation.name)
+            for derivation in group_by.derivations:
+                dev_name = derivation.name
+                dev_exp = derivation.expression
+                if dev_name in columns:
+                    errors.append("Incorrect derivation name {} due to output column name conflict".format(dev_name))
+                if dev_exp != "*" and is_identifier(dev_exp):
+                    if dev_exp not in columns:
+                        errors.append("Incorrect derivation expression {}, please check the derivation expression".format(dev_exp))
 
         for source in group_by.sources:
             src: Source = source

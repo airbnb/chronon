@@ -30,7 +30,7 @@ from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME, TEAMS_FILE_PATH
 from ai.chronon.repo import teams
 from ai.chronon.repo.serializer import thrift_simple_json_protected
-from ai.chronon.repo.validator import ChrononRepoValidator
+from ai.chronon.repo.validator import ChrononRepoValidator, get_join_output_columns, get_group_by_output_columns
 
 # This is set in the main function -
 # from command line or from env variable during invocation
@@ -105,6 +105,12 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         _set_templated_values(obj, obj_class, teams_path, team_name)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
             num_written_objs += 1
+
+            if obj_class is Join:
+                _print_highlighted(f"Output Join Features", get_join_output_columns(obj))
+
+            if obj_class is GroupBy:
+                _print_highlighted(f"Output GroupBy Features", get_group_by_output_columns(obj))
 
             # In case of online join, we need to materialize the underlying online group_bys.
             if obj_class is Join and obj.metaData.online:
