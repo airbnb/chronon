@@ -245,9 +245,11 @@ class ChrononRepoValidator(object):
         group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
         errors += [f"join {join.metaData.name}'s underlying {error}"
                    for errors in group_by_errors for error in errors]
+        # Check if the production join is using non production groupBy
         if join.metaData.production and non_prod_old_group_bys:
             errors.append("join {} is production but includes the following non production group_bys: {}".format(
                 join.metaData.name, ', '.join(non_prod_old_group_bys)))
+        # Check if the online join is using the offline groupBy
         if join.metaData.online:
             if offline_included_group_bys:
                 errors.append("join {} is online but includes the following offline group_bys: {}".format(
@@ -256,25 +258,23 @@ class ChrononRepoValidator(object):
         group_by_correct = all(not errors for errors in group_by_errors)
         if join.derivations and group_by_correct:
             columns = set(get_pre_derived_join_columns(join))
-        derived_columns = set()
-        for derivation in join.derivations:
-            if
-        derivation.name in derived_columns:
-        errors.append(
-            "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
-        else:
-        derived_columns.add(derivation.name)
-        for derivation in join.derivations:
-            dev_name = derivation.name
-        dev_exp = derivation.expression
-        if dev_name in columns:
-            errors.append("Incorrect derivation name {} due to output column name conflict".format(dev_name))
-        if dev_exp != "*" and is_identifier(dev_exp):
-            if
-        dev_exp not in columns: \
-            errors.append(
-                "Incorrect derivation expression {}, please check the derivation expression".format(
-                    dev_exp))
+            derived_columns = set()
+            for derivation in join.derivations:
+                if derivation.name in derived_columns:
+                    errors.append(
+                        "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
+                else:
+                    derived_columns.add(derivation.name)
+            for derivation in join.derivations:
+                dev_name = derivation.name
+                dev_exp = derivation.expression
+                if dev_name in columns:
+                    errors.append("Incorrect derivation name {} due to output column name conflict".format(dev_name))
+                if dev_exp != "*" and is_identifier(dev_exp):
+                    if dev_exp not in columns:
+                        errors.append(
+                            "Incorrect derivation expression {}, please check the derivation expression".format(
+                                dev_exp))
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
