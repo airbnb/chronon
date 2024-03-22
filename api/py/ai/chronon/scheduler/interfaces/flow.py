@@ -1,3 +1,10 @@
+"""
+Flow is an abstraction of a DAG.
+It contains a list of nodes and their dependencies.
+It can be visualized as a tree structure.
+"""
+
+
 class Flow:
     def __init__(self, name):
         self.name = name
@@ -14,11 +21,7 @@ class Flow:
 
     def visualize(self, node=None, level=0):
         if node is None:
-            starts = [
-                n
-                for n in self.nodes
-                if not any(n in node.dependencies for node in self.nodes)
-            ]
+            starts = [n for n in self.nodes if not any(n in node.dependencies for node in self.nodes)]
             for start in starts:
                 self.visualize(start, 0)
             return

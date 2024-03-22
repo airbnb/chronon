@@ -15,10 +15,6 @@ logging.basicConfig(level=logging.INFO)
 airflow_client.init(airflow_client.Service.STONE)
 
 
-def test():
-    pass
-
-
 class JoinBackfill:
     def __init__(self, join: Join, start_date: str, end_date: str, config_path: str):
         self.join = join
@@ -32,6 +28,7 @@ class JoinBackfill:
             skip_download=True,
         )
         self.config_path = config_path
+        self.config_name = config_path.split("/")[-1]
 
     def build_flow(self) -> Flow:
         """
@@ -57,7 +54,7 @@ class JoinBackfill:
 
     def run_join_part(self, join_part: str):
         # TODO: Find a better way to sync configs
-        cmd = "aws s3 cp s3://airbnb-datainfra-dependencies-internal-only/testing/test_online_join_small.v2 . && "
+        cmd = f"aws s3 cp {self.config_path} . && "
         cmd += (
             "emr-spark-submit"
             + " --spark-version 3.1.1"
@@ -72,7 +69,7 @@ class JoinBackfill:
             + " --class ai.chronon.spark.Driver"
             + f" {self.jar_path} join"
             + f" --selected-join-parts={join_part}"
-            + f" --conf-path={self.config_path}"
+            + f" --conf-path={self.config_name}"
             + f" --end-date={self.end_date}"
         )
         if self.start_date:
