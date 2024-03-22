@@ -253,7 +253,7 @@ class ChrononRepoValidator(object):
                 errors.append("join {} is online but includes the following offline group_bys: {}".format(
                     join.metaData.name, ', '.join(offline_included_group_bys)))
         # Only validate the join derivation when the underlying groupBy is valid
-        group_by_correct = any(not errors for errors in group_by_errors)
+        group_by_correct = all(not errors for errors in group_by_errors)
         if join.derivations and group_by_correct:
             columns = set(get_pre_derived_join_columns(join))
             derived_columns = set()
