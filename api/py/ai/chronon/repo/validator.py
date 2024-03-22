@@ -244,15 +244,14 @@ class ChrononRepoValidator(object):
         # Check if the underlying groupBy is valid
         group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
         errors += [f"join {join.metaData.name}'s underlying {error}"
-                   for errors in group_by_errors for error in errors
-                   if join.metaData.production and non_prod_old_group_bys]
-        errors.append("join {} is production but includes the following non production group_bys: {}".format(
-            join.metaData.name, ', '.join(non_prod_old_group_bys)))
+                   for errors in group_by_errors for error in errors]
+        if join.metaData.production and non_prod_old_group_bys:
+            errors.append("join {} is production but includes the following non production group_bys: {}".format(
+                join.metaData.name, ', '.join(non_prod_old_group_bys)))
         if join.metaData.online:
-            if
-        offline_included_group_bys:
-        errors.append("join {} is online but includes the following offline group_bys: {}".format(
-            join.metaData.name, ', '.join(offline_included_group_bys)))
+            if offline_included_group_bys:
+                errors.append("join {} is online but includes the following offline group_bys: {}".format(
+                    join.metaData.name, ', '.join(offline_included_group_bys)))
         # Only validate the join derivation when the underlying groupBy is valid
         group_by_correct = all(not errors for errors in group_by_errors)
         if join.derivations and group_by_correct:
