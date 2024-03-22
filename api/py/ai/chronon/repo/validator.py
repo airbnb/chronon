@@ -245,7 +245,7 @@ class ChrononRepoValidator(object):
         group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
         errors += [f"join {join.metaData.name}'s underlying {error}"
                    for errors in group_by_errors for error in errors
-                   if join.metaData.production and non_prod_old_group_bys:
+                   if join.metaData.production and non_prod_old_group_bys]
         errors.append("join {} is production but includes the following non production group_bys: {}".format(
             join.metaData.name, ', '.join(non_prod_old_group_bys)))
         if join.metaData.online:
@@ -273,9 +273,9 @@ class ChrononRepoValidator(object):
         if dev_exp != "*" and is_identifier(dev_exp):
             if
         dev_exp not in columns: \
-        errors.append(
-            "Incorrect derivation expression {}, please check the derivation expression".format(
-                dev_exp))
+            errors.append(
+                "Incorrect derivation expression {}, please check the derivation expression".format(
+                    dev_exp))
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
