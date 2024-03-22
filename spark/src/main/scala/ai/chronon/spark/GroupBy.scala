@@ -671,7 +671,8 @@ object GroupBy {
                       endPartition: String,
                       tableUtils: TableUtils,
                       stepDays: Option[Int] = None,
-                      overrideStartPartition: Option[String] = None): Unit = {
+                      overrideStartPartition: Option[String] = None,
+                      skipFirstHole: Boolean = true): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
@@ -687,7 +688,8 @@ object GroupBy {
     val groupByUnfilledRangesOpt =
       tableUtils.unfilledRanges(outputTable,
                                 PartitionRange(overrideStart, endPartition)(tableUtils),
-                                if (isAnySourceCumulative) None else Some(inputTables))
+                                if (isAnySourceCumulative) None else Some(inputTables),
+                                skipFirstHole = skipFirstHole)
 
     if (groupByUnfilledRangesOpt.isEmpty) {
       logger.info(s"""Nothing to backfill for $outputTable - given

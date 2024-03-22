@@ -65,6 +65,22 @@ object Driver {
     this: ScallopConf =>
     val confPath: ScallopOption[String] = opt[String](required = true, descr = "Path to conf")
 
+    val runFirstHole: ScallopOption[Boolean] =
+      opt[Boolean](required = false,
+                   default = Some(false),
+                   descr = "Skip the first unfilled partition range if some future partitions have been populated.")
+
+    val stepDays: ScallopOption[Int] =
+      opt[Int](required = false,
+               descr = "Runs offline backfill in steps, step-days at a time. Default is 30 days",
+               default = Option(30))
+
+    val startPartitionOverride: ScallopOption[String] =
+      opt[String](required = false,
+                  descr =
+                    "Start date to compute offline backfill, " +
+                      "this start date will override start partition specified in conf.")
+
     private val endDateInternal: ScallopOption[String] =
       opt[String](name = "end-date",
                   required = false,
@@ -222,18 +238,6 @@ object Driver {
         with OfflineSubcommand
         with LocalExportTableAbility
         with ResultValidationAbility {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
-      val runFirstHole: ScallopOption[Boolean] =
-        opt[Boolean](required = false,
-                     default = Some(false),
-                     descr = "Skip the first unfilled partition range if some future partitions have been populated.")
-      val startPartitionOverride: ScallopOption[String] =
-        opt[String](required = false,
-                    descr =
-                      "Start date to compute join backfill, this start date will override start partition in conf.")
       val selectedJoinParts: ScallopOption[List[String]] =
         opt[List[String]](required = false, descr = "A list of join parts that require backfilling.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
@@ -282,14 +286,6 @@ object Driver {
         with OfflineSubcommand
         with LocalExportTableAbility
         with ResultValidationAbility {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
-      val startPartitionOverride: ScallopOption[String] =
-        opt[String](
-          required = false,
-          descr = "Start date to compute group by backfill, this start date will override backfill start date in conf.")
       lazy val groupByConf: api.GroupBy = parseConf[api.GroupBy](confPath())
       override def subcommandName() = s"groupBy_${groupByConf.metaData.name}_backfill"
     }
@@ -301,7 +297,8 @@ object Driver {
         args.endDate(),
         tableUtils,
         args.stepDays.toOption,
-        args.startPartitionOverride.toOption
+        args.startPartitionOverride.toOption,
+        !args.runFirstHole()
       )
 
       if (args.shouldExport()) {
@@ -317,10 +314,6 @@ object Driver {
 
   object LabelJoin {
     class Args extends Subcommand("label-join") with OfflineSubcommand with LocalExportTableAbility {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs label join in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"label_join_${joinConf.metaData.name}"
     }
@@ -396,19 +389,11 @@ object Driver {
 
   object StagingQueryBackfill {
     class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand with LocalExportTableAbility {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
       val enableAutoExpand: ScallopOption[Boolean] =
         opt[Boolean](required = false,
                      descr = "Auto expand hive table if new columns added in staging query",
                      default = Option(true))
-      val startPartitionOverride: ScallopOption[String] =
-        opt[String](
-          required = false,
-          descr =
-            "Start date to compute staging query backfill, this start date will override start partition in conf.")
+
       lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
       override def subcommandName() = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
@@ -422,7 +407,8 @@ object Driver {
       )
       stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
                                           args.enableAutoExpand.toOption,
-                                          args.startPartitionOverride.toOption)
+                                          args.startPartitionOverride.toOption,
+                                          !args.runFirstHole())
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)
@@ -432,10 +418,6 @@ object Driver {
 
   object DailyStats {
     class Args extends Subcommand("stats-summary") with OfflineSubcommand {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
       val sample: ScallopOption[Double] =
         opt[Double](required = false,
                     descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
@@ -456,10 +438,6 @@ object Driver {
 
   object LogStats {
     class Args extends Subcommand("log-summary") with OfflineSubcommand {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
       val sample: ScallopOption[Double] =
         opt[Double](required = false, descr = "Sampling ratio", default = Option(0.1))
       val forceBackfill: ScallopOption[Boolean] =
@@ -706,11 +684,6 @@ object Driver {
 
       val schemaTable: ScallopOption[String] =
         opt[String](required = true, descr = "Hive table with mapping from schema_hash to schema_value_last")
-
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs consistency metrics job in steps, step-days at a time. Default is 15 days",
-                 default = Option(15))
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"log_flattener_join_${joinConf.metaData.name}"
     }
