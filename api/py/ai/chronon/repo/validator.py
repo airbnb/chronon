@@ -257,7 +257,8 @@ class ChrononRepoValidator(object):
             derived_columns = set()
             for derivation in join.derivations:
                 if derivation.name in derived_columns:
-                    errors.append("Incorrect derivation name {} due to output column name conflict".format(derivation.name))
+                    errors.append(
+                        "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
                 else:
                     derived_columns.add(derivation.name)
             for derivation in join.derivations:
@@ -267,7 +268,9 @@ class ChrononRepoValidator(object):
                     errors.append("Incorrect derivation name {} due to output column name conflict".format(dev_name))
                 if dev_exp != "*" and is_identifier(dev_exp):
                     if dev_exp not in columns:
-                        errors.append("Incorrect derivation expression {}, please check the derivation expression".format(dev_exp))
+                        errors.append(
+                            "Incorrect derivation expression {}, please check the derivation expression".format(
+                                dev_exp))
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
@@ -308,7 +311,8 @@ class ChrononRepoValidator(object):
             derived_columns = set()
             for derivation in group_by.derivations:
                 if derivation.name in derived_columns:
-                    errors.append("Incorrect derivation name {} due to output column name conflict".format(derivation.name))
+                    errors.append(
+                        "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
                 else:
                     derived_columns.add(derivation.name)
             for derivation in group_by.derivations:
@@ -318,7 +322,9 @@ class ChrononRepoValidator(object):
                     errors.append("Incorrect derivation name {} due to output column name conflict".format(dev_name))
                 if dev_exp != "*" and is_identifier(dev_exp):
                     if dev_exp not in columns:
-                        errors.append("Incorrect derivation expression {}, please check the derivation expression".format(dev_exp))
+                        errors.append(
+                            "Incorrect derivation expression {}, please check the derivation expression".format(
+                                dev_exp))
 
         for source in group_by.sources:
             src: Source = source
