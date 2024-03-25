@@ -107,7 +107,7 @@ Let's start with three feature sets, built on top of our raw input sources.
 
 We can aggregate the purchases log data to the user level, to give us a view into this user's previous activity on our platform. Specifically, we can compute `SUM`s `COUNT`s and `AVERAGE`s of their previous purchase amounts over various windows.
 
-Becuase this feature is built upon a source that includes both a table and a topic, its features can be computed in both batch and streaming.
+Because this feature is built upon a source that includes both a table and a topic, its features can be computed in both batch and streaming.
 
 ```python
 source = Source(
