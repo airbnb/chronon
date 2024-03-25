@@ -17,7 +17,6 @@ load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/meta/metadata.sky", "labels")
 
 load("config/kubernetes/sidecars/confidant.sky", "raw_secret", "yaml_secret")
-load("config/kubernetes/sidecars/confidant_migration.sky", migration_raw_secret="raw_secret", migration_yaml_secret="yaml_secret")
 load("config/kubernetes/sidecars/pandora.sky", pandora_raw_secret="raw_secret", pandora_yaml_secret="yaml_secret")
 load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
 load("config/kubernetes/helpers/resource_requirements.sky", "attempt_to_get_pod_sizing_from_compute_config")
@@ -146,15 +145,11 @@ def _build_args(ctx, compute_config):
                     ys_args["key_type"] = secret["yaml_secret"]["type"]
                 if "secrets_source" in platform_options and platform_options["secrets_source"] == "PANDORA":
                     readable_secrets.append(pandora_yaml_secret(**ys_args))
-                elif "secrets_source" in platform_options and platform_options["secrets_source"] == "MIGRATION":
-                    readable_secrets.append(migration_yaml_secret(**ys_args))
                 else:
                     readable_secrets.append(yaml_secret(**ys_args))
             if "raw_secret" in secret:
                 if "secrets_source" in platform_options and platform_options["secrets_source"] == "PANDORA":
                     readable_secrets.append(pandora_raw_secret(key=secret["raw_secret"]["key"], filename=secret["raw_secret"]["filename"]))
-                elif "secrets_source" in platform_options and platform_options["secrets_source"] == "MIGRATION":
-                    readable_secrets.append(migration_raw_secret(key=secret["raw_secret"]["key"], filename=secret["raw_secret"]["filename"]))
                 else:
                     readable_secrets.append(raw_secret(key=secret["raw_secret"]["key"], filename=secret["raw_secret"]["filename"]))
         if readable_secrets:

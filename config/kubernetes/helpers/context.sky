@@ -740,3 +740,13 @@ def get_service_deploy_config(ctx):
         The service deploy config
     """
     return ctx.vars.get("service.config.deploy")
+
+"""
+    Gets whether the service should use the sansshell sidecar gocode
+    Args:
+        ctx: The context containing Henson and the Centralized Service Configurations.
+    Returns:
+        The value injected by Henson based on the sansshell_sidecar_gocode feature flag. Defaults to False.
+    """
+def should_use_sansshell_sidecar_gocode(ctx):
+    return ctx.vars.get("henson.enable_gocode_sansshell_sidecar", False)

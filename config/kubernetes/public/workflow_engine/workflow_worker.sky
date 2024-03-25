@@ -202,11 +202,12 @@ def ruby_workflow_worker_shared_msp(
             _validate_packaging_settings(name, startup_timeout, workers_per_replica, memory_mib)
 
         replicas = replicas_func(ctx)
-        _validate_replicas(ctx, replicas)
+        if not serverless:
+            _validate_replicas(ctx, replicas)
         _validate_drain_timeout(drain_timeout)
 
         if availability_tier == A100:
-            fail("Workflow Engine does not currently support A100 workers due to the server currently only being A200. Additionally, the Orchestration team (as of Jan 13th 2022) doesn't recommend Shared MSP for A100 services yet. Both of these things may change in the future, but please come chat with us in #workflow-engine if you're interested in setting up A100 workers.")
+            fail("Workflow Engine does not currently support A100 workers due to the server currently only being A200. Additionally, the Orchestration team (as of Jan 13th 2022) doesn't recommend Shared MSP for A100 services yet. Both of these things may change in the future, but please come chat with us in #services if you're interested in setting up A100 workers.")
 
         return _service_shared_msp(
             ctx,
@@ -565,7 +566,7 @@ def _validate_serverless_canary_replicas(canary_replicas):
 
 def _validate_drain_timeout(timeout):
     if timeout < 10 or timeout > 300:
-       fail("The worker drain timeout (%s specified) must be set between 10 seconds and 300 seconds. If you require these limits to change, please reach out at #workflow-engine." % (timeout))
+       fail("The worker drain timeout (%s specified) must be set between 10 seconds and 300 seconds. If you require these limits to change, please reach out at #services." % (timeout))
 
 def _validate_packaging_settings(name, startup_timeout, workers_per_replica, memory_mib):
     if startup_timeout < 600:
@@ -587,7 +588,5 @@ def _compensate_drain_timeout(timeout):
     return timeout + DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME
 
 def _maybe_enable_binpacking(ctx):
-    if get_env(ctx) != "qa":
-        return
-
-    ctx.vars["msp.binpacking"] = True
+    # Binpacking is always disabled at the moment due to a lockup bug on Graviton.
+    return

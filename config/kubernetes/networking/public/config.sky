@@ -103,6 +103,7 @@ def networking_config(
         enable_cross_domain_services = NOT_PROVIDED,
         enable_envoy_config_srv_debug_sidecar = NOT_PROVIDED,
         max_headers_count = NOT_PROVIDED,
+        enable_local_reachability = NOT_PROVIDED,
         _sn_breakglass = breakglass_settings()):
     """
     Deployment plugin that injects custom networking features for your pod.
@@ -144,6 +145,8 @@ def networking_config(
             which replaces regular envoy-config-srv-sidecar container and uses unstripped Envoy binary.
         max_headers_count:
             The maximum number of headers supported by the proxy on listeners and all inbound/outbound clusters
+        enable_local_reachability: Boolean value indicating whether to enable local reachability for the service.
+            By default this is true for all Shared MSP services.
         _sn_breakglass: these are internal networking customizations for use by the
             Service Networking Team. While service owners are generally not expected
             to need to set these arguments, we expose them via the `breakglass_settings` API
@@ -202,6 +205,10 @@ def networking_config(
         max_headers_count = network_config_updater(
             _update_envoy_config_srv_config = _envoy_config_srv_set_max_headers_count,
             max_headers_count = max_headers_count,
+        ),
+        enable_local_reachability = network_config_updater(
+            _update_envoy_config_srv_config = _envoy_config_srv_set_enable_local_reachability,
+            enable_local_reachability = enable_local_reachability,
         ),
         **_sn_breakglass
     )
@@ -398,6 +405,9 @@ def _envoy_config_srv_set_cross_domain_services(args):
 
 def _envoy_config_srv_set_max_headers_count(args):
     return {"max_headers_count": args.max_headers_count}
+
+def _envoy_config_srv_set_enable_local_reachability(args):
+    return {"enable_local_reachability": args.enable_local_reachability}
 
 # A helper function to resolve whether the global rate-limiter should be turned-on
 # based on the old / deprecated value (`enable_global_ratelimit`) and the new struct (`global_ratelimit.enable`)

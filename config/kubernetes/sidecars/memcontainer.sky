@@ -16,8 +16,8 @@ def memento_sidecar(ctx):
         sidecar_container(
             name = sidecar_name,
             sidecar_service = "memcontainer",
-            command = ["/pay/deploy/gocode/current/memcontainer/memcontainer"],
-            container_image = "stripe/gocode/memcontainer",
+            command = ["/build/memrouter -c 1000 -l *:8787 -t 2 -o proxy_config=/build/memcontainer-lua/topology_loader.lua"],
+            container_image = "stripe/stripe-private-oss-forks/memrouter/memrouter-container",
             plugins = [],
         ),
     )

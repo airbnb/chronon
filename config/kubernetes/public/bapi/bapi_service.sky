@@ -105,8 +105,8 @@ def bapi_service(ctx,
   priority,
   instance_type,
   replicas,
-  workers, 
-  image_artifact = None, 
+  workers,
+  image_artifact = None,
   override_msp_shard = "kubeapicc", # only kubeapicc has m6i instances so use that shard
 ):
   if image_artifact:
@@ -171,7 +171,7 @@ def bapi_service(ctx,
     ),
 
     msp_shard(shard),
-    use_geoip_databases(),
+    use_geoip_databases(ctx),
     config_srv_sidecar(ctx),
     add_security_groups(
         "apibox",

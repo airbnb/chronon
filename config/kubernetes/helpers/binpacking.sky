@@ -3,20 +3,37 @@ load("config/kubernetes/core/pod.sky", "pod_runtime_class")
 load("config/kubernetes/core/volume.sky", "mount_pod_volume", "volume_mount_all_containers")
 load("config/kubernetes/sidecars/credentials_proxy_shim.sky", "credentials_proxy_shim_sidecar")
 load("config/kubernetes/meta/metadata.sky", "labels")
-load("config/kubernetes/core/ha.sky", "prefer_zone_balance", "prefer_node_balance", "require_zone_balance", "require_node_balance")
+load("config/kubernetes/core/ha.sky", "prefer_zone_balance", "require_zone_balance", "require_node_balance")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+
+def get_require_node_balance_plugin(set_require_node_balance_with_skew):
+    """
+    conditional_plugin won't work here as the plugin will be evaluated first and then the condition is evaluated. If the condition
+    fails the plugin is ignored. Here we should not evaluate the plugin itself hence using the if condition
+    """
+    if set_require_node_balance_with_skew != -1:
+        return compose_plugins(require_node_balance(set_require_node_balance_with_skew))
+    else:
+        return None
+
+def get_require_zone_balance_plugin(set_require_zone_balance_with_skew):
+    if set_require_zone_balance_with_skew == -1:
+        return compose_plugins(prefer_zone_balance())
+    else:
+        return compose_plugins(require_zone_balance(set_require_zone_balance_with_skew))
 
 def bin_packing(set_require_zone_balance_with_skew=-1, set_require_node_balance_with_skew=-1):
     """
-    Returns the array of plugins needed to support binpacking in a deployment.
+    Returns the plugins needed to support binpacking in a deployment.
 
     Args:
         set_require_zone_balance_with_skew: Set the require_zone_balance flag on the deployment with the provided skew
         set_require_node_balance_with_skew: Set the require_node_balance flag on the deployment with the provided skew
 
     Returns:
-        An array of plugins to be added to a deployment.
+        A composed plugin that enables all features required for bin packing to functionality
     """
-    bin_packing_plugins = [
+    return compose_plugins(
         # Set the proper runtime for this pod, which is kata runtime. Which will enclose the pod in a MicroVM
         pod_runtime_class("kata-clh"),
 
@@ -33,16 +50,11 @@ def bin_packing(set_require_zone_balance_with_skew=-1, set_require_node_balance_
         # For tracking, attach an extra label when we use soft constraints
         labels({
             "stripe.io/binpacking-soft-constraints": "enabled",
-        })
-    ]
+        }),
 
-    # We want to automatically spread BinPacked workloads across Availability Zones
-    # however we do not want this to be a hard constraint, unless specified.
-    if set_require_node_balance_with_skew != -1:
-        bin_packing_plugins.append(require_node_balance(set_require_node_balance_with_skew))
-    if set_require_zone_balance_with_skew == -1:
-        bin_packing_plugins.append(prefer_zone_balance())
-    else:
-        bin_packing_plugins.append(require_zone_balance(set_require_zone_balance_with_skew))
+        # We want to automatically spread BinPacked workloads across Availability Zones
+        # however we do not want this to be a hard constraint, unless specified.
+        get_require_node_balance_plugin(set_require_node_balance_with_skew),
+        get_require_zone_balance_plugin(set_require_zone_balance_with_skew)
 
-    return bin_packing_plugins
+    )

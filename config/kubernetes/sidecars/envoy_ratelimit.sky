@@ -1,5 +1,5 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-# team: reliability-patterns-and-practices
+# team: service-networking
 load("config/kubernetes/core/container.sky", "container", "container_port")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/core/generic.sky", "is_dedicated_msp", "is_shared_msp")

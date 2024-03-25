@@ -102,7 +102,7 @@ def job(ctx, *plugins, shared_msp=False, shared_msp_networking_plugin=False, ena
             _apply_plugin(ctx, compose_plugins(shared_msp_experimental_job_support()), job)
 
         if is_bin_packing_enabled(ctx) == True:
-            _apply_plugin(ctx, compose_plugins(*bin_packing()), job)
+            _apply_plugin(ctx, bin_packing(), job)
 
     return job["render"](ctx, job)
 

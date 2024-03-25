@@ -1,13 +1,11 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/core/probe.sky", "probes", "tcp_probe")
 load("config/kubernetes/core/container.sky", "sidecar_container")
-load("config/kubernetes/helpers/context.sky", "get_env")
+load("config/kubernetes/core/probe.sky", "probes", "tcp_probe")
+load("config/kubernetes/helpers/context.sky", "get_env", "should_use_sansshell_sidecar_gocode")
 load("config/kubernetes/helpers/security.sky", "mount_host_credentials_proxy", "mount_host_stripe_ca_certs")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "container_plugin")
-load("config/kubernetes/sidecars/variables.sky", "SANSSHELL_CONTAINER_FALLBACK_DIGEST", "SANSSHELL_CONTAINER_FALLBACK_ENV")
-
-SIDECAR_NAME = "sansshell-sidecar"
+load("config/kubernetes/sidecars/variables.sky", "SANSSHELL_CONTAINER_FALLBACK_DIGEST", "SANSSHELL_CONTAINER_FALLBACK_ENV", "SANSSHELL_GOCODE_CONTAINER_FALLBACK_DIGEST", "SANSSHELL_GOCODE_CONTAINER_FALLBACK_ENV")
 
 ALLOWED_CLIENTS = {
     "qa": ["forserversbox.global.prod.deploy.stripe.net", "forserversbox.global.qa.deploy.stripe.net", "java-restart-manager.global.qa.stripe.io:/Process.Process/Kill|/OS.OS/ListProcesses"],
@@ -25,21 +23,35 @@ def sansshell_sidecar(ctx):
     # https://git.corp.stripe.com/stripe-private-oss-forks/sansshell/blob/master/cmd/sansshell-server/main.go
     port = 3791
 
-    entrypoint = "/sansshell-sidecar"
+    if should_use_sansshell_sidecar_gocode(ctx):
+        # Use the new version of the sidecar built in the gocode repository.
+        sansshell_sidecar_name = "sansshell-srv-sidecar"
+        sansshell_entrypoint = "/pay/deploy/sansshell-srv-sidecar/current/sansshell-srv-sidecar/sansshell-srv-sidecar"
+        sansshell_container_image = "stripe/gocode/sansshell-srv-sidecar"
+        sansshell_fallback_digest = SANSSHELL_GOCODE_CONTAINER_FALLBACK_DIGEST
+        sansshell_fallback_env = SANSSHELL_GOCODE_CONTAINER_FALLBACK_ENV
+    else:
+        # Use the legacy version of the sidecar built in the stripe-private-oss-forks repository.
+        sansshell_sidecar_name = "sansshell-sidecar"
+        sansshell_entrypoint = "/sansshell-sidecar"
+        sansshell_container_image = "stripe/stripe-private-oss-forks/sansshell"
+        sansshell_fallback_digest = SANSSHELL_CONTAINER_FALLBACK_DIGEST
+        sansshell_fallback_env = SANSSHELL_CONTAINER_FALLBACK_ENV
+
     flags = {
         "hostport": ":{}".format(port),
         "credential-source": "service-credentials"
     }
 
     return compose_plugins(
-        mount_host_stripe_ca_certs(container_name = SIDECAR_NAME),
-        mount_host_credentials_proxy(container_name = SIDECAR_NAME),
+        mount_host_stripe_ca_certs(container_name = sansshell_sidecar_name),
+        mount_host_credentials_proxy(container_name = sansshell_sidecar_name),
         sidecar_container(
-            SIDECAR_NAME,
-            command = [entrypoint] + [serialize_flag(k, v) for k, v in flags.items()],
-            container_image = "stripe/stripe-private-oss-forks/sansshell",
-            fallback_label = SANSSHELL_CONTAINER_FALLBACK_DIGEST,
-            fallback_env = SANSSHELL_CONTAINER_FALLBACK_ENV,
+            name = sansshell_sidecar_name,
+            command = [sansshell_entrypoint] + [serialize_flag(k, v) for k, v in flags.items()],
+            container_image = sansshell_container_image,
+            fallback_label = sansshell_fallback_digest,
+            fallback_env = sansshell_fallback_env,
             plugins = [
                 probes(
                     # p99 latency of GetServiceCertificate occasionally spike over a minute threshold.

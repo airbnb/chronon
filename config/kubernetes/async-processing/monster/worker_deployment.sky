@@ -235,7 +235,7 @@ def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
         monster_deployment_labels(config),
 
         # Make GeoIP cron autorefresher files accessible to service
-        use_geoip_databases(),
+        use_geoip_databases(ctx),
 
         # Required for Authz usage in monster consumers
         mount_ldap_host_volumes(),

@@ -35,8 +35,6 @@ review_requirements:
 - files:
   - sidecars/confidant.sky
   - sidecars/confidant_test.sky
-  - sidecars/confidant_migration.sky
-  - sidecars/confidant_migration_test.sky
   - sidecars/pandora.sky
   - sidecars/pandora_test.sky
   assignees:

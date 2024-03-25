@@ -241,9 +241,7 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
         # If Bin Packing is enabled we need to inject a few custom plugins
         # More information can be read at go/binpacking
         if is_bin_packing_enabled(ctx) == True:
-            _apply_plugin(ctx, compose_plugins(
-                *bin_packing(set_require_zone_balance_with_skew, set_require_node_balance_with_skew)
-                ), deployment)
+            _apply_plugin(ctx, bin_packing(set_require_zone_balance_with_skew, set_require_node_balance_with_skew), deployment)
 
         if is_horizontal_pod_autoscaling_enabled(ctx) == True and deployment["kwargs"]["replicas"] > 2:
             # Feature flag opt in is only available for services with 3 or more replicas.

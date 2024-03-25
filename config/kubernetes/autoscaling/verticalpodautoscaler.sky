@@ -1,9 +1,10 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/helpers/proto_or_yaml.sky", "VerticalPodAutoscaler", "VerticalPodAutoscalerSpec")
 load("config/kubernetes/plugins/types.sky", "deployment_plugin")
-load("config/kubernetes/meta/metadata.sky", "render_metadata")
-load("config/kubernetes/helpers/context.sky", "get_env", "get_blue_green_color", "is_isolated_deploy")
+load("config/kubernetes/meta/metadata.sky", "render_metadata", "annotations", "labels")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_blue_green_color", "is_isolated_deploy", "is_bin_packing_enabled")
 load("config/kubernetes/helpers/warning.sky", "warn")
+load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 
 NUM_RECOMMENDATION_BUCKETS = 3
 
@@ -104,3 +105,21 @@ def get_recommender_bucket(deployment_name):
         }]
 
     return [] # default recommender
+
+def right_size(ctx, old_instance_type = None):
+    if old_instance_type == None:
+        fail("The right_size plugin needs to be passed the old instance_type (before right-sizing), received None")
+
+    # If this is BinPacked we will already be attaching this annotation, don't override it.
+    # This is purely used for non-binpacked workloads.
+    if is_bin_packing_enabled(ctx):
+        return
+
+    return compose_plugins(
+        annotations({
+            "stripe.io/original-instance-type": old_instance_type,
+        }),
+        labels({
+            "stripe.io/right-sized": "true",
+        }),
+    )

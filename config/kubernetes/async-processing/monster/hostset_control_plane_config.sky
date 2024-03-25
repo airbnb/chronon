@@ -431,24 +431,19 @@ A200_HOST_SETS = struct(
                 "cmh":          no_replicas_cluster(),
             },
             preprod={
-                "northwest":    cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, sweeper_replicas=2, express_replicas=0, api_replicas=0),
+                "northwest":    no_replicas_cluster(),
                 "bom":          no_replicas_cluster(),
-                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, sweeper_replicas=2, express_replicas=0, api_replicas=0),
+                "cmh":          no_replicas_cluster(),
             },
             prod={
-                "northwest":    cluster(fanout_replicas=3, fanout_retry_replicas=3, feeder_replicas=3, sweeper_replicas=2, express_replicas=0, api_replicas=0),
+                "northwest":    no_replicas_cluster(),
                 "bom":          no_replicas_cluster(),
-                "cmh":          cluster(fanout_replicas=2, fanout_retry_replicas=2, feeder_replicas=2, sweeper_replicas=2, express_replicas=0, api_replicas=0),
+                "cmh":          no_replicas_cluster(),
             }
         ),
         host_set(
             "tax-product",
             qa={
-                "northwest":  cluster(fanout_replicas=2, feeder_replicas=2),
-                "bom":        cluster(fanout_replicas=2, feeder_replicas=2),
-                "cmh":        cluster(fanout_replicas=2, feeder_replicas=2),
-            },
-            preprod={
                 "northwest":  cluster(fanout_replicas=2, feeder_replicas=2),
                 "bom":        cluster(fanout_replicas=2, feeder_replicas=2),
                 "cmh":        cluster(fanout_replicas=2, feeder_replicas=2),

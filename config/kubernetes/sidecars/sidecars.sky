@@ -23,7 +23,7 @@ def sidecars(ctx, sidecars_map):
         elif sidecar_name == "offload_profiles":
             args = [ use_offload_profiles() ] + args
         elif sidecar_name == "geoip_databases":
-            args = [ use_geoip_databases() ] + args
+            args = [ use_geoip_databases(ctx) ] + args
         elif sidecar_name == "ratelimit":
             sidecar_spec = sidecars_map[sidecar_name].args
             for key in sidecar_spec.keys():

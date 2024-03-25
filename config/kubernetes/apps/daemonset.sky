@@ -15,6 +15,7 @@ load("config/kubernetes/plugins/types.sky", "daemonset_plugin")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "DaemonSet", "DaemonSetSpec")
 load("config/kubernetes/core/generic.sky", "is_security_group_policy_enabled")
 load("config/kubernetes/helpers/context.sky", "get_render_yaml", "get_env", "is_isolated_deploy")
+load("config/kubernetes/helpers/pod_priority.sky", "pod_priority_node_critical")
 
 def daemonset(ctx, *plugins, **kwargs):
     """
@@ -49,7 +50,7 @@ def daemonset(ctx, *plugins, **kwargs):
         "kwargs": {},
     }
 
-    all_plugins = []
+    all_plugins = [pod_priority_node_critical()]
     all_plugins.extend(plugins)
     all_plugins.append(daemonset_options(**kwargs))
 

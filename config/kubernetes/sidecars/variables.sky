@@ -95,6 +95,21 @@ WORKER_CONTAINER_FALLBACK_ENV = DEFUALT_CONTAINER_ENV
 SANSSHELL_CONTAINER_FALLBACK_DIGEST = "sha256:75ac8f4d0f45edc201cb7447935c6d9381bd827de6c7a0d766edfd183fa2a34c"
 SANSSHELL_CONTAINER_FALLBACK_ENV = DEFUALT_CONTAINER_ENV
 
+# HEADS UP! Updating these values was never the right way to roll out a new version of the SansShell sidecar.
+#
+# You can rollout a new version of the container image by deploying the `sansshell-srv-sidecar` service:
+#
+# QA: http://go/qa/deploy/sansshell-srv-sidecar
+# Prod: http://go/deploy/sansshell-srv-sidecar
+#
+# The constants below will only be used as a fallback in case Henson does not provide a version for this sidecar
+# for some reason.
+
+# https://git.corp.stripe.com/stripe-internal/gocode/commit/68661b95d29f1b5cdc3471911d88f7cd36465266
+# containers.global.prod.stripe.io/stripe/gocode/sansshell-srv-sidecar@sha256:f5db1b3f813b5aa267f1b10e5a513d2070bd5487c26f272f88fe04f75ff430c9
+SANSSHELL_GOCODE_CONTAINER_FALLBACK_DIGEST = "sha256:f5db1b3f813b5aa267f1b10e5a513d2070bd5487c26f272f88fe04f75ff430c9"
+SANSSHELL_GOCODE_CONTAINER_FALLBACK_ENV = DEFUALT_CONTAINER_ENV
+
 # HEADS UP! Updating these values is no longer the right way to roll out a new version of the go profiler sidecar.
 #
 # The go profiler sidecar is now using our new support for sidecar deploys! You can rollout a new version of the

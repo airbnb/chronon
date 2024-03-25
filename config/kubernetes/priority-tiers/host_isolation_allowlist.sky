@@ -1,8 +1,14 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 # This allowlist serves as a ratchet to protect against potentially dangerous behaviors when enabling and disabling host isolation.
-# If you are enabling host isolation, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-enable-host-isolation-for-your-service).
-# If you are disabling host isolation, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-disable-host-isolation). Failure to do so can be EXTREMELY DANGEROUS, as
+# To add yourself to the allowlist, use the "{service_name}-{priority_tier}" format.
+
+# If you are **enabling host isolation**, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-enable-host-isolation-for-your-service).
+
+# If you are **disabling host isolation**, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-disable-host-isolation). Failure to do so can be EXTREMELY DANGEROUS, as
 # all requests to your service will begin to fail. Removing yourself from the allowlist is an acknowledgement that you have followed the guide.
+
+# If you are **adding a new tier to an already host-isolated service**, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-provision-a-new-host-isolated-tier). Failure to do so can be EXTREMELY DANGEROUS, as
+# all requests tagged with the new tier to your service will begin to fail. Adding yourself to the allowlist is an acknowledgement that you have followed the guide.
 
 HOST_ISOLATION_ALLOWLIST = [
     "grpc-upload-srv-p2",
@@ -14,6 +20,11 @@ HOST_ISOLATION_ALLOWLIST = [
     "manage-srv-p3",
     "manage-srv-p4",
     "manage-srv-p5",
+
+    "grpc-manage-srv-p2",
+    "grpc-manage-srv-p3",
+    "grpc-manage-srv-p4",
+    "grpc-manage-srv-p5",
 
     "user-auth-bridge-srv-production",
 
@@ -43,11 +54,13 @@ HOST_ISOLATION_ALLOWLIST = [
     "mono-bapi-srv-p0-canary",
     "mono-bapi-srv-p0-performance",
     "mono-bapi-srv-p0-holdout",
+    "mono-bapi-srv-p0-high-priority",
     "mono-bapi-srv-p0",
     "mono-bapi-srv-p1",
     "mono-bapi-srv-p1-canary",
     "mono-bapi-srv-p1-performance",
     "mono-bapi-srv-p1-holdout",
+    "mono-bapi-srv-p1-high-priority",
     "mono-bapi-srv-p2",
     "mono-bapi-srv-p2-canary",
     "mono-bapi-srv-p2-performance",
@@ -84,6 +97,16 @@ HOST_ISOLATION_ALLOWLIST = [
     "api-platform-bapi-srv-p3",
     "api-platform-bapi-srv-p4",
     "api-platform-bapi-srv-p5",
+
+    "paymentflows-bapi-srv-p0",
+    "paymentflows-bapi-srv-p1",
+    "paymentflows-bapi-srv-p2",
+    "paymentflows-bapi-srv-p3",
+    "paymentflows-bapi-srv-p4",
+    "paymentflows-bapi-srv-p5",
+
+    "privacy-products-bapi-srv-p2",
+    "privacy-products-bapi-srv-p5",
 
     # We can probably remove these gocode services.
     "reldb-proxy-dev-srv",
