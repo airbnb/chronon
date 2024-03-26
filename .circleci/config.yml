@@ -18,18 +18,18 @@ jobs:
             - image: docker:17.05.0-ce-git
         steps:
             - setup_remote_docker:
-                  docker_layer_caching: true
+                docker_layer_caching: true
             - checkout
             - run:
-                  name: Build docker image
-                  command: |
-                      set +o pipefail
-                      docker build -t houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
+                name: Build docker image
+                command: |
+                    set +o pipefail
+                     docker build -t houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
             - run:
-                  name: Tag docker image
-                  command: |
-                      set +o pipefail
-                      docker tag houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 houpy0829/chronon-ci:base
+                name: Tag docker image
+                command: |
+                    set +o pipefail
+                    docker tag houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 houpy0829/chronon-ci:base
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
