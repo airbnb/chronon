@@ -21,11 +21,6 @@ jobs:
                 docker_layer_caching: true
             - checkout
             - run:
-                name: Build docker image
-                command: |
-                    set +o pipefail
-                     docker build -t houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
-            - run:
                 name: Tag docker image
                 command: |
                     set +o pipefail
