@@ -102,3 +102,7 @@ html[data-theme=dark] {
 .fa-list {
     margin-right: 10px;
 }
+
+.svg-inline--fa.fa-square-github.fa-lg {
+    display: none;
+}
