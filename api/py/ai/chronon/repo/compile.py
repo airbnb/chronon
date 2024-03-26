@@ -107,10 +107,10 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
             num_written_objs += 1
 
             if obj_class is Join:
-                _print_highlighted("Output Join Features", get_join_output_columns(obj))
+                _print_features_names("Output Join Features", get_join_output_columns(obj))
 
             if obj_class is GroupBy:
-                _print_highlighted("Output GroupBy Features", get_group_by_output_columns(obj))
+                _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
 
             # In case of online join, we need to materialize the underlying online group_bys.
             if obj_class is Join and obj.metaData.online:
@@ -231,6 +231,11 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
 def _print_highlighted(left, right):
     # print in blue.
     print(f"{left:>25} - \u001b[34m{right}\u001b[0m")
+
+
+def _print_features_names(left, right):
+    # Print in green and separate lines.
+    print(f"{left:>25} - \u001b[32m{right}\u001b[0m")
 
 
 def _print_error(left, right):

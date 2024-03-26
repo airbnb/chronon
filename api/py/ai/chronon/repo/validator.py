@@ -320,15 +320,15 @@ class ChrononRepoValidator(object):
                 else:
                     derived_columns.add(derivation.name)
             for derivation in group_by.derivations:
-                dev_name = derivation.name
-                dev_exp = derivation.expression
-                if dev_name in columns:
-                    errors.append("Incorrect derivation name {} due to output column name conflict".format(dev_name))
-                if dev_exp != "*" and is_identifier(dev_exp):
-                    if dev_exp not in columns:
+                derived_name = derivation.name
+                devived_exp = derivation.expression
+                if derived_name in columns:
+                    errors.append("Incorrect derivation name {} due to output column name conflict".format(derived_name))
+                if devived_exp != "*" and is_identifier(devived_exp):
+                    if devived_exp not in columns:
                         errors.append(
                             "Incorrect derivation expression {}, please check the derivation expression".format(
-                                dev_exp))
+                                devived_exp))
 
         for source in group_by.sources:
             src: Source = source
