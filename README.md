@@ -9,7 +9,7 @@ More information about Chronon can be found at [chronon.ai](https://chronon.ai/)
 ![High Level](https://chronon.ai/_images/intro.png)
 
 
-## Platform Features
+## Platform Features test
 
 ### Online Serving
 
