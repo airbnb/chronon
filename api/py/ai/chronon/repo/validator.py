@@ -225,6 +225,32 @@ class ChrononRepoValidator(object):
         old_obj = self._get_old_obj(type(obj), obj.metaData.name)
         return not old_obj or not self._has_diff(obj, old_obj) or not old_obj.metaData.online
 
+    def _validate_derivation(self, columns: List[str], derivations: List[object]) -> List[str]:
+        """
+        Validate join/groupBy's derivation is defined correctly.
+
+        Returns:
+          list of validation errors.
+        """
+        errors = []
+        derived_columns = set()
+        for derivation in derivations:
+            if derivation.name in derived_columns:
+                errors.append(
+                    "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
+            else:
+                derived_columns.add(derivation.name)
+        for derivation in derivations:
+            dev_name = derivation.name
+            dev_exp = derivation.expression
+            if dev_name in columns:
+                errors.append("Incorrect derivation name {} due to output column name conflict".format(dev_name))
+            if dev_exp != "*" and is_identifier(dev_exp):
+                if dev_exp not in columns:
+                    errors.append(
+                        "Incorrect derivation expression {}, please check the derivation expression".format(
+                            dev_exp))
+
     def _validate_join(self, join: Join) -> List[str]:
         """
         Validate join's status with materialized versions of group_bys
@@ -258,23 +284,7 @@ class ChrononRepoValidator(object):
         group_by_correct = all(not errors for errors in group_by_errors)
         if join.derivations and group_by_correct:
             columns = set(get_pre_derived_join_columns(join))
-            derived_columns = set()
-            for derivation in join.derivations:
-                if derivation.name in derived_columns:
-                    errors.append(
-                        "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
-                else:
-                    derived_columns.add(derivation.name)
-            for derivation in join.derivations:
-                dev_name = derivation.name
-                dev_exp = derivation.expression
-                if dev_name in columns:
-                    errors.append("Incorrect derivation name {} due to output column name conflict".format(dev_name))
-                if dev_exp != "*" and is_identifier(dev_exp):
-                    if dev_exp not in columns:
-                        errors.append(
-                            "Incorrect derivation expression {}, please check the derivation expression".format(
-                                dev_exp))
+            _validate_derivations(columns, join.derivations)
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
@@ -312,23 +322,7 @@ class ChrononRepoValidator(object):
         # validate the derivations are defined correctly
         if group_by.derivations:
             columns = set(get_pre_derived_group_by_columns(group_by))
-            derived_columns = set()
-            for derivation in group_by.derivations:
-                if derivation.name in derived_columns:
-                    errors.append(
-                        "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
-                else:
-                    derived_columns.add(derivation.name)
-            for derivation in group_by.derivations:
-                derived_name = derivation.name
-                devived_exp = derivation.expression
-                if derived_name in columns:
-                    errors.append("Incorrect derivation name {} due to output column name conflict".format(derived_name))
-                if devived_exp != "*" and is_identifier(devived_exp):
-                    if devived_exp not in columns:
-                        errors.append(
-                            "Incorrect derivation expression {}, please check the derivation expression".format(
-                                devived_exp))
+            _validate_derivations(columns, group_by.derivations)
 
         for source in group_by.sources:
             src: Source = source
