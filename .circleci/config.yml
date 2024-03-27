@@ -21,10 +21,10 @@ jobs:
                 docker_layer_caching: true
             - checkout
             - run:
-                name: Tag docker image
+                name: Pull docker image
                 command: |
                     set +o pipefail
-                    docker tag houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 houpy0829/chronon-ci:base
+                    docker pull houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
