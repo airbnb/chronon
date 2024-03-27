@@ -12,7 +12,7 @@ executors:
             - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
 
 jobs:
-    "Docker Base Build":
+    "Pull Docker Image":
         <<: *base_defaults
         docker:
             - image: docker:17.05.0-ce-git
@@ -124,19 +124,19 @@ jobs:
 workflows:
     build_test_deploy:
         jobs:
-            - "Docker Base Build"
+            - "Pull Docker Image"
             - "Scala 12 -- Spark 3 Tests":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"
             - "Scala 13 -- Tests":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"
             - "Scalafmt Check":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"
             - "Chronon Python Tests":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"
             - "Chronon Python Lint":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"
