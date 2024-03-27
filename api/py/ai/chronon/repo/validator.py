@@ -20,7 +20,7 @@ import logging
 import os
 import re
 from ai.chronon.api.ttypes import \
-    GroupBy, Join, Source
+    GroupBy, Join, Source, Derivation
 from ai.chronon.group_by import get_output_col_names
 from ai.chronon.logger import get_logger
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
