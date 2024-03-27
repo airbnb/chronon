@@ -225,7 +225,7 @@ class ChrononRepoValidator(object):
         old_obj = self._get_old_obj(type(obj), obj.metaData.name)
         return not old_obj or not self._has_diff(obj, old_obj) or not old_obj.metaData.online
 
-    def _validate_derivation(self, columns: List[str], derivations: List[object]) -> List[str]:
+    def _validate_derivations(self, columns: List[str], derivations: List[object]) -> List[str]:
         """
         Validate join/groupBy's derivation is defined correctly.
 
