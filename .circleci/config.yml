@@ -5,26 +5,26 @@ base_defaults: &base_defaults
     working_directory: /chronon
 
 executors:
-  docker_baseimg_executor:
-    resource_class: xlarge
-    working_directory: /chronon
-    docker:
-      - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
+    docker_baseimg_executor:
+        resource_class: xlarge
+        working_directory: /chronon
+        docker:
+            - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
 
 jobs:
-  "Docker Base Build":
-    <<: *base_defaults
-    docker:
-      - image: docker:17.05.0-ce-git
-    steps:
-      - setup_remote_docker:
-          docker_layer_caching: true
-      - checkout
-      - run:
-          name: Tag docker image
-          command: |
-            set +o pipefail
-            docker tag houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 houpy0829/chronon-ci:base
+    "Docker Base Build":
+        <<: *base_defaults
+        docker:
+            - image: docker:17.05.0-ce-git
+        steps:
+            - setup_remote_docker:
+                docker_layer_caching: true
+            - checkout
+            - run:
+                name: Pull docker image
+                command: |
+                    set +o pipefail
+                    docker tag houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
