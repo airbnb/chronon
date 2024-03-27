@@ -12,20 +12,27 @@ from ai.chronon.utils import join_part_name
 
 SPARK_VERSION = "3.1.1"
 SPARK_JAR_TYPE = "uber"
+EXECUTOR_MEMORY = "4g"
+DRIVER_MEMORY = "4g"
+AIRFLOW_CLUSTER = airflow_client.Service.STONE
 logging.basicConfig(level=logging.INFO)
-airflow_client.init(airflow_client.Service.STONE)
 
 
 class JoinBackfill:
     def __init__(
         self,
+        dag_id: str,
         join: Join,
         start_date: str,
         end_date: str,
         s3_bucket: str,
         config_path: str,
         spark_version: str = SPARK_VERSION,
+        airflow_cluster: str = AIRFLOW_CLUSTER,
+        executor_memory: str = EXECUTOR_MEMORY,
+        driver_memory: str = DRIVER_MEMORY,
     ):
+        self.dag_id = dag_id
         self.join = join
         self.start_date = start_date
         self.end_date = end_date
@@ -39,6 +46,9 @@ class JoinBackfill:
         self.s3_bucket = s3_bucket
         self.config_path = config_path
         self.spark_version = spark_version
+        self.airflow_cluster = airflow_cluster
+        self.executor_memory = executor_memory
+        self.driver_memory = driver_memory
 
     def build_flow(self) -> Flow:
         """
@@ -70,8 +80,12 @@ class JoinBackfill:
         aws s3 cp {self.s3_bucket}run.py /tmp/ &&
         aws s3 cp {self.s3_bucket}spark_submit.sh /tmp/ &&
         export SPARK_VERSION={self.spark_version} &&
-        python3 /tmp/run.py --mode=backfill --conf=/tmp/{self.config_path} --env=production --spark-submit-path /tmp/spark_submit.sh --selected-join-parts={join_part} --start-ds={self.start_date} --ds={self.end_date}
+        export EXECUTOR_MEMORY={self.executor_memory} &&
+        export DRIVER_MEMORY={self.driver_memory} &&
+        python3 /tmp/run.py --mode=backfill --conf=/tmp/{self.config_path} --env=production --spark-submit-path /tmp/spark_submit.sh --selected-join-parts={join_part} --ds={self.end_date}
         """
+        if self.start_date:
+            cmd += f" --start-date={self.start_date}"
         return cmd
 
     def run_left(self):
@@ -83,8 +97,9 @@ class JoinBackfill:
         return "echo 'Running final join'"
 
     def run(self):
+        airflow_client.init(self.airflow_cluster)
         orchestrator = AirflowOrchestrator(
-            dag_id="join_backfill",
+            dag_id=self.dag_id,
             start_date=datetime.strptime(self.start_date, "%Y-%m-%d"),
         )
         dag = orchestrator.build_dag_from_flow(self.build_flow())

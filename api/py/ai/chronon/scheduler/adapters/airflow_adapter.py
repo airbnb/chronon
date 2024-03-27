@@ -5,7 +5,7 @@ from airflow.operators.bash_operator import BashOperator
 
 
 class AirflowOrchestrator(WorkflowOrchestrator):
-    def __init__(self, dag_id, start_date, schedule_interval=None):
+    def __init__(self, dag_id, start_date, schedule_interval="@once"):
         self.dag = DAG(
             dag_id,
             start_date=start_date,
