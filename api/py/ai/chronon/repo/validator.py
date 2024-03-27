@@ -284,7 +284,7 @@ class ChrononRepoValidator(object):
         group_by_correct = all(not errors for errors in group_by_errors)
         if join.derivations and group_by_correct:
             columns = set(get_pre_derived_join_columns(join))
-            _validate_derivations(columns, join.derivations)
+            self._validate_derivations(columns, join.derivations)
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
@@ -322,7 +322,7 @@ class ChrononRepoValidator(object):
         # validate the derivations are defined correctly
         if group_by.derivations:
             columns = set(get_pre_derived_group_by_columns(group_by))
-            _validate_derivations(columns, group_by.derivations)
+            self._validate_derivations(columns, group_by.derivations)
 
         for source in group_by.sources:
             src: Source = source
