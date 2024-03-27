@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime
 
 import airflow_client
@@ -16,7 +17,15 @@ airflow_client.init(airflow_client.Service.STONE)
 
 
 class JoinBackfill:
-    def __init__(self, join: Join, start_date: str, end_date: str, config_path: str):
+    def __init__(
+        self,
+        join: Join,
+        start_date: str,
+        end_date: str,
+        s3_bucket: str,
+        config_path: str,
+        spark_version: str = SPARK_VERSION,
+    ):
         self.join = join
         self.start_date = start_date
         self.end_date = end_date
@@ -27,8 +36,9 @@ class JoinBackfill:
             spark_version=SPARK_VERSION,
             skip_download=True,
         )
+        self.s3_bucket = s3_bucket
         self.config_path = config_path
-        self.config_name = config_path.split("/")[-1]
+        self.spark_version = spark_version
 
     def build_flow(self) -> Flow:
         """
@@ -54,26 +64,14 @@ class JoinBackfill:
 
     def run_join_part(self, join_part: str):
         # TODO: Find a better way to sync configs
-        cmd = f"aws s3 cp {self.config_path} . && "
-        cmd += (
-            "emr-spark-submit"
-            + " --spark-version 3.1.1"
-            + " --emr-cluster backfill-shared-prod"
-            + " --hive-cluster silver"
-            + " --queue backfill"
-            + " --deploy-mode client"
-            + " --master yarn"
-            + " --executor-memory 4G"
-            + " --driver-memory 4G"
-            + " --jars ''"
-            + " --class ai.chronon.spark.Driver"
-            + f" {self.jar_path} join"
-            + f" --selected-join-parts={join_part}"
-            + f" --conf-path={self.config_name}"
-            + f" --end-date={self.end_date}"
-        )
-        if self.start_date:
-            cmd += f" --start-partition-override={self.start_date}"
+        config_dir = os.path.dirname(self.config_path) + "/"
+        cmd = f"""
+        aws s3 cp {self.s3_bucket}{self.config_path} /tmp/{config_dir} &&
+        aws s3 cp {self.s3_bucket}run.py /tmp/ &&
+        aws s3 cp {self.s3_bucket}spark_submit.sh /tmp/ &&
+        export SPARK_VERSION={self.spark_version} &&
+        python3 /tmp/run.py --mode=backfill --conf=/tmp/{self.config_path} --env=production --spark-submit-path /tmp/spark_submit.sh --selected-join-parts={join_part} --start-ds={self.start_date} --ds={self.end_date}
+        """
         return cmd
 
     def run_left(self):
