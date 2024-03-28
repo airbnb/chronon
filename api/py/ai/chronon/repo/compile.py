@@ -69,7 +69,11 @@ def get_folder_name_from_class_name(class_name):
     '--force-overwrite',
     help='Force overwriting existing materialized conf.',
     is_flag=True)
-def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite):
+@click.option(
+    '--feature-display',
+    help='Print out the features list created by the conf.',
+    is_flag=True)
+def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite, feature_display):
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
     The materialized objects are what will be submitted to spark jobs - driven by airflow, or by manual user testing.
@@ -106,10 +110,10 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
             num_written_objs += 1
 
-            if obj_class is Join:
+            if obj_class is Join and feature_display:
                 _print_features_names("Output Join Features", get_join_output_columns(obj))
 
-            if obj_class is GroupBy:
+            if obj_class is GroupBy and feature_display:
                 _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
 
             # In case of online join, we need to materialize the underlying online group_bys.
