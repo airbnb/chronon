@@ -32,7 +32,9 @@ class JoinBackfill:
         driver_memory: str = DRIVER_MEMORY,
     ):
         self.dag_id = "_".join(
-            map(sanitize, ["chronon_join_backfill", os.path.basename(config_path).split("/")[-1], start_date, end_date])
+            map(
+                sanitize, ["chronon_joins_backfill", os.path.basename(config_path).split("/")[-1], start_date, end_date]
+            )
         )
         self.join = join
         self.start_date = start_date
@@ -83,7 +85,8 @@ class JoinBackfill:
         export SPARK_VERSION={self.spark_version} &&
         export EXECUTOR_MEMORY={self.executor_memory} &&
         export DRIVER_MEMORY={self.driver_memory} &&
-        python3 /tmp/run.py --mode=backfill --conf=/tmp/{self.config_path} --env=production --spark-submit-path /tmp/spark_submit.sh --selected-join-parts={join_part} --ds={self.end_date}"""
+        python3 /tmp/run.py --mode=backfill --conf=/tmp/{self.config_path} --env=production \
+        --spark-submit-path /tmp/spark_submit.sh --selected-join-parts={join_part} --ds={self.end_date}"""
         if self.start_date:
             cmd += f" --start-ds={self.start_date}"
         return cmd
