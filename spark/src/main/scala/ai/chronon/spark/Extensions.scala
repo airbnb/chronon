@@ -247,6 +247,14 @@ object Extensions {
                             format: String = tableUtils.partitionSpec.format): DataFrame =
       df.withColumn(columnName, from_unixtime(df.col(timeColumn) / 1000, format))
 
+
+    def addTimebasedColIfExists(): DataFrame =
+      if (df.schema.names.contains(Constants.TimeColumn)) {
+        df.withTimeBasedColumn(Constants.TimePartitionColumn)
+      } else {
+        df
+      }
+
     private def camelToSnake(name: String) = {
       val res = "([a-z]+)([A-Z]\\w+)?".r
         .replaceAllIn(name, { m => m.subgroups.flatMap(g => Option(g).map(_.toLowerCase())).mkString("_") })

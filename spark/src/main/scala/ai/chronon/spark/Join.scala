@@ -229,7 +229,7 @@ class Join(joinConf: api.Join,
   }
 
   override def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit = {
-    val bootstrapDf = tableUtils.sql(leftRange.genScanQuery(query = null, table = bootstrapTable))
+    val bootstrapDf = tableUtils.sql(leftRange.genScanQuery(query = null, table = bootstrapTable)).addTimebasedColIfExists()
     val rightPartsData = getRightPartsData(leftRange)
     val joinedDfTry =
       try {
@@ -254,11 +254,7 @@ class Join(joinConf: api.Join,
                             bootstrapInfo: BootstrapInfo,
                             runSmallMode: Boolean = false): Option[DataFrame] = {
 
-    val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
-      leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
-    } else {
-      leftDf
-    }
+    val leftTaggedDf = leftDf.addTimebasedColIfExists()
 
     // compute bootstrap table - a left outer join between left source and various bootstrap source table
     // this becomes the "new" left for the following GB backfills

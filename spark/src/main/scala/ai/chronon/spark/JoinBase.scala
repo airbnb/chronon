@@ -351,7 +351,8 @@ abstract class JoinBase(joinConf: api.Join,
       unfilledRanges.foreach { unfilledRange =>
         val leftDf = JoinUtils.leftDf(joinConf, unfilledRange, tableUtils)
         if (leftDf.isDefined) {
-          computeBootstrapTable(leftDf.get, unfilledRange, bootstrapInfo)
+          val leftTaggedDf = leftDf.get.addTimebasedColIfExists()
+          computeBootstrapTable(leftTaggedDf, unfilledRange, bootstrapInfo)
         } else {
           logger.info(s"Query produced no results for date range: $unfilledRange. Please check upstream.")
         }
@@ -396,7 +397,7 @@ abstract class JoinBase(joinConf: api.Join,
     computeJoinOpt(stepDays, overrideStartPartition).get
   }
 
-  def computeJoinOpt(stepDays: Option[Int] = None, overrideStartPartition: Option[String] = None): Option[DataFrame] = {
+  def computeJoinOpt(stepDays: Option[Int] = None, overrideStartPartition: Option[String] = None, useBootstrapForLeft: Boolean = false): Option[DataFrame] = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
@@ -404,6 +405,14 @@ abstract class JoinBase(joinConf: api.Join,
     joinConf.joinParts.asScala.foreach { jp =>
       assert(Option(jp.groupBy.metaData.team).nonEmpty,
              s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
+    }
+
+    val source = joinConf.left
+    if (useBootstrapForLeft && !source.isSetJoinSource) {
+      logger.info("Overwriting left side to use saved Bootstrap table...")
+      source.getEvents.getQuery.setSelects(null)
+      if (source.isSetEntities) { source.getEntities.setSnapshotTable(bootstrapTable) }
+      else if (source.isSetEvents) { source.getEvents.setTable(bootstrapTable) }
     }
 
     // Run validations before starting the job
