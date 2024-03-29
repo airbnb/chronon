@@ -1,11 +1,9 @@
 import logging
 import os
-from datetime import datetime
 
-import airflow_client
+from ai.chronon.constants import ADAPTERS
 from ai.chronon.join import Join
 from ai.chronon.repo.run import download_jar
-from ai.chronon.scheduler.adapters.airflow_adapter import AirflowOrchestrator
 from ai.chronon.scheduler.interfaces.flow import Flow
 from ai.chronon.scheduler.interfaces.node import Node
 from ai.chronon.utils import join_part_name, sanitize
@@ -14,7 +12,6 @@ SPARK_VERSION = "3.1.1"
 SPARK_JAR_TYPE = "uber"
 EXECUTOR_MEMORY = "4g"
 DRIVER_MEMORY = "4g"
-AIRFLOW_CLUSTER = airflow_client.Service.STONE
 logging.basicConfig(level=logging.INFO)
 
 
@@ -27,7 +24,6 @@ class JoinBackfill:
         config_path: str,
         s3_bucket: str,
         spark_version: str = SPARK_VERSION,
-        airflow_cluster: str = AIRFLOW_CLUSTER,
         executor_memory: str = EXECUTOR_MEMORY,
         driver_memory: str = DRIVER_MEMORY,
     ):
@@ -49,7 +45,6 @@ class JoinBackfill:
         self.s3_bucket = s3_bucket
         self.config_path = config_path
         self.spark_version = spark_version
-        self.airflow_cluster = airflow_cluster
         self.executor_memory = executor_memory
         self.driver_memory = driver_memory
 
@@ -99,11 +94,8 @@ class JoinBackfill:
         # TODO: integrate with the Spark side change
         return "echo 'Running final join'"
 
-    def run(self):
-        airflow_client.init(self.airflow_cluster)
-        orchestrator = AirflowOrchestrator(
-            dag_id=self.dag_id,
-            start_date=datetime.strptime(self.start_date, "%Y-%m-%d"),
-        )
-        dag = orchestrator.build_dag_from_flow(self.build_flow())
-        airflow_client.create_dag(dag, overwrite=True)
+    def run(self, orchestrator: str):
+        orchestrator = ADAPTERS[orchestrator](dag_id=self.dag_id, start_date=self.start_date)
+        orchestrator.setup()
+        orchestrator.build_dag_from_flow(self.build_flow())
+        orchestrator.trigger_run()
