@@ -21,15 +21,10 @@ import com.yahoo.memory.Memory
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import com.yahoo.sketches.kll.KllFloatsSketch
-import com.yahoo.sketches.{
-  ArrayOfDoublesSerDe,
-  ArrayOfItemsSerDe,
-  ArrayOfLongsSerDe,
-  ArrayOfNumbersSerDe,
-  ArrayOfStringsSerDe
-}
+import com.yahoo.sketches.{ArrayOfDoublesSerDe, ArrayOfItemsSerDe, ArrayOfLongsSerDe, ArrayOfStringsSerDe}
 
-import java.util
+import java.{lang, util}
+import scala.collection.mutable
 import scala.reflect.ClassTag
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
@@ -343,26 +338,32 @@ object CpcFriendly {
   }
 }
 
+class StringItemsSketch(maxMapSize: Int) extends ItemsSketch[String](maxMapSize)
+class LongItemsSketch(maxMapSize: Int) extends ItemsSketch[java.lang.Long](maxMapSize)
+class DoubleItemsSketch(maxMapSize: Int) extends ItemsSketch[java.lang.Double](maxMapSize)
+
 trait FrequentItemsFriendly[Input] {
   def serializer: ArrayOfItemsSerDe[Input]
+  def sketch(maxMapSize: Int): ItemsSketch[Input]
 }
 
 object FrequentItemsFriendly {
   implicit val stringIsFrequentItemsFriendly: FrequentItemsFriendly[String] = new FrequentItemsFriendly[String] {
     override def serializer: ArrayOfItemsSerDe[String] = new ArrayOfStringsSerDe
+    override def sketch(maxMapSize: Int): ItemsSketch[String] = new StringItemsSketch(maxMapSize)
   }
 
-  implicit val longIsCpcFriendly: FrequentItemsFriendly[java.lang.Long] = new FrequentItemsFriendly[java.lang.Long] {
-    override def serializer: ArrayOfItemsSerDe[java.lang.Long] = new ArrayOfLongsSerDe
-  }
-  implicit val doubleIsCpcFriendly: FrequentItemsFriendly[java.lang.Double] =
-    new FrequentItemsFriendly[java.lang.Double] {
-      override def serializer: ArrayOfItemsSerDe[java.lang.Double] = new ArrayOfDoublesSerDe
+  implicit val longIsFrequentItemsFriendly: FrequentItemsFriendly[java.lang.Long] =
+    new FrequentItemsFriendly[java.lang.Long] {
+      override def serializer: ArrayOfItemsSerDe[java.lang.Long] = new ArrayOfLongsSerDe
+      override def sketch(maxMapSize: Int): ItemsSketch[lang.Long] = new LongItemsSketch(maxMapSize)
     }
 
-  implicit val BinaryIsCpcFriendly: FrequentItemsFriendly[Number] = new FrequentItemsFriendly[Number] {
-    override def serializer: ArrayOfItemsSerDe[Number] = new ArrayOfNumbersSerDe
-  }
+  implicit val doubleIsFrequentItemsFriendly: FrequentItemsFriendly[java.lang.Double] =
+    new FrequentItemsFriendly[java.lang.Double] {
+      override def serializer: ArrayOfItemsSerDe[java.lang.Double] = new ArrayOfDoublesSerDe
+      override def sketch(maxMapSize: Int): ItemsSketch[lang.Double] = new DoubleItemsSketch(maxMapSize)
+    }
 }
 
 class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: ErrorType = ErrorType.NO_FALSE_POSITIVES)
@@ -372,7 +373,12 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
   override def irType: DataType = BinaryType
   type Sketch = ItemsSketch[T]
   override def prepare(input: T): Sketch = {
-    val sketch = new ItemsSketch[T](mapSize)
+    // The ItemsSketch implementation requires a size with a positive power of 2
+    // Initialize the sketch with the next closest power of 2
+    val power = math.ceil(math.log(math.max(mapSize, 1)) / math.log(2))
+    val sketchSize = math.pow(2, power).toInt
+
+    val sketch = implicitly[FrequentItemsFriendly[T]].sketch(sketchSize)
     sketch.update(input)
     sketch
   }
@@ -393,8 +399,26 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
     ItemsSketch.getInstance[T](Memory.wrap(bytes), serDe)
   }
 
-  override def finalize(ir: Sketch): Map[T, Long] =
-    ir.getFrequentItems(errorType).map(sk => sk.getItem -> sk.getEstimate).toMap
+  override def finalize(ir: Sketch): Map[T, Long] = {
+    if (mapSize == 0) {
+      return Map.empty
+    }
+
+    val items = ir.getFrequentItems(errorType).map(sk => sk.getItem -> sk.getEstimate)
+    val heap = mutable.PriorityQueue[(T, Long)]()(Ordering.by(_._2))
+
+    items.foreach({
+      case (key, value) =>
+        if (heap.size < mapSize) {
+          heap.enqueue((key, value))
+        } else if (heap.head._2 < value) {
+          heap.dequeue()
+          heap.enqueue((key, value))
+        }
+    })
+
+    heap.dequeueAll.toMap
+  }
 
   override def normalize(ir: Sketch): Array[Byte] = {
     val serDe = implicitly[FrequentItemsFriendly[T]].serializer

@@ -209,6 +209,10 @@ object ColumnAggregator {
   private def toFloat[A: Numeric](inp: Any): Float = implicitly[Numeric[A]].toFloat(inp.asInstanceOf[A])
   private def toLong[A: Numeric](inp: Any) = implicitly[Numeric[A]].toLong(inp.asInstanceOf[A])
   private def boolToLong(inp: Any): Long = if (inp.asInstanceOf[Boolean]) 1 else 0
+  private def toJavaLong[A: Numeric](inp: Any) =
+    implicitly[Numeric[A]].toLong(inp.asInstanceOf[A]).asInstanceOf[java.lang.Long]
+  private def toJavaDouble[A: Numeric](inp: Any) =
+    implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A]).asInstanceOf[java.lang.Double]
 
   def construct(baseInputType: DataType,
                 aggregationPart: AggregationPart,
@@ -256,6 +260,17 @@ object ColumnAggregator {
     aggregationPart.operation match {
       case Operation.COUNT     => simple(new Count)
       case Operation.HISTOGRAM => simple(new Histogram(aggregationPart.getInt("k", Some(0))))
+      case Operation.APPROX_HISTOGRAM_K =>
+        val k = aggregationPart.getInt("k", Some(8))
+        inputType match {
+          case IntType    => simple(new FrequentItems[java.lang.Long](k), toJavaLong[Int])
+          case LongType   => simple(new FrequentItems[java.lang.Long](k))
+          case ShortType  => simple(new FrequentItems[java.lang.Long](k), toJavaLong[Short])
+          case DoubleType => simple(new FrequentItems[java.lang.Double](k))
+          case FloatType  => simple(new FrequentItems[java.lang.Double](k), toJavaDouble[Float])
+          case StringType => simple(new FrequentItems[String](k))
+          case _          => mismatchException
+        }
       case Operation.SUM =>
         inputType match {
           case IntType     => simple(new Sum[Long](LongType), toLong[Int])
