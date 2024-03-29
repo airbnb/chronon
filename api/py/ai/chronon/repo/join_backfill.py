@@ -8,7 +8,7 @@ from ai.chronon.repo.run import download_jar
 from ai.chronon.scheduler.adapters.airflow_adapter import AirflowOrchestrator
 from ai.chronon.scheduler.interfaces.flow import Flow
 from ai.chronon.scheduler.interfaces.node import Node
-from ai.chronon.utils import join_part_name
+from ai.chronon.utils import join_part_name, sanitize
 
 SPARK_VERSION = "3.1.1"
 SPARK_JAR_TYPE = "uber"
@@ -21,18 +21,19 @@ logging.basicConfig(level=logging.INFO)
 class JoinBackfill:
     def __init__(
         self,
-        dag_id: str,
         join: Join,
         start_date: str,
         end_date: str,
-        s3_bucket: str,
         config_path: str,
+        s3_bucket: str,
         spark_version: str = SPARK_VERSION,
         airflow_cluster: str = AIRFLOW_CLUSTER,
         executor_memory: str = EXECUTOR_MEMORY,
         driver_memory: str = DRIVER_MEMORY,
     ):
-        self.dag_id = dag_id
+        self.dag_id = "_".join(
+            map(sanitize, ["chronon_join_backfill", os.path.basename(config_path).split("/")[-1], start_date, end_date])
+        )
         self.join = join
         self.start_date = start_date
         self.end_date = end_date
@@ -82,10 +83,9 @@ class JoinBackfill:
         export SPARK_VERSION={self.spark_version} &&
         export EXECUTOR_MEMORY={self.executor_memory} &&
         export DRIVER_MEMORY={self.driver_memory} &&
-        python3 /tmp/run.py --mode=backfill --conf=/tmp/{self.config_path} --env=production --spark-submit-path /tmp/spark_submit.sh --selected-join-parts={join_part} --ds={self.end_date}
-        """
+        python3 /tmp/run.py --mode=backfill --conf=/tmp/{self.config_path} --env=production --spark-submit-path /tmp/spark_submit.sh --selected-join-parts={join_part} --ds={self.end_date}"""
         if self.start_date:
-            cmd += f" --start-date={self.start_date}"
+            cmd += f" --start-ds={self.start_date}"
         return cmd
 
     def run_left(self):
