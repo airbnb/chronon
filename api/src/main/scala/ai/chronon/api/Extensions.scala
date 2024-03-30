@@ -884,8 +884,8 @@ object Extensions {
 
     def leftChanged(oldSemanticHash: Map[String, String]): Boolean = {
       // Checks for semantic changes in left or bootstrap, because those are saved together
-      oldSemanticHash(leftSourceKey) != semanticHash(leftSourceKey) || oldSemanticHash(
-        join.metaData.bootstrapTable) != semanticHash(join.metaData.bootstrapTable)
+      oldSemanticHash.get(leftSourceKey) != semanticHash.get(leftSourceKey) || oldSemanticHash.get(
+        join.metaData.bootstrapTable) != semanticHash.get(join.metaData.bootstrapTable)
     }
 
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
