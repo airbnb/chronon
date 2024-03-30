@@ -241,7 +241,10 @@ object Driver {
       val selectedJoinParts: ScallopOption[List[String]] =
         opt[List[String]](required = false, descr = "A list of join parts that require backfilling.")
       val useCachedLeft: ScallopOption[Boolean] =
-        opt[Boolean](required = false, default = Some(false), descr = "Whether or not to use the cached bootstrap table as the source - used in parallelized join flow.")
+        opt[Boolean](
+          required = false,
+          default = Some(false),
+          descr = "Whether or not to use the cached bootstrap table as the source - used in parallelized join flow.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }
@@ -257,7 +260,9 @@ object Driver {
       )
 
       if (args.selectedJoinParts.isDefined) {
-        join.computeJoinOpt(args.stepDays.toOption, args.startPartitionOverride.toOption, args.useCachedLeft.getOrElse(false))
+        join.computeJoinOpt(args.stepDays.toOption,
+                            args.startPartitionOverride.toOption,
+                            args.useCachedLeft.getOrElse(false))
         logger.info(
           s"Backfilling selected join parts: ${args.selectedJoinParts()} is complete. Skipping the final join. Exiting."
         )

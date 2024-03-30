@@ -45,7 +45,6 @@ import scala.collection.compat._
 import scala.jdk.CollectionConverters._
 
 import ai.chronon.api.DataModel.Entities
-//import scala.jdk.CollectionConverters.asScalaBufferConverter
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
 
@@ -229,7 +228,8 @@ class Join(joinConf: api.Join,
   }
 
   override def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit = {
-    val bootstrapDf = tableUtils.sql(leftRange.genScanQuery(query = null, table = bootstrapTable)).addTimebasedColIfExists()
+    val bootstrapDf =
+      tableUtils.sql(leftRange.genScanQuery(query = null, table = bootstrapTable)).addTimebasedColIfExists()
     val rightPartsData = getRightPartsData(leftRange)
     val joinedDfTry =
       try {

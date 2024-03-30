@@ -397,7 +397,9 @@ abstract class JoinBase(joinConf: api.Join,
     computeJoinOpt(stepDays, overrideStartPartition).get
   }
 
-  def computeJoinOpt(stepDays: Option[Int] = None, overrideStartPartition: Option[String] = None, useBootstrapForLeft: Boolean = false): Option[DataFrame] = {
+  def computeJoinOpt(stepDays: Option[Int] = None,
+                     overrideStartPartition: Option[String] = None,
+                     useBootstrapForLeft: Boolean = false): Option[DataFrame] = {
 
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
