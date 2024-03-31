@@ -338,65 +338,70 @@ object CpcFriendly {
   }
 }
 
-class StringItemsSketch(maxMapSize: Int) extends ItemsSketch[String](maxMapSize)
-class LongItemsSketch(maxMapSize: Int) extends ItemsSketch[java.lang.Long](maxMapSize)
-class DoubleItemsSketch(maxMapSize: Int) extends ItemsSketch[java.lang.Double](maxMapSize)
+case class ItemsSketchIR[T](sketch: ItemsSketch[T], sketchType: Int)
 
 trait FrequentItemsFriendly[Input] {
   def serializer: ArrayOfItemsSerDe[Input]
-  def sketch(maxMapSize: Int): ItemsSketch[Input]
+  def sketchType: Int
 }
 
 object FrequentItemsFriendly {
+  val StringItemType: Int = 1
+  val LongItemType: Int = 2
+  val DoubleItemType: Int = 3
+
   implicit val stringIsFrequentItemsFriendly: FrequentItemsFriendly[String] = new FrequentItemsFriendly[String] {
     override def serializer: ArrayOfItemsSerDe[String] = new ArrayOfStringsSerDe
-    override def sketch(maxMapSize: Int): ItemsSketch[String] = new StringItemsSketch(maxMapSize)
+    override def sketchType: Int = StringItemType
   }
 
   implicit val longIsFrequentItemsFriendly: FrequentItemsFriendly[java.lang.Long] =
     new FrequentItemsFriendly[java.lang.Long] {
       override def serializer: ArrayOfItemsSerDe[java.lang.Long] = new ArrayOfLongsSerDe
-      override def sketch(maxMapSize: Int): ItemsSketch[lang.Long] = new LongItemsSketch(maxMapSize)
+      override def sketchType: Int = LongItemType
     }
 
   implicit val doubleIsFrequentItemsFriendly: FrequentItemsFriendly[java.lang.Double] =
     new FrequentItemsFriendly[java.lang.Double] {
       override def serializer: ArrayOfItemsSerDe[java.lang.Double] = new ArrayOfDoublesSerDe
-      override def sketch(maxMapSize: Int): ItemsSketch[lang.Double] = new DoubleItemsSketch(maxMapSize)
+      override def sketchType: Int = DoubleItemType
     }
 }
 
 class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: ErrorType = ErrorType.NO_FALSE_POSITIVES)
-    extends SimpleAggregator[T, ItemsSketch[T], Map[T, Long]] {
+    extends SimpleAggregator[T, ItemsSketchIR[T], Map[T, Long]] {
+  private type Sketch = ItemsSketchIR[T]
+
+  // The ItemsSketch implementation requires a size with a positive power of 2
+  // Initialize the sketch with the next closest power of 2
+  val sketchSize: Int = if (mapSize > 1) Integer.highestOneBit(mapSize - 1) << 1 else 2
+
   override def outputType: DataType = MapType(StringType, IntType)
 
   override def irType: DataType = BinaryType
-  type Sketch = ItemsSketch[T]
-  override def prepare(input: T): Sketch = {
-    // The ItemsSketch implementation requires a size with a positive power of 2
-    // Initialize the sketch with the next closest power of 2
-    val power = math.ceil(math.log(math.max(mapSize, 1)) / math.log(2))
-    val sketchSize = math.pow(2, power).toInt
 
-    val sketch = implicitly[FrequentItemsFriendly[T]].sketch(sketchSize)
+  override def prepare(input: T): Sketch = {
+    val sketch = new ItemsSketch[T](sketchSize)
+    val sketchType = implicitly[FrequentItemsFriendly[T]].sketchType
     sketch.update(input)
-    sketch
+    ItemsSketchIR(sketch, sketchType)
   }
 
   override def update(ir: Sketch, input: T): Sketch = {
-    ir.update(input)
+    ir.sketch.update(input)
     ir
   }
   override def merge(ir1: Sketch, ir2: Sketch): Sketch = {
-    ir1.merge(ir2)
+    ir1.sketch.merge(ir2.sketch)
     ir1
   }
 
   // ItemsSketch doesn't have a proper copy method. So we serialize and deserialize.
   override def clone(ir: Sketch): Sketch = {
-    val serDe = implicitly[FrequentItemsFriendly[T]].serializer
-    val bytes = ir.toByteArray(serDe)
-    ItemsSketch.getInstance[T](Memory.wrap(bytes), serDe)
+    val serializer = implicitly[FrequentItemsFriendly[T]].serializer
+    val bytes = ir.sketch.toByteArray(serializer)
+    val clonedSketch = ItemsSketch.getInstance(Memory.wrap(bytes), serializer)
+    ItemsSketchIR(clonedSketch, ir.sketchType)
   }
 
   override def finalize(ir: Sketch): Map[T, Long] = {
@@ -404,7 +409,7 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
       return Map.empty
     }
 
-    val items = ir.getFrequentItems(errorType).map(sk => sk.getItem -> sk.getEstimate)
+    val items = ir.sketch.getFrequentItems(errorType).map(sk => sk.getItem -> sk.getEstimate)
     val heap = mutable.PriorityQueue[(T, Long)]()(Ordering.by(_._2))
 
     items.foreach({
@@ -421,13 +426,16 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
   }
 
   override def normalize(ir: Sketch): Array[Byte] = {
-    val serDe = implicitly[FrequentItemsFriendly[T]].serializer
-    ir.toByteArray(serDe)
+    val serializer = implicitly[FrequentItemsFriendly[T]].serializer
+    (Seq(ir.sketchType.byteValue()) ++ ir.sketch.toByteArray(serializer)).toArray
   }
 
   override def denormalize(normalized: Any): Sketch = {
-    val serDe = implicitly[FrequentItemsFriendly[T]].serializer
-    ItemsSketch.getInstance[T](Memory.wrap(normalized.asInstanceOf[Array[Byte]]), serDe)
+    val bytes = normalized.asInstanceOf[Array[Byte]]
+    val sketchType = bytes.head
+    val serializer = implicitly[FrequentItemsFriendly[T]].serializer
+    val sketch = ItemsSketch.getInstance[T](Memory.wrap(bytes.tail), serializer)
+    ItemsSketchIR(sketch, sketchType)
   }
 }
 

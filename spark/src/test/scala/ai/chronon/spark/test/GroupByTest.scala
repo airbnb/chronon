@@ -38,7 +38,7 @@ import ai.chronon.spark._
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{Encoders, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 
@@ -341,9 +341,10 @@ class GroupByTest {
     assertTrue(aggregationsMetadata.length == 2)
     val columns = aggregationsMetadata.map(a => a.name -> a.columnType).toMap
     assertEquals(Map(
-      "time_spent_ms" -> LongType,
-      "price" -> DoubleType
-    ), columns)
+                   "time_spent_ms" -> LongType,
+                   "price" -> DoubleType
+                 ),
+                 columns)
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
@@ -413,8 +414,8 @@ class GroupByTest {
     tableUtils.createDatabase(namespace)
     DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
     val source = Builders.Source.events(
-      query =
-        Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms", "price"), startPartition = startPartition),
+      query = Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms", "price"),
+                             startPartition = startPartition),
       table = sourceTable
     )
     (source, endPartition)
@@ -520,14 +521,26 @@ class GroupByTest {
           new Window(60, TimeUnit.DAYS)
         ),
         argMap = Map("k" -> "4")
-      ),
+      )
     )
     backfill(name = "unit_test_group_by_approx_histograms",
-      source = source,
-      endPartition = endPartition,
-      namespace = namespace,
-      tableUtils = tableUtils,
-      additionalAgg = aggs)
+             source = source,
+             endPartition = endPartition,
+             namespace = namespace,
+             tableUtils = tableUtils,
+             additionalAgg = aggs)
+
+    val histogramValues = spark
+      .sql("""
+          |select explode(map_values(item_approx_histogram_k_15d)) as item_values
+          |from test_approx_histograms.unit_test_group_by_approx_histograms
+          |""".stripMargin)
+      .map(row => row.getAs[Int]("item_values"))(Encoders.scalaInt)
+      .collect()
+      .toSet
+
+    assert(histogramValues.nonEmpty)
+    assert(!histogramValues.contains(0))
   }
 
   @Test
