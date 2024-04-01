@@ -88,7 +88,8 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: BaseT
     val queryOpt = Option(query)
     val startClause = Option(start).map(start => s"${fillIfAbsent(Constants.TimeColumn)} >= " + Constants.Partition.epochMillis(start))
     val endClause = Option(end).map(end => s"${fillIfAbsent(Constants.TimeColumn)} < " + Constants.Partition.epochMillis(Constants.Partition.after(end)))
-    val wheres = (startClause ++ endClause).toSeq
+    val baseWheres = if (Option(query.wheres).isDefined) query.wheres.asScala else Seq[String]()
+    val wheres = baseWheres ++ (startClause ++ endClause).toSeq
     QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
       from = table,
       wheres = wheres,
