@@ -7,6 +7,7 @@ object QueryUtils {
   def build(selects: Map[String, String],
             from: String,
             wheres: scala.collection.Seq[String],
+            isLocalized: Boolean,
             fillIfAbsent: Map[String, String] = null): String = {
 
     def toProjections(m: Map[String, String]) =
@@ -25,7 +26,13 @@ object QueryUtils {
       case (None, _)                 => Seq("*")
     }
 
-    val whereClause = Option(wheres)
+    val updatedWheres = if (isLocalized) {
+      wheres ++ Seq(s"(${Constants.LocalityZoneColumn} = 'DEFAULT' or ${Constants.LocalityZoneColumn} is null)")
+    } else {
+      wheres
+    }
+
+    val whereClause = Option(updatedWheres)
       .filter(_.nonEmpty)
       .map { ws =>
         s"""
@@ -36,6 +43,6 @@ object QueryUtils {
 
     s"""SELECT
        |  ${finalSelects.mkString(",\n  ")}
-       |FROM $from $whereClause""".stripMargin
+       |FROM $from$whereClause""".stripMargin
   }
 }

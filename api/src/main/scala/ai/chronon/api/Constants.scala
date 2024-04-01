@@ -28,6 +28,7 @@ object Constants {
   def initConstantNameProvider(provider: ConstantNameProvider): Unit =
     constantNameProvider.set(provider)
 
+  def LocalityZoneColumn: String = "locality_zone"
   def TimeColumn: String = constantNameProvider.get().TimeColumn
   def PartitionColumn: String = constantNameProvider.get().DatePartitionColumn
   def HourPartitionColumn: String = constantNameProvider.get().HourPartitionColumn

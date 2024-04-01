@@ -1166,7 +1166,8 @@ class JoinTest {
     val renderedUnpartitioned = renderUnpartitionedDataSourceQuery(
       viewsGroupByUnpartitioned.sources.asScala.head,
       Seq("item"),
-      viewsGroupByUnpartitioned.inferredAccuracy
+      viewsGroupByUnpartitioned.inferredAccuracy,
+      false
     )
     // Only checking that the date logic is correct in the query
     assertFalse(renderedUnpartitioned.contains("ds"))

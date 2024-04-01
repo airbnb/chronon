@@ -81,6 +81,7 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: BaseT
     QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
                      from = table,
                      wheres = wheres,
+                     isLocalized = tableUtils.isLocalized(table),
                      fillIfAbsent = fillIfAbsent)
   }
 
@@ -93,6 +94,7 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: BaseT
     QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
       from = table,
       wheres = wheres,
+      isLocalized = tableUtils.isLocalized(table),
       fillIfAbsent = fillIfAbsent)
   }
 

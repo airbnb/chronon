@@ -515,7 +515,8 @@ object GroupBy {
         if (!tableUtils.isPartitioned(source.table)) {
           renderUnpartitionedDataSourceQuery(source,
             groupByConf.getKeyColumns.asScala,
-            groupByConf.inferredAccuracy)
+            groupByConf.inferredAccuracy,
+            tableUtils.isLocalized(source.table))
         } else {
           renderDataSourceQuery(groupByConf,
             source,
@@ -705,10 +706,12 @@ object GroupBy {
       throw new Exception(s"mutationTopic is not set for groupby ${groupByConf.metaData.name} with Accuracy.TEMPORAL")
     }
 
+    val table = if (mutations) source.getEntities.mutationTable.cleanSpec else source.table
     val query = api.QueryUtils.build(
       Option(source.query.selects).map(_.toScala).orNull,
-      if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
+      table,
       Option(source.query.wheres).map(_.toScala).getOrElse(Seq.empty[String]) ++ partitionConditions,
+      tableUtils.isLocalized(table),
       metaColumns ++ keys.map(_ -> null)
     )
     query
@@ -716,7 +719,8 @@ object GroupBy {
 
   def renderUnpartitionedDataSourceQuery(source: api.Source,
                             keys: Seq[String],
-                            accuracy: api.Accuracy): String = {
+                            accuracy: api.Accuracy,
+                            isLocalized: Boolean): String = {
     var metaColumns: Map[String, String] = Map()
 
     val timeMapping = accuracy match {
@@ -738,6 +742,7 @@ object GroupBy {
       selects=Option(source.query.selects).map(_.asScala.toMap).orNull,
       from=source.table,
       wheres=Option(source.query.wheres).map(_.asScala).getOrElse(Seq.empty[String]),
+      isLocalized=isLocalized,
       fillIfAbsent=metaColumns ++ keys.map(_ -> null)
     )
     logger.info("Querying unpartitioned data from renderUnpartitionedDataSourceQuery with query: " + query)
@@ -746,7 +751,7 @@ object GroupBy {
 
   // Required for pyspark support
   def renderUnpartitionedDataSourceQueryWithArrayList(source: api.Source, keys: java.util.ArrayList[String], accuracy: api.Accuracy): String = {
-    renderUnpartitionedDataSourceQuery(source, keys.asScala.toSeq, accuracy)
+    renderUnpartitionedDataSourceQuery(source, keys.asScala.toSeq, accuracy, false /* We require notebooks users to filter out India data */)
   }
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,

@@ -40,6 +40,7 @@ object JoinUtils {
         QueryUtils.build(selects = Option(joinConf.left.query).map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
           from = joinConf.left.table,
           wheres = Option(joinConf.left.query).flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String]),
+          isLocalized = tableUtils.isLocalized(joinConf.left.table),
           fillIfAbsent = timeProjection.toMap)
       }
     } else {

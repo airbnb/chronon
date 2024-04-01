@@ -60,6 +60,11 @@ trait BaseTableUtils {
     schema.fieldNames.contains(partitionColumn)
   }
 
+  def isLocalized(tableName: String): Boolean = {
+    val schema = getSchemaFromTable(tableName)
+    schema.fieldNames.contains(Constants.LocalityZoneColumn)
+  }
+
   // return all specified partition columns in a table in format of Map[partitionName, PartitionValue]
   def allPartitions(tableName: String, partitionColumnsFilter: Seq[String] = Seq.empty): Seq[Map[String, String]] = {
     if (!tableExists(tableName)) return Seq.empty[Map[String, String]]

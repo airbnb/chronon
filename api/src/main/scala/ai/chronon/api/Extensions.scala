@@ -469,6 +469,7 @@ object Extensions {
         selects,
         Constants.StreamingInputTable,
         baseWheres.toSeq ++ timeWheres.toSeq ++ keyWhereOption.toSeq,
+        false, // Don't filter by locality zone in streaming queries.
         fillIfAbsent = fillIfAbsent
       )
     }
