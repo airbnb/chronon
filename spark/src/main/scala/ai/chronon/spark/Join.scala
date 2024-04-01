@@ -252,13 +252,19 @@ class Join(joinConf: api.Join,
   override def computeRange(leftDf: DataFrame,
                             leftRange: PartitionRange,
                             bootstrapInfo: BootstrapInfo,
-                            runSmallMode: Boolean = false): Option[DataFrame] = {
+                            runSmallMode: Boolean = false,
+                            usingBootstrappedLeft: Boolean = false): Option[DataFrame] = {
 
     val leftTaggedDf = leftDf.addTimebasedColIfExists()
 
     // compute bootstrap table - a left outer join between left source and various bootstrap source table
     // this becomes the "new" left for the following GB backfills
-    val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
+    val bootstrapDf = if (usingBootstrappedLeft) {
+      leftTaggedDf
+    } else {
+      computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
+    }
+
     val bootStrapWithStats = bootstrapDf.withStats
 
     // for each join part, find the bootstrap sets that can fully "cover" the required fields. Later we will use this
@@ -339,7 +345,7 @@ class Join(joinConf: api.Join,
           // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
           Success(
             rightResults
-              .foldLeft(bootstrapDf) {
+              .foldLeft(bootstrapDf.addTimebasedColIfExists()) {
                 case (partialDf, (rightPart, rightDf)) => joinWithLeft(partialDf, rightDf, rightPart)
               }
               // drop all processing metadata columns
@@ -354,7 +360,7 @@ class Join(joinConf: api.Join,
       }
       .get
 
-    Some(processJoinedDf(joinedDfTry, leftDf, bootstrapInfo, bootstrapDf))
+    Some(processJoinedDf(joinedDfTry, leftTaggedDf, bootstrapInfo, bootstrapDf))
   }
 
   private def processJoinedDf(joinedDfTry: Try[DataFrame],

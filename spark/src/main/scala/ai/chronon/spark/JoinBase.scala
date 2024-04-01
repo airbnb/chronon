@@ -311,7 +311,8 @@ abstract class JoinBase(joinConf: api.Join,
   def computeRange(leftDf: DataFrame,
                    leftRange: PartitionRange,
                    bootstrapInfo: BootstrapInfo,
-                   runSmallMode: Boolean = false): Option[DataFrame]
+                   runSmallMode: Boolean = false,
+                   usingBootstrappedLeft: Boolean = false): Option[DataFrame]
 
   def computeBootstrapTable(leftDf: DataFrame, range: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 
@@ -412,9 +413,13 @@ abstract class JoinBase(joinConf: api.Join,
     val source = joinConf.left
     if (useBootstrapForLeft && !source.isSetJoinSource) {
       logger.info("Overwriting left side to use saved Bootstrap table...")
-      source.getEvents.getQuery.setSelects(null)
-      if (source.isSetEntities) { source.getEntities.setSnapshotTable(bootstrapTable) }
-      else if (source.isSetEvents) { source.getEvents.setTable(bootstrapTable) }
+      if (source.isSetEntities) {
+        source.getEntities.setSnapshotTable(bootstrapTable)
+        source.getEntities.getQuery.setSelects(null)
+      } else if (source.isSetEvents) {
+        source.getEvents.setTable(bootstrapTable)
+        source.getEvents.getQuery.setSelects(null)
+      }
     }
 
     // Run validations before starting the job
@@ -502,7 +507,7 @@ abstract class JoinBase(joinConf: api.Join,
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           if (showDf) leftDfInRange.prettyPrint()
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
-          val finalDf = computeRange(leftDfInRange, range, bootstrapInfo, runSmallMode)
+          val finalDf = computeRange(leftDfInRange, range, bootstrapInfo, runSmallMode, useBootstrapForLeft)
           if (selectedJoinParts.isDefined) {
             assert(finalDf.isEmpty,
                    "The arg `selectedJoinParts` is defined, so no final join is required. `finalDf` should be empty")
