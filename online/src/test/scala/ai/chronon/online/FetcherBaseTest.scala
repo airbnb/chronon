@@ -36,7 +36,7 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
 import scala.util.Try
 
-class FetcherBaseTest extends MockitoSugar with Matchers {
+class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   val GroupBy = "relevance.short_term_user_features"
   val Column = "pdp_view_count_14d"
   val GuestKey = "guest"

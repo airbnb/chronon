@@ -21,8 +21,8 @@ import scala.collection.JavaConverters._
 import scala.util.{Failure, Success, Try}
 
 trait MockitoHelper extends MockitoSugar {
-  // Overriding doReturn to fix a known Java/Scala interoperability issue when using Mockito. ("doReturn: ambiguous
-  // reference to overloaded definition"). An alternative would be to use the 'mockito-scala' library.
+  // We override doReturn to fix a known Java/Scala interoperability issue. Without this fix, we see "doReturn:
+  // ambiguous reference to overloaded definition" errors. An alternative would be to use the 'mockito-scala' library.
   def doReturn(toBeReturned: Any): Stubber = {
     Mockito.doReturn(toBeReturned, Nil: _*)
   }
