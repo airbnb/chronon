@@ -7,8 +7,8 @@
 set -euxo pipefail
 
 BRANCH="$(git rev-parse --abbrev-ref HEAD)"
-if [[ "$BRANCH" != "master" ]]; then
-  echo "$(tput bold) You are not on master!"
+if [[ "$BRANCH" != "main" ]]; then
+  echo "$(tput bold) You are not on main branch!"
   echo "$(tput sgr0) Are you sure you want to release? (y to continue)"
   read response
   if [[ "$response" != "y" ]]; then

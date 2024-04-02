@@ -16,25 +16,25 @@
 
 package ai.chronon.online
 
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
-import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
+import ai.chronon.api.Extensions.{ExternalPartOps, GroupByOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
-
 import java.util.function.{BiPredicate, Consumer}
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
+import scala.collection.immutable.Map
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
+
+import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildDerivedFields}
 
 object Fetcher {
   case class Request(name: String,
@@ -100,10 +100,17 @@ class Fetcher(val kvStore: KVStore,
                 val keyField = StructField(name, dType)
                 keyFields.add(keyField)
             }
-          val baseValueSchema = if (joinPart.groupBy.aggregations == null) {
+          val groupBySchemaBeforeDerivation: StructType = if (servingInfo.groupBy.aggregations == null) {
             servingInfo.selectedChrononSchema
           } else {
             servingInfo.outputChrononSchema
+          }
+          val baseValueSchema: StructType = if (!servingInfo.groupBy.hasDerivations) {
+            groupBySchemaBeforeDerivation
+          } else {
+            val fields =
+              buildDerivedFields(servingInfo.groupBy.derivationsScala, keySchema, groupBySchemaBeforeDerivation)
+            StructType(s"groupby_derived_${servingInfo.groupBy.metaData.cleanName}", fields.toArray)
           }
           baseValueSchema.fields.foreach { sf =>
             valueFields.append(joinPart.constructJoinPartSchema(sf))
@@ -145,7 +152,17 @@ class Fetcher(val kvStore: KVStore,
   // key and value schemas
   lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]](
     { joinName: String =>
-      getJoinConf(joinName).map(_.join).map(buildJoinCodec)
+      getJoinConf(joinName)
+        .map(_.join)
+        .map(buildJoinCodec)
+        .recoverWith {
+          case th: Throwable =>
+            Failure(
+              new RuntimeException(
+                s"Couldn't fetch joinName = ${joinName} or build join codec due to ${th.traceString}",
+                th
+              ))
+        }
     },
     { join: String => Metrics.Context(environment = "join.codec.fetch", join = join) })
 
@@ -184,30 +201,46 @@ class Fetcher(val kvStore: KVStore,
             val derivationStartTs = System.currentTimeMillis()
             val joinName = internalResponse.request.name
             val ctx = Metrics.Context(Environment.JoinFetching, join = joinName)
-            val joinCodec = getJoinCodecs(internalResponse.request.name).get
-            ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
-            val requestTs = internalResponse.request.atMillis.getOrElse(System.currentTimeMillis())
-            val requestDs = TsUtils.toStr(requestTs).substring(0, 10)
-            val baseMap = internalMap ++ externalMap
-            // used for derivation based on ts/ds
-            val tsDsMap: Map[String, AnyRef] =
-              Map("ts" -> (requestTs).asInstanceOf[AnyRef], "ds" -> (requestDs).asInstanceOf[AnyRef])
-            val derivedMap: Map[String, AnyRef] = Try(
-              joinCodec
-                .deriveFunc(internalResponse.request.keys, baseMap ++ tsDsMap)
-                .mapValues(_.asInstanceOf[AnyRef])
-                .toMap) match {
-              case Success(derivedMap) => derivedMap
-              case Failure(exception) => {
+            val joinCodecTry = getJoinCodecs(internalResponse.request.name)
+            joinCodecTry match {
+              case Success(joinCodec) =>
+                ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
+                val baseMap = internalMap ++ externalMap
+                val derivedMapTry: Try[Map[String, AnyRef]] = Try {
+                  applyDeriveFunc(joinCodec.deriveFunc, internalResponse.request, baseMap)
+                }
+                val derivedMap: Map[String, AnyRef] = derivedMapTry match {
+                  case Success(derivedMap) => derivedMap
+                  case Failure(exception) =>
+                    ctx.incrementException(exception)
+                    val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
+                      joinCodec
+                        .renameOnlyDeriveFunc(internalResponse.request.keys, baseMap)
+                        .mapValues(_.asInstanceOf[AnyRef])
+                        .toMap
+                    }
+                    val renameOnlyDerivedMap: Map[String, AnyRef] = renameOnlyDerivedMapTry match {
+                      case Success(renameOnlyDerivedMap) =>
+                        renameOnlyDerivedMap
+                      case Failure(exception) =>
+                        ctx.incrementException(exception)
+                        Map("derivation_rename_exception" -> exception.traceString.asInstanceOf[AnyRef])
+                    }
+                    val derivedExceptionMap: Map[String, AnyRef] =
+                      Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
+                    renameOnlyDerivedMap ++ derivedExceptionMap
+                }
+                val requestEndTs = System.currentTimeMillis()
+                ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
+                ctx.distribution("overall.latency.millis", requestEndTs - ts)
+                ResponseWithContext(internalResponse.request, derivedMap, baseMap)
+              case Failure(exception) =>
+                // more validation logic will be covered in compile.py to avoid this case
                 ctx.incrementException(exception)
-                throw exception
-              }
+                ResponseWithContext(internalResponse.request,
+                                    Map("join_codec_fetch_exception" -> exception.traceString),
+                                    Map.empty)
             }
-            val derivedMapCleaned = derivedMap -- tsDsMap.keys
-            val requestEndTs = System.currentTimeMillis()
-            ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
-            ctx.distribution("overall.latency.millis", requestEndTs - ts)
-            ResponseWithContext(internalResponse.request, derivedMapCleaned, baseMap)
         }
     }
 
@@ -308,8 +341,8 @@ class Fetcher(val kvStore: KVStore,
     loggingTry.failed.map { exception =>
       // to handle GroupByServingInfo staleness that results in encoding failure
       getJoinCodecs.refresh(resp.request.name)
-      joinContext.foreach(_.incrementException(exception))
-      logger.info(s"logging failed due to ${exception.traceString}")
+      joinContext.foreach(
+        _.incrementException(new Exception(s"Logging failed due to: ${exception.traceString}", exception)))
     }
     Response(resp.request, Success(resp.derivedValues))
   }
@@ -482,7 +515,8 @@ class Fetcher(val kvStore: KVStore,
   }
 
   /**
-    * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the drift for
+    * Given a sequence of stats responses for different time intervals, re arrange it into a map containing the drift
+    * for
     * the approx percentile metrics.
     * TODO: Extend to larger periods of time by merging the Sketches from a larger slice.
     * TODO: Allow for non sequential time intervals. i.e. this week against the same week last year.

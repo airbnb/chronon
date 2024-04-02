@@ -19,7 +19,7 @@ Does not include:
 
 ## Setup
 
-To get started with the Chronon, all you need to do is download the [docker-compose.yml](https://github.com/airbnb/chronon/blob/master/docker-compose.yml) file and run it locally:
+To get started with the Chronon, all you need to do is download the [docker-compose.yml](https://github.com/airbnb/chronon/blob/main/docker-compose.yml) file and run it locally:
 
 ```bash
 curl -o docker-compose.yml https://chronon.ai/docker-compose.yml
@@ -34,7 +34,7 @@ In this example, let's assume that we're a large online retailer, and we've dete
 
 ## Raw data sources
 
-Fabricated raw data is included in the [data](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/data) directory. It includes four tables:
+Fabricated raw data is included in the [data](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/data) directory. It includes four tables:
 
 1. Users - includes basic information about users such as account created date; modeled as a batch data source that updates daily
 2. Purchases - a log of all purchases by users; modeled as a log table with a streaming (i.e. Kafka) event-bus counterpart
@@ -65,7 +65,7 @@ Let's start with three feature sets, built on top of our raw input sources.
 
 We can aggregate the purchases log data to the user level, to give us a view into this user's previous activity on our platform. Specifically, we can compute `SUM`s `COUNT`s and `AVERAGE`s of their previous purchase amounts over various windows.
 
-Becuase this feature is built upon a source that includes both a table and a topic, its features can be computed in both batch and streaming.
+Because this feature is built upon a source that includes both a table and a topic, its features can be computed in both batch and streaming.
 
 ```python
 source = Source(
@@ -101,11 +101,11 @@ v1 = GroupBy(
 )
 ```
 
-See the whole code file here: [purchases GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/purchases.py). This is also in your docker image. We'll be running computation for it and the other GroupBys in [Step 3 - Backfilling Data](#step-3---backfilling-data). 
+See the whole code file here: [purchases GroupBy](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/purchases.py). This is also in your docker image. We'll be running computation for it and the other GroupBys in [Step 3 - Backfilling Data](#step-3---backfilling-data). 
 
 **Feature set 2: Returns data features**
 
-We perform a similar set of aggregations on returns data in the [returns GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/returns.py). The code is not included here because it looks similar to the above example.
+We perform a similar set of aggregations on returns data in the [returns GroupBy](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/returns.py). The code is not included here because it looks similar to the above example.
 
 **Feature set 3: User data features**
 
@@ -127,7 +127,7 @@ v1 = GroupBy(
 ) 
 ```
 
-Taken from the [users GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/users.py).
+Taken from the [users GroupBy](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/users.py).
 
 
 ### Step 2 - Join the features together
@@ -160,7 +160,7 @@ v1 = Join(
 )
 ```
 
-Taken from the [training_set Join](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/joins/quickstart/training_set.py). 
+Taken from the [training_set Join](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/joins/quickstart/training_set.py). 
 
 The `left` side of the join is what defines the timestamps and primary keys for the backfill (notice that it is built on top of the `checkout` event, as dictated by our use case).
 
@@ -330,4 +330,4 @@ Using chronon for your feature engineering work simplifies and improves your ML 
 4. Chronon exposes easy endpoints for feature fetching.
 5. Consistency is guaranteed and measurable.
 
-For a more detailed view into the benefits of using Chronon, see [Benefits of Chronon documentation](https://github.com/airbnb/chronon/tree/master?tab=readme-ov-file#benefits-of-chronon-over-other-approaches).
+For a more detailed view into the benefits of using Chronon, see [Benefits of Chronon documentation](https://github.com/airbnb/chronon/tree/main?tab=readme-ov-file#benefits-of-chronon-over-other-approaches).

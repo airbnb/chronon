@@ -41,7 +41,8 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 
   def computeStagingQuery(stepDays: Option[Int] = None,
                           enableAutoExpand: Option[Boolean] = Some(true),
-                          overrideStartPartition: Option[String] = None): Unit = {
+                          overrideStartPartition: Option[String] = None,
+                          skipFirstHole: Boolean = true): Unit = {
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
     if (stagingQueryConf.startPartition == null) {
@@ -50,7 +51,9 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     }
     val overrideStart = overrideStartPartition.getOrElse(stagingQueryConf.startPartition)
     val unfilledRanges =
-      tableUtils.unfilledRanges(outputTable, PartitionRange(overrideStart, endPartition)(tableUtils))
+      tableUtils.unfilledRanges(outputTable,
+                                PartitionRange(overrideStart, endPartition)(tableUtils),
+                                skipFirstHole = skipFirstHole)
 
     if (unfilledRanges.isEmpty) {
       logger.info(s"""No unfilled range for $outputTable given
@@ -128,7 +131,8 @@ object StagingQuery {
     val stagingQueryJob = new StagingQuery(
       stagingQueryConf,
       parsedArgs.endDate(),
-      TableUtils(SparkSessionBuilder.build(s"staging_query_${stagingQueryConf.metaData.name}"))
+      TableUtils(
+        SparkSessionBuilder.build(s"staging_query_${stagingQueryConf.metaData.name}", enforceKryoSerializer = false))
     )
     stagingQueryJob.computeStagingQuery(parsedArgs.stepDays.toOption)
   }

@@ -50,7 +50,7 @@ The caches will be configured on a per-GroupBy basis, i.e. two caches per GroupB
 
 Caching will be an opt-in feature that can be enabled by Chronon developers.
 
-Most of the code changes are in [FetcherBase.scala](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/FetcherBase.scala).
+Most of the code changes are in [FetcherBase.scala](https://github.com/airbnb/chronon/blob/main/online/src/main/scala/ai/chronon/online/FetcherBase.scala).
 
 ### Batch Caching Details
 
@@ -144,7 +144,7 @@ The size of the cache should ideally be set in terms of maximum memory usage (e.
 
 ### Step 1: BatchIr Caching
 
-We start by caching the conversion from `batchBytes` to `FinalBatchIr` (the [toBatchIr function in FetcherBase](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/FetcherBase.scala#L102)) and `Map[String, AnyRef]`.
+We start by caching the conversion from `batchBytes` to `FinalBatchIr` (the [toBatchIr function in FetcherBase](https://github.com/airbnb/chronon/blob/main/online/src/main/scala/ai/chronon/online/FetcherBase.scala#L102)) and `Map[String, AnyRef]`.
 
 To make testing easier, we'll disable this feature by default and enable it via Java Args.
 
@@ -166,7 +166,7 @@ Results: will add
 
 ### Step 3: `TiledIr` Caching
 
-The second step is caching [tile bytes to TiledIr](https://github.com/airbnb/chronon/blob/master/online/src/main/scala/ai/chronon/online/TileCodec.scala#L77C67-L77C67). This is only possible if the tile bytes contain information about whether a tile is complete (i.e. it won’t be updated anymore). The Flink side marks tiles as complete.
+The second step is caching [tile bytes to TiledIr](https://github.com/airbnb/chronon/blob/main/online/src/main/scala/ai/chronon/online/TileCodec.scala#L77C67-L77C67). This is only possible if the tile bytes contain information about whether a tile is complete (i.e. it won’t be updated anymore). The Flink side marks tiles as complete.
 
 This cache can be "monoid-aware". Instead of storing multiple consecutive tiles for a given time range, we combine the tiles and store a single, larger tile in memory. For example, we combine two tiles, [0, 1) and [1, 2), into one, [0, 2).
 

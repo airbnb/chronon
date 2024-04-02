@@ -30,7 +30,7 @@ from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME, TEAMS_FILE_PATH
 from ai.chronon.repo import teams
 from ai.chronon.repo.serializer import thrift_simple_json_protected
-from ai.chronon.repo.validator import ChrononRepoValidator
+from ai.chronon.repo.validator import ChrononRepoValidator, get_join_output_columns, get_group_by_output_columns
 
 # This is set in the main function -
 # from command line or from env variable during invocation
@@ -69,7 +69,11 @@ def get_folder_name_from_class_name(class_name):
     '--force-overwrite',
     help='Force overwriting existing materialized conf.',
     is_flag=True)
-def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite):
+@click.option(
+    '--feature-display',
+    help='Print out the features list created by the conf.',
+    is_flag=True)
+def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite, feature_display):
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
     The materialized objects are what will be submitted to spark jobs - driven by airflow, or by manual user testing.
@@ -105,6 +109,12 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         _set_templated_values(obj, obj_class, teams_path, team_name)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
             num_written_objs += 1
+
+            if obj_class is Join and feature_display:
+                _print_features_names("Output Join Features", get_join_output_columns(obj))
+
+            if obj_class is GroupBy and feature_display:
+                _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
 
             # In case of online join, we need to materialize the underlying online group_bys.
             if obj_class is Join and obj.metaData.online:
@@ -225,6 +235,11 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
 def _print_highlighted(left, right):
     # print in blue.
     print(f"{left:>25} - \u001b[34m{right}\u001b[0m")
+
+
+def _print_features_names(left, right):
+    # Print in green and separate lines.
+    print(f"{left:>25} - \u001b[32m{right}\u001b[0m")
 
 
 def _print_error(left, right):

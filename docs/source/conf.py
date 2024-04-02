@@ -21,32 +21,32 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-project = 'Chronon'
-copyright = 'The Chronon Authors'
+project = "Chronon"
+copyright = "The Chronon Authors"
 # author = 'Nikhil Simha'
-release = '0.0.60'
+release = "0.0.60"
 
 # -- General configuration ---------------------------------------------------
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#general-configuration
 
 extensions = [
-    'sphinx.ext.duration',
-    'myst_parser',
-    'sphinx.ext.autodoc',
-    'sphinx.ext.todo',
-    'sphinx.ext.coverage',
+    "sphinx.ext.duration",
+    "myst_parser",
+    "sphinx.ext.autodoc",
+    "sphinx.ext.todo",
+    "sphinx.ext.coverage",
 ]
 
 source_parsers = {
-    '.md': 'recommonmark.parser.CommonMarkParser',
+    ".md": "recommonmark.parser.CommonMarkParser",
 }
 
 source_suffix = {
-    '.rst': 'restructuredtext',
-    '.md': 'markdown',
+    ".rst": "restructuredtext",
+    ".md": "markdown",
 }
 
-#-- Options for myst parser --------------------------------------------------
+# -- Options for myst parser --------------------------------------------------
 myst_heading_anchors = 3
 
 # -- Options for HTML output -------------------------------------------------
@@ -60,8 +60,8 @@ html_theme_options = {
     "navbar_align": "right",
     "github_url": "https://github.com/airbnb/chronon",
     "logo": {
-      "image_light": "logo_curly.png",
-      "image_dark": "logo_curly.png",
+        "image_light": "_static/logo_curly.png",
+        "image_dark": "_static/logo_curly_white.png",
     },
     "favicons": [
         {
@@ -86,7 +86,7 @@ html_theme_options = {
         #     "type": "fontawesome",
         # }
     ],
-    'article_header_end': ["navbar-icon-links.html", "theme-switcher.html"],
+    "article_header_end": ["navbar-icon-links.html", "theme-switcher.html"],
     # "navbar_end": ["navbar-icon-links.html", "search-field.html"]
 }
 
@@ -94,7 +94,7 @@ html_sidebars = {
     "**": ["navbar-logo.html", "search-field.html", "sbt-sidebar-nav.html"]
 }
 html_title = "Chronon"
-html_static_path = ['_static']
+html_static_path = ["_static"]
 html_css_files = ["chronon.css"]
 html_context = {"default_mode": "light"}
-html_file_suffix = '.html'
+html_file_suffix = ".html"

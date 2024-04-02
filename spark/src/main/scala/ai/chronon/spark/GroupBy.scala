@@ -16,22 +16,21 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
+import org.slf4j.LoggerFactory
 
 import java.util
 import scala.collection.{Seq, mutable}
@@ -672,7 +671,8 @@ object GroupBy {
                       endPartition: String,
                       tableUtils: TableUtils,
                       stepDays: Option[Int] = None,
-                      overrideStartPartition: Option[String] = None): Unit = {
+                      overrideStartPartition: Option[String] = None,
+                      skipFirstHole: Boolean = true): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
@@ -688,7 +688,8 @@ object GroupBy {
     val groupByUnfilledRangesOpt =
       tableUtils.unfilledRanges(outputTable,
                                 PartitionRange(overrideStart, endPartition)(tableUtils),
-                                if (isAnySourceCumulative) None else Some(inputTables))
+                                if (isAnySourceCumulative) None else Some(inputTables),
+                                skipFirstHole = skipFirstHole)
 
     if (groupByUnfilledRangesOpt.isEmpty) {
       logger.info(s"""Nothing to backfill for $outputTable - given

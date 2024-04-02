@@ -26,12 +26,15 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-
 import java.util.Base64
+
+import scala.+:
 import scala.collection.mutable
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{IterableOps, MapOps}
 import scala.util.{Failure, Success, Try}
+
+import ai.chronon.online.OnlineDerivationUtil.timeFields
 
 /**
   * Purpose of LogFlattenerJob is to unpack serialized Avro data from online requests and flatten each field
@@ -120,7 +123,7 @@ class LogFlattenerJob(session: SparkSession,
     // contextual features are logged twice in keys and values, where values are prefixed with ext_contextual
     // here we exclude the duplicated fields as the two are always identical
     val dataFields = allDataFields.filterNot(_.name.startsWith(Constants.ContextualPrefix))
-    val metadataFields = StructField(Constants.SchemaHash, StringType) +: JoinCodec.timeFields
+    val metadataFields = StructField(Constants.SchemaHash, StringType) +: timeFields
     val outputSchema = StructType("", metadataFields ++ dataFields)
     val (keyBase64Idx, valueBase64Idx, tsIdx, dsIdx, schemaHashIdx) = (0, 1, 2, 3, 4)
     val outputRdd: RDD[Row] = rawDf

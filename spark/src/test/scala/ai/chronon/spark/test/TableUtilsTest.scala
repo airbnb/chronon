@@ -22,12 +22,21 @@ import ai.chronon.spark.test.TestUtils.makeDf
 import ai.chronon.api.{StructField, _}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
+import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
 
 import scala.util.Try
+
+
+
+class SimpleAddUDF extends UDF {
+  def evaluate(value: Int): Int = {
+    value + 20
+  }
+}
 
 class TableUtilsTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("TableUtilsTest", local = true)
@@ -407,6 +416,12 @@ class TableUtilsTest {
     val tableName = "db.test_check_table_permission"
     prepareTestDataWithSubPartitions(tableName)
     assertTrue(tableUtils.checkTablePermission(tableName))
+  }
+
+  @Test
+  def testDoubleUDFRegistration(): Unit = {
+    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF'")
+    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF'")
   }
 
   @Test

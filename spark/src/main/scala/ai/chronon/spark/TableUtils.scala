@@ -16,6 +16,8 @@
 
 package ai.chronon.spark
 
+import java.io.{PrintWriter, StringWriter}
+
 import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
@@ -27,13 +29,14 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.storage.StorageLevel
-
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import java.util.concurrent.{ExecutorService, Executors}
+
 import scala.collection.{Seq, mutable}
+import scala.collection.immutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.{Failure, Success, Try}
 
@@ -49,6 +52,10 @@ case class TableUtils(sparkSession: SparkSession) {
   private val partitionFormat: String =
     sparkSession.conf.get("spark.chronon.partition.format", "yyyy-MM-dd")
   val partitionSpec: PartitionSpec = PartitionSpec(partitionFormat, WindowUtils.Day.millis)
+  val smallModelEnabled: Boolean =
+    sparkSession.conf.get("spark.chronon.backfill.small_mode.enabled", "true").toBoolean
+  val smallModeNumRowsCutoff: Int =
+    sparkSession.conf.get("spark.chronon.backfill.small_mode_cutoff", "5000").toInt
   val backfillValidationEnforced: Boolean =
     sparkSession.conf.get("spark.chronon.backfill.validation.enabled", "true").toBoolean
   // Threshold to control whether or not to use bloomfilter on join backfill. If the backfill row approximate count is under this threshold, we will use bloomfilter.
@@ -60,6 +67,8 @@ case class TableUtils(sparkSession: SparkSession) {
   val cacheLevelString: String = sparkSession.conf.get("spark.chronon.table_write.cache.level", "NONE").toUpperCase()
   val blockingCacheEviction: Boolean =
     sparkSession.conf.get("spark.chronon.table_write.cache.blocking", "false").toBoolean
+
+  val useIceberg: Boolean = sparkSession.conf.get("spark.chronon.table_write.iceberg", "false").toBoolean
   val cacheLevel: Option[StorageLevel] = Try {
     if (cacheLevelString == "NONE") None
     else Some(StorageLevel.fromString(cacheLevelString))
@@ -272,7 +281,8 @@ case class TableUtils(sparkSession: SparkSession) {
                        saveMode: SaveMode = SaveMode.Overwrite,
                        fileFormat: String = "PARQUET",
                        autoExpand: Boolean = false,
-                       stats: Option[DfStats] = None): Unit = {
+                       stats: Option[DfStats] = None,
+                       sortByCols: Seq[String] = Seq.empty): Unit = {
     // partitions to the last
     val dfRearranged: DataFrame = if (!df.columns.endsWith(partitionColumns)) {
       val colOrder = df.columns.diff(partitionColumns) ++ partitionColumns
@@ -317,15 +327,35 @@ case class TableUtils(sparkSession: SparkSession) {
       // so that an exception will be thrown below
       dfRearranged
     }
-    repartitionAndWrite(finalizedDf, tableName, saveMode, stats)
+    repartitionAndWrite(finalizedDf, tableName, saveMode, stats, sortByCols)
   }
 
   def sql(query: String): DataFrame = {
     val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
+    val sw = new StringWriter()
+    val pw = new PrintWriter(sw)
+    new Throwable().printStackTrace(pw)
+    val stackTraceString = sw.toString
+    val stackTraceStringPretty = stackTraceString
+      .split("\n")
+      .filter(_.contains("chronon"))
+      .map(_.replace("at ai.chronon.spark.", ""))
+      .mkString("\n")
+
     logger.info(
-      s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n")
-    val df = sparkSession.sql(query).coalesce(partitionCount)
-    df
+      s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n\n Query call path (not an error stack trace): \n$stackTraceStringPretty \n\n --------")
+    try {
+      // Run the query
+      val df = sparkSession.sql(query).coalesce(partitionCount)
+      df
+    } catch {
+      case e: AnalysisException if e.getMessage.contains(" already exists") =>
+        logger.warn(s"Non-Fatal: ${e.getMessage}. Query may result in redefinition.")
+        sparkSession.sql("SHOW USER FUNCTIONS")
+      case e: Exception =>
+        logger.error("Error running query:", e)
+        throw e
+    }
   }
 
   def insertUnPartitioned(df: DataFrame,
@@ -381,17 +411,21 @@ case class TableUtils(sparkSession: SparkSession) {
   private def repartitionAndWrite(df: DataFrame,
                                   tableName: String,
                                   saveMode: SaveMode,
-                                  stats: Option[DfStats]): Unit = {
+                                  stats: Option[DfStats],
+                                  sortByCols: Seq[String] = Seq.empty): Unit = {
     wrapWithCache(s"repartition & write to $tableName", df) {
-      repartitionAndWriteInternal(df, tableName, saveMode, stats)
+      logger.info(s"Repartitioning before writing...")
+      repartitionAndWriteInternal(df, tableName, saveMode, stats, sortByCols)
     }.get
   }
 
   private def repartitionAndWriteInternal(df: DataFrame,
                                           tableName: String,
                                           saveMode: SaveMode,
-                                          stats: Option[DfStats]): Unit = {
+                                          stats: Option[DfStats],
+                                          sortByCols: Seq[String] = Seq.empty): Unit = {
     // get row count and table partition count statistics
+
     val (rowCount: Long, tablePartitionCount: Int) =
       if (df.schema.fieldNames.contains(partitionColumn)) {
         if (stats.isDefined && stats.get.partitionRange.wellDefined) {
@@ -445,13 +479,15 @@ case class TableUtils(sparkSession: SparkSession) {
 
       logger.info(
         s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
-      val repartitionCols =
+      val (repartitionCols: immutable.Seq[String], partitionSortCols: immutable.Seq[String]) =
         if (df.schema.fieldNames.contains(partitionColumn)) {
-          Seq(partitionColumn, saltCol)
-        } else { Seq(saltCol) }
+          (Seq(partitionColumn, saltCol), Seq(partitionColumn) ++ sortByCols)
+        } else { (Seq(saltCol), sortByCols) }
+      logger.info(s"Sorting within partitions with cols: $partitionSortCols")
       saltedDf
-        .repartition(shuffleParallelism, repartitionCols.map(saltedDf.col).toSeq: _*)
+        .repartition(shuffleParallelism, repartitionCols.map(saltedDf.col): _*)
         .drop(saltCol)
+        .sortWithinPartitions(partitionSortCols.map(col): _*)
         .write
         .mode(saveMode)
         .insertInto(tableName)
@@ -467,10 +503,16 @@ case class TableUtils(sparkSession: SparkSession) {
     val fieldDefinitions = schema
       .filterNot(field => partitionColumns.contains(field.name))
       .map(field => s"`${field.name}` ${field.dataType.catalogString}")
+
+    val tableTypString = if (useIceberg) {
+      "USING iceberg"
+    } else {
+      ""
+    }
     val createFragment =
       s"""CREATE TABLE $tableName (
          |    ${fieldDefinitions.mkString(",\n    ")}
-         |)""".stripMargin
+         |) $tableTypString """.stripMargin
     val partitionFragment = if (partitionColumns != null && partitionColumns.nonEmpty) {
       val partitionDefinitions = schema
         .filter(field => partitionColumns.contains(field.name))
@@ -488,7 +530,12 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       ""
     }
-    Seq(createFragment, partitionFragment, s"STORED AS $fileFormat", propertiesFragment).mkString("\n")
+    val fileFormatString = if (useIceberg) {
+      ""
+    } else {
+      s"STORED AS $fileFormat"
+    }
+    Seq(createFragment, partitionFragment, fileFormatString, propertiesFragment).mkString("\n")
   }
 
   private def alterTablePropertiesSql(tableName: String, properties: Map[String, String]): String = {
