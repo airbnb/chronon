@@ -338,33 +338,34 @@ object CpcFriendly {
   }
 }
 
-case class ItemsSketchIR[T](sketch: ItemsSketch[T], sketchType: Int)
+object FrequentItemType extends Enumeration {
+  type ItemType = Value
+  val StringItemType, LongItemType, DoubleItemType = Value
+}
+
+case class ItemsSketchIR[T](sketch: ItemsSketch[T], sketchType: FrequentItemType.ItemType)
 
 trait FrequentItemsFriendly[Input] {
   def serializer: ArrayOfItemsSerDe[Input]
-  def sketchType: Int
+  def sketchType: FrequentItemType.ItemType
 }
 
 object FrequentItemsFriendly {
-  val StringItemType: Int = 1
-  val LongItemType: Int = 2
-  val DoubleItemType: Int = 3
-
   implicit val stringIsFrequentItemsFriendly: FrequentItemsFriendly[String] = new FrequentItemsFriendly[String] {
     override def serializer: ArrayOfItemsSerDe[String] = new ArrayOfStringsSerDe
-    override def sketchType: Int = StringItemType
+    override def sketchType: FrequentItemType.ItemType = FrequentItemType.StringItemType
   }
 
   implicit val longIsFrequentItemsFriendly: FrequentItemsFriendly[java.lang.Long] =
     new FrequentItemsFriendly[java.lang.Long] {
       override def serializer: ArrayOfItemsSerDe[java.lang.Long] = new ArrayOfLongsSerDe
-      override def sketchType: Int = LongItemType
+      override def sketchType: FrequentItemType.ItemType = FrequentItemType.LongItemType
     }
 
   implicit val doubleIsFrequentItemsFriendly: FrequentItemsFriendly[java.lang.Double] =
     new FrequentItemsFriendly[java.lang.Double] {
       override def serializer: ArrayOfItemsSerDe[java.lang.Double] = new ArrayOfDoublesSerDe
-      override def sketchType: Int = DoubleItemType
+      override def sketchType: FrequentItemType.ItemType = FrequentItemType.DoubleItemType
     }
 }
 
@@ -427,12 +428,12 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
 
   override def normalize(ir: Sketch): Array[Byte] = {
     val serializer = implicitly[FrequentItemsFriendly[T]].serializer
-    (Seq(ir.sketchType.byteValue()) ++ ir.sketch.toByteArray(serializer)).toArray
+    (Seq(ir.sketchType.id.byteValue()) ++ ir.sketch.toByteArray(serializer)).toArray
   }
 
   override def denormalize(normalized: Any): Sketch = {
     val bytes = normalized.asInstanceOf[Array[Byte]]
-    val sketchType = bytes.head
+    val sketchType = FrequentItemType(bytes.head)
     val serializer = implicitly[FrequentItemsFriendly[T]].serializer
     val sketch = ItemsSketch.getInstance[T](Memory.wrap(bytes.tail), serializer)
     ItemsSketchIR(sketch, sketchType)

@@ -1,6 +1,6 @@
 package ai.chronon.aggregator.test
 
-import ai.chronon.aggregator.base.{FrequentItems, FrequentItemsFriendly}
+import ai.chronon.aggregator.base.{FrequentItemType, FrequentItems, FrequentItemsFriendly, ItemsSketchIR}
 import junit.framework.TestCase
 import org.junit.Assert._
 
@@ -88,21 +88,6 @@ class FrequentItemsTest extends TestCase {
       .map(i => i -> i)
       .toMap
 
-    def toSketch[T: FrequentItemsFriendly](counts: Map[T, Int]) = {
-      val sketch = new FrequentItems[T](4)
-      val items = counts.toSeq.sortBy(_._2).reverse
-      val ir = sketch.prepare(items.head._1)
-
-      def increment(value: T, times: Int) = {
-        (1 to times).foreach({ _ => sketch.update(ir, value) })
-      }
-
-      increment(items.head._1, items.head._2 - 1)
-      items.tail.foreach(item => increment(item._1, item._2))
-
-      (sketch, ir)
-    }
-
     def serialize[T: FrequentItemsFriendly](values: Map[T, Int]) = {
       val (sketch, ir) = toSketch(values)
       val bytes = sketch.normalize(ir)
@@ -113,19 +98,53 @@ class FrequentItemsTest extends TestCase {
     // Longs
     val expectedLongValues = testValues.map({ case (k, v) => k.toLong.asInstanceOf[java.lang.Long] -> v })
     val (longSketchType, actualLongValues) = serialize(expectedLongValues)
-    assertEquals(FrequentItemsFriendly.LongItemType, longSketchType)
+    assertEquals(FrequentItemType.LongItemType, longSketchType)
     assertEquals(expectedLongValues, actualLongValues)
 
     // Doubles
     val expectedDoubleValues = testValues.map({ case (k, v) => k.toDouble.asInstanceOf[java.lang.Double] -> v })
     val (doubleSketchType, actualDoubleValues) = serialize(expectedDoubleValues)
-    assertEquals(FrequentItemsFriendly.DoubleItemType, doubleSketchType)
+    assertEquals(FrequentItemType.DoubleItemType, doubleSketchType)
     assertEquals(expectedDoubleValues, actualDoubleValues)
 
     // Strings
     val expectedStringValues = testValues.map({ case (k, v) => k.toString -> v })
     val (stringSketchType, actualStringValues) = serialize(expectedStringValues)
-    assertEquals(FrequentItemsFriendly.StringItemType, stringSketchType)
+    assertEquals(FrequentItemType.StringItemType, stringSketchType)
     assertEquals(expectedStringValues, actualStringValues)
+  }
+
+  def testBulkMerge(): Unit = {
+    val sketch = new FrequentItems[String](3)
+
+    val irs = Seq(
+      toSketch(Map("3" -> 3)),
+      toSketch(Map("2" -> 2)),
+      toSketch(Map("1" -> 1))
+    ).map(i => i._2).iterator
+
+    val ir = sketch.bulkMerge(irs)
+
+    assertEquals(Map(
+                   "3" -> 3,
+                   "2" -> 2,
+                   "1" -> 1
+                 ),
+                 sketch.finalize(ir))
+  }
+
+  def toSketch[T: FrequentItemsFriendly](counts: Map[T, Int]): (FrequentItems[T], ItemsSketchIR[T]) = {
+    val sketch = new FrequentItems[T](4)
+    val items = counts.toSeq.sortBy(_._2).reverse
+    val ir = sketch.prepare(items.head._1)
+
+    def increment(value: T, times: Int) = {
+      (1 to times).foreach({ _ => sketch.update(ir, value) })
+    }
+
+    increment(items.head._1, items.head._2 - 1)
+    items.tail.foreach(item => increment(item._1, item._2))
+
+    (sketch, ir)
   }
 }

@@ -15,8 +15,9 @@
  */
 package ai.chronon.spark
 
+import ai.chronon.aggregator.base.FrequentItemType.{DoubleItemType, LongItemType, StringItemType}
 import ai.chronon.aggregator.base.FrequentItemsFriendly._
-import ai.chronon.aggregator.base.{FrequentItemsFriendly, ItemsSketchIR}
+import ai.chronon.aggregator.base.{FrequentItemType, FrequentItemsFriendly, ItemsSketchIR}
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, Serializer}
 import com.yahoo.memory.Memory
@@ -39,7 +40,7 @@ class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
   }
 }
 class ItemsSketchKryoSerializer[T] extends Serializer[ItemsSketchIR[T]] {
-  def getSerializer(sketchType: Int): ArrayOfItemsSerDe[T] = {
+  def getSerializer(sketchType: FrequentItemType.Value): ArrayOfItemsSerDe[T] = {
     val serializer = sketchType match {
       case StringItemType => implicitly[FrequentItemsFriendly[String]].serializer
       case LongItemType   => implicitly[FrequentItemsFriendly[java.lang.Long]].serializer
@@ -52,12 +53,12 @@ class ItemsSketchKryoSerializer[T] extends Serializer[ItemsSketchIR[T]] {
   override def write(kryo: Kryo, output: Output, sketch: ItemsSketchIR[T]): Unit = {
     val serializer = getSerializer(sketch.sketchType)
     val bytes = sketch.sketch.toByteArray(serializer)
-    output.writeInt(sketch.sketchType)
+    output.writeInt(sketch.sketchType.id)
     output.writeInt(bytes.size)
     output.writeBytes(bytes)
   }
   override def read(kryo: Kryo, input: Input, `type`: Class[ItemsSketchIR[T]]): ItemsSketchIR[T] = {
-    val sketchType = input.readInt()
+    val sketchType = FrequentItemType(input.readInt())
     val size = input.readInt()
     val bytes = input.readBytes(size)
     val serializer = getSerializer(sketchType)
