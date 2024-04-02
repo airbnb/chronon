@@ -206,6 +206,11 @@ class FetcherTest extends TestCase {
           operation = Operation.AVERAGE,
           inputColumn = "rating",
           windows = Seq(new Window(1, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.APPROX_HISTOGRAM_K,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
         )
       ),
       accuracy = Accuracy.TEMPORAL,
@@ -317,6 +322,11 @@ class FetcherTest extends TestCase {
         ),
         Builders.Aggregation(
           operation = Operation.AVERAGE,
+          inputColumn = "rating",
+          windows = Seq(new Window(2, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.APPROX_HISTOGRAM_K,
           inputColumn = "rating",
           windows = Seq(new Window(2, TimeUnit.DAYS))
         )

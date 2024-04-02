@@ -1,13 +1,15 @@
 package ai.chronon.spark
 
+import ai.chronon.aggregator.base.FrequentItemType.{DoubleItemType, LongItemType, StringItemType}
+import ai.chronon.aggregator.base.FrequentItemsFriendly._
+import ai.chronon.aggregator.base._
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, Serializer}
 import com.yahoo.memory.Memory
-import com.yahoo.sketches.ArrayOfStringsSerDe
+import com.yahoo.sketches.ArrayOfItemsSerDe
 import com.yahoo.sketches.cpc.CpcSketch
 import com.yahoo.sketches.frequencies.ItemsSketch
 import org.apache.spark.serializer.KryoRegistrator
-import org.apache.spark.SPARK_VERSION
 
 class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
   override def write(kryo: Kryo, output: Output, sketch: CpcSketch): Unit = {
@@ -22,22 +24,33 @@ class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
     CpcSketch.heapify(bytes)
   }
 }
+class ItemsSketchKryoSerializer[T] extends Serializer[ItemsSketchIR[T]] {
+  def getSerializer(sketchType: FrequentItemType.Value): ArrayOfItemsSerDe[T] = {
+    val serializer = sketchType match {
+      case StringItemType => implicitly[FrequentItemsFriendly[String]].serializer
+      case LongItemType   => implicitly[FrequentItemsFriendly[java.lang.Long]].serializer
+      case DoubleItemType => implicitly[FrequentItemsFriendly[java.lang.Double]].serializer
+      case _              => throw new IllegalArgumentException(s"No serializer for sketch type $sketchType")
+    }
+    serializer.asInstanceOf[ArrayOfItemsSerDe[T]]
+  }
 
-class ItemsSketchKryoSerializer extends Serializer[ItemSketchSerializable] {
-  override def write(kryo: Kryo, output: Output, sketch: ItemSketchSerializable): Unit = {
-    val serDe = new ArrayOfStringsSerDe
-    val bytes = sketch.sketch.toByteArray(serDe)
+  override def write(kryo: Kryo, output: Output, sketch: ItemsSketchIR[T]): Unit = {
+    val serializer = getSerializer(sketch.sketchType)
+    val bytes = sketch.sketch.toByteArray(serializer)
+    output.writeInt(sketch.sketchType.id)
     output.writeInt(bytes.size)
     output.writeBytes(bytes)
   }
-
-  override def read(kryo: Kryo, input: Input, `type`: Class[ItemSketchSerializable]): ItemSketchSerializable = {
+  override def read(kryo: Kryo,
+                    input: Input,
+                    `type`: Class[ItemsSketchIR[T]]): ItemsSketchIR[T] = {
+    val sketchType = FrequentItemType(input.readInt())
     val size = input.readInt()
     val bytes = input.readBytes(size)
-    val serDe = new ArrayOfStringsSerDe
-    val result = new ItemSketchSerializable
-    result.sketch = ItemsSketch.getInstance[String](Memory.wrap(bytes), serDe)
-    result
+    val serializer = getSerializer(sketchType)
+    val sketch = ItemsSketch.getInstance[T](Memory.wrap(bytes), serializer)
+    ItemsSketchIR(sketch, sketchType)
   }
 }
 
@@ -129,10 +142,11 @@ class ChrononKryoRegistrator extends KryoRegistrator {
         case _: ClassNotFoundException => // do nothing
       }
     }
+
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
     kryo.register(classOf[Array[Array[AnyRef]]])
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
-    kryo.register(classOf[ItemSketchSerializable], new ItemsSketchKryoSerializer())
     kryo.register(classOf[Array[ItemSketchSerializable]])
+    kryo.register(classOf[ItemsSketchIR[AnyRef]], new ItemsSketchKryoSerializer[AnyRef])
   }
 }
