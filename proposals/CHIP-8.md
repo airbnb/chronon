@@ -1,9 +1,11 @@
 # CHIP-8: Hourly GroupBy Batch Jobs
-**Author: Andrew Lee (Stripe) | Last Modified: 2024-03-26**
+**Author: Andrew Lee (Stripe) | Last Modified: 2024-04-02**
 
 This CHIP introduces changes to support running hourly batch jobs for Chronon `GroupBy`s, which will enable: 
 - more frequent batch data uploads for streaming `GroupBy`s
 - hourly batch features
+
+**Current Status:** Design discussion. Stripe contributors are aligned on the design but have not started implementation yet.
 
 ## Motivation
 This change is motivated by serving latency demands and user requests for improved system capabilities.
