@@ -111,7 +111,14 @@ class FetcherBase(kvStore: KVStore,
             s"Request time of $queryTimeMs is less than batch time ${aggregator.batchEndTs}" +
               s" for groupBy ${servingInfo.groupByOps.metaData.getName}"))
         null
-      } else if (batchBytes == null && (streamingResponses == null || streamingResponses.isEmpty)) {
+      } else if (
+        // Check if there's no streaming data.
+        (streamingResponses == null || streamingResponses.isEmpty) &&
+        // Check if there's no batch data. This is only possible if the batch response is from a KV Store request
+        // (KvStoreBatchResponse) that returned null bytes. It's not possible to have null batch data with cached batch
+        // responses as we only cache non-null data.
+        (batchResponses.isInstanceOf[KvStoreBatchResponse] && batchBytes == null)
+      ) {
         if (debug) logger.info("Both batch and streaming data are null")
         return null
       }
