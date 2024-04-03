@@ -20,12 +20,15 @@ import scala.util.{Success, Try}
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import scala.collection.Seq
+import org.slf4j.{Logger, LoggerFactory}
 
 /*
  * FetcherCache is an extension to FetcherBase that provides caching functionality. It caches KV store
  * requests to decrease feature serving latency.
  * */
 trait FetcherCache {
+  @transient private lazy val logger: Logger = LoggerFactory.getLogger(getClass)
+
   val batchIrCacheName = "batch_cache"
   val maybeBatchIrCache: Option[BatchIrCache] =
     Option(System.getProperty("ai.chronon.fetcher.batch_ir_cache_size"))
@@ -46,11 +49,11 @@ trait FetcherCache {
       groupByName, {
         groupBy.getMetaData.customJsonLookUp("enable_caching") match {
           case b: Boolean =>
-            println(s"Caching is ${if (b) "enabled" else "disabled"} for $groupByName")
+            logger.info(s"Caching is ${if (b) "enabled" else "disabled"} for $groupByName")
             isCachingEnabledForGroupBy.putIfAbsent(groupByName, b)
             b
           case null =>
-            println(s"Caching is disabled for $groupByName, enable_caching is not set.")
+            logger.info(s"Caching is disabled for $groupByName, enable_caching is not set.")
             isCachingEnabledForGroupBy.putIfAbsent(groupByName, false)
             false
           case _ => false
@@ -189,7 +192,12 @@ object FetcherCache {
     type Value = BatchResponses
   }
 
-  // BatchResponses encapsulates either a batch response from kv store or a cached batch response.
+  /**
+    * Encapsulates the response for a GetRequest for batch data. This response could be the values received from
+    * a KV Store request, or cached values.
+    *
+    * (The fetcher uses these batch values to construct the response for a request for feature values.)
+    * */
   sealed abstract class BatchResponses {
     def getBatchBytes(batchEndTsMillis: Long): Array[Byte]
   }
@@ -198,6 +206,8 @@ object FetcherCache {
     def apply(cachedResponse: FinalBatchIr): CachedFinalIrBatchResponse = CachedFinalIrBatchResponse(cachedResponse)
     def apply(cachedResponse: Map[String, AnyRef]): CachedMapBatchResponse = CachedMapBatchResponse(cachedResponse)
   }
+
+  /** Encapsulates batch response values received from a KV Store request.  */
   case class KvStoreBatchResponse(response: Try[Seq[TimedValue]]) extends BatchResponses {
     def getBatchBytes(batchEndTsMillis: Long): Array[Byte] =
       response
@@ -206,10 +216,16 @@ object FetcherCache {
         .map(_.bytes)
         .getOrElse(null)
   }
+
+  /** Encapsulates a batch response that was found in the Fetcher's internal IR cache.  */
   sealed abstract class CachedBatchResponse extends BatchResponses {
     // This is the case where we don't have bytes because the decoded IR was cached so we didn't hit the KV store again.
     def getBatchBytes(batchEndTsMillis: Long): Null = null
   }
+
+  /** Encapsulates a decoded batch response that was found in the Fetcher's internal IR cache.  */
   case class CachedFinalIrBatchResponse(response: FinalBatchIr) extends CachedBatchResponse
+
+  /** Encapsulates a decoded batch response that was found in the Fetcher's internal IR cache  */
   case class CachedMapBatchResponse(response: Map[String, AnyRef]) extends CachedBatchResponse
 }
