@@ -18,15 +18,15 @@ run.py needs to only depend in python standard library to simplify execution req
 #     limitations under the License.
 
 import argparse
-import time
 import json
 import logging
+import multiprocessing
 import os
 import re
 import subprocess
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
-import multiprocessing
 
 ONLINE_ARGS = "--online-jar={online_jar} --online-class={online_class} "
 OFFLINE_ARGS = "--conf-path={conf_path} --end-date={ds} "
@@ -155,7 +155,10 @@ def check_output(cmd):
     return subprocess.check_output(cmd.split(), bufsize=0).strip()
 
 
-def download_only_once(url, path):
+def download_only_once(url, path, skip_download=False):
+    if skip_download:
+        print("Skipping download of " + path)
+        return
     should_download = True
     path = path.strip()
     if os.path.exists(path):
@@ -182,7 +185,13 @@ def download_only_once(url, path):
 
 
 @retry_decorator(retries=3, backoff=50)
-def download_jar(version, jar_type="uber", release_tag=None, spark_version="2.4.0"):
+def download_jar(
+    version,
+    jar_type="uber",
+    release_tag=None,
+    spark_version="2.4.0",
+    skip_download=False,
+):
     assert (
         spark_version in SUPPORTED_SPARK
     ), f"Received unsupported spark version {spark_version}. Supported spark versions are {SUPPORTED_SPARK}"
@@ -221,7 +230,7 @@ def download_jar(version, jar_type="uber", release_tag=None, spark_version="2.4.
             jar_type=jar_type,
         )
         jar_path = os.path.join("/tmp", jar_url.split("/")[-1])
-        download_only_once(jar_url, jar_path)
+        download_only_once(jar_url, jar_path, skip_download)
     return jar_path
 
 
@@ -294,9 +303,9 @@ def set_runtime_env(args):
                     )
                     # Load additional args used on backfill.
                     if custom_json(conf_json) and effective_mode == "backfill":
-                        environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = (
-                            " ".join(custom_json(conf_json).get("additional_args", []))
-                        )
+                        environment["conf_env"][
+                            "CHRONON_CONFIG_ADDITIONAL_ARGS"
+                        ] = " ".join(custom_json(conf_json).get("additional_args", []))
                     environment["cli_args"]["APP_NAME"] = APP_NAME_TEMPLATE.format(
                         mode=effective_mode,
                         conf_type=conf_type,
