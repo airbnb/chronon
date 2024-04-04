@@ -41,6 +41,8 @@ ONLINE_MODES = [
 ]
 SPARK_MODES = [
     "backfill",
+    "backfill-left",
+    "backfill-final",
     "upload",
     "streaming",
     "streaming-client",
@@ -61,6 +63,8 @@ SCALA_VERSION_FOR_SPARK = {"2.4.0": "2.11", "3.1.1": "2.12", "3.2.1": "2.13"}
 
 MODE_ARGS = {
     "backfill": OFFLINE_ARGS,
+    "backfill-left": OFFLINE_ARGS,
+    "backfill-final": OFFLINE_ARGS,
     "upload": OFFLINE_ARGS,
     "stats-summary": OFFLINE_ARGS,
     "log-summary": OFFLINE_ARGS,
@@ -91,6 +95,8 @@ ROUTES = {
     },
     "joins": {
         "backfill": "join",
+        "backfill-left": "join-left",
+        "backfill-final": "join-final",
         "metadata-upload": "metadata-upload",
         "fetch": "fetch",
         "consistency-metrics-compute": "consistency-metrics-compute",
@@ -302,7 +308,7 @@ def set_runtime_env(args):
                         .get(effective_mode, {})
                     )
                     # Load additional args used on backfill.
-                    if custom_json(conf_json) and effective_mode == "backfill":
+                    if custom_json(conf_json) and effective_mode in ["backfill", "backfill-left", "backfill-final"]:
                         environment["conf_env"][
                             "CHRONON_CONFIG_ADDITIONAL_ARGS"
                         ] = " ".join(custom_json(conf_json).get("additional_args", []))

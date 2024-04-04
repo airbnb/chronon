@@ -882,6 +882,13 @@ object Extensions {
       externalPartHashes ++ semanticHash
     }
 
+    def leftChanged(oldSemanticHash: Map[String, String]): Boolean = {
+      // Checks for semantic changes in left or bootstrap, because those are saved together
+      val bootstrapExistsAndChanged = oldSemanticHash.contains(join.metaData.bootstrapTable) && oldSemanticHash.get(
+        join.metaData.bootstrapTable) != semanticHash.get(join.metaData.bootstrapTable)
+      oldSemanticHash.get(leftSourceKey) != semanticHash.get(leftSourceKey) || bootstrapExistsAndChanged
+    }
+
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
       val newSemanticHash = semanticHash
       // only right join part hashes for convenience
@@ -890,7 +897,7 @@ object Extensions {
       }
 
       // drop everything if left source changes
-      val partsToDrop = if (oldSemanticHash(leftSourceKey) != newSemanticHash(leftSourceKey)) {
+      val partsToDrop = if (leftChanged(oldSemanticHash)) {
         partHashes(oldSemanticHash).keys.toSeq
       } else {
         val changed = partHashes(newSemanticHash).flatMap {
