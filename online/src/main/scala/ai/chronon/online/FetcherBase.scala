@@ -49,15 +49,15 @@ class FetcherBase(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false)
-    extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
+  extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(
-      groupByServingInfoParsed: GroupByServingInfoParsed,
-      batchRequest: GetRequest,
-      streamingRequestOpt: Option[GetRequest],
-      endTs: Option[Long],
-      context: Metrics.Context
-  )
+                                         groupByServingInfoParsed: GroupByServingInfoParsed,
+                                         batchRequest: GetRequest,
+                                         streamingRequestOpt: Option[GetRequest],
+                                         endTs: Option[Long],
+                                         context: Metrics.Context
+                                       )
 
   // a groupBy request is split into batchRequest and optionally a streamingRequest
   // this method decodes bytes (of the appropriate avro schema) into chronon rows aggregates further if necessary
@@ -101,10 +101,10 @@ class FetcherBase(kvStore: KVStore,
         null
       } else {
         reportKvResponse(context.withSuffix("streaming"),
-                         streamingResponses,
-                         queryTimeMs,
-                         overallLatency,
-                         totalResponseValueBytes)
+          streamingResponses,
+          queryTimeMs,
+          overallLatency,
+          totalResponseValueBytes)
 
         val batchIr = toBatchIr(batchBytes, servingInfo)
         val output: Array[Any] = if (servingInfo.isTilingEnabled) {
@@ -171,7 +171,7 @@ class FetcherBase(kvStore: KVStore,
       context.distribution(Name.FreshnessMinutes, (queryTsMillis - ts) / 60000)
     }
     context.distribution("attributed_latency.millis",
-                         ((responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis).toLong)
+      ((responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis).toLong)
   }
 
   private def updateServingInfo(batchEndTs: Long,
@@ -240,8 +240,8 @@ class FetcherBase(kvStore: KVStore,
             case Accuracy.TEMPORAL =>
               Some(
                 GetRequest(streamingKeyBytes,
-                           groupByServingInfo.groupByOps.streamingDataset,
-                           Some(groupByServingInfo.batchEndTsMillis)))
+                  groupByServingInfo.groupByOps.streamingDataset,
+                  Some(groupByServingInfo.batchEndTsMillis)))
             // no further aggregation is required - the value in KvStore is good as is
             case Accuracy.SNAPSHOT => None
           }
@@ -288,9 +288,9 @@ class FetcherBase(kvStore: KVStore,
               // pick the batch version with highest timestamp
               val batchResponseTryAll = responsesMap
                 .getOrElse(batchRequest,
-                           Failure(
-                             new IllegalStateException(
-                               s"Couldn't find corresponding response for $batchRequest in responseMap")))
+                  Failure(
+                    new IllegalStateException(
+                      s"Couldn't find corresponding response for $batchRequest in responseMap")))
               val streamingResponsesOpt =
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
@@ -301,13 +301,13 @@ class FetcherBase(kvStore: KVStore,
                       s"Constructing response for groupBy: ${groupByServingInfo.groupByOps.metaData.getName} " +
                         s"for keys: ${request.keys}")
                   constructGroupByResponse(batchResponseTryAll,
-                                           streamingResponsesOpt,
-                                           groupByServingInfo,
-                                           queryTs,
-                                           startTimeMs,
-                                           multiGetMillis,
-                                           context,
-                                           totalResponseValueBytes)
+                    streamingResponsesOpt,
+                    groupByServingInfo,
+                    queryTs,
+                    startTimeMs,
+                    multiGetMillis,
+                    context,
+                    totalResponseValueBytes)
                 } catch {
                   case ex: Exception =>
                     // not all exceptions are due to stale schema, so we want to control how often we hit kv store
@@ -355,6 +355,15 @@ class FetcherBase(kvStore: KVStore,
         }.toList
         responses
       }
+  }
+
+  def reportFetcherVersion(): String = {
+    val version = getClass.getPackage.getImplementationVersion
+    if (version == null) {
+      "0.0.0"
+    } else {
+      version
+    }
   }
 
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {
@@ -431,8 +440,8 @@ class FetcherBase(kvStore: KVStore,
                 case Left(PrefixedRequest(prefix, groupByRequest)) => {
                   responseMap
                     .getOrElse(groupByRequest,
-                               Failure(new IllegalStateException(
-                                 s"Couldn't find a groupBy response for $groupByRequest in response map")))
+                      Failure(new IllegalStateException(
+                        s"Couldn't find a groupBy response for $groupByRequest in response map")))
                     .map { valueMap =>
                       if (valueMap != null) {
                         valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
@@ -470,22 +479,22 @@ class FetcherBase(kvStore: KVStore,
   }
 
   /**
-    * Fetch method to simulate a random access interface for Chronon
-    * by distributing requests to relevant GroupBys. This is a batch
-    * API which allows the caller to provide a sequence of ColumnSpec
-    * queries and receive a mapping of results.
-    *
-    * TODO: Metrics
-    * TODO: Collection identifier for metrics
-    * TODO: Consider removing prefix interface for this method
-    * TODO: Consider using simpler response type since mapping is redundant
-    *
-    * @param columnSpecs – batch of ColumnSpec queries
-    * @return Future map of query to GroupBy response
-    */
+   * Fetch method to simulate a random access interface for Chronon
+   * by distributing requests to relevant GroupBys. This is a batch
+   * API which allows the caller to provide a sequence of ColumnSpec
+   * queries and receive a mapping of results.
+   *
+   * TODO: Metrics
+   * TODO: Collection identifier for metrics
+   * TODO: Consider removing prefix interface for this method
+   * TODO: Consider using simpler response type since mapping is redundant
+   *
+   * @param columnSpecs – batch of ColumnSpec queries
+   * @return Future map of query to GroupBy response
+   */
   def fetchColumns(
-      columnSpecs: Seq[ColumnSpec]
-  ): Future[Map[ColumnSpec, Response]] = {
+                    columnSpecs: Seq[ColumnSpec]
+                  ): Future[Map[ColumnSpec, Response]] = {
     val startTimeMs = System.currentTimeMillis()
 
     // Generate a mapping from ColumnSpec query --> GroupBy request

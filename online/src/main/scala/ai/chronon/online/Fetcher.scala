@@ -117,6 +117,10 @@ class Fetcher(val kvStore: KVStore,
       .build()
 
     ctx.recordEvent("caller_name_fetcher_version", event)
+    val version = super.reportFetcherVersion()
+    val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${version}"
+    println(s"Chronon debug $message")
+
   }
 
   reportCallerNameFetcherVersion()
