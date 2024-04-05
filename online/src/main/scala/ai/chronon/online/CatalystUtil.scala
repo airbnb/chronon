@@ -159,24 +159,26 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
     val df = session.sqlContext.table(sessionTable).selectExpr(selectClauses.toSeq: _*)
     val filteredDf = whereClauseOpt.map(df.where(_)).getOrElse(df)
 
+    def handleWholeStageCodegenExec(whc: WholeStageCodegenExec): InternalRow => Option[InternalRow] = {
+      val (ctx, cleanedSource) = whc.doCodeGen()
+      val (clazz, _) = CodeGenerator.compile(cleanedSource)
+      val references = ctx.references.toArray
+      val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
+      val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
+      buffer.init(0, Array(iteratorWrapper))
+      def codegenFunc(row: InternalRow): Option[InternalRow] = {
+        iteratorWrapper.put(row)
+        while (buffer.hasNext) {
+          return Some(buffer.next())
+        }
+        None
+      }
+      codegenFunc
+    }
+
     // extract transform function from the df spark plan
     val func: InternalRow => Option[InternalRow] = filteredDf.queryExecution.executedPlan match {
-      case whc: WholeStageCodegenExec => {
-        val (ctx, cleanedSource) = whc.doCodeGen()
-        val (clazz, _) = CodeGenerator.compile(cleanedSource)
-        val references = ctx.references.toArray
-        val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
-        val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
-        buffer.init(0, Array(iteratorWrapper))
-        def codegenFunc(row: InternalRow): Option[InternalRow] = {
-          iteratorWrapper.put(row)
-          while (buffer.hasNext) {
-            return Some(buffer.next())
-          }
-          None
-        }
-        codegenFunc
-      }
+      case whc: WholeStageCodegenExec => handleWholeStageCodegenExec(whc)
       case ProjectExec(projectList, fp @ FilterExec(condition, child)) => {
         val unsafeProjection = UnsafeProjection.create(projectList, fp.output)
 
@@ -192,23 +194,7 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
       }
       case ProjectExec(projectList, childPlan) => {
         childPlan match {
-          case whc @ WholeStageCodegenExec(fp @ FilterExec(condition, child)) =>
-            val (ctx, cleanedSource) = whc.doCodeGen()
-            val (clazz, _) = CodeGenerator.compile(cleanedSource)
-            val references = ctx.references.toArray
-            val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
-            val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
-            buffer.init(0, Array(iteratorWrapper))
-
-            def codegenFunc(row: InternalRow): Option[InternalRow] = {
-              iteratorWrapper.put(row)
-              while (buffer.hasNext) {
-                return Some(buffer.next())
-              }
-              None
-            }
-
-            codegenFunc
+          case whc @ WholeStageCodegenExec(fp @ FilterExec(condition, child)) => handleWholeStageCodegenExec(whc)
           case _ =>
             val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
             def projectFunc(row: InternalRow): Option[InternalRow] = {
