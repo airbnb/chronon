@@ -191,11 +191,33 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
         projectFunc
       }
       case ProjectExec(projectList, childPlan) => {
-        val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
-        def projectFunc(row: InternalRow): Option[InternalRow] = {
-          Some(unsafeProjection.apply(row))
+        childPlan match {
+          case whc @ WholeStageCodegenExec(fp @ FilterExec(condition, child)) =>
+            val (ctx, cleanedSource) = whc.doCodeGen()
+            val (clazz, _) = CodeGenerator.compile(cleanedSource)
+            val references = ctx.references.toArray
+            val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
+            val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
+            buffer.init(0, Array(iteratorWrapper))
+
+            def codegenFunc(row: InternalRow): Option[InternalRow] = {
+              iteratorWrapper.put(row)
+              while (buffer.hasNext) {
+                return Some(buffer.next())
+              }
+              None
+            }
+
+            codegenFunc
+          case _ =>
+            val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
+
+            def projectFunc(row: InternalRow): Option[InternalRow] = {
+              Some(unsafeProjection.apply(row))
+            }
+
+            projectFunc
         }
-        projectFunc
       }
       case ltse: LocalTableScanExec => {
         // Input `row` is unused because for LTSE, no input is needed to compute the output
