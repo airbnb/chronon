@@ -211,11 +211,9 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
             codegenFunc
           case _ =>
             val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
-
             def projectFunc(row: InternalRow): Option[InternalRow] = {
               Some(unsafeProjection.apply(row))
             }
-
             projectFunc
         }
       }
