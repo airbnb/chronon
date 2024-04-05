@@ -584,7 +584,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertTrue(res.get("c").asInstanceOf[util.ArrayList[Any]].contains("world"))
   }
 
-  def testWhereClauseShouldFilterEventOutButDoesnt(): Unit = {
+  def testWhereClauseShouldFilterEventOut(): Unit = {
     val inputEventStruct: StructType = StructType.from(
       "InputEventStruct",
       Array(
@@ -608,6 +608,6 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val wheres = Seq("tag = 'inexistent'")
     val cu = new CatalystUtil(selects, inputEventStruct, wheres)
     val res = cu.performSql(inputEventRow)
-    assertTrue(res.get.size == 3) // If this assertion passes, the event was not filtered out.
+    assertTrue(res.isEmpty)
   }
 }
