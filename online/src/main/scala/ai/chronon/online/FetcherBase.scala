@@ -357,15 +357,6 @@ class FetcherBase(kvStore: KVStore,
       }
   }
 
-  def reportFetcherVersion(): String = {
-    val version = getClass.getPackage.getImplementationVersion
-    if (version == null) {
-      "0.0.0"
-    } else {
-      version
-    }
-  }
-
   def toBatchIr(bytes: Array[Byte], gbInfo: GroupByServingInfoParsed): FinalBatchIr = {
     if (bytes == null) return null
     val batchRecord =

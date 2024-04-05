@@ -87,19 +87,8 @@ class Fetcher(val kvStore: KVStore,
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
 
   private def reportCallerNameFetcherVersion(): Unit = {
-    def reportFetcherVersion(): String = {
-      val version = getClass.getPackage.getImplementationVersion
-      if (version == null) {
-        "0.0.0"
-      } else {
-        version
-      }
-    }
-
-    val version = reportFetcherVersion()
-    val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${version}"
-
     import buildinfo.BuildInfo
+    val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
     println(s"""
          |Chronon debug $message
          |getClass $getClass
@@ -117,10 +106,6 @@ class Fetcher(val kvStore: KVStore,
       .build()
 
     ctx.recordEvent("caller_name_fetcher_version", event)
-    val version = super.reportFetcherVersion()
-    val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${version}"
-    println(s"Chronon debug $message")
-
   }
 
   reportCallerNameFetcherVersion()
