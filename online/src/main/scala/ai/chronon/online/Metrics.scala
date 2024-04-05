@@ -18,7 +18,7 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import com.timgroup.statsd.NonBlockingStatsDClient
+import com.timgroup.statsd.{Event, NonBlockingStatsDClient}
 
 import scala.util.ScalaJavaConversions.ListOps
 
@@ -197,6 +197,7 @@ object Metrics {
     def gauge(metric: String, value: Long): Unit = stats.gauge(prefix(metric), value, tags)
 
     def recordSetValue(metric: String, value: String): Unit = stats.recordSetValue(prefix(metric), value, tags)
+    def recordEvent(metric: String, event: Event): Unit = stats.recordEvent(event, prefix(metric), tags)
 
     def toTags: Array[String] = {
       val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String]).map(_.sanitize)
