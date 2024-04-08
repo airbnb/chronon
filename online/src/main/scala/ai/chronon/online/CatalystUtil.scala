@@ -161,7 +161,7 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
 
     // extract transform function from the df spark plan
     val func: InternalRow => Option[InternalRow] = filteredDf.queryExecution.executedPlan match {
-      case whc: WholeStageCodegenExec =>
+      case whc: WholeStageCodegenExec => {
         val (ctx, cleanedSource) = whc.doCodeGen()
         val (clazz, _) = CodeGenerator.compile(cleanedSource)
         val references = ctx.references.toArray
@@ -176,6 +176,7 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
           None
         }
         codegenFunc
+      }
       case ProjectExec(projectList, fp @ FilterExec(condition, child)) => {
         val unsafeProjection = UnsafeProjection.create(projectList, fp.output)
 
@@ -191,6 +192,7 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
       }
       case ProjectExec(projectList, childPlan) => {
         childPlan match {
+          // This WholeStageCodegenExec case is slightly different from the one above as we apply a projection.
           case whc @ WholeStageCodegenExec(fp: FilterExec) =>
             val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
             val (ctx, cleanedSource) = whc.doCodeGen()
