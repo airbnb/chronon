@@ -81,7 +81,7 @@ class Fetcher(val kvStore: KVStore,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
               val externalSourceRegistry: ExternalSourceRegistry = null,
-              featureFlags: BiPredicate[String, java.util.Map[String, String]])
+              featureFlags: BiPredicate[String, java.util.Map[String, String]] = null)
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
 
   def buildJoinCodec(joinConf: api.Join): JoinCodec = {
