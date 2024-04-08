@@ -240,6 +240,11 @@ object Driver {
         with ResultValidationAbility {
       val selectedJoinParts: ScallopOption[List[String]] =
         opt[List[String]](required = false, descr = "A list of join parts that require backfilling.")
+      val useCachedLeft: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          default = Some(false),
+          descr = "Whether or not to use the cached bootstrap table as the source - used in parallelized join flow.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }
@@ -255,7 +260,9 @@ object Driver {
       )
 
       if (args.selectedJoinParts.isDefined) {
-        join.computeJoinOpt(args.stepDays.toOption, args.startPartitionOverride.toOption)
+        join.computeJoinOpt(args.stepDays.toOption,
+                            args.startPartitionOverride.toOption,
+                            args.useCachedLeft.getOrElse(false))
         logger.info(
           s"Backfilling selected join parts: ${args.selectedJoinParts()} is complete. Skipping the final join. Exiting."
         )
@@ -276,6 +283,52 @@ object Driver {
       df.show(numRows = 3, truncate = 0, vertical = true)
       logger.info(
         s"\nShowing three rows of output above.\nQuery table `${args.joinConf.metaData.outputTable}` for more.\n")
+    }
+  }
+
+  object JoinBackfillLeft {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("join-left")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"join_left_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        !args.runFirstHole()
+      )
+      join.computeLeft(args.startPartitionOverride.toOption)
+    }
+  }
+
+  object JoinBackfillFinal {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("join-final")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"join_final_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        !args.runFirstHole()
+      )
+      join.computeFinal(args.startPartitionOverride.toOption)
     }
   }
 
@@ -833,6 +886,10 @@ object Driver {
     addSubcommand(CompareJoinQueryArgs)
     object MetadataExportArgs extends MetadataExport.Args
     addSubcommand(MetadataExportArgs)
+    object JoinBackfillLeftArgs extends JoinBackfillLeft.Args
+    addSubcommand(JoinBackfillLeftArgs)
+    object JoinBackfillFinalArgs extends JoinBackfillFinal.Args
+    addSubcommand(JoinBackfillFinalArgs)
     object LabelJoinArgs extends LabelJoin.Args
     addSubcommand(LabelJoinArgs)
     requireSubcommand()
@@ -872,6 +929,8 @@ object Driver {
           case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
           case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
+          case args.JoinBackfillLeftArgs   => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
+          case args.JoinBackfillFinalArgs  => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
           case _                           => logger.info(s"Unknown subcommand: $x")
         }
       case None => logger.info(s"specify a subcommand please")
