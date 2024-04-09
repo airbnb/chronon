@@ -72,6 +72,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.Metadata",
       "ai.chronon.api.Row",
       "ai.chronon.spark.KeyWithHash",
+      "ai.chronon.aggregator.base.MomentsIR",
       "ai.chronon.aggregator.windowing.BatchIr",
       "ai.chronon.online.RowWrapper",
       "ai.chronon.online.Fetcher$Request",

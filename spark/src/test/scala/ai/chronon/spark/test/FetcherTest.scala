@@ -208,6 +208,21 @@ class FetcherTest extends TestCase {
           windows = Seq(new Window(1, TimeUnit.DAYS))
         ),
         Builders.Aggregation(
+          operation = Operation.VARIANCE,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.SKEW,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.KURTOSIS,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
           operation = Operation.APPROX_HISTOGRAM_K,
           inputColumn = "rating",
           windows = Seq(new Window(1, TimeUnit.DAYS))
@@ -322,6 +337,21 @@ class FetcherTest extends TestCase {
         ),
         Builders.Aggregation(
           operation = Operation.AVERAGE,
+          inputColumn = "rating",
+          windows = Seq(new Window(2, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.VARIANCE,
+          inputColumn = "rating",
+          windows = Seq(new Window(2, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.SKEW,
+          inputColumn = "rating",
+          windows = Seq(new Window(2, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.KURTOSIS,
           inputColumn = "rating",
           windows = Seq(new Window(2, TimeUnit.DAYS))
         ),

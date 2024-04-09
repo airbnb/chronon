@@ -309,6 +309,25 @@ object ColumnAggregator {
           case _          => mismatchException
         }
 
+      case Operation.SKEW =>
+        inputType match {
+          case IntType => simple(new Skew, toDouble[Int])
+          case LongType => simple(new Skew, toDouble[Long])
+          case ShortType => simple(new Skew, toDouble[Short])
+          case DoubleType => simple(new Skew)
+          case FloatType => simple(new Skew, toDouble[Float])
+          case _ => mismatchException
+        }
+      case Operation.KURTOSIS =>
+        inputType match {
+          case IntType    => simple(new Kurtosis, toDouble[Int])
+          case LongType   => simple(new Kurtosis, toDouble[Long])
+          case ShortType  => simple(new Kurtosis, toDouble[Short])
+          case DoubleType => simple(new Kurtosis)
+          case FloatType  => simple(new Kurtosis, toDouble[Float])
+          case _          => mismatchException
+        }
+
       case Operation.MIN =>
         inputType match {
           case IntType    => simple(new Min[Int](inputType))

@@ -675,15 +675,54 @@ class GroupByTest {
       additionalAgg = aggs)
 
     val histogramValues = spark.sql(
-      """
-        |select explode(map_values(item_approx_histogram_k_15d)) as item_values
-        |from test_approx_histograms.unit_test_group_by_approx_histograms
-        |""".stripMargin)
+        """
+          |select explode(map_values(item_approx_histogram_k_15d)) as item_values
+          |from test_approx_histograms.unit_test_group_by_approx_histograms
+          |""".stripMargin)
       .map(row => row.getAs[Int]("item_values"))(Encoders.scalaInt)
       .collect()
       .toSet
 
     assert(histogramValues.nonEmpty)
     assert(!histogramValues.contains(0))
+  }
+
+  @Test
+  def testDescriptiveStats(): Unit = {
+    val (source, endPartition) = createTestSource(suffix = "_descriptive_stats")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_descriptive_stats"
+    val aggs = Seq(
+      Builders.Aggregation(
+        operation = Operation.VARIANCE,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.SKEW,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.KURTOSIS,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+    )
+    backfill(name = "unit_test_group_by_descriptive_stats",
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils,
+      additionalAgg = aggs)
   }
 }

@@ -10,6 +10,7 @@ import com.yahoo.sketches.{ArrayOfDoublesSerDe, ArrayOfItemsSerDe, ArrayOfLongsS
 
 import java.util
 import scala.collection.mutable
+import scala.jdk.CollectionConverters._
 import scala.reflect.ClassTag
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
@@ -587,3 +588,116 @@ class TopK[T: Ordering: ClassTag](inputType: DataType, k: Int)
     extends OrderByLimit[T](inputType, k, Ordering[T].reverse)
 
 class BottomK[T: Ordering: ClassTag](inputType: DataType, k: Int) extends OrderByLimit[T](inputType, k, Ordering[T])
+
+case class MomentsIR(
+    n: Double,
+    m1: Double,
+    m2: Double,
+    m3: Double,
+    m4: Double
+)
+
+// Uses Welford/Knuth method as the traditional sum of squares based formula has serious numerical stability problems
+trait MomentAggregator extends SimpleAggregator[Double, MomentsIR, Double] {
+  override def prepare(input: Double): MomentsIR = {
+    val ir = MomentsIR(
+      n = 0,
+      m1 = 0,
+      m2 = 0,
+      m3 = 0,
+      m4 = 0
+    )
+
+    update(ir, input)
+  }
+
+  // Implementation is similar to the variance calculation above, but is extended to calculate the 3rd and 4th moments.
+  // References for the approach are here:
+  // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Higher-order_statistics
+  // https://www.johndcook.com/blog/skewness_kurtosis/
+  override def update(ir: MomentsIR, x: Double): MomentsIR = {
+    val n1 = ir.n
+    val n = ir.n + 1
+    val delta = x - ir.m1
+    val deltaN = delta / n
+    val deltaN2 = deltaN * deltaN
+    val term1 = delta * deltaN * n1
+    val m1 = ir.m1 + deltaN
+    val m4 = ir.m4 + term1 * deltaN2 * (n * n - 3 * n + 3) + 6 * deltaN2 * ir.m2 - 4 * deltaN * ir.m3
+    val m3 = ir.m3 + term1 * deltaN * (n - 2) - 3 * deltaN * ir.m2
+    val m2 = ir.m2 + term1
+
+    MomentsIR(
+      n = n,
+      m1 = m1,
+      m2 = m2,
+      m3 = m3,
+      m4 = m4
+    )
+  }
+
+  override def outputType: DataType = DoubleType
+
+  override def irType: DataType = ListType(DoubleType)
+
+  // Implementation is similar to the variance calculation above, but is extended to calculate the 3rd and 4th moments.
+  // References for the approach are here:
+  // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Higher-order_statistics
+  // https://www.johndcook.com/blog/skewness_kurtosis/
+  override def merge(a: MomentsIR, b: MomentsIR): MomentsIR = {
+    val n = a.n + b.n
+    val delta = b.m1 - a.m1
+    val delta2 = delta * delta
+    val delta3 = delta * delta2
+    val delta4 = delta2 * delta2
+
+    val m1 = (a.n * a.m1 + b.n * b.m1) / n
+    val m2 = a.m2 + b.m2 + delta2 * a.n * b.n / n
+    val m3 = a.m3 + b.m3 + delta3 * a.n * b.n * (a.n - b.n) / (n * n) +
+      3.0 * delta * (a.n * b.m2 - b.n * a.m2) / n
+    val m4 = a.m4 + b.m4 + delta4 * a.n * b.n * (a.n * a.n - a.n * b.n + b.n * b.n) / (n * n * n) +
+      6.0 * delta2 * (a.n * a.n * b.m2 + b.n * b.n * a.m2) / (n * n) + 4.0 * delta * (a.n * b.m3 - b.n * a.m3) / n
+
+    MomentsIR(
+      n = n,
+      m1 = m1,
+      m2 = m2,
+      m3 = m3,
+      m4 = m4
+    )
+  }
+
+  override def finalize(ir: MomentsIR): Double
+
+  override def clone(ir: MomentsIR): MomentsIR = {
+    MomentsIR(
+      n = ir.n,
+      m1 = ir.m1,
+      m2 = ir.m2,
+      m3 = ir.m3,
+      m4 = ir.m4
+    )
+  }
+
+  override def normalize(ir: MomentsIR): util.ArrayList[Double] = {
+    val values = List(ir.n, ir.m1, ir.m2, ir.m3, ir.m4)
+    new util.ArrayList[Double](values.asJava)
+  }
+
+  override def denormalize(normalized: Any): MomentsIR = {
+    val values = normalized.asInstanceOf[util.ArrayList[Double]].asScala
+    MomentsIR(values(0), values(1), values(2), values(3), values(4))
+  }
+
+  override def isDeletable = false
+}
+
+class Skew extends MomentAggregator {
+  override def finalize(ir: MomentsIR): Double =
+    if (ir.n < 3 || ir.m2 == 0) Double.NaN else Math.sqrt(ir.n) * ir.m3 / Math.pow(ir.m2, 1.5)
+}
+
+class Kurtosis extends MomentAggregator {
+  override def finalize(ir: MomentsIR): Double =
+    if (ir.n < 4 || ir.m2 == 0) Double.NaN else ir.n * ir.m4 / (ir.m2 * ir.m2) - 3
+}
