@@ -58,6 +58,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     if (unfilledRanges.isEmpty) {
       logger.info(s"""No unfilled range for $outputTable given
            |start partition of ${stagingQueryConf.startPartition}
+           |override start partition of $overrideStart
            |end partition of $endPartition
            |""".stripMargin)
       return

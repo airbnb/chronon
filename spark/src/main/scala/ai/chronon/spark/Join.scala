@@ -28,8 +28,8 @@ import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
-
 import java.util.concurrent.Executors
+
 import scala.collection.{Seq, mutable}
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
@@ -42,8 +42,11 @@ import scala.collection.parallel.ExecutionContextTaskSupport
 import scala.concurrent.duration.{Duration, DurationInt}
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
 import scala.collection.compat._
+import scala.jdk.CollectionConverters._
+
+import ai.chronon.api.DataModel.Entities
 import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 /*
  * hashes: a list containing bootstrap hashes that represent the list of bootstrap parts that a record has matched
@@ -77,8 +80,6 @@ class Join(joinConf: api.Join,
            showDf: Boolean = false,
            selectedJoinParts: Option[List[String]] = None)
     extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf, selectedJoinParts) {
-
-  private val bootstrapTable = joinConf.metaData.bootstrapTable
 
   private def padFields(df: DataFrame, structType: sql.types.StructType): DataFrame = {
     structType.foldLeft(df) {
@@ -209,19 +210,61 @@ class Join(joinConf: api.Join,
     coveringSetsPerJoinPart
   }
 
+  private def getRightPartsData(leftRange: PartitionRange): Seq[(JoinPart, DataFrame)] = {
+    joinConf.joinParts.asScala.map { joinPart =>
+      val partTable = joinConf.partOutputTable(joinPart)
+      val effectiveRange =
+        if (joinConf.left.dataModel != Entities && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+          leftRange.shift(-1)
+        } else {
+          leftRange
+        }
+      val wheres = Seq(s"ds >= '${effectiveRange.start}'", s"ds <= '${effectiveRange.end}'")
+      val sql = QueryUtils.build(null, partTable, wheres)
+      logger.info(s"Pulling data from joinPart table with: $sql")
+      val df = tableUtils.sparkSession.sql(sql)
+      (joinPart, df)
+    }
+  }
+
+  override def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit = {
+    val bootstrapDf =
+      tableUtils.sql(leftRange.genScanQuery(query = null, table = bootstrapTable)).addTimebasedColIfExists()
+    val rightPartsData = getRightPartsData(leftRange)
+    val joinedDfTry =
+      try {
+        Success(
+          rightPartsData
+            .foldLeft(bootstrapDf) {
+              case (partialDf, (rightPart, rightDf)) => joinWithLeft(partialDf, rightDf, rightPart)
+            }
+            // drop all processing metadata columns
+            .drop(Constants.MatchedHashes, Constants.TimePartitionColumn))
+      } catch {
+        case e: Exception =>
+          e.printStackTrace()
+          Failure(e)
+      }
+    val df = processJoinedDf(joinedDfTry, leftDf, bootstrapInfo, bootstrapDf)
+    df.save(outputTable, tableProps, autoExpand = true)
+  }
+
   override def computeRange(leftDf: DataFrame,
                             leftRange: PartitionRange,
                             bootstrapInfo: BootstrapInfo,
-                            runSmallMode: Boolean = false): Option[DataFrame] = {
-    val leftTaggedDf = if (leftDf.schema.names.contains(Constants.TimeColumn)) {
-      leftDf.withTimeBasedColumn(Constants.TimePartitionColumn)
-    } else {
-      leftDf
-    }
+                            runSmallMode: Boolean = false,
+                            usingBootstrappedLeft: Boolean = false): Option[DataFrame] = {
+
+    val leftTaggedDf = leftDf.addTimebasedColIfExists()
 
     // compute bootstrap table - a left outer join between left source and various bootstrap source table
     // this becomes the "new" left for the following GB backfills
-    val bootstrapDf = computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
+    val bootstrapDf = if (usingBootstrappedLeft) {
+      leftTaggedDf
+    } else {
+      computeBootstrapTable(leftTaggedDf, leftRange, bootstrapInfo)
+    }
+
     val bootStrapWithStats = bootstrapDf.withStats
 
     // for each join part, find the bootstrap sets that can fully "cover" the required fields. Later we will use this
@@ -302,7 +345,7 @@ class Join(joinConf: api.Join,
           // a bootstrap source can cover a partial date range. we combine the columns using coalesce-rule
           Success(
             rightResults
-              .foldLeft(bootstrapDf) {
+              .foldLeft(bootstrapDf.addTimebasedColIfExists()) {
                 case (partialDf, (rightPart, rightDf)) => joinWithLeft(partialDf, rightDf, rightPart)
               }
               // drop all processing metadata columns
@@ -317,6 +360,13 @@ class Join(joinConf: api.Join,
       }
       .get
 
+    Some(processJoinedDf(joinedDfTry, leftTaggedDf, bootstrapInfo, bootstrapDf))
+  }
+
+  private def processJoinedDf(joinedDfTry: Try[DataFrame],
+                              leftDf: DataFrame,
+                              bootstrapInfo: BootstrapInfo,
+                              bootstrapDf: DataFrame): DataFrame = {
     if (joinedDfTry.isFailure) throw joinedDfTry.failed.get
     val joinedDf = joinedDfTry.get
     val outputColumns = joinedDf.columns.filter(bootstrapInfo.fieldNames ++ bootstrapDf.columns)
@@ -325,7 +375,7 @@ class Join(joinConf: api.Join,
                                           bootstrapInfo,
                                           leftDf.columns)
     finalDf.explain()
-    Some(finalDf)
+    finalDf
   }
 
   def applyDerivation(baseDf: DataFrame, bootstrapInfo: BootstrapInfo, leftColumns: Seq[String]): DataFrame = {
@@ -422,18 +472,9 @@ class Join(joinConf: api.Join,
    * The main goal here to join together the various bootstrap source to the left table, and in the process maintain
    * relevant metadata such that we can easily tell which record needs computation or not in the following step.
    */
-  private def computeBootstrapTable(leftDf: DataFrame,
-                                    range: PartitionRange,
-                                    bootstrapInfo: BootstrapInfo): DataFrame = {
-
-    // For consistency comparison join, we also need to materialize the left table as bootstrap table in order to
-    // make random OOC sampling deterministic.
-    val isConsistencyJoin =
-      joinConf.metaData.isSetTableProperties && joinConf.metaData.tableProperties.containsKey(Constants.ChrononOOCTable)
-
-    if (!joinConf.isSetBootstrapParts && !isConsistencyJoin) {
-      return padExternalFields(leftDf, bootstrapInfo)
-    }
+  override def computeBootstrapTable(leftDf: DataFrame,
+                                     range: PartitionRange,
+                                     bootstrapInfo: BootstrapInfo): DataFrame = {
 
     def validateReservedColumns(df: DataFrame, table: String, columns: Seq[String]): Unit = {
       val reservedColumnsContained = columns.filter(df.schema.fieldNames.contains)
