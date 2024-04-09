@@ -11,7 +11,7 @@ More information about Chronon can be found at [chronon.ai](https://chronon.ai/)
 
 ## Platform Features test
 
-### Online Serving
+### Online Serving\
 
 Chronon offers an API for realtime fetching which returns up-to-date values for your features. It supports:
 
