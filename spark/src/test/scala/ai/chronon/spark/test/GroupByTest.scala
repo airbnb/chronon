@@ -617,4 +617,43 @@ class GroupByTest {
     }
     assertEquals(0, diff.count())
   }
+
+  @Test
+  def testDescriptiveStats(): Unit = {
+    val (source, endPartition) = createTestSource(suffix = "_descriptive_stats")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_descriptive_stats"
+    val aggs = Seq(
+      Builders.Aggregation(
+        operation = Operation.VARIANCE,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.SKEW,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.KURTOSIS,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+    )
+    backfill(name = "unit_test_group_by_descriptive_stats",
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils,
+      additionalAgg = aggs)
+  }
 }
