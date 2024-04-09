@@ -8,6 +8,7 @@ import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import com.yahoo.sketches.kll.KllFloatsSketch
 import com.yahoo.sketches.{ArrayOfDoublesSerDe, ArrayOfItemsSerDe, ArrayOfLongsSerDe, ArrayOfStringsSerDe}
 
+import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
 import java.util
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -424,6 +425,155 @@ case class FrequentItems[T: FrequentItemsFriendly](mapSize: Int, errorType: Erro
     val serializer = implicitly[FrequentItemsFriendly[T]].serializer
     val sketch = ItemsSketch.getInstance[T](Memory.wrap(bytes.tail), serializer)
     ItemsSketchIR(sketch, sketchType)
+  }
+
+  def toSketch(values: Map[T, Long]): Sketch = {
+    val sketch = new ItemsSketch[T](sketchSize)
+    val sketchType = implicitly[FrequentItemsFriendly[T]].sketchType
+
+    values.foreach({
+      case (k, v) => sketch.update(k, v)
+    })
+
+    ItemsSketchIR(sketch, sketchType)
+  }
+}
+
+case class ApproxHistogramIr[T: FrequentItemsFriendly](
+    isApprox: Boolean,
+    sketch: Option[ItemsSketchIR[T]],
+    histogram: Option[mutable.Map[T, Long]]
+)
+
+case class ApproxHistogramIrSerializable[T: FrequentItemsFriendly](
+    isApprox: Boolean,
+    // The ItemsSketch isn't directly serializable
+    sketch: Option[Array[Byte]],
+    histogram: Option[mutable.Map[T, Long]]
+)
+
+// The ItemsSketch uses approximations and estimates for both values below and above k.
+// This keeps an exact aggregation for entries where the number of keys is < k, and switches over to the sketch
+// when the underlying map exceeds k keys.
+class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorType = ErrorType.NO_FALSE_POSITIVES)
+    extends SimpleAggregator[T, ApproxHistogramIr[T], Map[T, Long]] {
+  private val frequentItemsAggregator = new FrequentItems[T](mapSize, errorType)
+  override def prepare(input: T): ApproxHistogramIr[T] = {
+    ApproxHistogramIr(isApprox = false, sketch = None, histogram = Some(mutable.Map(input -> 1L)))
+  }
+
+  override def update(ir: ApproxHistogramIr[T], input: T): ApproxHistogramIr[T] = {
+    (ir.histogram, ir.sketch) match {
+      case (Some(hist), _) =>
+        increment(input, 1L, hist)
+        toIr(hist)
+      case (_, Some(sketch)) =>
+        sketch.sketch.update(input)
+        ApproxHistogramIr(isApprox = true, sketch = Some(sketch), histogram = None)
+      case _ => throw new IllegalStateException("Histogram state is missing")
+    }
+  }
+
+  override def outputType: DataType = MapType(StringType, IntType)
+  override def irType: DataType = BinaryType
+
+  override def merge(ir1: ApproxHistogramIr[T], ir2: ApproxHistogramIr[T]): ApproxHistogramIr[T] = {
+    (ir1.histogram, ir1.sketch, ir2.histogram, ir2.sketch) match {
+      case (Some(hist1), None, Some(hist2), None)     => combine(hist1, hist2)
+      case (None, Some(sketch1), None, Some(sketch2)) => combine(sketch1, sketch2)
+      case (Some(hist1), None, None, Some(sketch2))   => combine(hist1, sketch2)
+      case (None, Some(sketch1), Some(hist2), None)   => combine(hist2, sketch1)
+      case _ => throw new IllegalStateException("Histogram state is missing")
+    }
+  }
+
+  override def finalize(ir: ApproxHistogramIr[T]): Map[T, Long] = {
+    (ir.sketch, ir.histogram) match {
+      case (Some(sketch), None) => frequentItemsAggregator.finalize(sketch)
+      case (None, Some(hist))   => hist.toMap
+      case _ => throw new IllegalStateException("Histogram state is missing")
+    }
+  }
+
+  override def clone(ir: ApproxHistogramIr[T]): ApproxHistogramIr[T] = {
+    (ir.sketch, ir.histogram) match {
+      case (Some(sketch), None) =>
+        val clone = frequentItemsAggregator.clone(sketch)
+        ApproxHistogramIr(isApprox = true, sketch = Some(clone), histogram = None)
+      case (None, Some(hist)) =>
+        val clone = hist.clone()
+        ApproxHistogramIr(isApprox = false, sketch = None, histogram = Some(clone))
+      case _ => throw new IllegalStateException("Histogram state is missing")
+    }
+  }
+
+  override def normalize(ir: ApproxHistogramIr[T]): Any = {
+    val serializable = ApproxHistogramIrSerializable(
+      isApprox = ir.isApprox,
+      sketch = ir.sketch.map(frequentItemsAggregator.normalize),
+      histogram = ir.histogram
+    )
+
+    val byteStream = new ByteArrayOutputStream()
+    val outputStream = new ObjectOutputStream(byteStream)
+
+    try {
+      outputStream.writeObject(serializable)
+    } finally {
+      outputStream.close()
+      byteStream.close()
+    }
+
+    byteStream.toByteArray
+  }
+
+  override def denormalize(ir: Any): ApproxHistogramIr[T] = {
+    val bytes = ir.asInstanceOf[Array[Byte]]
+
+    val byteStream = new ByteArrayInputStream(bytes)
+    val objectStream = new ObjectInputStream(byteStream)
+
+    try {
+      val serializable = objectStream.readObject().asInstanceOf[ApproxHistogramIrSerializable[T]]
+      ApproxHistogramIr(
+        isApprox = serializable.isApprox,
+        sketch = serializable.sketch.map(frequentItemsAggregator.denormalize),
+        histogram = serializable.histogram
+      )
+    } finally {
+      objectStream.close()
+      byteStream.close()
+    }
+  }
+
+  private def combine(hist1: mutable.Map[T, Long], hist2: mutable.Map[T, Long]): ApproxHistogramIr[T] = {
+    val hist = mutable.Map[T, Long]()
+    hist1.foreach({ case (k, v) => increment(k, v, hist) })
+    hist2.foreach({ case (k, v) => increment(k, v, hist) })
+    toIr(hist)
+  }
+  private def combine(sketch1: ItemsSketchIR[T], sketch2: ItemsSketchIR[T]): ApproxHistogramIr[T] = {
+    val sketch = frequentItemsAggregator.merge(sketch1, sketch2)
+    ApproxHistogramIr(isApprox = true, sketch = Some(sketch), histogram = None)
+  }
+  private def combine(hist: mutable.Map[T, Long], sketch: ItemsSketchIR[T]): ApproxHistogramIr[T] = {
+    hist.foreach({ case (k, v) => sketch.sketch.update(k, v) })
+    ApproxHistogramIr(isApprox = true, sketch = Some(sketch), histogram = None)
+  }
+
+  private def toIr(hist: mutable.Map[T, Long]): ApproxHistogramIr[T] = {
+    if (hist.size > mapSize)
+      ApproxHistogramIr(isApprox = true, sketch = Some(frequentItemsAggregator.toSketch(hist.toMap)), histogram = None)
+    else
+      ApproxHistogramIr(isApprox = false, sketch = None, histogram = Some(hist))
+  }
+
+  private def increment(value: T, times: Long, values: mutable.Map[T, Long]): Unit = {
+    if (values.contains(value)) {
+      values(value) += times
+    } else {
+      values += (value -> times)
+    }
   }
 }
 

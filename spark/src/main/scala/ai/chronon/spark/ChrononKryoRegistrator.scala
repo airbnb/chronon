@@ -74,6 +74,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "ai.chronon.spark.KeyWithHash",
       "ai.chronon.aggregator.base.MomentsIR",
       "ai.chronon.aggregator.windowing.BatchIr",
+      "ai.chronon.aggregator.base.ApproxHistogramIr",
       "ai.chronon.online.RowWrapper",
       "ai.chronon.online.Fetcher$Request",
       "ai.chronon.aggregator.windowing.FinalBatchIr",

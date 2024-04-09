@@ -232,12 +232,12 @@ object ColumnAggregator {
       case Operation.APPROX_HISTOGRAM_K =>
         val k = aggregationPart.getInt("k", Some(8))
         inputType match {
-          case IntType    => simple(new FrequentItems[java.lang.Long](k), toJavaLong[Int])
-          case LongType   => simple(new FrequentItems[java.lang.Long](k))
-          case ShortType  => simple(new FrequentItems[java.lang.Long](k), toJavaLong[Short])
-          case DoubleType => simple(new FrequentItems[java.lang.Double](k))
-          case FloatType  => simple(new FrequentItems[java.lang.Double](k), toJavaDouble[Float])
-          case StringType => simple(new FrequentItems[String](k))
+          case IntType    => simple(new ApproxHistogram[java.lang.Long](k), toJavaLong[Int])
+          case LongType   => simple(new ApproxHistogram[java.lang.Long](k))
+          case ShortType  => simple(new ApproxHistogram[java.lang.Long](k), toJavaLong[Short])
+          case DoubleType => simple(new ApproxHistogram[java.lang.Double](k))
+          case FloatType  => simple(new ApproxHistogram[java.lang.Double](k), toJavaDouble[Float])
+          case StringType => simple(new ApproxHistogram[String](k))
           case _          => mismatchException
         }
       case Operation.SUM =>
