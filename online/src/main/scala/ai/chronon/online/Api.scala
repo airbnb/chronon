@@ -208,6 +208,9 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                     externalRegistry,
                     callerName)
 
+  final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(null)
+
+
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)

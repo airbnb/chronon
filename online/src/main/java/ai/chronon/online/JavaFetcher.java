@@ -37,6 +37,11 @@ public class JavaFetcher {
     this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName);
   }
 
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null);
+  }
+
+
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {
     List<JavaResponse> result = new ArrayList<>(responseSeq.size());
     Iterator<Response> it = responseSeq.iterator();

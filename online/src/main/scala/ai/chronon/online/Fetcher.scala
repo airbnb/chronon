@@ -37,6 +37,7 @@ import scala.util.{Failure, Success, Try}
 import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildDerivedFields}
 import com.timgroup.statsd.Event
 import com.timgroup.statsd.Event.AlertType
+import buildinfo.BuildInfo
 
 object Fetcher {
   case class Request(name: String,
@@ -87,16 +88,7 @@ class Fetcher(val kvStore: KVStore,
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
 
   private def reportCallerNameFetcherVersion(): Unit = {
-    import buildinfo.BuildInfo
     val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
-    println(s"""
-         |Chronon debug $message
-         |getClass $getClass
-         |getPackage ${getClass.getPackage}
-         |getSpecificationVersion ${getClass.getPackage.toString}
-         |Running ${BuildInfo.name} version ${BuildInfo.version}
-         |""".stripMargin) // Running ${BuildInfo.name} version ${BuildInfo.version}
-
     val ctx = Metrics.Context(Environment.Fetcher)
     val event = Event
       .builder()
@@ -104,10 +96,10 @@ class Fetcher(val kvStore: KVStore,
       .withText(message)
       .withAlertType(AlertType.INFO)
       .build()
-
     ctx.recordEvent("caller_name_fetcher_version", event)
   }
 
+  // run during initialization
   reportCallerNameFetcherVersion()
 
   def buildJoinCodec(joinConf: api.Join): JoinCodec = {

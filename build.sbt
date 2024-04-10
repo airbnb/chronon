@@ -75,8 +75,6 @@ lazy val releaseSettings = Seq(
   )
 )
 
-//enablePlugins(GitVersioning, GitBranchPrompt, BuildInfoPlugin)
-
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))

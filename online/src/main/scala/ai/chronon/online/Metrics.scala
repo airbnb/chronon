@@ -196,7 +196,6 @@ object Metrics {
 
     def gauge(metric: String, value: Long): Unit = stats.gauge(prefix(metric), value, tags)
 
-    def recordSetValue(metric: String, value: String): Unit = stats.recordSetValue(prefix(metric), value, tags)
     def recordEvent(metric: String, event: Event): Unit = stats.recordEvent(event, prefix(metric), tags)
 
     def toTags: Array[String] = {
