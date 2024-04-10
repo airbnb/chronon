@@ -75,6 +75,8 @@ lazy val releaseSettings = Seq(
   )
 )
 
+enablePlugins(GitVersioning, GitBranchPrompt)
+
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
@@ -82,7 +84,8 @@ lazy val root = (project in file("."))
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
-    version := git.versionProperty.value,
+    name := "chronon",
+    version := git.versionProperty.value
   )
   .settings(releaseSettings: _*)
 
@@ -309,10 +312,7 @@ lazy val online = project
       "net.jodah" % "typetools" % "0.4.1"
     ),
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer"),
-    version := git.versionProperty.value,
-    buildInfoKeys := Seq[BuildInfoKey](name, version, scalaVersion, sbtVersion),
-    buildInfoPackage := "buildinfo",
-    buildInfoUsePackageAsPath := true
+    version := git.versionProperty.value
   )
 
 lazy val online_unshaded = (project in file("online"))
@@ -333,7 +333,7 @@ lazy val online_unshaded = (project in file("online"))
                                        "avro",
                                        "spark-all/provided",
                                        "scala-parallel-collections",
-                                       "netty-buffer"),
+                                       "netty-buffer")
   )
 
 
