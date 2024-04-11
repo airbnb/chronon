@@ -18,7 +18,7 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import com.timgroup.statsd.NonBlockingStatsDClient
+import com.timgroup.statsd.{Event, NonBlockingStatsDClient}
 
 import scala.util.ScalaJavaConversions.ListOps
 
@@ -30,7 +30,7 @@ object Metrics {
     val GroupByFetching = "group_by.fetch"
     val GroupByUpload = "group_by.upload"
     val GroupByStreaming = "group_by.streaming"
-
+    val Fetcher = "fetcher"
     val JoinOffline = "join.offline"
     val GroupByOffline = "group_by.offline"
     val StagingQueryOffline = "staging_query.offline"
@@ -195,6 +195,8 @@ object Metrics {
     def count(metric: String, value: Long): Unit = stats.count(prefix(metric), value, tags)
 
     def gauge(metric: String, value: Long): Unit = stats.gauge(prefix(metric), value, tags)
+
+    def recordEvent(metric: String, event: Event): Unit = stats.recordEvent(event, prefix(metric), tags)
 
     def toTags: Array[String] = {
       val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String]).map(_.sanitize)
