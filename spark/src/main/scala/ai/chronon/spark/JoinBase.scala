@@ -411,15 +411,14 @@ abstract class JoinBase(joinConf: api.Join,
     }
 
     val source = joinConf.left
-    if (useBootstrapForLeft && !source.isSetJoinSource) {
+
+    if (useBootstrapForLeft) {
       logger.info("Overwriting left side to use saved Bootstrap table...")
-      if (source.isSetEntities) {
-        source.getEntities.setSnapshotTable(bootstrapTable)
-        source.getEntities.getQuery.setSelects(null)
-      } else if (source.isSetEvents) {
-        source.getEvents.setTable(bootstrapTable)
-        source.getEvents.getQuery.setSelects(null)
-      }
+      source.overwriteTable(bootstrapTable)
+      val query = source.query
+      // Selects map and where clauses already applied to bootstrap transformation
+      query.setSelects(null)
+      query.setWheres(null)
     }
 
     // Run validations before starting the job
