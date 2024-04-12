@@ -118,11 +118,11 @@ class FetcherBase(kvStore: KVStore,
           if (debug) {
             val gson = new Gson()
             logger.info(s"""
-                 |batch ir: ${gson.toJson(batchIr)}
-                 |streamingIrs: ${gson.toJson(streamingIrs)}
-                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-                 |queryTime in millis: $queryTimeMs
-                 |""".stripMargin)
+                           |batch ir: ${gson.toJson(batchIr)}
+                           |streamingIrs: ${gson.toJson(streamingIrs)}
+                           |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                           |queryTime in millis: $queryTimeMs
+                           |""".stripMargin)
           }
 
           aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
@@ -140,11 +140,11 @@ class FetcherBase(kvStore: KVStore,
           if (debug) {
             val gson = new Gson()
             logger.info(s"""
-                 |batch ir: ${gson.toJson(batchIr)}
-                 |streamingRows: ${gson.toJson(streamingRows)}
-                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-                 |queryTime in millis: $queryTimeMs
-                 |""".stripMargin)
+                           |batch ir: ${gson.toJson(batchIr)}
+                           |streamingRows: ${gson.toJson(streamingRows)}
+                           |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                           |queryTime in millis: $queryTimeMs
+                           |""".stripMargin)
           }
 
           aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
@@ -179,8 +179,8 @@ class FetcherBase(kvStore: KVStore,
     val name = groupByServingInfo.groupBy.metaData.name
     if (batchEndTs > groupByServingInfo.batchEndTsMillis) {
       logger.info(s"""$name's value's batch timestamp of $batchEndTs is
-           |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
-           |Forcing an update of schema.""".stripMargin)
+                     |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
+                     |Forcing an update of schema.""".stripMargin)
       getGroupByServingInfo
         .force(name)
         .recover {

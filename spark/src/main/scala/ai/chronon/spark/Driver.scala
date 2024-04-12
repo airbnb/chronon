@@ -668,7 +668,7 @@ object Driver {
       if (keyMapList.length > 1) {
         logger.info(s"Plan to send ${keyMapList.length} fetches with ${args.interval()} seconds interval")
       }
-      val fetcher = args.impl(args.serializableProps).buildFetcher(true)
+      val fetcher = args.impl(args.serializableProps).buildFetcher(true, "FetcherCLI")
       def iterate(): Unit = {
         keyMapList.foreach(keyMap => {
           logger.info(s"--- [START FETCHING for ${keyMap}] ---")
