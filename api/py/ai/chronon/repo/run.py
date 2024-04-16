@@ -87,6 +87,7 @@ ROUTES = {
         "upload": "group-by-upload",
         "backfill": "group-by-backfill",
         "streaming": "group-by-streaming",
+        "metadata-upload": "metadata-upload",
         "local-streaming": "group-by-streaming",
         "fetch": "fetch",
         "analyze": "analyze",
