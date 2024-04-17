@@ -275,6 +275,7 @@ abstract class JoinBase(joinConf: api.Join,
           Some(col(column))
         }
       }
+      logger.info(s"Renaming LeftDf")
       skewFilteredLeft.select(columns: _*)
     }
 
