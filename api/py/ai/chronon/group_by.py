@@ -3,6 +3,7 @@ import ai.chronon.utils as utils
 import logging
 import json
 import sys
+from pyspark.dbutils import DBUtils
 from typing import List, Optional, Union, Dict, Callable, Tuple
 
 OperationType = int  # type(zthrift.Operation.FIRST)
@@ -329,6 +330,9 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             name: str = None,
             tags: Dict[str, str] = None,
             batchPartitionCadence = ttypes.BatchPartitionCadence.DAILY,
+            databricks_mode: bool = False,
+            team_slug: str = None,
+            dbutils:DBUtils = None,
             **kwargs) -> ttypes.GroupBy:
     """
 
@@ -427,11 +431,23 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     :param batchPartitionCadence:
         WARNING: BatchPartitionCadence.HOURLY is currently unsupported in the online setting.
         This is only used to validate GroupBy window lengths (hourly batch cadence => hourly windows supported)
+    :param databricks_mode:
+        If set to True, the GroupBy is running in a Databricks notebook.
+    :param team_slug:
+        Team slug is currently only used and required when running in a Databricks notebook.
+    :param dbutils:
+        This is a global variable that is defined by default in a Databricks notebook. It is used to access the metadata of the notebook. 
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
     """
     assert sources, "Sources are not specified"
+
+    # Simple checks to make sure that notebooks users are setting their features up properly
+    if databricks_mode:
+        utils.run_databricks_assertions_for_group_by(name, team_slug, output_namespace, dbutils)
+    else:
+        utils.confirm_databricks_mode_is_set_correctly()
 
     agg_inputs = []
     if aggregations is not None:
@@ -474,8 +490,13 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     kwargs.update({
         "lag": lag
     })
-    # get caller's filename to assign team
-    team = sys._getframe().f_back.f_code.co_filename.split("/")[-2]
+    
+    # If running this in a databricks notebook, we should set the team to the provided team_slug. We can change this to use the notebook env variables once they are implemented.
+    if databricks_mode:
+        team = team_slug
+    # Get callers filename to assign team name
+    else:
+        team = sys._getframe().f_back.f_code.co_filename.split("/")[-2]
 
     column_tags = {}
     if aggregations:
@@ -499,17 +520,25 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         offlineSchedule=offline_schedule,
         batchPartitionCadence=batchPartitionCadence,    
     )
-    
+
+    # If running this in a databricks notebook, we should set the module name to the name of the notebook.
+    # In our utils notebooks assertions checks we will verify that dbutils has been defined already.
+    if databricks_mode:
+        notebook_path: str = dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+        notebook_name: str = notebook_path.split("/")[-1].split(".")[0].replace(" ", "_").lower()
+        module_name = notebook_name
+
     # The module name of the GroupBy is found by finding the module that corresponds to the frame
     # before the frame that has the module name importlib._bootstrap
-    module_name = ''
-    i = 1
-    while True:
-        cur_module_name = sys._getframe(i).f_globals['__name__']
-        if cur_module_name == 'importlib._bootstrap':
-            break
-        module_name = cur_module_name
-        i = i + 1
+    else:
+        module_name = ''
+        i = 1
+        while True:
+            cur_module_name = sys._getframe(i).f_globals['__name__']
+            if cur_module_name == 'importlib._bootstrap':
+                break
+            module_name = cur_module_name
+            i = i + 1
         
     group_by = ttypes.GroupBy(
         sources=sources,

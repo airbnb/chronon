@@ -10,7 +10,11 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from typing import List, Union, cast, Optional
+from pyspark.dbutils import DBUtils
 
+
+DATABRICKS_NAMESPACE = "shepherd_databricks"
+CHRONON_POC_USERTABLES_NAMESPACE="chronon_poc_usertables"
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
@@ -339,3 +343,30 @@ def get_related_table_names(conf: ChrononJobTypes) -> List[str]:
         related_tables.append(f"{table_name}_bootstrap")
 
     return related_tables
+
+
+def run_databricks_assertions_for_join(team_slug: str, name: str, output_namespace: str, right_parts: List[api.JoinPart], dbutils: DBUtils):
+    assert dbutils, "dbutils must be provided in the Join definition. It is set by default in your Databricks Notebook."
+    assert team_slug, "team_slug is required for databricks_mode"
+    assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
+    assert name, "a name for the join is required for databricks_mode"
+    # TODO:
+    # Once https://jira.corp.stripe.com/browse/DPPROD-2313 is resolved we can only use CHRONON_POC_USERTABLES_NAMESPACE
+    # For now we will tell users to write to DATABRICKS_NAMESPACE
+    assert output_namespace==DATABRICKS_NAMESPACE or output_namespace==CHRONON_POC_USERTABLES_NAMESPACE, f"output_namespace should be '{DATABRICKS_NAMESPACE}' for databricks_mode"
+    for join_part in right_parts:
+        run_databricks_assertions_for_group_by(join_part.groupBy.metaData.name, join_part.groupBy.metaData.team, output_namespace, dbutils) 
+
+def run_databricks_assertions_for_group_by(name: str, team_slug: str, output_namespace: str, dbutils: DBUtils):
+    assert dbutils, "dbutils must be provided in the GroupBy definition. It is set by default in your Databricks Notebook."
+    assert name, "When using a GroupBy in a databricks notebook you must specify a `name` in the GroupBy definition."
+    assert team_slug, "When using a GroupBy in a databricks notebook you must specify a `team_slug` in the GroupBy definition."
+    assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
+    # TODO:
+    # Once https://jira.corp.stripe.com/browse/DPPROD-2313 is resolved we can only use CHRONON_POC_USERTABLES_NAMESPACE
+    # For now we will tell users to write to DATABRICKS_NAMESPACE
+    assert output_namespace==DATABRICKS_NAMESPACE or output_namespace==CHRONON_POC_USERTABLES_NAMESPACE, f"output_namespace should be '{DATABRICKS_NAMESPACE}' for databricks_mode"
+
+def confirm_databricks_mode_is_set_correctly():
+    cwd = os.getcwd()
+    assert "/databricks/driver" not in cwd, "You are running this in a databricks notebook. Please add databricks_mode=True to your GroupBy/Join definitions."

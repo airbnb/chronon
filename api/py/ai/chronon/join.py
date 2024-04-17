@@ -7,6 +7,7 @@ import importlib
 import json
 import logging
 from typing import List, Dict, Tuple
+from pyspark.dbutils import DBUtils
 
 logging.basicConfig(level=logging.INFO)
 
@@ -377,6 +378,10 @@ def Join(left: api.Source,
          derivations: List[api.Derivation] = None,
          tags: Dict[str, str] = None,
          batchPartitionCadence = api.BatchPartitionCadence.DAILY,
+         databricks_mode: bool = False,
+         name: str = None,
+         team_slug: str = None,
+         dbutils: DBUtils = None,
          **kwargs
          ) -> api.Join:
     """
@@ -464,9 +469,23 @@ def Join(left: api.Source,
     :type tags: Dict[str, str]
     :param batchPartitionCadence:
         Cadence & partitioning scheme for Join offline jobs (daily vs. hourly).
+    :param databricks_mode:
+        If set to True, the Join is running in a Databricks notebook.
+    :param name:
+        The desired name of the output table when running in a Databricks notebook. 
+    :param team_slug:
+        Team slug is currently only used and required when running in a Databricks notebook.
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
+
+    # Simple checks to make sure that notebooks users are setting their features up properly
+    if databricks_mode:
+        utils.run_databricks_assertions_for_join(name, team_slug, output_namespace, right_parts, dbutils)
+    else:
+        utils.confirm_databricks_mode_is_set_correctly()
+
+
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
@@ -572,6 +591,11 @@ def Join(left: api.Source,
         consistencySamplePercent=consistency_sample_percent,
         batchPartitionCadence=batchPartitionCadence,
     )
+
+    # Add these on after to prevent non-databricks users from accidentally overriding these.
+    if databricks_mode:
+        metadata.name = name
+        metadata.team = team_slug
 
     return api.Join(
         left=updated_left,
