@@ -7,6 +7,7 @@ deploying a Henson service with Skycfg. It contains a dictionary of data that ca
 useful when defining a workload. These functions provide a consistent interface for
 accessing that data.
 """
+load("config/kubernetes/helpers/dynamic.sky", "dynamic_replicas")
 
 def get_priority_tier_config(ctx):
     get_priority_tier = ctx.vars.get("service.config.get_priority_tiers_fn")
@@ -27,3 +28,52 @@ def get_merged_compute_v2_config(ctx, priority_tier = None):
     return json.decode(
         get_merged_compute_config(
             ctx.vars.get("stripe.environment"), ctx.vars.get("stripe.cluster"), priority_tier=priority_tier))
+
+def get_dynamic_replicas(compute_config, use_canary = False):
+    """ Helper function for reading dynamic replica configuration info from service config; will fail if args are nonsensical
+
+    Args:
+        compute_config: a ComputeV2 protobuf
+        use_canary: boolean indicating whether or not a canary is in use
+
+    Returns:
+        None if a dynamic replica config is not found; if one is found, return a plugin to configure it
+    """
+    desired_count = 1
+    max_count = None
+    min_count = None
+
+    if (
+        compute_config.get("resources")
+        and compute_config["resources"].get("num_replicas")
+    ):
+        desired_count = int(compute_config["resources"]["num_replicas"])
+
+    if (
+        compute_config.get("resources")
+        and compute_config["resources"].get("dynamic_replica_max_count")
+    ):
+        max_count = int(compute_config["resources"]["dynamic_replica_max_count"])
+
+    if (
+        compute_config.get("resources")
+        and compute_config["resources"].get("dynamic_replica_min_count")
+    ):
+        min_count = int(compute_config["resources"]["dynamic_replica_min_count"])
+
+    # If use_canary, then decrement the desired_count or checks in deployment.sky
+    # will fail when the replica count (decremented elsewhere) doesn't match the desired count.
+    if use_canary:
+        desired_count -= 1
+
+    # If either max/min are defined, setup dynamic replicas
+    if max_count != None and min_count != None:
+        # CEL rules validate the dynamic replica data;
+        # see gocode:service-config/build/constraints/rules/compute/dynamic_replicas.yaml
+        return dynamic_replicas(
+            desired_count = desired_count,
+            max_count = max_count,
+            min_count = min_count
+        )
+
+    return None

@@ -9,7 +9,15 @@ load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/core/container.sky", "container")
 load("config/kubernetes/helpers/images.sky", "image")
 
-def add_jmxfetch_sidecar(ctx, service_name, jmx_port):
+def add_jmxfetch_sidecar(
+    ctx,
+    service_name,
+    jmx_port,
+    conf_directory="/datadog_compat_config",
+    conf_file_name="mongo_java_client.yaml",
+    config_file_yaml=None):
+    if config_file_yaml == None:
+      config_file_yaml = get_jmx_mongo_java_client_yaml_content(service_name, jmx_port)
     return compose_plugins(
       container(
         name = "jmxfetch",
@@ -26,11 +34,11 @@ def add_jmxfetch_sidecar(ctx, service_name, jmx_port):
             "/jmxfetch-0.14.0-jar-with-dependencies.jar",
             "org.datadog.jmxfetch.App",
             "--check",
-            "mongo_java_client.yaml",
+            conf_file_name,
             "--check_period",
             "15000",
             "--conf_directory",
-            "/datadog_compat_config/",
+            conf_directory,
             "--log_level",
             "ERROR",
             "--log_location",
@@ -38,7 +46,7 @@ def add_jmxfetch_sidecar(ctx, service_name, jmx_port):
             "--reporter",
             "statsd:127.0.0.1:8200",
             "--status_location",
-            "status-mongo_java_client.yaml",
+            "status-" + conf_file_name,
             "collect",
         ],
         plugins = [
@@ -53,11 +61,11 @@ def add_jmxfetch_sidecar(ctx, service_name, jmx_port):
         ],
       ),
       config_file(
-        "/datadog_compat_config/mongo_java_client.yaml",
-        get_jmx_mongo_java_client_yaml_content(service_name, jmx_port),
-        "/datadog_compat_config",
+        conf_directory + "/" + conf_file_name,
+        config_file_yaml,
+        conf_directory,
       ),
-      mount_pod_volume("/datadog_compat_config", container_name = "jmxfetch"),
+      mount_pod_volume(conf_directory, container_name = "jmxfetch"),
     )
 
 def get_jmx_mongo_java_client_yaml_content(service_name, port):

@@ -94,7 +94,7 @@ def generate_parallel(config):
 
 
 def generate_request_timeout(config):
-    # RUN_STREAMING-41303
+    # RUN_ASYNCPROCESSING-18701
     # ===================
     #
     # Default is 15s. Increasing this value to deal with a poison message

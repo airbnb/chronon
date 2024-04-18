@@ -22,8 +22,7 @@ ACCOUNT_NAME_TO_ID = {
 
 SHARD_TYPE = struct(
     TEST="test",
-    SHARED_MSP_A400="shared_msp_a400",
-    SHARED_MSP_ALL_TIERS="shared_msp_all_tiers",
+    SHARED_MSP="shared_msp",
     DEDICATED_MSP="dedicated_msp",
     CANARY="canary",
 )
@@ -40,7 +39,7 @@ BINPACKING_STATE = struct(
     DISABLED="DISABLED",
 )
 
-def _shard(name, *, shared_msp=True, cron=False, account="mainland", shard_type=SHARD_TYPE.SHARED_MSP_ALL_TIERS, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.ENABLED):
+def _shard(name, *, shared_msp=True, cron=False, account="mainland", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.ENABLED):
     return struct(name=name, shared_msp=shared_msp, cron=cron, account=account, shard_type=shard_type, shard_state=shard_state, binpacking_state=binpacking_state)
 
 ENV_CLUSTER_SHARDS = {
@@ -50,25 +49,26 @@ ENV_CLUSTER_SHARDS = {
         ],
         "cmh": [
             _shard("kubemaster", cron=True),
+            _shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
         ],
         "east": [
             _shard("kubemaster", cron=True),
         ],
         "northwest": [
-            _shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
+            _shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP, binpacking_state=BINPACKING_STATE.DISABLED),
             _shard("kubeapiaa"),
             _shard("kubeapibb"),
             _shard("kubeapicc"),
             _shard("kubeapidd", cron=True),
             _shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
-            _shard("msppink", account="msp-shared-all-pink", shard_type=SHARD_TYPE.TEST),
-            _shard("mspyellow", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP_A400, shard_state=SHARD_STATE.PROVISIONING),
+            _shard("msppink", account="msp-shared-all-pink", shard_type=SHARD_TYPE.TEST, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
+            _shard("mspyellow", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
         ],
     },
     "preprod": {
         "cmh": [
             _shard("kubemaster", cron=True),
-            _shard("mspteal", account="cmh.preprod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP_ALL_TIERS, shard_state=SHARD_STATE.PROVISIONING),
+            _shard("mspteal", account="cmh.preprod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
         ]
     },
     "prod": {
@@ -77,19 +77,20 @@ ENV_CLUSTER_SHARDS = {
         ],
         "cmh": [
             _shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
+            _shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
         ],
         "east": [
             _shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
         ],
         "northwest": [
-            _shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
+            _shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP, binpacking_state=BINPACKING_STATE.DISABLED),
             _shard("kubeapiaa"),
             _shard("kubeapibb"),
             _shard("kubeapicc"),
             _shard("kubeapidd", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
             _shard("kubeapiee", binpacking_state=BINPACKING_STATE.DISABLED),
             _shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
-            _shard("mspruby", account="northwest.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP_A400, shard_state=SHARD_STATE.PROVISIONING),
+            _shard("mspruby", account="northwest.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
         ],
     },
 }

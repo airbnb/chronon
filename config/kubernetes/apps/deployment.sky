@@ -184,12 +184,30 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
             # remediate this, we just check if the repo of the service is
             # pay-server.
             if get_repo(ctx) == "stripe-internal/pay-server":
+                # Note: Isolated deploys for service hosts do not require allowlist configurations
+
                 # Check that the service is added to the host isolation allowlist if enabling for the first time.
-                if priority_tier and priority_tier_header and k8s_workload_name not in HOST_ISOLATION_ALLOWLIST:
+                host_isolation_enabled_without_allowlist_config = all(
+                    [
+                        not is_isolated_deploy(ctx),
+                        priority_tier,
+                        priority_tier_header,
+                        k8s_workload_name not in HOST_ISOLATION_ALLOWLIST,
+                    ]
+                )
+                if host_isolation_enabled_without_allowlist_config:
                     fail(k8s_workload_name + " must be added to host_isolation_allowlist.sky")
 
                 # Check that the service is removed from the host isolation allowlist if disabling.
-                if not priority_tier and not priority_tier_header and k8s_workload_name in HOST_ISOLATION_ALLOWLIST:
+                host_isolation_disabled_with_allowlist_config = all(
+                    [
+                        not is_isolated_deploy(ctx),
+                        not priority_tier,
+                        not priority_tier_header,
+                        k8s_workload_name in HOST_ISOLATION_ALLOWLIST,
+                    ]
+                )
+                if host_isolation_disabled_with_allowlist_config:
                     fail(k8s_workload_name + " must be removed from host_isolation_allowlist.sky")
 
             # These will either both be set OR both be unset.

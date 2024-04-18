@@ -1,9 +1,21 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
+"""
+Common functions shared between Ruby services and Ruby workflow workers
+"""
 load("config/kubernetes/networking/internal/config/override.sky", "NOT_PROVIDED")
 load("config/kubernetes/networking/public/config.sky", "networking_config", "global_ratelimit")
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
 
 def ruby_canary_suffix(ctx, default="-canary"):
+    """ Get the suffix to be used for canaries
+
+    Args:
+        ctx: The context object
+        default: The default suffix to be used if not specified
+    Returns:
+        the suffix to be used for the canary Ruby process
+    """
+
     # Has ComputeV2?
     compute_config = ctx.vars.get("service.config.compute_v2")
 
@@ -24,7 +36,15 @@ def ruby_canary_suffix(ctx, default="-canary"):
 
     return default
 
-def get_networking_config(ctx, platform_options):
+def get_networking_config(_, platform_options):
+    """ Get the networking config for Ruby services
+
+    Args:
+        _: The context object (not currently used)
+        platform_options: PlatformOptions protobuf message
+    Returns:
+        An array of plugins for configuring networking
+    """
     global_ratelimit_val = NOT_PROVIDED
     egress_proxy_tier = NOT_PROVIDED
     enable_cross_domain_services = NOT_PROVIDED

@@ -20,6 +20,10 @@ HOST_ISOLATION_ALLOWLIST = [
     "manage-srv-p3",
     "manage-srv-p4",
     "manage-srv-p5",
+    "manage-srv-canary-p2",
+    "manage-srv-canary-p3",
+    "manage-srv-canary-p4",
+    "manage-srv-canary-p5",
 
     "grpc-manage-srv-p2",
     "grpc-manage-srv-p3",
@@ -30,6 +34,8 @@ HOST_ISOLATION_ALLOWLIST = [
 
     "sample-api-srv-p2",
     "sample-api-srv-p5",
+    "sample-api-grpc-srv-p2",
+    "sample-api-grpc-srv-p5",
 
     "apps-bapi-srv-p2",
     "apps-bapi-srv-p5",
@@ -98,15 +104,34 @@ HOST_ISOLATION_ALLOWLIST = [
     "api-platform-bapi-srv-p4",
     "api-platform-bapi-srv-p5",
 
-    "paymentflows-bapi-srv-p0",
-    "paymentflows-bapi-srv-p1",
-    "paymentflows-bapi-srv-p2",
-    "paymentflows-bapi-srv-p3",
-    "paymentflows-bapi-srv-p4",
-    "paymentflows-bapi-srv-p5",
+    "payins-bapi-srv-p0",
+    "payins-bapi-srv-p1",
+    "payins-bapi-srv-p2",
+    "payins-bapi-srv-p3",
+    "payins-bapi-srv-p4",
+    "payins-bapi-srv-p5",
 
     "privacy-products-bapi-srv-p2",
     "privacy-products-bapi-srv-p5",
+
+    "transfer-photon-srv-livemode-critical",
+    "transfer-photon-srv-livemode",
+    "transfer-photon-srv-api-testmode",
+
+    "mastercard-settlement-services-srv-livemode-critical",
+    "mastercard-settlement-services-srv-batch-critical",
+    "mastercard-settlement-services-srv-batch",
+
+    "goldmansachs-proxy-grpc-srv-batch",
+    "goldmansachs-proxy-grpc-srv-api-testmode",
+    "goldmansachs-proxy-grpc-srv-synthetic",
+
+    "payment-method-sharing-srv-livemode-critical",
+    "payment-method-sharing-srv-api-testmode",
+
+    "bankcon-cred-gateway-srv-livemode-critical",
+    "bankcon-cred-gateway-srv-batch-critical",
+    "bankcon-cred-gateway-srv-batch",
 
     # We can probably remove these gocode services.
     "reldb-proxy-dev-srv",

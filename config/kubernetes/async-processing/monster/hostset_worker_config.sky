@@ -6,7 +6,7 @@ load("config/kubernetes/async-processing/monster/config.sky",
 load("config/kubernetes/async-processing/monster/hostset_worker.sky", "cluster", "hostset")
 load(
     "config/kubernetes/helpers/aws_instance_sizes.sky",
-    "m6g_16xlarge", "r6g_8xlarge", "r6g_xlarge", "r7g_xlarge", "r7g_8xlarge"
+    "m6g_16xlarge", "r6g_8xlarge", "r6g_xlarge", "r7g_xlarge", "r7g_8xlarge", "r6g_4xlarge"
 )
 load("config/kubernetes/async-processing/monster/util.sky", "dynamic_replicas")
 
@@ -227,9 +227,9 @@ A200_HOST_SETS = struct(
                     "cmh":          cluster(),
                 },
                 prod={
-                    "northwest":    cluster(consume_replicas=23,
+                    "northwest":    cluster(consume_replicas=27,
                                             fanout_replicas=4,
-                                            mb_per_worker=2800,
+                                            mb_per_worker=3200,
                                             instance_type=m6g_16xlarge),
                     "bom":          cluster(mb_per_worker=2700,
                                             consume_replicas=6),
@@ -481,7 +481,7 @@ A200_HOST_SETS = struct(
                     "cmh":          cluster(mb_per_worker=2800),
                 },
                 prod={
-                    "northwest":    cluster(consume_replicas=16,
+                    "northwest":    cluster(consume_replicas=24,
                                             fanout_replicas=6,
                                             mb_per_worker=2100,
                                             instance_type=r7g_8xlarge),
@@ -731,8 +731,8 @@ A400_HOST_SETS = struct(
                 },
                 prod={
                     "cmh":          empty_worker_cluster(),
-                    "northwest":    cluster(mb_per_worker=4200, # Increasing since memory utilization is hovering around ~90%
-                                            consume_replicas=274,
+                    "northwest":    cluster(mb_per_worker=4500, # Increasing since memory utilization is hovering around ~90%
+                                            consume_replicas=296,
                                             fanout_replicas=0,
                                             instance_type=m6g_16xlarge),
                     "bom":          empty_worker_cluster(),
@@ -819,7 +819,7 @@ TEST_HOST_SET = struct(
     hostsets=[
         hostset("monster-test",
                 prod={
-                    "northwest":    cluster(consume_replicas=2, fanout_replicas=2, mb_per_worker=2800),
+                    "northwest":    cluster(consume_replicas=2, fanout_replicas=2, mb_per_worker=2800, instance_type=r6g_4xlarge),
                     "bom":          cluster(mb_per_worker=2800),
                     "cmh":          cluster(mb_per_worker=2800),
                 },

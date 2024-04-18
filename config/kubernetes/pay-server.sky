@@ -64,17 +64,20 @@ def pay_server_pod(ctx, **kwargs):
     """
     image = kwargs.pop("image", default_pay_server_image)
 
+    default_env_vars = {
+        "LANG": "C.UTF-8",
+        "LC_ALL": "C.UTF-8",
+        "STRIPE_BUNDLE_USE_SORBET_RUBY": "true",
+    }
+    default_env_vars.update(rbenv_version_env_var(ctx))
+
     standard_plugins = compose_plugins(
         stripe_pod(
             ctx,
             image=image,
             **kwargs
         ),
-        container_env_vars({
-            "LANG": "C.UTF-8",
-            "LC_ALL": "C.UTF-8",
-            "STRIPE_BUNDLE_USE_SORBET_RUBY": "true",
-        }),
+        container_env_vars(default_env_vars),
         use_mongo_caches(use_legacy_host_mounts = True),
         mount_host_volume("/pay/conf", volume_args = {
             "type": "Directory",
@@ -651,6 +654,15 @@ def _puma_cluster_service(ctx, port, healthcheck, container_name, failure_thresh
         startup = startup_probe,
         container_name = container_name,
     )
+
+# Whether we should be using Ruby 3.3 for this deploy instead of the current 3.1
+# The value of henson.use_ruby_3_3 comes from the gocode.henson.should_use_ruby_3_3
+# feature flag.
+def rbenv_version_env_var(ctx):
+    if ctx.vars.get("henson.use_ruby_3_3", False):
+        return {"STRIPE_BUNDLE_MSP_OVERRIDE_RBENV_VERSION": "sorbet_ruby_3_3"}
+
+    return {}
 
 # Shared env-vars between bapi and baplings to control GC settings
 # based on bapi experimentation

@@ -1,11 +1,5 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 # See http://go/metadata-yaml for information on supported keys and values
-#
-# Note: this code ownership file (and _only_ this code ownership file, in the
-# entire subtree) is copied during the vendoring process. To avoid unnecessary
-# review hangups, if you own code anywhere in this subtree and plan to execute
-# vendor mirror operations into other repos, you should declare your team as a
-# reviewer in this file as well.
 ---
 responsible_team: orchestration
 change_notifications:
@@ -21,7 +15,7 @@ review_requirements:
   - codeowners-cloud
   - codeowners-infra-platform
   - codeowners-fleet-automation
-  - codeowners-async-processing # for vendor mirroring
+  - codeowners-core-events # for vendor mirroring
 - files:
   - sidecars/envoy_ratelimit.sky
   - sidecars/envoy_ratelimit_test.sky
@@ -52,8 +46,6 @@ review_requirements:
   - codeowners-service-networking
   - codeowners-orchestration
 
-  reviewers_in_training:
-  - acamer
 - files:
   - sidecars/metrics.sky
   - sidecars/metrics_test.sky
@@ -69,3 +61,12 @@ review_requirements:
   - codeowners-connections-fdp
   reviewers:
   - codeowners-orchestration
+  reviewers_in_training:
+  - felixliu
+
+- files:
+  - sidecars/memcontainer.sky
+  assignees:
+  - codeowners-distributed-caching-platform
+  reviewers:
+  - codeowners-distributed-caching-platform

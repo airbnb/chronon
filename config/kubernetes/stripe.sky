@@ -21,7 +21,7 @@ load("config/kubernetes/helpers/security.sky", "run_as_unprivileged")
 load("config/kubernetes/meta/metadata.sky", "annotations", "labels", "metadata")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/sidecars/confidant.sky", "secret_options")
-load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "is_msp_consul_deprecation_enabled", "get_name", "get_henson_config", "is_isolated_deploy", "get_service_variant")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "get_name", "get_henson_config", "is_isolated_deploy", "get_service_variant")
 load("config/kubernetes/helpers/costs_attribution.sky", "add_costs_attribution_override_label")
 load("config/kubernetes/sidecars/consul_agent_init.sky", "consul_agent_init")
 load("config/kubernetes/helpers/tolerations.sky", "add_toleration")
@@ -49,7 +49,7 @@ def stripe_pod(
         instance_type = None,
         availability_tier = None,
         use_shared_msp_service_account = True,
-        requires_consul = None,
+        requires_consul = False,
         command_required = True,
         resource_requirements_spec = None,
 ):
@@ -208,7 +208,7 @@ def stripe_pod(
 
 
 
-def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, requires_consul = None, container_resource_spec = None):
+def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, requires_consul = False, container_resource_spec = None):
     """
     Plugin for enabling a pod to run on Shared MSP.
     """
@@ -363,15 +363,12 @@ def _set_shared_msp_service_account(ctx, arguments, pod_def):
     pod_def["service_account_name"] = "shared-msp-sa"
 
 
-def is_msp_consul_deprecation_enabled_extra_safe(ctx):
-    return is_msp_consul_deprecation_enabled(ctx)
-
 CONSUL_AGENT_ENABLED_LABEL = "stripe.io/consul-agent"
 CONSUL_AGENT_ENABLED_LABEL_UNKNOWN = "unknown"
 CONSUL_AGENT_ENABLED_LABEL_ENABLED = "enabled"
 CONSUL_AGENT_ENABLED_LABEL_DISABLED = "disabled"
 
-def _with_consul_agent_enablement(ctx, requires_consul = None):
+def _with_consul_agent_enablement(ctx, requires_consul = False):
     """Returns plugins to make possible the enablement mechanism to turn Consul agent On/Off
 
     Returns plugins to make possible the enablement mechanism to turn Consul agent On/Off. This will
@@ -395,15 +392,13 @@ def _with_consul_agent_enablement(ctx, requires_consul = None):
     |                 |                        |                | `disabled` and skip the init container since  |
     |                 |                        |                | there's nothing to wait for.                  |
     +-----------------+------------------------+----------------+-----------------------------------------------+
-    | None            | unknown                | Added          | In this case, Consul will be required         |
-    |                 |                        |                | but we will use this value to track down      |
-    |                 |                        |                | services that need to explicitly set their    |
-    |                 |                        |                | dependency.                                   |
+    | None            | disabled               | Not added      | In this case, we will default to NOT running  |
+    |                 |                        |                | Consul, as it is officially a not a supported |
+    |                 |                        |                | infrastructure component at Stripe. Please    |
+    |                 |                        |                | refer to http://go/consul-replacement for     |
+    |                 |                        |                | more.                                          |
     +-----------------+------------------------+----------------+-----------------------------------------------+
     """
-
-    if not is_msp_consul_deprecation_enabled_extra_safe(ctx):
-        return compose_plugins()
 
     # Get the label value
     consul_agent_label_value = _determine_consul_enablement_label_value(requires_consul)
@@ -414,18 +409,16 @@ def _with_consul_agent_enablement(ctx, requires_consul = None):
 
     return compose_plugins(*plugins)
 
-def consul_enablement_label(ctx, requires_consul = None):
-    # Circuit breaker in case of emergencies
-    if not is_msp_consul_deprecation_enabled_extra_safe(ctx):
-        return CONSUL_AGENT_ENABLED_LABEL_UNKNOWN # fallback to unknown, which is essentially the same as 'Consul Aware'
-
+def consul_enablement_label(ctx, requires_consul = False):
     return _determine_consul_enablement_label_value(requires_consul)
 
-def _determine_consul_enablement_label_value(requires_consul = None):
-    # "unknown" label means that Consul request wasn't explicitly set by the service owner but
-    # will be considered as needed. Having a third value for the label will allow us to track down
-    # services that haven't been reviewed and added the Consul dependency explicitly.
-    consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_UNKNOWN
+def _determine_consul_enablement_label_value(requires_consul = False):
+    # By default, unless requested, all Shared MSP services are now started
+    # WITHOUT Consul running. If you are a service owner reading this comment, 
+    # and have a consul dependency, please set 'requires_consul = True' in your 
+    # pod definition. Then work with the Service Networking team to remove your 
+    # usage of Consul, as it is not a supported infrastructure component anymore.
+    consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_DISABLED
     if requires_consul == True:
         consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_ENABLED
     elif requires_consul == False:

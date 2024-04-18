@@ -1,21 +1,29 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/core/env_var.sky", "default_env_vars")
 load("config/kubernetes/core/lifecycle.sky", "pre_stop", "exec_action", "grace_period")
 load("config/kubernetes/core/probe.sky", "add_initial_delay_seconds")
-load("config/kubernetes/core/volume.sky", "mount_host_volume", "mount_pod_volume", "pod_volume", "render_volume_mount", "volume_mount", "add_host_volume", "add_volume_mount")
-load("config/kubernetes/helpers/images.sky", "image", "sidecar_image")
+load("config/kubernetes/core/volume.sky", "host_volume", "mount_pod_volume", "pod_volume", "volume_mount", "add_host_volume", "add_volume_mount")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/core/generic.sky", "is_dedicated_msp", "is_shared_msp")
 load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
-load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
-load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/sidecars/variables.sky", "HEALTH_CONTAINER_FALLBACK_SHA", "HEALTH_CONTAINER_FALLBACK_ENV")
 load("config/kubernetes/sidecars/consul.sky", "consul_termination_delay")
-load("config/kubernetes/core/container.sky", "resource_requirements")
+load("config/kubernetes/core/container.sky", "sidecar_container")
 
 health_container_name = "health-sidecar"
 health_pod_volume_name = "pay-pod-health"
 default_request_drain_grace_period_seconds = 60
+
+# This is not a good practice to refer to this from worker.sky. But retaining it
+# so that nothing is broken
+def pod_health_volume():
+    """
+    Plugin for defining a pod volume with health status and control files.
+    """
+    return pod_volume(
+        path = "/pay/pod/health",
+        name = health_pod_volume_name,
+        reason = "Allows the health sidecar to inform service healthchecks.",
+    )
 
 def safely_deployed_service(
     ctx,
@@ -46,16 +54,7 @@ def safely_deployed_service(
     if request_drain_grace_period_seconds == None:
         request_drain_grace_period_seconds = default_request_drain_grace_period_seconds
 
-    pod = pod_plugin(
-        _update_pod,
-        container_name = container_name,
-    )
-
-    return compose_plugins(
-        pod,
-
-        pod_health_volume(),
-
+    standard_plugins = compose_plugins(
         # ensures that consul keeps advertising the service while traffic drains
         consul_termination_delay(delay="{}s".format(consul_propagation_period_seconds)),
 
@@ -66,93 +65,71 @@ def safely_deployed_service(
         # the consul propagation period
         grace_period(consul_propagation_period_seconds + request_drain_grace_period_seconds),
 
-        # The Shared MSP plugin is applied in deployment.sky, since the plugin must be run after all containers already exist.
-        conditional_plugin(
-            condition=is_dedicated_msp,
-            plugin=pre_stop(exec_action(ctx, "/bin/sleep", str(consul_propagation_period_seconds)), container_name = container_name),
+    )
+
+    # The Shared MSP plugin is applied in deployment.sky, since the plugin must be run after all containers already exist.
+    shared_plugins = compose_plugins(
+        pod_health_volume(),
+        sidecar_container(
+            health_container_name,
+            command = [
+                "/bin/health-sidecar",
+                "--pod-health-dir=/pay/pod/health",
+            ],
+            container_image = "stripe/compute/health-sidecar-image",
+            fallback_label = HEALTH_CONTAINER_FALLBACK_SHA,
+            fallback_env = HEALTH_CONTAINER_FALLBACK_ENV,
+            plugins = [
+                volume_mount("/pay/pod/health", read_only = False),
+            ]
         ),
 
-        # mount the pod health into the healthchecked container
+        # This is a duplicate and strange. This is the only place where name is not matching the path
+        # Changing this has multiple implications hence retaining the functionality
         volume_mount(
             path = "/pay/health",
-            name = health_pod_volume_name,
+            name = "pay-pod-health",
             container_name = container_name,
         )
     )
 
-def pod_health_volume():
-    """
-    Plugin for defining a pod volume with health status and control files.
-    """
-    return pod_volume(
-        path = "/pay/pod/health",
-        name = health_pod_volume_name,
-        reason = "Allows the health sidecar to inform service healthchecks.",
-    )
-
-def _update_pod(ctx, plugin, pod_def):
-    if health_container_name in pod_def:
-        fail("there should only be one health_sidecar")
-    _create_health_container(pod_def)
-
-    # mount the pod health folder so the sidecar can synthesize health for the app
-    add_volume_mount(
-        pod_def[health_container_name],
-        path = "/pay/pod/health",
-        read_only = False,
-    )
-
-    # mount the node health so the sidecar can factor it into the pod health
-    if _should_mount_node_health(pod_def):
-        add_host_volume(pod_def, "/pay/health", type="Directory", reason="Allows the health sidecar to read the state of the host's stripe-health check.")
-        add_volume_mount(pod_def[health_container_name], path = "/pay/health")
-
-def _create_health_container(pod_def):
-    sidecar = {
-        "render": _render_health_sidecar,
-        "name": health_container_name,
-        "volume_mounts": {},
-        "should_mount_node_health": _should_mount_node_health(pod_def),
-        "sidecar_service": "health-sidecar",
-    }
-
-    pod_def[health_container_name] = sidecar
-    pod_def["containers"].append(sidecar)
-
-    return sidecar
-
-def _render_health_sidecar(ctx, container_def, pod):
-    container = struct(**container_def)
-
-    volume_mounts = [render_volume_mount(ctx, mount) for mount in container.volume_mounts.values()]
-
-    command = [
-        "/bin/health-sidecar",
-        "--pod-health-dir=/pay/pod/health",
-    ]
-
-    if container.should_mount_node_health:
-        command.append("--node-health-dir=/pay/health")
-
-    return Container(
-        ctx,
-        name = container.name,
-        image = _health_image(ctx),
-        command = command,
-        env = default_env_vars(ctx),
-        volumeMounts = volume_mounts,
-        resources = resource_requirements(ctx),
-    )
-
-def _health_image(ctx):
-    return sidecar_image(ctx,
-        name = "health-sidecar",
-        fallback = image(ctx,
-            name = "stripe/compute/health-sidecar-image",
-            label = HEALTH_CONTAINER_FALLBACK_SHA,
-            env = HEALTH_CONTAINER_FALLBACK_ENV,
+    dedicated_plugins = compose_plugins(
+        pod_health_volume(),
+        host_volume("/pay/health",
+            type = "Directory",
+            reason = "Allows the health sidecar to read the state of the host's stripe-health check."
         ),
+        pre_stop(exec_action(ctx, "/bin/sleep", str(consul_propagation_period_seconds)), container_name = container_name),
+        sidecar_container(
+            health_container_name,
+            command = [
+                "/bin/health-sidecar",
+                "--pod-health-dir=/pay/pod/health",
+                "--node-health-dir=/pay/health",
+            ],
+            container_image = "stripe/compute/health-sidecar-image",
+            fallback_label = HEALTH_CONTAINER_FALLBACK_SHA,
+            fallback_env = HEALTH_CONTAINER_FALLBACK_ENV,
+            plugins = [
+                # mount the pod health folder so the sidecar can synthesize health for the app
+                volume_mount("/pay/pod/health", read_only = False),
+                # mount the node health so the sidecar can factor it into the pod health
+                volume_mount("/pay/health", container_name = health_container_name),
+            ]
+        ),
+
+        # This is a duplicate and strange. This is the only place where name is not matching the path
+        # Changing this has multiple implications hence retaining the functionality
+        volume_mount(
+            path = "/pay/health",
+            name = "pay-pod-health",
+            container_name = container_name,
+        )
     )
 
-def _should_mount_node_health(pod_def):
-    return not pod_def.get("shared_msp", False)
+
+    return compose_plugins(
+        standard_plugins,
+        conditional_plugin(condition = is_shared_msp, plugin = shared_plugins),
+        conditional_plugin(condition = is_dedicated_msp, plugin = dedicated_plugins),
+    )

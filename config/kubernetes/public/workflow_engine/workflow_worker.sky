@@ -10,11 +10,15 @@ load("config/kubernetes/core/lifecycle.sky", "DEFAULT_ENVOY_HEALTHCHECK_PROPAGAT
 load("config/kubernetes/core/probe.sky", "command_probe", "probes")
 load("config/kubernetes/helpers/availability_tiers.sky", "A100", "A400")
 load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size")
-load("config/kubernetes/helpers/context.sky", "get_env")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_name", "get_owner", "get_target_shard")
 load("config/kubernetes/helpers/external_scaling_control.sky", "external_scaling_control")
 load("config/kubernetes/helpers/images.sky", "image_defaults")
+load("config/kubernetes/helpers/msp_shard.sky", "MSP_CLUSTER_ANNOTATION", "MSP_SHARD_ANNOTATION")
+load("config/kubernetes/helpers/proto_or_yaml.sky", "PodDisruptionBudget", "PodDisruptionBudgetSpec", "ObjectMeta")
+load("config/kubernetes/helpers/tags.sky", "SERVICE_OWNER_LABEL", "default_annotations")
 load("config/kubernetes/meta/metadata.sky", "labels")
 load("config/kubernetes/pay-server.sky", "einhorn_service", "pay_server_pod")
+load("config/kubernetes/policy/pdb.sky", "pod_disruption_budget")
 load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
 load("config/kubernetes/service-config/ruby_common.sky", "ruby_canary_suffix")
 
@@ -175,7 +179,8 @@ def ruby_workflow_worker_shared_msp(
 
     # Opt-out until RUN_WOFLO-1522 is resolved
     TEMPORARY_PACKAGING_VALIDATION_OPT_OUT = [
-        "workflow-work-connections-dre"
+        "workflow-work-connections-dre",
+        "workflow-work-issuing-xp",
     ]
 
     def _main(ctx):
@@ -439,7 +444,10 @@ def _service_shared_msp(
         grace_period(drain_timeout),
         labels({
             "stripe.io/platform": "workflow",
-        })
+        }),
+        # Disable the normal pod disruption budget controller for workflow workers as
+        # we use a custom one below.
+        pod_disruption_budget(disable = True),
     ]
     all_plugins.extend(*plugins)
 
@@ -450,6 +458,28 @@ def _service_shared_msp(
         shared_msp = True,
         *all_plugins
     )
+
+    # We don't need two custom pod disruption budgets for the canary
+    # and main deployments so we just create one for the main deployment.
+    #
+    # During host lifecycle events where all replicas of a workflow worker (including
+    # the canary) are on the same host we can see availability issues as all replicas
+    # are terminated at the same time.
+    #
+    # The standard PDB controller that MSP uses doesn't work here because it only
+    # applies to deployments with two or more replicas. Workflow workers have a
+    # canary deployment for one of their replicas which means that it looks to MSP
+    # like they have two, one replica deployments and therefore are not interesting
+    # to the PDB controller.
+    if not is_canary:
+        disruption_budget = _disruption_budget(
+            ctx,
+            name = name + "-disruption-budget",
+            namespace = namespace,
+            min_available = 1,
+        )
+        return [deploy, disruption_budget]
+
     return [deploy]
 
 def _service_dedicated_msp(
@@ -590,3 +620,30 @@ def _compensate_drain_timeout(timeout):
 def _maybe_enable_binpacking(ctx):
     # Binpacking is always disabled at the moment due to a lockup bug on Graviton.
     return
+
+def _disruption_budget(ctx, *, name, namespace, min_available):
+    annotations = default_annotations(ctx, None, get_owner(ctx))
+
+    # Ensure the PDB is applied to the correct shard.
+    annotations[MSP_CLUSTER_ANNOTATION] = get_target_shard(ctx)
+    annotations[MSP_SHARD_ANNOTATION] = get_target_shard(ctx)
+
+    return PodDisruptionBudget(
+        ctx,
+        metadata = ObjectMeta(
+            ctx,
+            name = name,
+            namespace = namespace,
+            labels = {SERVICE_OWNER_LABEL: get_owner(ctx)},
+            annotations = annotations,
+        ),
+        spec = PodDisruptionBudgetSpec(
+            ctx,
+            minAvailable = min_available,
+            selector = {
+                "matchLabels": {
+                    "stripe.io/henson-service": get_name(ctx),
+                },
+            },
+        ),
+    )

@@ -17,7 +17,7 @@ load("config/kubernetes/helpers/context.sky", "get_cluster", "get_env")
 SUPPORTED_MSP_INSTANCE_TYPES = [
     'c5.12xlarge', 'c5.18xlarge', 'c5.24xlarge', 'c5.2xlarge', 'c5.4xlarge', 'c5.9xlarge', 'c5.xlarge',
     'c5d.12xlarge', 'c5d.18xlarge', 'c5d.24xlarge', 'c5d.2xlarge', 'c5d.4xlarge', 'c5d.9xlarge', 'c5d.xlarge',
-    'c5n.large', 'c5n.xlarge', 'c5n.2xlarge', 'c5n.4xlarge', 'c5n.9xlarge', 'c5n.18xlarge', 'c5n.metal',
+    'c5n.xlarge', 'c5n.2xlarge', 'c5n.4xlarge', 'c5n.9xlarge', 'c5n.18xlarge', 'c5n.metal',
     'c6a.12xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
     'c6i.12xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
     'i3.2xlarge', 'i3.xlarge', 'i3.4xlarge',
@@ -101,20 +101,21 @@ def aws_instance_size(instance_type):
     # is equal to 1% (625 basis points = 6.25%).
     base_instance_family_memory_reduction_basis_points = {
         "c5": 750,
-        "c6i": 750, # Assuming same values as c5
-        "c6a": 750, # Assuming same values as c5
-        "c6g": 750, # Assuming same values as c5
-        "c7g": 750, # Assuming same values as c5
+        "c6i": 750,  # Assuming same values as c5
+        "c6a": 750,  # Assuming same values as c5
+        "c6g": 750,  # Assuming same values as c5
+        "c7g": 750,  # Assuming same values as c5
         "m5": 700,
-        "m6i": 700, # Assuming same values as m5
-        "m6g": 700, # Assuming same values as m5
-        "m7i": 700, # Assuming same values as m5
-        "m7a": 700, # Assuming same values as m5
-        "m7g": 700, # Assuming same values as m5
+        "m6i": 700,  # Assuming same values as m5
+        "m6g": 700,  # Assuming same values as m5
+        "m7i": 700,  # Assuming same values as m5
+        "m7a": 700,  # Assuming same values as m5
+        "m7g": 700,  # Assuming same values as m5
         "r5": 525,
-        "r6g": 525, # Assume same value as r5
-        "r7g": 525, # Assume same value as r5
+        "r6g": 525,  # Assume same value as r5
+        "r7g": 525,  # Assume same value as r5
         "i3": 700,
+        "i3en": 700, # Assume same value as i3
         # TODO(gregj) this m6a value is copied from m5 -- I didn't actually go look at the memory
         # usage on instances of these actual types, since we're just prototyping m6a instances on
         # AMD in QA for now. We'll need to find the actual value here before actually running gen 6
@@ -3856,7 +3857,6 @@ _INSTANCE_TYPES_BY_NAME = {
     c5d_12xlarge.name: c5d_12xlarge,
     c5d_18xlarge.name: c5d_18xlarge,
     c5d_24xlarge.name: c5d_24xlarge,
-    c5n_large.name: c5n_large,
     c5n_xlarge.name: c5n_xlarge,
     c5n_2xlarge.name: c5n_2xlarge,
     c5n_4xlarge.name: c5n_4xlarge,

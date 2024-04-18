@@ -253,6 +253,7 @@ def iam_role_account_affinity_annotation(affinity):
         Args:
             affinity: sets a "mode" for the credentials provider to consume. It must be one of:
             - FROM_WORKER: the AWS Account will be based on the EC2 Instance hosting the pod (e.g. the underlying mspworker node)
+            - FROM_ENVIRONMENT: the AWS account will be based on the environment the pod is running in
 
         Returns:
             A plugin that adds an annotation (`stripe.io/iam-role-account-affinity`) to a pod
@@ -263,7 +264,7 @@ def iam_role_account_affinity_annotation(affinity):
     )
 
 def _iam_role_account_affinity_annotation(ctx, plugin, pod_def):
-    if plugin.affinity == "FROM_WORKER":
+    if plugin.affinity == "FROM_WORKER" or plugin.affinity == "FROM_ENVIRONMENT":
         pod_def['resource']["metadata"]["annotations"][IAM_ROLE_ACCOUNT_AFFINITY_ANNOTATION_KEY] = plugin.affinity
         return
 

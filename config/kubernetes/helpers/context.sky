@@ -670,17 +670,6 @@ def get_sc_bm_has_load_balancer(ctx):
     bundle_manifest = get_sc_bundle_manifest(ctx)
     return bundle_manifest != None and bundle_manifest.load_balancer != None
 
-def is_msp_consul_deprecation_enabled(ctx):
-    """
-    Gets whether MSP Consul Deprecation mechanism is enabled or not. This variable is injected by
-    Henson after checking the `gocode.msp.consul_deprecation_rollout` feature flag.
-        Args:
-        ctx: The context containing Henson and the Centralized Service Configurations.
-    Returns:
-        MSP Consul Deprecation mechanism enabled
-    """
-    return ctx.vars.get("msp.consul_deprecating", False)
-
 def is_isolated_deploy(ctx):
     """
     Gets whether the skycfg being rendered is for an MSP isolated deployment

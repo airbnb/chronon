@@ -5,7 +5,7 @@
 load("config/kubernetes/async-processing/monster/util.sky", "ALL_CLUSTERS")
 load(
     "config/kubernetes/helpers/aws_instance_sizes.sky",
-    "m5_2xlarge", "m6g_2xlarge", "m6g_16xlarge", "r6g_8xlarge", "r6g_xlarge", "r7g_xlarge", "r7g_8xlarge"
+    "m5_2xlarge", "m6g_2xlarge", "m6g_16xlarge", "r6g_8xlarge", "r6g_xlarge", "r7g_xlarge", "r7g_8xlarge", "r6g_4xlarge"
 )
 
 DEFAULT_WORKER_COUNT = 2
@@ -42,6 +42,9 @@ ALLOWED_INSTANCE_TYPES = [
     m5_2xlarge, m6g_2xlarge,
     # For workers that need more CPU, higher traffic
     m6g_16xlarge,
+
+    # For testing service, with higher memory and lower CPU
+    r6g_4xlarge,
 ]
 
 def get_default_instance_type(env, cluster):

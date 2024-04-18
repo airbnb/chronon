@@ -346,13 +346,13 @@ def PolicyRule(ctx, **kwargs):
 def Subject(ctx, **kwargs):
     return _generic_kubernetes_yaml(ctx, **kwargs)
 
-### Node v1beta1
+### Node v1
 
 def RuntimeClass(ctx, **kwargs):
-    return _generic_kubernetes_yaml(ctx, apiVersion="node.k8s.io/v1beta1", kind="RuntimeClass", **kwargs)
+    return _generic_kubernetes_yaml(ctx, apiVersion="node.k8s.io/v1", kind="RuntimeClass", **kwargs)
 
 def Overhead(ctx, **kwargs):
-    return _generic_kubernetes_yaml(ctx, apiVersion="node.k8s.io/v1beta1", kind="Overhead", **kwargs)
+    return _generic_kubernetes_yaml(ctx, apiVersion="node.k8s.io/v1", kind="Overhead", **kwargs)
 
 ### Policy v1beta1
 
@@ -388,6 +388,12 @@ def AllowedHostPath(ctx, **kwargs):
     return _generic_kubernetes_yaml(ctx, **kwargs)
 
 def HostPortRange(ctx, **kwargs):
+    return _generic_kubernetes_yaml(ctx, **kwargs)
+
+def PodDisruptionBudget(ctx, **kwargs):
+    return _generic_kubernetes_yaml(ctx, apiVersion="policy/v1", kind="PodDisruptionBudget", marshal = True, **kwargs)
+
+def PodDisruptionBudgetSpec(ctx, **kwargs):
     return _generic_kubernetes_yaml(ctx, **kwargs)
 
 ## Util

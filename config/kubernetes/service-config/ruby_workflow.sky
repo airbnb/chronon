@@ -1,4 +1,11 @@
 # DO NOT EDIT: http://go/vendor-skycfg
+"""
+Golden Compute file for ruby workflow services
+"""
+load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
+load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/helpers/availability_tiers.sky", "get_pod_availability_tier_by_name")
+load("config/kubernetes/helpers/aws_instance_sizes.sky", "get_instance_type_by_name")
 load("config/kubernetes/helpers/context.sky",
     "get_availability_tier",
     "get_identity",
@@ -6,22 +13,17 @@ load("config/kubernetes/helpers/context.sky",
     "is_faas_managed",
     "get_container_images"
 )
-load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
-load("config/kubernetes/service-config/ruby_common.sky", "get_networking_config")
-load("config/kubernetes/public/workflow_engine/workflow_worker.sky", "ruby_workflow_worker_shared_msp")
-load("config/kubernetes/helpers/availability_tiers.sky", "get_pod_availability_tier_by_name")
-load("config/kubernetes/helpers/aws_instance_sizes.sky", "get_instance_type_by_name")
+load("config/kubernetes/helpers/graviton.sky", "is_graviton_instance", "smart_graviton_instance")
+load("config/kubernetes/helpers/images.sky", "image_defaults")
+load("config/kubernetes/helpers/resource_requirements.sky", "attempt_to_get_pod_sizing_from_compute_config")
 load("config/kubernetes/helpers/security.sky", "add_security_groups")
-load("config/kubernetes/sidecars/sidecars.sky", "sidecars")
-load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/meta/metadata.sky", "labels")
-
+load("config/kubernetes/public/workflow_engine/workflow_worker.sky", "ruby_workflow_worker_shared_msp")
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config", "get_dynamic_replicas")
+load("config/kubernetes/service-config/ruby_common.sky", "get_networking_config")
 load("config/kubernetes/sidecars/confidant.sky", "raw_secret", "yaml_secret")
 load("config/kubernetes/sidecars/pandora.sky", pandora_raw_secret="raw_secret", pandora_yaml_secret="yaml_secret")
-load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
-load("config/kubernetes/helpers/resource_requirements.sky", "attempt_to_get_pod_sizing_from_compute_config")
-load("config/kubernetes/helpers/images.sky", "image_defaults")
-load("config/kubernetes/helpers/graviton.sky", "is_graviton_instance", "smart_graviton_instance")
+load("config/kubernetes/sidecars/sidecars.sky", "sidecars")
 
 compute_pb = proto.package("com.stripe.gocode.service_config")
 
@@ -44,6 +46,17 @@ def _platform_options(compute_config):
         return None
 
 def get_max_surge(deploy_config, platform_options):
+    """ Get the max_surge value from the deploy config or platform options.
+
+    Initially, max_surge was put as an integer in the deploy config. Later, it was
+    moved to the PlatformOptions protobuf message.
+
+    Args:
+        deploy_config: a com.stripe.gocode.service_config.Deploy protobuf message.
+        platform_options: a com.stripe.gocode.service_config.PlatformOptions protobuf message
+    Returns:
+        The max_surge value.
+    """
     max_surge = 1
 
     if deploy_config.max_surge and deploy_config.max_surge.value != None:
@@ -62,6 +75,17 @@ def get_max_surge(deploy_config, platform_options):
     return max_surge
 
 def get_max_unavailable(deploy_config, platform_options):
+    """ Get the max_unavailable value from the deploy config or platform options.
+
+    Initially, max_unavailable was put as an integer in the deploy config. Later, it was
+    moved to the PlatformOptions protobuf message.
+
+    Args:
+        deploy_config: a com.stripe.gocode.service_config.Deploy protobuf message.
+        platform_options: a com.stripe.gocode.service_config.PlatformOptions protobuf message
+    Returns:
+        The max_unavailable value.
+    """
     max_unavailable = 1
 
     if deploy_config.max_unavailable and deploy_config.max_unavailable.value != None:
@@ -80,6 +104,13 @@ def get_max_unavailable(deploy_config, platform_options):
     return max_unavailable
 
 def deployment_strategy_func(ctx):
+    """ Return a function which returns the deployment strategy for the service.
+
+    Args:
+        ctx: The context object.
+    Returns:
+        A function which returns the deployment strategy for the service.
+    """
     deploy_config = ctx.vars.get("service.config.deploy")
     compute_config = get_merged_compute_v2_config(ctx)
 
@@ -114,7 +145,7 @@ def requires_consul_in_computev2_config(compute_config):
     ):
         return not bool(compute_config["platform_options"]["disable_consul"])
     else:
-        return None
+        return False # As of April 17th, 2024 Consul is Deprecated by default.
 
 def _build_args(ctx, compute_config):
     args = {}
@@ -159,12 +190,24 @@ def _build_args(ctx, compute_config):
     if "sidecars" in compute_config and len(compute_config["sidecars"].items()) > 0:
         plugins = sidecars(ctx, compute_config["sidecars"]) + plugins
 
+    # If dynamic replicas are configured, add them to plugins
+    dynamic_replicas = get_dynamic_replicas(compute_config, use_canary = True)
+    if dynamic_replicas != None:
+        plugins.extend([dynamic_replicas])
+
     if len(plugins) > 0:
         args["plugins"] = plugins
 
     return args
 
 def plugins(ctx):
+    """ Build plugins for the service
+
+    Args:
+        ctx: The context object.
+    Returns:
+        A list of plugins for the service.
+    """
     compute_config = get_merged_compute_v2_config(ctx)
 
     result = _build_args(ctx, compute_config)
@@ -178,6 +221,13 @@ def replicas(ctx):
     return get_merged_compute_v2_config(ctx)["resources"]["num_replicas"]
 
 def deployments(ctx):
+    """ Return a list of deployments for the service.
+
+    Args:
+        ctx: The context object.
+    Returns:
+        A list of deployments for the service.
+    """
     compute_config = get_merged_compute_v2_config(ctx)
     name = get_name(ctx)
     namespace = get_identity(ctx)
@@ -234,13 +284,22 @@ def _strict_packaging(compute_config):
     return True
 
 def get_separate_canary_by_name(compute_config):
-    # Originally, there was going to be a ComputeV2 flag to contro
-    # this, but it was never implemented and it literally looks like
-    # there is only 1 place where a service wants a different
-    # canary suffix, so instead of providing a boolean flag w/ a
-    # default value, set this as True if a value is specified: the
-    # one or two services that want this can hardcode what is currently
-    # the default value.
+    """
+    Whether or not to use a separate canary name for this service.
+
+    Originally, there was going to be a ComputeV2 flag to contro
+    this, but it was never implemented and it literally looks like
+    there is only 1 place where a service wants a different
+    canary suffix, so instead of providing a boolean flag w/ a
+    default value, set this as True if a value is specified: the
+    one or two services that want this can hardcode what is currently
+    the default value.
+
+    Args:
+      compute_config: The merged ComputeV2 config for the service
+    Returns:
+      True if the service wants a different canary suffix, False otherwise
+    """
     if compute_config == None:
         return False
 

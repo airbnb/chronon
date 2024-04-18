@@ -631,7 +631,7 @@ _CRONS = [
     {
         #dbricks-infra-monitor is an MSP cron which does not handle any financial data
         "name": "dbricks-infra-monitor",
-        "namepsace": "dbrickscronbox"
+        "namespace": "dbrickscronbox"
     },
     # The following cronjobs only send emails to remind
     # users to update their KYC data on their accounts.
@@ -713,12 +713,6 @@ _CRONS = [
         "namespace": "kubeacronnoegress"
     },
     {
-        # home-search-reindex-trailhead-slack-thread indexes Slack threads saved
-        # for use in Trailhead Q&A and does not handle financial data
-        "name": "home-search-reindex-trailhead-docs",
-        "namespace": "kubeacronnoegress"
-    },
-    {
         # trailhead-notifier sends Slack notifications and makes Jira tickets
         # for Trailhead purposes; it does not handle financial data
         "name": "trailhead-notifier",
@@ -784,8 +778,844 @@ _CRONS = [
 
 ]
 
+#########################################################
+# The below entries were migrated from YAML definitions #
+# in cron/scripts/sox_compliance/exception_list.yaml    #
+# Please do not add new entries to this list.           #
+#########################################################
+_LEGACY_YAML_ENTRIES = [
+    {
+      "name": "archive-slack-messages",
+      "sox_control": "disabled"
+    },
+    # atlas--query-registered-agent-status does not handle any financial data
+    {
+      "name": "atlas--query-registered-agent-status",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "atlas--unsubscribe-registered-agents",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--create-evolve-ach-closed-loop",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--create-financial-account",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--create-iccl-evolve-payout",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--create-iccl-evolve-spend",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--create-iccl-gs-spend",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--create-instant-transfers",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--create-orig-transfers",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--create-rec-transfer-achs",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--create-rec-transfer-wires",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--verify-evolve-gs-ach-closed-loop",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--verify-financial-account",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--verify-instant-transfers",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--verify-issuing-card-closed-loop",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--verify-orig-transfers",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--canary-tests--verify-rec-transfers",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--check-deposit-clearing",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--confirm-book-transfers",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--evolve-reverse-top-up-negative-balances",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--evolve-top-up-negative-balances",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--evolve-verify-last-business-day-eod-balances-are-nonnegative",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--goldman-sachs-account-closure-request-processor",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--goldman-sachs-cover-negative-balances",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--goldman-sachs-entity-onboarding-request-processor",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--goldman-sachs-entity-update-request-processor",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--goldman-sachs-send-updates",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--goldman-sachs-virtual-account-onboarding-request-processor",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--goldman-sachs-virtual-account-update-request-processor",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--partner-account-bank-migration-processor",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--post-inbound-ach-returns",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--seed-goldman-account-numbers",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--evolve-aggregate-negative-balance-by-time",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--evolve-verify-last-business-day-eod-balances-are-nonnegative",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--goldman-sachs-get-notifications",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--preprod-seed-goldman-fake-account-numbers",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--seed-goldman-fake-account-numbers",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "banking--upload-w9-forms",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-ping-finicity",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-ping-mx",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-ping-wells-fargo",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--purge-finicity-testing-customers",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--refresh-all-finicity-institutions",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--refresh-all-mx-institutions",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--refresh-direct-auth-tokens",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-compute-availability-snapshots",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-recover-degraded-features",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-recover-unavailable-features",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-update-partner-maintenance",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--map-or-promote-partner-institutions",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--mx-bulk-set-background-aggregation",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--refresh-institutions-for-search-cache",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-prune-old-availability-snapshots",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-prune-old-stats-snapshots",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-refresh-all-finicity-institution-certifications",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-refresh-all-finicity-registration-statuses",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-refresh-all-mx-registration-statuses",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "bank-connections--run-refresh-auth-party-name-cache",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "con-mon-v2",
+      "sox_control": "disabled"
+    },
+    # create-jira-tickets-from-csp-violations does not handle any financial data, just files tickets
+    # based on CSP reports coming from browsers
+    {
+      "name": "create-jira-tickets-from-csp-violations",
+      "sox_control": "disabled"
+    },
+    # devbox-data does not handle any financial data
+    {
+      "name": "devbox-data-input",
+      "sox_control": "disabled"
+    },
+    # docs open graph images are not in scope for SOX controls
+    {
+      "name": "docs-product--ogimage",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "global-apac--india-check-daily-settlements",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "global-apac--india-sihub-bin-list-update",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "global-apac--india-sihub-process-validations",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "global-apac--india-update-routing-list",
+      "sox_control": "disabled"
+    },
+    # guru-analytics-sync does not handle any financial data
+    {
+      "name": "guru-analytics-sync",
+      "sox_control": "disabled"
+    },
+    # guru-sync does not handle any financial data
+    {
+      "name": "guru-sync",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-api-methods does not handle any financial data
+    {
+      "name": "home-search-reindex-api-methods",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-chalk-models does not handle any financial data
+    {
+      "name": "home-search-reindex-chalk-models",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-confluence-pages does not handle any financial data
+    {
+      "name": "home-search-reindex-confluence-pages",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-confluence-questions does not handle any financial data
+    {
+      "name": "home-search-reindex-confluence-questions",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-definitions does not handle any financial data
+    {
+      "name": "home-search-reindex-definitions",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-golinks does not handle any financial data
+    {
+      "name": "home-search-reindex-golinks",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-home-models does not handle any financial data
+    {
+      "name": "home-search-reindex-home-models",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-host-types does not handle any financial data
+    {
+      "name": "home-search-reindex-host-types",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-incidents does not handle any financial data
+    {
+      "name": "home-search-reindex-incidents",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-launch-cal-project does not handle any financial data
+    {
+      "name": "home-search-reindex-launch-cal-project",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-people-support-docs does not handle any financial data
+    {
+      "name": "home-search-reindex-people-support-docs",
+      "sox_control": "disabled"
+    },
+    # home-search-reindex-services does not handle any financial data
+    {
+      "name": "home-search-reindex-services",
+      "sox_control": "disabled"
+    },
+    # home-sync-google-calendar-events does not handle any financial data
+    {
+      "name": "home-sync-google-calendar-events",
+      "sox_control": "disabled"
+    },
+    # home-sync-automated-google-lists does not handle any financial data
+    {
+      "name": "home-sync-automated-google-lists",
+      "sox_control": "disabled"
+    },
+    # i18n--automated-create-task does not handle any financial data
+    {
+      "name": "i18n--automated-create-task",
+      "sox_control": "disabled"
+    },
+    # i18n--lokalise-pull-to-s3 does not handle any financial data
+    {
+      "name": "i18n--lokalise-pull-to-s3",
+      "sox_control": "disabled"
+    },
+    # i18n--incremental-push.yaml does not handle any financial data
+    {
+      "name": "i18n--incremental-push.yaml",
+      "sox_control": "disabled"
+    },
+    # i18n--locale-config-check does not handle any financial data
+    {
+      "name": "i18n--locale-config-check",
+      "sox_control": "disabled"
+    },
+    # i18n--email-lqa-runner does not handle any financial data
+    {
+      "name": "i18n--email-lqa-runner",
+      "sox_control": "disabled"
+    },
+    # liquidate-zero-amount-urs does not handle any financial data
+    {
+      "name": "liquidate-zero-amount-urs",
+      "sox_control": "disabled"
+    },
+    # https://jira.corp.stripe.com/browse/RUN_BAASBANKS-4105
+    {
+      "name": "ops--creator--evolve-encrypted-updated-accounts-ledger-report",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "ops--creator--meta-apac-bin-list",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "ops--creator--rbl--clearing-transaction-detail-report",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "ops--creator--rbl--dispute-event-report",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "ops--creator--rbl-export--clearing-transaction-detail-report",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "ops--creator--rbl-export--dispute-event-report",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "ops--creator--standard-chartered-domestic--daily-transaction-summary-report",
+      "sox_control": "disabled"
+    },
+      # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "ops--creator--standard-chartered-exports--debits-breakdown-purpose-code-report",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "ops--creator--standard-chartered-exports--merchant-onboarding-report",
+      "sox_control": "disabled"
+    },
+    # all cron jobs owned by APAC India are out of scope for SOX control: https://jira.corp.stripe.com/browse/RUN_APAC_MOMO-2611
+    {
+      "name": "ops--poster--rbl-india-submission",
+      "sox_control": "disabled"
+    },
+    # this cron downloads model annotations to make them available in privacy-srv. It does not touch financial data, just model metadata
+    {
+      "name": "privacy-eng--update-annotations",
+      "sox_control": "disabled"
+    },
+    # qa-enabled-financial-data-false cron does not exist and is used for UTs.
+    {
+      "name": "qa-enabled-financial-data-false",
+      "sox_control": "disabled"
+    },
+    # reindex-support-site does not handle any financial data
+    {
+      "name": "reindex-support-site",
+      "sox_control": "disabled"
+    },
+    # amex chargeback rating generator is a 7 year old cron that is not part of any reporting and out of scope for SOX control
+    {
+      "name": "risk--cron-amex-chargeback-rating-generator",
+      "sox_control": "disabled"
+    },
+    # this job only backs data in the RDP user-facing dataset, which is not used for Stripe's financial reporting and has no precedent of being within ICP scope.
+    {
+      "name": "sigma--hydrate-oversized-invoices",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "ofac-vpn-usage",
+      "sox_control": "disabled"
+    },
+    # this job fetches a holiday calendar, and does not handle any financial data
+    {
+      "name": "ops--explorer--copp-clark",
+      "sox_control": "disabled"
+    },
+    # this job fetches Canadian routing information for validation and does not handle any financial data
+    {
+      "name": "ops--explorer--routing--ca",
+      "sox_control": "disabled"
+    },
+    # orchestration-cluster-test cron is a MSP cron used for testing only and does not hold any financial data.
+    {
+      "name": "orchestration-cluster-test",
+      "sox_control": "disabled"
+    },
+    # orchestration-cronops-placeholder cron is a MSP cron used as a placeholder and does not hold any financial data.
+    {
+      "name": "orchestration-cronops-placeholder",
+      "sox_control": "disabled"
+    },
+    # orchestration-test-kube-heartbeat cron is a MSP cron used as a heartbeat cron and does not hold any financial data.
+    {
+      "name": "orchestration-test-kube-heartbeat",
+      "sox_control": "disabled"
+    },
+    # ruby infra cronjobs for updating metadata about source code and code quality. Does not interact with financial data
+    {
+      "name": "ruby-infra--pkg-dependencies-graph",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "ruby-infra--pkg-dependencies-sync-all-packages-dr-depper",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "ruby-infra--pkg-dependencies-sync",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "ruby-infra--regenerate-todos",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "ruby-infra--save-badges-season",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "ruby-infra--update-leaderboard",
+      "sox_control": "disabled"
+    },
+    # Scheduled load test cron jobs
+    {
+      "name": "run-accounts-ambient-cmh",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "run-forwarding-load-test",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "run-regression-api-shard-split",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "run-regression-pi-shard-split",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "run-regression-pi-shard-test",
+      "sox_control": "disabled"
+    },
+    # qa-enabled-financial-data-false cron does not exist and is used for UTs.
+    {
+      "name": "qa-enabled-financial-data-false",
+      "sox_control": "disabled"
+    },
+    # this job only backs data in the RDP user-facing dataset, which is not used for Stripe's financial reporting and has no precedent of being within ICP scope.
+    {
+      "name": "sigma--hydrate-oversized-invoices",
+      "sox_control": "disabled"
+    },
+    # This enforces permissions in a google drive, it is not used for SOX control
+    {
+      "name": "solbooks--validate-gsheet-permissions",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "storage--generate-shard-map",
+      "sox_control": "disabled"
+    },
+    # this job only handles rate limits for user 2FA, it is not concerned with financial data
+    {
+      "name": "user-auth-code-rate-limit-loader",
+      "sox_control": "disabled"
+    },
+    # user-calendar-cache-* are used for pre-emptively caching stripe calendars on CIBot.
+    # They hold no financial data and are simply used as a performance boost.
+    {
+      "name": "user-calendar-cache-bom",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "user-calendar-cache-cmh",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "user-calendar-cache-northwest",
+      "sox_control": "disabled"
+    },
+    # Is just a reminder for reviewer trainees, but is not in SOX scope
+    {
+      "name": "reviewer-trainees-reminder",
+      "sox_control": "disabled"
+    },
+    # revprod-rev-rec-outreach-email is a cron job to send an outreach email to ask for feedback
+    {
+      "name": "revprod-rev-rec-outreach-email",
+      "sox_control": "disabled"
+    },
+    # Internal cron-jobs for search team affecting clusters outside of SOX scope
+    {
+      "name": "search-infra--dashboard-search-drowzee-slow-tasks",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--dashboard-search-restore-qa",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--datahub-search-prod-slow-tasks",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--export-canonical-shard-sizes",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--export-dashboard-shard-sizes",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--export-internal-shard-sizes",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--export-merchant-object-attribution",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--export-public-shard-sizes",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--export-requestlog-shard-sizes",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--expunge-deletes-prod",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--internal-search-slow-tasks-prod",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--request-log-migrate-indices",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--request-log-slow-tasks",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "search-infra--sweep-indices",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "update-search-ingest-sidecar",
+      "sox_control": "disabled"
+    },
+    # internal tool to sync translations with db
+    {
+      "name": "i18n--upsert-db-from-tms",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "security--safbot",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "security--saf-acquisition-sync",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "security--send-saf-nudge-emails",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "security--send-saf-sponsor-reports",
+      "sox_control": "disabled"
+    },
+    # internal job to alert Support Systems if any Salesforce limits are predicted to expire based on current usage
+    {
+      "name": "salesforce-limits",
+      "sox_control": "disabled"
+    },
+    # https://jira.corp.stripe.com/browse/RUN_BAAS_ISSUING-5708
+    {
+      "name": "issuing-bank-integration-refresh-crb-customer-profile",
+      "sox_control": "disabled"
+    },
+    # https://jira.corp.stripe.com/browse/RUN_LATAM-7182 Annual financial report for Brazilian merchants
+    {
+      "name": "global-latam--brazil-regulatory-reports--all-brazil-merchants-annual-report",
+      "sox_control": "disabled"
+    },
+    # Internal job that adds the owning team members to the Monster project on Home
+    {
+      "name": "sync-monster-project-to-team-members",
+      "sox_control": "disabled"
+    },
+    # Internal job that adds the owning team members to the SQS project on Home
+    {
+      "name": "sync-sqs-project-to-team-members",
+      "sox_control": "disabled"
+    },
+    # Internal job used to move Android build artifacts to S3
+    {
+      "name": "terminal--android-daily",
+      "sox_control": "disabled"
+    },
+    # Internal job that runs device tests for Tap to Pay on Android
+    {
+      "name": "terminal-device-payments-browserstack-android-daily",
+      "sox_control": "disabled"
+    },
+    # Job that sends daily summary push notification to users. If this fails it restarts every hour
+    # and has no impact on sending incorrect information to users. Push notifications are inherintly
+    # flaky on Apple's end
+    {
+      "name": "product--push-notifications--daily-summary-0",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-1",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-2",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-3",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-4",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-5",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-6",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-7",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-8",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-9",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-10",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-11",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-12",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-13",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-14",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-15",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-16",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-17",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-18",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "product--push-notifications--daily-summary-19",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "update-stripe-employees",
+      "sox_control": "disabled"
+    },
+    # Job that pulls translations of text content from Lokalize into the CMS for stripe.com
+    {
+      "name": "wpp--cms-pull-all-translations",
+      "sox_control": "disabled"
+    },
+    # Job that publishes translations of text content from Lokalize into the CMS for stripe.com
+    {
+      "name": "wpp--cms-autopublish-translations",
+      "sox_control": "disabled"
+    }
+]
+
 def cron_in_exceptions(namespace, name):
     for cron in _CRONS:
         if cron.get("namespace") == namespace and cron.get("name") == name:
             return True
+    for cron in _LEGACY_YAML_ENTRIES:
+        if cron.get("name") == name and cron.get("sox_control") == "disabled":
+            return True
     return False
+
+def get_cron_list_for_unit_testing():
+    return _CRONS
+
+def get_legacy_yaml_entries_for_unit_testing():
+    return _LEGACY_YAML_ENTRIES

@@ -26,7 +26,7 @@ STANDARD_TIER_MAPPING = {
     STANDARD_TIER_PB_PACKAGE.SYNTHETIC: "SYNTHETIC",
 }
 
-def tiered_deployments(ctx, deployment_supplier):
+def tiered_deployments(ctx, deployment_supplier, **kwargs):
     """ Helper function that creates a set of deployments based on the priority tier information specified in the service's compute.yaml.
 
     Args:
@@ -85,6 +85,6 @@ def tiered_deployments(ctx, deployment_supplier):
             receive_non_priority_traffic = priority_tier.get("receive_non_priority_traffic"),
         )
 
-        deployments.append(deployment_supplier(ctx, priority_name, meta))
+        deployments.append(deployment_supplier(ctx, priority_name, meta, **kwargs))
 
     return deployments
