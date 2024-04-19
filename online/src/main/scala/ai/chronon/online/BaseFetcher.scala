@@ -107,8 +107,11 @@ class BaseFetcher(kvStore: KVStore,
                        totalResponseValueBytes)
 
       // If caching is enabled, we try to fetch the batch IR from the cache so we avoid the work of decoding it.
+      val batchIrDecodeStartTime = System.currentTimeMillis()
       val batchIr: FinalBatchIr =
         getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
+      context.histogramTagged("group_by.batchir_decode.latency.millis",
+                              System.currentTimeMillis() - batchIrDecodeStartTime)
 
       // check if we have late batch data for this GroupBy resulting in degraded counters
       val degradedCount = checkLateBatchData(queryTimeMs,
@@ -119,6 +122,7 @@ class BaseFetcher(kvStore: KVStore,
       context.count("group_by.degraded_counter.count", degradedCount)
 
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
+        val allStreamingIrDecodeStartTime = System.currentTimeMillis()
         val streamingIrs: Seq[TiledIr] = streamingResponses
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .map { tVal =>
@@ -146,6 +150,8 @@ class BaseFetcher(kvStore: KVStore,
 
             TiledIr(tVal.millis, tile, tileSize)
           }
+        context.histogramTagged("group_by.all_streamingir_decode.latency.millis",
+                                System.currentTimeMillis() - allStreamingIrDecodeStartTime)
 
         if (debug) {
           val gson = new Gson()
@@ -160,7 +166,10 @@ class BaseFetcher(kvStore: KVStore,
         val useTileLayering = featureFlags.test(
           "zoolander.shepherd.enable_tile_layering_reads",
           Map("feature_group_dataset" -> servingInfo.groupByOps.streamingDataset).asJava)
-        aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs, useTileLayering)
+        val aggregatorStartTime = System.currentTimeMillis()
+        val result = aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs, useTileLayering)
+        context.histogramTagged("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
+        result
       } else {
         val selectedCodec = servingInfo.groupByOps.dataModel match {
           case DataModel.Events   => servingInfo.valueAvroCodec
