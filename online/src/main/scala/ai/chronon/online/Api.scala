@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
+import ai.chronon.online.FlagStore
 
 import java.util.function.{BiPredicate, Consumer}
 import scala.collection.Seq
@@ -190,9 +191,6 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     */
   def logResponse(resp: LoggableResponse): Unit
 
-  // override to allow rolling out features/infrastructure changes in a safe, controlled manner
-  def isFeatureFlagEnabled(flagName: String, attributes: java.util.Map[String, String]): Boolean = false
-
   // helper functions
   final def buildFetcher(debug: Boolean = false): Fetcher =
     new Fetcher(genKvStore,
@@ -201,7 +199,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 debug = debug,
                 externalSourceRegistry = externalRegistry,
                 timeoutMillis = timeoutMillis,
-                featureFlags = featureFlagBiPredicate)
+                flagStore = flagStore)
 
   final def buildJavaFetcher(): JavaFetcher =
     new JavaFetcher(genKvStore,
@@ -209,15 +207,12 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                     timeoutMillis,
                     responseConsumer,
                     externalRegistry,
-                    featureFlagBiPredicate)
+                    flagStore)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
     }
 
-  private def featureFlagBiPredicate: BiPredicate[String, java.util.Map[String, String]] =
-    new BiPredicate[String, java.util.Map[String, String]] {
-      override def test(t: String, u: java.util.Map[String, String]): Boolean = isFeatureFlagEnabled(t, u)
-    }
+  val flagStore: FlagStore = null
 }
