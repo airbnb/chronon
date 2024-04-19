@@ -48,7 +48,8 @@ import ai.chronon.online.OnlineDerivationUtil.{
 class FetcherBase(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
-                  debug: Boolean = false)
+                  debug: Boolean = false,
+                  flagStore: FlagStore = null)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(
