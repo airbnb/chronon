@@ -26,10 +26,11 @@ import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
-import java.util.function.{Consumer}
+import java.util.function.Consumer
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
+import scala.collection.immutable.Map
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 

@@ -20,9 +20,8 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
-import ai.chronon.online.FlagStore
 
-import java.util.function.{BiPredicate, Consumer}
+import java.util.function.Consumer
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -172,6 +171,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   private var timeoutMillis: Long = 10000
 
+  val flagStore: FlagStore = null
+
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
 
   // kafka has built-in support - but one can add support to other types using this method.
@@ -213,6 +214,4 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
     }
-
-  val flagStore: FlagStore = null
 }
