@@ -411,7 +411,6 @@ abstract class JoinBase(joinConf: api.Join,
     }
 
     val source = joinConf.left
-
     if (useBootstrapForLeft) {
       logger.info("Overwriting left side to use saved Bootstrap table...")
       source.overwriteTable(bootstrapTable)
