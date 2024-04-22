@@ -416,7 +416,7 @@ abstract class JoinBase(joinConf: api.Join,
       logger.info("Overwriting left side to use saved Bootstrap table...")
       source.overwriteTable(bootstrapTable)
       val query = source.query
-      // Selects map and where clauses already applied to bootstrap transformation
+      // sets map and where clauses already applied to bootstrap transformation
       query.setSelects(null)
       query.setWheres(null)
     }
