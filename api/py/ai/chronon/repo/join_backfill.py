@@ -5,12 +5,13 @@ from ai.chronon.constants import ADAPTERS
 from ai.chronon.join import Join
 from ai.chronon.scheduler.interfaces.flow import Flow
 from ai.chronon.scheduler.interfaces.node import Node
-from ai.chronon.utils import join_part_name, sanitize
+from ai.chronon.utils import get_join_output_table_name, join_part_name, sanitize
 
 SPARK_VERSION = "3.1.1"
 SPARK_JAR_TYPE = "uber"
 EXECUTOR_MEMORY = "4g"
 DRIVER_MEMORY = "4g"
+TASK_PREFIX = "compute_join"
 logging.basicConfig(level=logging.INFO)
 
 
@@ -50,13 +51,15 @@ class JoinBackfill:
         :return: A Flow object that represents the flow of the Join
         """
         flow = Flow(self.join.metaData.name)
-        final_node = Node("final_join", self.run_final_join())
-        left_node = Node("left_table", self.run_left())
+        final_node = Node(
+            f"{TASK_PREFIX}__{sanitize(get_join_output_table_name(self.join, full_name=True))}", self.run_final_join()
+        )
+        left_node = Node(f"{TASK_PREFIX}__left_table", self.run_left())
         flow.add_node(final_node)
         flow.add_node(left_node)
         for join_part in self.join.joinParts:
             jp_full_name = join_part_name(join_part)
-            jp_node = Node(jp_full_name, self.run_join_part(jp_full_name))
+            jp_node = Node(f"{TASK_PREFIX}__{jp_full_name}", self.run_join_part(jp_full_name))
             flow.add_node(jp_node)
             jp_node.add_dependency(left_node)
             final_node.add_dependency(jp_node)
@@ -81,10 +84,10 @@ class JoinBackfill:
         return self.command_template() + f" --mode=backfill --selected-join-parts={join_part} --use-cached-left"
 
     def run_left(self):
-        return self.command_template() + f" --mode=backfill-left"
+        return self.command_template() + " --mode=backfill-left"
 
     def run_final_join(self):
-        return self.command_template() + f" --mode=backfill-final"
+        return self.command_template() + " --mode=backfill-final"
 
     def run(self, orchestrator: str):
         orchestrator = ADAPTERS[orchestrator](dag_id=self.dag_id, start_date=self.start_date)
