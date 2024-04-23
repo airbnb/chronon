@@ -69,6 +69,27 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       }
   }
 
+  def getConfListByTeam(teamName: String): Try[String] = {
+    kvStore.getString(teamName, dataset, timeoutMillis)
+  }
+
+  lazy val getGroupBysConfByTeam: TTLCache[String, Try[String]] = new TTLCache[String, Try[String]](
+    { team =>
+      val startTimeMs = System.currentTimeMillis()
+      val result = getConfListByTeam(team)
+      val context =
+        if (result.isSuccess) Metrics.Context(Metrics.Environment.MetaDataFetching, team)
+        else Metrics.Context(Metrics.Environment.MetaDataFetching, team = team)
+      // Throw exception after metrics. No join metadata is bound to be a critical failure.
+      if (result.isFailure) {
+        context.withSuffix("team").increment(Metrics.Name.Exception)
+        throw result.failed.get
+      }
+      context.withSuffix("team").distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
+      result
+    },
+    { team => Metrics.Context(environment = "team.meta.fetch", team = team) })
+
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]](
     { name =>
       val startTimeMs = System.currentTimeMillis()

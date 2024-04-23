@@ -124,6 +124,13 @@ object Metrics {
       )
     }
 
+    def apply(environment: Environment, team: String): Context = {
+      Context(
+        environment = environment,
+        team = team
+      )
+    }
+
     val statsPort: Int = System.getProperty("ai.chronon.metrics.port", "8125").toInt
     val tagCache: TTLCache[Context, String] = new TTLCache[Context, String](
       { ctx => ctx.toTags.reverse.mkString(",") },
