@@ -157,7 +157,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   // derive team from path to file
   def pathToTeam(confPath: String): String = {
-    //  // capture <conf_type>/<team> as key e.g joins/team
+    //  capture <conf_type>/<team> as key e.g group_bys/host_churn
     confPath.split("/").takeRight(3).take(2).mkString("/")
   }
 
@@ -284,6 +284,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     Future.sequence(futures).map(_.flatten)
   }
 
+  // upload the configs list by team to KV store:
+  // key = <conf_type>/<team> in bytes, e.g group_bys/host_churn
+  // value = list of config names in bytes, e.g List(group_bys/host_churn/agg_p2_impressions.v1, group_bys/host_churn/agg_deactivations.v1)
   def putConfByTeam(configPath: String): Future[Seq[Boolean]] = {
 
     val configFile = new File(configPath)
