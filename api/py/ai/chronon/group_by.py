@@ -521,6 +521,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         batchPartitionCadence=batchPartitionCadence,    
     )
 
+    module_name = None
     # If running this in a databricks notebook, we should set the module name to the name of the notebook.
     # In our utils notebooks assertions checks we will verify that dbutils has been defined already.
     if databricks_mode:
@@ -529,8 +530,9 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         module_name = notebook_name
 
     # The module name of the GroupBy is found by finding the module that corresponds to the frame
-    # before the frame that has the module name importlib._bootstrap
-    else:
+    # before the frame that has the module name importlib._bootstrap. We only need to do this
+    # if a name was not specified.
+    elif not name:
         module_name = ''
         i = 1
         while True:
