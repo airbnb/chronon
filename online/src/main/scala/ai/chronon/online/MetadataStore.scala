@@ -157,8 +157,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   // derive team from path to file
   def pathToTeam(confPath: String): String = {
-    // capture team as key
-    confPath.split("/").takeRight(3)(1)
+    //  // capture <conf_type>/<team> as key e.g joins/team
+    confPath.split("/").takeRight(3).take(2).mkString("/")
   }
 
   def putConfByKey(
