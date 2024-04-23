@@ -725,12 +725,12 @@ object Driver {
     def run(args: Args): Unit = {
       val putRequest = args.metaDataStore.putConfByName(args.confPath())
       val res = Await.result(putRequest, 1.hour)
-      logger.info(
-        s"Uploaded Chronon ${args.confPath} Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
+      logger.info(s"Uploaded Chronon ${args.confPath} Configs to the KV store, success count = ${res.count(v =>
+        v)}, failure count = ${res.count(!_)}")
       val putByTeamRequest = args.metaDataStore.putConfByTeam(args.confPath())
       val resByTeam = Await.result(putByTeamRequest, 1.hour)
-      logger.info(
-        s"Uploaded Chronon ${args.confPath} entity by team to the KV store, success count = ${resByTeam.count(v => v)}, failure count = ${resByTeam.count(!_)}")
+      logger.info(s"Uploaded Chronon ${args.confPath} entity by team to the KV store, success count = ${resByTeam.count(
+        v => v)}, failure count = ${resByTeam.count(!_)}")
     }
   }
 
