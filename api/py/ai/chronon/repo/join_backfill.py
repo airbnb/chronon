@@ -3,8 +3,6 @@ import os
 
 from ai.chronon.constants import ADAPTERS
 from ai.chronon.join import Join
-
-# from ai.chronon.repo.run import download_jar
 from ai.chronon.scheduler.interfaces.flow import Flow
 from ai.chronon.scheduler.interfaces.node import Node
 from ai.chronon.utils import join_part_name, sanitize
@@ -70,11 +68,10 @@ class JoinBackfill:
         aws s3 cp {self.s3_bucket}{self.config_path} /tmp/{config_dir} &&
         aws s3 cp {self.s3_bucket}run.py /tmp/ &&
         aws s3 cp {self.s3_bucket}spark_submit.sh /tmp/ &&
-        aws s3 cp {self.s3_bucket}spark_uber-assembly-dh-support-left-final-0.0.71-SNAPSHOT.jar /tmp/ &&
         export SPARK_VERSION={self.spark_version} &&
         export EXECUTOR_MEMORY={self.executor_memory} &&
         export DRIVER_MEMORY={self.driver_memory} &&
-        CHRONON_DRIVER_JAR=/tmp/spark_uber-assembly-dh-support-left-final-0.0.71-SNAPSHOT.jar python3 /tmp/run.py \
+        python3 /tmp/run.py \
 --conf=/tmp/{self.config_path} --env=production --spark-submit-path /tmp/spark_submit.sh --ds={self.end_date}"""
         if self.start_date:
             cmd += f" --start-ds={self.start_date}"
