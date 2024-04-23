@@ -344,6 +344,17 @@ object Extensions {
       else { source.getJoinSource.getJoin.metaData.outputTable }
     }
 
+    def overwriteTable(table: String): Unit = {
+      if (source.isSetEntities) { source.getEntities.setSnapshotTable(table) }
+      else if (source.isSetEvents) { source.getEvents.setTable(table) }
+      else {
+        val metadata = source.getJoinSource.getJoin.getMetaData
+        val Array(namespace, tableName) = table.split(".")
+        metadata.setOutputNamespace(namespace)
+        metadata.setName(tableName)
+      }
+    }
+
     def table: String = rawTable.cleanSpec
 
     def subPartitionFilters: Map[String, String] = {
