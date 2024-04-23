@@ -213,7 +213,6 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     }
   }
 
-
   // process chronon configs only. others will be ignored
   // todo: add metrics
   private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
@@ -226,7 +225,6 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         None
     }
   }
-
 
   def parseName(path: String): Option[String] = {
     val gson = new Gson()
@@ -275,9 +273,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
                          |key: $key
                          |conf: $value""".stripMargin)
           PutRequest(keyBytes = key.getBytes(),
-            valueBytes = value.getBytes(),
-            dataset = dataset,
-            tsMillis = Some(System.currentTimeMillis()))
+                     valueBytes = value.getBytes(),
+                     dataset = dataset,
+                     tsMillis = Some(System.currentTimeMillis()))
         }
       }
     val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
@@ -300,27 +298,26 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         name.isDefined
       }
 
-    val kvPairs: Map[String, List[String]] = validFileList.foldLeft(Map.empty[String, List[String]]) {
-        (map, file) => {
-          val path = file.getPath
-          val key = pathToTeam(path)
-          val value = pathToKey(path)
-          val updatedList = map.getOrElse(key, List()) :+ value
-          map + (key -> updatedList)
+    val kvPairs: Map[String, List[String]] = validFileList.foldLeft(Map.empty[String, List[String]]) { (map, file) =>
+      {
+        val path = file.getPath
+        val key = pathToTeam(path)
+        val value = pathToKey(path)
+        val updatedList = map.getOrElse(key, List()) :+ value
+        map + (key -> updatedList)
       }
     }
 
     val puts: Seq[PutRequest] = kvPairs.map {
       case (key, list) => {
         val listStr = list.toString()
-        logger.info(
-          s"""Putting metadata for
+        logger.info(s"""Putting metadata for
              |key: $key
              |conf: $listStr""".stripMargin)
         PutRequest(keyBytes = key.getBytes(),
-          valueBytes = listStr.getBytes(),
-          dataset = dataset,
-          tsMillis = Some(System.currentTimeMillis()))
+                   valueBytes = listStr.getBytes(),
+                   dataset = dataset,
+                   tsMillis = Some(System.currentTimeMillis()))
       }
     }.toSeq
 
