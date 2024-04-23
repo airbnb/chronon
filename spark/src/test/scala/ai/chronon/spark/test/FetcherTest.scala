@@ -74,7 +74,7 @@ class FetcherTest extends TestCase {
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFilePut = singleFileMetadataStore.putConf(confResource.getPath)
+    val singleFilePut = singleFileMetadataStore.putConfByName(confResource.getPath)
     Await.result(singleFilePut, Duration.Inf)
     val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
@@ -86,7 +86,7 @@ class FetcherTest extends TestCase {
     val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryPut = directoryMetadataStore.putConf(confResource.getPath.replace(s"/$joinPath", ""))
+    val directoryPut = directoryMetadataStore.putConfByName(confResource.getPath.replace(s"/$joinPath", ""))
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
       inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))

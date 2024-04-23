@@ -155,9 +155,18 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     confPath.split("/").takeRight(3).mkString("/")
   }
 
-  // upload the materialized JSONs to KV store:
-  // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
-  def putConf(configPath: String): Future[Seq[Boolean]] = {
+  // derive team from path to file
+  def pathToTeam(confPath: String): String = {
+    // capture team as key
+    confPath.split("/").takeRight(3)(1)
+  }
+
+
+  def putConfByKey(
+    configPath: String,
+    keyFunc: String => String,
+    valueFunc: String => Option[String]
+  ): Future[Seq[Boolean]] = {
     val configFile = new File(configPath)
     assert(configFile.exists(), s"$configFile does not exist")
     logger.info(s"Uploading Chronon configs from $configPath")
@@ -171,27 +180,55 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       }
       .flatMap { file =>
         val path = file.getPath
-        val confJsonOpt = path match {
-          case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
-          case value if value.contains("joins/")           => loadJson[Join](value)
-          case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
-          case _                                           => logger.info(s"unknown config type in file $path"); None
-        }
-        val key = pathToKey(path)
-        confJsonOpt.map { conf =>
-          logger.info(s"""Putting metadata for 
-               |key: $key 
-               |conf: $conf""".stripMargin)
+        val key = keyFunc(path)
+        val value = valueFunc(path)
+
+        value.map { value =>
+          logger.info(s"""Putting metadata for
+                         |key: $key
+                         |conf: $value""".stripMargin)
           PutRequest(keyBytes = key.getBytes(),
-                     valueBytes = conf.getBytes(),
-                     dataset = dataset,
-                     tsMillis = Some(System.currentTimeMillis()))
+            valueBytes = value.getBytes(),
+            dataset = dataset,
+            tsMillis = Some(System.currentTimeMillis()))
         }
       }
     val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
     logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
     val futures = putsBatches.map(batch => kvStore.multiPut(batch))
     Future.sequence(futures).map(_.flatten)
+  }
+
+  // upload the materialized JSONs to KV store:
+  // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
+  def putConfByName(configPath: String): Future[Seq[Boolean]] = {
+    def keyFunc(confPath: String): String = {
+      pathToKey(confPath)
+    }
+
+    def valueFunc(confPath: String): Option[String] = {
+      val confJsonOpt = confPath match {
+        case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
+        case value if value.contains("joins/")           => loadJson[Join](value)
+        case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
+        case _                                           => logger.info(s"unknown config type in file $confPath"); None
+      }
+      confJsonOpt
+    }
+
+    putConfByKey(configPath, keyFunc, valueFunc)
+  }
+
+  def putConfByTeam(configPath: String): Future[Seq[Boolean]] = {
+    def keyFunc(confPath: String): String = {
+      pathToTeam(confPath)
+    }
+
+    def valueFunc(confPath: String): Option[String] = {
+      Some(pathToKey(confPath))
+    }
+
+    putConfByKey(configPath, keyFunc, valueFunc)
   }
 
   // list file recursively
