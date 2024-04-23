@@ -161,43 +161,6 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     confPath.split("/").takeRight(3).take(2).mkString("/")
   }
 
-  def putConfByKey(
-      configPath: String,
-      keyFunc: String => String,
-      valueFunc: String => Option[String]
-  ): Future[Seq[Boolean]] = {
-    val configFile = new File(configPath)
-    assert(configFile.exists(), s"$configFile does not exist")
-    logger.info(s"Uploading Chronon configs from $configPath")
-    val fileList = listFiles(configFile)
-
-    val puts = fileList
-      .filter { file =>
-        val name = parseName(file.getPath)
-        if (name.isEmpty) logger.info(s"Skipping invalid file ${file.getPath}")
-        name.isDefined
-      }
-      .flatMap { file =>
-        val path = file.getPath
-        val key = keyFunc(path)
-        val value = valueFunc(path)
-
-        value.map { value =>
-          logger.info(s"""Putting metadata for
-                         |key: $key
-                         |conf: $value""".stripMargin)
-          PutRequest(keyBytes = key.getBytes(),
-                     valueBytes = value.getBytes(),
-                     dataset = dataset,
-                     tsMillis = Some(System.currentTimeMillis()))
-        }
-      }
-    val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
-    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
-    val futures = putsBatches.map(batch => kvStore.multiPut(batch))
-    Future.sequence(futures).map(_.flatten)
-  }
-
   // list file recursively
   private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
     if (base.isFile) {
