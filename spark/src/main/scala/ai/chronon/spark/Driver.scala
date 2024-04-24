@@ -17,7 +17,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
@@ -594,8 +594,9 @@ object Driver {
     @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
     class Args extends Subcommand("fetch") with OnlineSubcommand {
+      val confPath: ScallopOption[String] = opt[String](required = false, descr = "Path to conf to fetch features")
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
-      val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
+      val name: ScallopOption[String] = opt[String](required = false, descr = "name of the join/group-by to fetch")
       val `type`: ScallopOption[String] =
         choice(Seq("join", "group-by", "join-stats"), descr = "the type of conf to fetch", default = Some("join"))
       val keyJsonFile: ScallopOption[String] = opt[String](
@@ -644,6 +645,7 @@ object Driver {
       if (args.keyJson.isEmpty && args.keyJsonFile.isEmpty) {
         throw new Exception("At least one of keyJson and keyJsonFile should be specified!")
       }
+      require(!args.confPath.isEmpty || !args.name.isEmpty, "--conf-path or --name should be specified!")
       val objectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
       def readMap: String => Map[String, AnyRef] = { json =>
         objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
@@ -675,10 +677,17 @@ object Driver {
           if (args.`type`() == "join-stats") {
             fetchStats(args, objectMapper, keyMap, fetcher)
           } else {
+            val featureName = if (args.name.isDefined) {
+              args.name()
+            } else {
+              args.confPath().confPathToKey
+            }
+            lazy val joinConfOption: Option[api.Join] =
+              args.confPath.toOption.map(confPath => parseConf[api.Join](confPath))
             val startNs = System.nanoTime
-            val requests = Seq(Fetcher.Request(args.name(), keyMap, args.atMillis.toOption))
+            val requests = Seq(Fetcher.Request(featureName, keyMap, args.atMillis.toOption))
             val resultFuture = if (args.`type`() == "join") {
-              fetcher.fetchJoin(requests)
+              fetcher.fetchJoin(requests, joinConfOption)
             } else {
               fetcher.fetchGroupBys(requests)
             }

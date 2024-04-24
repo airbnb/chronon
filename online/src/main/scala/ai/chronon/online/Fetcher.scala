@@ -102,7 +102,7 @@ class Fetcher(val kvStore: KVStore,
   // run during initialization
   reportCallerNameFetcherVersion()
 
-  def buildJoinCodec(joinConf: api.Join): JoinCodec = {
+  def buildJoinCodec(joinConf: Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
     // collect keyFields and valueFields from joinParts/GroupBys
@@ -190,9 +190,10 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+  override def fetchJoin(requests: scala.collection.Seq[Request],
+                         joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
-    val internalResponsesF = super.fetchJoin(requests)
+    val internalResponsesF = super.fetchJoin(requests, joinConf)
     val externalResponsesF = fetchExternal(requests)
     val combinedResponsesF = internalResponsesF.zip(externalResponsesF).map {
       case (internalResponses, externalResponses) =>
