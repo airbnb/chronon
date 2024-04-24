@@ -251,9 +251,8 @@ class Analyzer(tableUtils: TableUtils,
 
   def analyzeJoin(joinConf: api.Join,
                   enableHitter: Boolean = false,
-                  metadataExtraction: Boolean = false,
-                  validationAssert: Boolean = false
-                 ): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+                  validateTablePermission: Boolean = true,
+                  validationAssert: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
@@ -263,23 +262,23 @@ class Analyzer(tableUtils: TableUtils,
       val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
       val analysis = analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table)
       val leftSchema: Map[String, DataType] =
-        leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
-      (analysis, leftSchema)
-    } else if (metadataExtraction){
-      val analysis = ""
-      val scanQuery = range.genScanQuery(joinConf.left.query,
-        joinConf.left.table,
-        fillIfAbsent = Map(tableUtils.partitionColumn -> null))
-      val leftSchema: Map[String, DataType] = tableUtils.sql(scanQuery).schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
+        leftDf.schema.fields
+          .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
+          .toMap
       (analysis, leftSchema)
     } else {
-      val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
       val analysis = ""
-      val leftSchema: Map[String, DataType] =
-        leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
+      val scanQuery = range.genScanQuery(joinConf.left.query,
+                                         joinConf.left.table,
+                                         fillIfAbsent = Map(tableUtils.partitionColumn -> null))
+      val leftSchema: Map[String, DataType] = tableUtils
+        .sql(scanQuery)
+        .schema
+        .fields
+        .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
+        .toMap
       (analysis, leftSchema)
     }
-
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbTables = ListBuffer[String]()
@@ -316,7 +315,7 @@ class Analyzer(tableUtils: TableUtils,
       if (gbStartPartition.nonEmpty)
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
-    val noAccessTables = if (!metadataExtraction) {
+    val noAccessTables = if (validateTablePermission) {
       runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
     } else Set()
 
