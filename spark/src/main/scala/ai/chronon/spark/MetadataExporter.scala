@@ -58,7 +58,7 @@ object MetadataExporter {
           configData + { "features" -> analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap) }
         } else {
           val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
-          val joinAnalysis = analyzer.analyzeJoin(join)
+          val joinAnalysis = analyzer.analyzeJoin(join, metadataExtraction = true)
           val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
           configData + { "features" -> featureMetadata }
         }
