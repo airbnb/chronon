@@ -81,6 +81,9 @@ object MetadataExporter {
   }
 
   def processEntities(inputPath: String, outputPath: String, suffix: String): Unit = {
+    logger.info(s"Processing files from ${inputPath + suffix}")
+    val paths = getFilePaths(inputPath + suffix)
+    logger.info(s"Processing ${paths.length} files from ${paths}")
     val processSuccess = getFilePaths(inputPath + suffix).map { path =>
       try {
         val data = enrichMetadata(path)
@@ -97,7 +100,8 @@ object MetadataExporter {
   }
 
   def run(inputPath: String, outputPath: String): Unit = {
-    processEntities(inputPath, outputPath, GROUPBY_PATH_SUFFIX)
-    processEntities(inputPath, outputPath, JOIN_PATH_SUFFIX)
+    //processEntities(inputPath, outputPath, GROUPBY_PATH_SUFFIX)
+    //processEntities(inputPath, outputPath, JOIN_PATH_SUFFIX)
+    processEntities(inputPath, outputPath, "")
   }
 }
