@@ -257,10 +257,20 @@ class Analyzer(tableUtils: TableUtils,
     // run SQL environment setups such as UDFs and JARs
     joinConf.setups.foreach(tableUtils.sql)
 
-    val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
-    val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
-    val leftSchema: Map[String, DataType] =
-      leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
+    val (analysis, leftSchema) = if (enableHitter) {
+      val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
+      val analysis = analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table)
+      val leftSchema: Map[String, DataType] =
+        leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
+      (analysis, leftSchema)
+    } else {
+      val analysis = ""
+      val scanQuery = range.genScanQuery(joinConf.left.query,
+        joinConf.left.table,
+        fillIfAbsent = Map(tableUtils.partitionColumn -> null))
+      val leftSchema: Map[String, DataType] = tableUtils.sql(scanQuery).schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
+      (analysis, leftSchema)
+    }
 
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
