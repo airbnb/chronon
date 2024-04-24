@@ -3,15 +3,15 @@ import os
 
 from ai.chronon.constants import ADAPTERS
 from ai.chronon.join import Join
-from ai.chronon.repo.run import download_jar
 from ai.chronon.scheduler.interfaces.flow import Flow
 from ai.chronon.scheduler.interfaces.node import Node
-from ai.chronon.utils import join_part_name, sanitize
+from ai.chronon.utils import get_join_output_table_name, join_part_name, sanitize
 
 SPARK_VERSION = "3.1.1"
 SPARK_JAR_TYPE = "uber"
 EXECUTOR_MEMORY = "4g"
 DRIVER_MEMORY = "4g"
+TASK_PREFIX = "compute_join"
 logging.basicConfig(level=logging.INFO)
 
 
@@ -35,13 +35,6 @@ class JoinBackfill:
         self.join = join
         self.start_date = start_date
         self.end_date = end_date
-        self.jar_path = download_jar(
-            "latest",
-            jar_type=SPARK_JAR_TYPE,
-            release_tag=None,
-            spark_version=SPARK_VERSION,
-            skip_download=True,
-        )
         self.s3_bucket = s3_bucket
         self.config_path = config_path
         self.spark_version = spark_version
@@ -58,20 +51,21 @@ class JoinBackfill:
         :return: A Flow object that represents the flow of the Join
         """
         flow = Flow(self.join.metaData.name)
-        final_node = Node("final_join", self.run_final_join())
-        left_node = Node("left_table", self.run_left())
+        final_node = Node(
+            f"{TASK_PREFIX}__{sanitize(get_join_output_table_name(self.join, full_name=True))}", self.run_final_join()
+        )
+        left_node = Node(f"{TASK_PREFIX}__left_table", self.run_left())
         flow.add_node(final_node)
         flow.add_node(left_node)
         for join_part in self.join.joinParts:
             jp_full_name = join_part_name(join_part)
-            jp_node = Node(jp_full_name, self.run_join_part(jp_full_name))
+            jp_node = Node(f"{TASK_PREFIX}__{jp_full_name}", self.run_join_part(jp_full_name))
             flow.add_node(jp_node)
             jp_node.add_dependency(left_node)
             final_node.add_dependency(jp_node)
         return flow
 
-    def run_join_part(self, join_part: str):
-        # TODO: Find a better way to sync configs
+    def command_template(self):
         config_dir = os.path.dirname(self.config_path) + "/"
         cmd = f"""
         aws s3 cp {self.s3_bucket}{self.config_path} /tmp/{config_dir} &&
@@ -80,19 +74,20 @@ class JoinBackfill:
         export SPARK_VERSION={self.spark_version} &&
         export EXECUTOR_MEMORY={self.executor_memory} &&
         export DRIVER_MEMORY={self.driver_memory} &&
-        python3 /tmp/run.py --mode=backfill --conf=/tmp/{self.config_path} --env=production \
-        --spark-submit-path /tmp/spark_submit.sh --selected-join-parts={join_part} --ds={self.end_date}"""
+        python3 /tmp/run.py \
+--conf=/tmp/{self.config_path} --env=production --spark-submit-path /tmp/spark_submit.sh --ds={self.end_date}"""
         if self.start_date:
             cmd += f" --start-ds={self.start_date}"
         return cmd
 
+    def run_join_part(self, join_part: str):
+        return self.command_template() + f" --mode=backfill --selected-join-parts={join_part} --use-cached-left"
+
     def run_left(self):
-        # TODO: integrate with the Spark side change
-        return "echo 'Running left table'"
+        return self.command_template() + " --mode=backfill-left"
 
     def run_final_join(self):
-        # TODO: integrate with the Spark side change
-        return "echo 'Running final join'"
+        return self.command_template() + " --mode=backfill-final"
 
     def run(self, orchestrator: str):
         orchestrator = ADAPTERS[orchestrator](dag_id=self.dag_id, start_date=self.start_date)
