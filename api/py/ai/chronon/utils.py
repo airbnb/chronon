@@ -10,7 +10,6 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from typing import List, Union, cast, Optional
-from pyspark.dbutils import DBUtils
 
 
 DATABRICKS_NAMESPACE = "shepherd_databricks"
@@ -345,8 +344,7 @@ def get_related_table_names(conf: ChrononJobTypes) -> List[str]:
     return related_tables
 
 
-def run_databricks_assertions_for_join(team_slug: str, name: str, output_namespace: str, right_parts: List[api.JoinPart], dbutils: DBUtils):
-    assert dbutils, "dbutils must be provided in the Join definition. It is set by default in your Databricks Notebook."
+def run_databricks_assertions_for_join(team_slug: str, name: str, output_namespace: str, right_parts: List[api.JoinPart]):
     assert team_slug, "team_slug is required for databricks_mode"
     assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
     assert name, "a name for the join is required for databricks_mode"
@@ -355,10 +353,9 @@ def run_databricks_assertions_for_join(team_slug: str, name: str, output_namespa
     # For now we will tell users to write to DATABRICKS_NAMESPACE
     assert output_namespace==DATABRICKS_NAMESPACE or output_namespace==CHRONON_POC_USERTABLES_NAMESPACE, f"output_namespace should be '{DATABRICKS_NAMESPACE}' for databricks_mode"
     for join_part in right_parts:
-        run_databricks_assertions_for_group_by(join_part.groupBy.metaData.name, join_part.groupBy.metaData.team, output_namespace, dbutils) 
+        run_databricks_assertions_for_group_by(join_part.groupBy.metaData.name, join_part.groupBy.metaData.team, output_namespace) 
 
-def run_databricks_assertions_for_group_by(name: str, team_slug: str, output_namespace: str, dbutils: DBUtils):
-    assert dbutils, "dbutils must be provided in the GroupBy definition. It is set by default in your Databricks Notebook."
+def run_databricks_assertions_for_group_by(name: str, team_slug: str, output_namespace: str):
     assert name, "When using a GroupBy in a databricks notebook you must specify a `name` in the GroupBy definition."
     assert team_slug, "When using a GroupBy in a databricks notebook you must specify a `team_slug` in the GroupBy definition."
     assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."

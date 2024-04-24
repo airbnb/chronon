@@ -7,7 +7,6 @@ import importlib
 import json
 import logging
 from typing import List, Dict, Tuple
-from pyspark.dbutils import DBUtils
 
 logging.basicConfig(level=logging.INFO)
 
@@ -381,7 +380,6 @@ def Join(left: api.Source,
          databricks_mode: bool = False,
          name: str = None,
          team_slug: str = None,
-         dbutils: DBUtils = None,
          **kwargs
          ) -> api.Join:
     """
@@ -481,7 +479,7 @@ def Join(left: api.Source,
 
     # Simple checks to make sure that notebooks users are setting their features up properly
     if databricks_mode:
-        utils.run_databricks_assertions_for_join(name, team_slug, output_namespace, right_parts, dbutils)
+        utils.run_databricks_assertions_for_join(name, team_slug, output_namespace, right_parts)
     else:
         utils.confirm_databricks_mode_is_set_correctly()
 
