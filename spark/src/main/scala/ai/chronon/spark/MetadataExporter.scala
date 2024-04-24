@@ -100,8 +100,7 @@ object MetadataExporter {
   }
 
   def run(inputPath: String, outputPath: String): Unit = {
-    //processEntities(inputPath, outputPath, GROUPBY_PATH_SUFFIX)
-    //processEntities(inputPath, outputPath, JOIN_PATH_SUFFIX)
-    processEntities(inputPath, outputPath, "")
+    processEntities(inputPath, outputPath, GROUPBY_PATH_SUFFIX)
+    processEntities(inputPath, outputPath, JOIN_PATH_SUFFIX)
   }
 }
