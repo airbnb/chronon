@@ -17,7 +17,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
@@ -680,7 +680,7 @@ object Driver {
             val featureName = if (args.name.isDefined) {
               args.name()
             } else {
-              args.confPath().split("/").takeRight(3).mkString("/")
+              args.confPath().confPathToKey
             }
             lazy val joinConfOption: Option[api.Join] =
               args.confPath.toOption.map(confPath => parseConf[api.Join](confPath))

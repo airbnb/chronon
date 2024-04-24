@@ -102,7 +102,7 @@ class Fetcher(val kvStore: KVStore,
   // run during initialization
   reportCallerNameFetcherVersion()
 
-  def buildJoinCodec(joinConf: api.Join): JoinCodec = {
+  def buildJoinCodec(joinConf: Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
     // collect keyFields and valueFields from joinParts/GroupBys
