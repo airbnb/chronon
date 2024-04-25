@@ -86,7 +86,7 @@ class Fetcher(val kvStore: KVStore,
               val externalSourceRegistry: ExternalSourceRegistry = null,
               callerName: String = null,
               flagStore: FlagStore = null)
-    extends FetcherBase(kvStore, flagStore, metaDataSet, timeoutMillis, debug) {
+    extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug, flagStore) {
 
   private def reportCallerNameFetcherVersion(): Unit = {
     val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
