@@ -17,7 +17,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.{Api, Fetcher, MetadataStore}
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
@@ -240,6 +240,11 @@ object Driver {
         with ResultValidationAbility {
       val selectedJoinParts: ScallopOption[List[String]] =
         opt[List[String]](required = false, descr = "A list of join parts that require backfilling.")
+      val useCachedLeft: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          default = Some(false),
+          descr = "Whether or not to use the cached bootstrap table as the source - used in parallelized join flow.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }
@@ -255,7 +260,9 @@ object Driver {
       )
 
       if (args.selectedJoinParts.isDefined) {
-        join.computeJoinOpt(args.stepDays.toOption, args.startPartitionOverride.toOption)
+        join.computeJoinOpt(args.stepDays.toOption,
+                            args.startPartitionOverride.toOption,
+                            args.useCachedLeft.getOrElse(false))
         logger.info(
           s"Backfilling selected join parts: ${args.selectedJoinParts()} is complete. Skipping the final join. Exiting."
         )
@@ -276,6 +283,52 @@ object Driver {
       df.show(numRows = 3, truncate = 0, vertical = true)
       logger.info(
         s"\nShowing three rows of output above.\nQuery table `${args.joinConf.metaData.outputTable}` for more.\n")
+    }
+  }
+
+  object JoinBackfillLeft {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("join-left")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"join_left_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        !args.runFirstHole()
+      )
+      join.computeLeft(args.startPartitionOverride.toOption)
+    }
+  }
+
+  object JoinBackfillFinal {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("join-final")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"join_final_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        !args.runFirstHole()
+      )
+      join.computeFinal(args.startPartitionOverride.toOption)
     }
   }
 
@@ -541,8 +594,9 @@ object Driver {
     @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
     class Args extends Subcommand("fetch") with OnlineSubcommand {
+      val confPath: ScallopOption[String] = opt[String](required = false, descr = "Path to conf to fetch features")
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
-      val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
+      val name: ScallopOption[String] = opt[String](required = false, descr = "name of the join/group-by to fetch")
       val `type`: ScallopOption[String] =
         choice(Seq("join", "group-by", "join-stats"), descr = "the type of conf to fetch", default = Some("join"))
       val keyJsonFile: ScallopOption[String] = opt[String](
@@ -591,6 +645,7 @@ object Driver {
       if (args.keyJson.isEmpty && args.keyJsonFile.isEmpty) {
         throw new Exception("At least one of keyJson and keyJsonFile should be specified!")
       }
+      require(!args.confPath.isEmpty || !args.name.isEmpty, "--conf-path or --name should be specified!")
       val objectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
       def readMap: String => Map[String, AnyRef] = { json =>
         objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
@@ -615,17 +670,24 @@ object Driver {
       if (keyMapList.length > 1) {
         logger.info(s"Plan to send ${keyMapList.length} fetches with ${args.interval()} seconds interval")
       }
-      val fetcher = args.impl(args.serializableProps).buildFetcher(true)
+      val fetcher = args.impl(args.serializableProps).buildFetcher(true, "FetcherCLI")
       def iterate(): Unit = {
         keyMapList.foreach(keyMap => {
           logger.info(s"--- [START FETCHING for ${keyMap}] ---")
           if (args.`type`() == "join-stats") {
             fetchStats(args, objectMapper, keyMap, fetcher)
           } else {
+            val featureName = if (args.name.isDefined) {
+              args.name()
+            } else {
+              args.confPath().confPathToKey
+            }
+            lazy val joinConfOption: Option[api.Join] =
+              args.confPath.toOption.map(confPath => parseConf[api.Join](confPath))
             val startNs = System.nanoTime
-            val requests = Seq(Fetcher.Request(args.name(), keyMap, args.atMillis.toOption))
+            val requests = Seq(Fetcher.Request(featureName, keyMap, args.atMillis.toOption))
             val resultFuture = if (args.`type`() == "join") {
-              fetcher.fetchJoin(requests)
+              fetcher.fetchJoin(requests, joinConfOption)
             } else {
               fetcher.fetchGroupBys(requests)
             }
@@ -833,6 +895,10 @@ object Driver {
     addSubcommand(CompareJoinQueryArgs)
     object MetadataExportArgs extends MetadataExport.Args
     addSubcommand(MetadataExportArgs)
+    object JoinBackfillLeftArgs extends JoinBackfillLeft.Args
+    addSubcommand(JoinBackfillLeftArgs)
+    object JoinBackfillFinalArgs extends JoinBackfillFinal.Args
+    addSubcommand(JoinBackfillFinalArgs)
     object LabelJoinArgs extends LabelJoin.Args
     addSubcommand(LabelJoinArgs)
     requireSubcommand()
@@ -872,6 +938,8 @@ object Driver {
           case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
           case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
+          case args.JoinBackfillLeftArgs   => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
+          case args.JoinBackfillFinalArgs  => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
           case _                           => logger.info(s"Unknown subcommand: $x")
         }
       case None => logger.info(s"specify a subcommand please")

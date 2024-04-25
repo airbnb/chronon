@@ -55,7 +55,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
     val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
-    val confKey = pathToKey(confPathOrName)
+    val confKey = confPathOrName.confPathToKey
     kvStore
       .getString(confKey, dataset, timeoutMillis)
       .map(conf => ThriftJsonCodec.fromJsonStr[T](conf, false, clazz))
@@ -149,12 +149,6 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       },
       { gb => Metrics.Context(environment = "group_by.serving_info.fetch", groupBy = gb) })
 
-  // derive a key from path to file
-  def pathToKey(confPath: String): String = {
-    // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
-    confPath.split("/").takeRight(3).mkString("/")
-  }
-
   // upload the materialized JSONs to KV store:
   // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
   def putConf(configPath: String): Future[Seq[Boolean]] = {
@@ -177,7 +171,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
           case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
           case _                                           => logger.info(s"unknown config type in file $path"); None
         }
-        val key = pathToKey(path)
+        val key = path.confPathToKey
         confJsonOpt.map { conf =>
           logger.info(s"""Putting metadata for 
                |key: $key 
