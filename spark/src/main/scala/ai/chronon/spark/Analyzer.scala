@@ -251,17 +251,29 @@ class Analyzer(tableUtils: TableUtils,
 
   def analyzeJoin(joinConf: api.Join,
                   enableHitter: Boolean = false,
+                  validateTablePermission: Boolean = true,
                   validationAssert: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
     joinConf.setups.foreach(tableUtils.sql)
 
-    val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
-    val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
-    val leftSchema: Map[String, DataType] =
-      leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
+    val (analysis, leftDf) = if (enableHitter) {
+      val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
+      val analysis = analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table)
+      (analysis, leftDf)
+    } else {
+      val analysis = ""
+      val scanQuery = range.genScanQuery(joinConf.left.query,
+                                         joinConf.left.table,
+                                         fillIfAbsent = Map(tableUtils.partitionColumn -> null))
+      val leftDf: DataFrame = tableUtils.sql(scanQuery)
+      (analysis, leftDf)
+    }
 
+    val leftSchema = leftDf.schema.fields
+      .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
+      .toMap
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbTables = ListBuffer[String]()
@@ -298,7 +310,9 @@ class Analyzer(tableUtils: TableUtils,
       if (gbStartPartition.nonEmpty)
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
-    val noAccessTables = runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
+    val noAccessTables = if (validateTablePermission) {
+      runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
+    } else Set()
 
     val rightSchema: Map[String, DataType] =
       aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap

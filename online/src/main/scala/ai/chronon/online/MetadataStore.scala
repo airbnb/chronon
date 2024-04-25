@@ -53,9 +53,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   implicit val executionContext: ExecutionContext = kvStore.executionContext
 
-  def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
+  def getConf[T <: TBase[_, _] : Manifest](confPathOrName: String): Try[T] = {
     val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
-    val confKey = pathToKey(confPathOrName)
+    val confKey = confPathOrName.confPathToKey
     kvStore
       .getString(confKey, dataset, timeoutMillis)
       .map(conf => ThriftJsonCodec.fromJsonStr[T](conf, false, clazz))
@@ -97,8 +97,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     logger.info(s"uploading join conf to dataset: $dataset by key: joins/${join.metaData.nameToFilePath}")
     kvStore.put(
       PutRequest(s"joins/${join.metaData.nameToFilePath}".getBytes(Constants.UTF8),
-                 ThriftJsonCodec.toJsonStr(join).getBytes(Constants.UTF8),
-                 dataset))
+        ThriftJsonCodec.toJsonStr(join).getBytes(Constants.UTF8),
+        dataset))
   }
 
   def getSchemaFromKVStore(dataset: String, key: String): AvroCodec = {
@@ -135,8 +135,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         if (metaData.isFailure) {
           Failure(
             new RuntimeException(s"Couldn't fetch group by serving info for $batchDataset, " +
-                                   s"please make sure a batch upload was successful",
-                                 metaData.failed.get))
+              s"please make sure a batch upload was successful",
+              metaData.failed.get))
         } else {
           val groupByServingInfo = ThriftJsonCodec
             .fromJsonStr[GroupByServingInfo](metaData.get, check = true, classOf[GroupByServingInfo])
@@ -161,8 +161,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     confPath.split("/").takeRight(3).take(2).mkString("/")
   }
 
+
   // list file recursively
-  private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
+  def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
     if (base.isFile) {
       Seq(base)
     } else {
@@ -178,7 +179,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   // process chronon configs only. others will be ignored
   // todo: add metrics
-  private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
+  def loadJson[T <: TBase[_, _] : Manifest : ClassTag](file: String): Option[String] = {
     try {
       val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)
       Some(ThriftJsonCodec.toJsonStr(configConf))
@@ -226,19 +227,20 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         val key = pathToKey(path)
         val confJsonOpt = path match {
           case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
-          case value if value.contains("joins/")           => loadJson[Join](value)
-          case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
-          case _                                           => logger.info(s"unknown config type in file $path"); None
+          case value if value.contains("joins/") => loadJson[Join](value)
+          case value if value.contains("group_bys/") => loadJson[GroupBy](value)
+          case _ => logger.info(s"unknown config type in file $path"); None
         }
 
         confJsonOpt.map { value =>
-          logger.info(s"""Putting metadata for
-                         |key: $key
-                         |conf: $value""".stripMargin)
+          logger.info(
+            s"""Putting metadata for
+               |key: $key
+               |conf: $value""".stripMargin)
           PutRequest(keyBytes = key.getBytes(),
-                     valueBytes = value.getBytes(),
-                     dataset = dataset,
-                     tsMillis = Some(System.currentTimeMillis()))
+            valueBytes = value.getBytes(),
+            dataset = dataset,
+            tsMillis = Some(System.currentTimeMillis()))
         }
       }
     val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
@@ -264,26 +266,26 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         name.isDefined
       }
 
-    val kvPairs: Map[String, List[String]] = validFileList.foldLeft(Map.empty[String, List[String]]) { (map, file) =>
-      {
-        val path = file.getPath
-        val key = pathToTeam(path)
-        val value = pathToKey(path)
-        val updatedList = map.getOrElse(key, List()) :+ value
-        map + (key -> updatedList)
-      }
+    val kvPairs: Map[String, List[String]] = validFileList.foldLeft(Map.empty[String, List[String]]) { (map, file) => {
+      val path = file.getPath
+      val key = pathToTeam(path)
+      val value = pathToKey(path)
+      val updatedList = map.getOrElse(key, List()) :+ value
+      map + (key -> updatedList)
+    }
     }
 
     val puts: Seq[PutRequest] = kvPairs.map {
       case (key, list) => {
         val listStr = list.toString()
-        logger.info(s"""Putting metadata for
+        logger.info(
+          s"""Putting metadata for
              |key: $key
              |conf: $listStr""".stripMargin)
         PutRequest(keyBytes = key.getBytes(),
-                   valueBytes = listStr.getBytes(),
-                   dataset = dataset,
-                   tsMillis = Some(System.currentTimeMillis()))
+          valueBytes = listStr.getBytes(),
+          dataset = dataset,
+          tsMillis = Some(System.currentTimeMillis()))
       }
     }.toSeq
 

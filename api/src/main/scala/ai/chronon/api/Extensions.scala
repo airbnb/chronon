@@ -634,6 +634,12 @@ object Extensions {
     def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
 
     def cleanSpec: String = string.split("/").head
+
+    // derive a feature name key from path to file
+    def confPathToKey: String = {
+      // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
+      string.split("/").takeRight(3).mkString("/")
+    }
   }
 
   implicit class ExternalSourceOps(externalSource: ExternalSource) extends ExternalSource(externalSource) {

@@ -380,12 +380,18 @@ class FetcherBase(kvStore: KVStore,
 
   // prioritize passed in joinOverrides over the ones in metadata store
   // used in stream-enrichment and in staging testing
-  def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+  def fetchJoin(requests: scala.collection.Seq[Request],
+                joinConf: Option[Join] = None): Future[scala.collection.Seq[Response]] = {
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
     val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, KeyMissingException]]])] =
       requests.map { request =>
-        val joinTry: Try[JoinOps] = getJoinConf(request.name)
+        val joinTry: Try[JoinOps] = if (joinConf.isEmpty) {
+          getJoinConf(request.name)
+        } else {
+          logger.debug(s"Using passed in join configuration: ${joinConf.get.metaData.getName}")
+          Success(JoinOps(joinConf.get))
+        }
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
           joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
