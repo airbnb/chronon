@@ -46,10 +46,10 @@ import ai.chronon.online.OnlineDerivationUtil.{
 //   2. does the fan out and fan in from kv store in a parallel fashion
 //   3. does the post aggregation
 class FetcherBase(kvStore: KVStore,
+                  flagStore: FlagStore = null,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
-                  debug: Boolean = false,
-                  flagStore: FlagStore = null)
+                  debug: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(
