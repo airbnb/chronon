@@ -171,7 +171,9 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   private var timeoutMillis: Long = 10000
 
-  val flagStore: FlagStore = null
+  private var flagStore: FlagStore = null
+
+  def setFlagStore(customFlagStore: FlagStore): Unit = { flagStore = customFlagStore }
 
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
 
