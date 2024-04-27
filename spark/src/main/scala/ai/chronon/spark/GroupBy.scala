@@ -39,7 +39,7 @@ import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
               val inputDf: DataFrame,
-              val mutationDf: DataFrame = null,
+              val mutationDfFn: () => DataFrame = null,
               skewFilter: Option[String] = None,
               finalize: Boolean = true)
     extends Serializable {
@@ -225,6 +225,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       .mapValues(sawtoothAggregator.finalizeSnapshot)
 
     // Preprocess for mutations: Add a ds of mutation ts column, collect sorted mutations by keys and ds of mutation.
+    val mutationDf = mutationDfFn()
     val mutationsTsIndex = mutationDf.schema.fieldIndex(Constants.MutationTimeColumn)
     val mTsIndex = mutationDf.schema.fieldIndex(Constants.TimeColumn)
     val mutationsReversalIndex = mutationDf.schema.fieldIndex(Constants.ReversalColumn)
@@ -460,7 +461,6 @@ object GroupBy {
            bloomMapOpt: Option[Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true,
-           mutationScan: Boolean = true,
            showDf: Boolean = false): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
@@ -515,8 +515,8 @@ object GroupBy {
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
     val mutationSources = groupByConf.sources.toScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
-    val mutationDf =
-      if (mutationScan && groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
+    def mutationDfFn(): DataFrame = {
+      val df: DataFrame = if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
         val mutationDf = mutationSources
           .map {
             renderDataSourceQuery(groupByConf,
@@ -539,15 +539,18 @@ object GroupBy {
         bloomMapOpt.map { mutationDf.filterBloom }.getOrElse { mutationDf }
       } else null
 
-    if (showDf && mutationDf != null) {
-      logger.info(s"printing mutation data for groupBy: ${groupByConf.metaData.name}")
-      mutationDf.prettyPrint()
+      if (showDf && df != null) {
+        logger.info(s"printing mutation data for groupBy: ${groupByConf.metaData.name}")
+        df.prettyPrint()
+      }
+
+      df
     }
 
     new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
                 keyColumns,
                 nullFiltered,
-                Option(mutationDf).orNull,
+                mutationDfFn,
                 finalize = finalize)
   }
 

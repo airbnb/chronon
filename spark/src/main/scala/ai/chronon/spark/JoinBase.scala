@@ -345,7 +345,7 @@ abstract class JoinBase(joinConf: api.Join,
       logger.info(s"Range to fill already computed. Skipping query execution...")
     } else {
       val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
-      val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
+      val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
       logger.info(s"Running ranges: $unfilledRanges")
       unfilledRanges.foreach { unfilledRange =>
         val leftDf = JoinUtils.leftDf(joinConf, unfilledRange, tableUtils)
@@ -378,7 +378,7 @@ abstract class JoinBase(joinConf: api.Join,
       logger.info(s"Range to fill already computed. Skipping query execution...")
     } else {
       val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
-      val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
+      val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
       logger.info(s"Running ranges: $unfilledRanges")
       unfilledRanges.foreach { unfilledRange =>
         val leftDf = JoinUtils.leftDf(joinConf, unfilledRange, tableUtils)
