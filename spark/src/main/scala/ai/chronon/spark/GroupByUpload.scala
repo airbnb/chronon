@@ -119,8 +119,7 @@ object GroupByUpload {
       .from(groupByConf,
             PartitionRange(endDs, endDs),
             TableUtils(session),
-            computeDependency = false,
-            mutationScan = false)
+            computeDependency = false)
     groupByServingInfo.setBatchEndDate(nextDay)
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
@@ -192,7 +191,6 @@ object GroupByUpload {
                                     PartitionRange(endDs, endDs),
                                     tableUtils,
                                     computeDependency = true,
-                                    mutationScan = false,
                                     showDf = showDf)
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
     // for temporal accuracy - we don't need to scan mutations for upload
@@ -203,7 +201,6 @@ object GroupByUpload {
                    PartitionRange(endDs, endDs).shift(1),
                    tableUtils,
                    computeDependency = true,
-                   mutationScan = false,
                    showDf = showDf)
     lazy val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
     // for mutations I need the snapshot from the previous day, but a batch end date of ds +1
