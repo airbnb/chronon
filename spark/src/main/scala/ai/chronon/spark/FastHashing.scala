@@ -16,7 +16,7 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
+import org.slf4j.{Logger, LoggerFactory}
 import ai.chronon.spark.Extensions._
 import com.google.common.hash.{Hasher, Hashing}
 import org.apache.spark.sql.Row
