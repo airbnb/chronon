@@ -75,15 +75,14 @@ object BootstrapInfo {
   def from(joinConf: api.Join,
            range: PartitionRange,
            tableUtils: TableUtils,
-           leftSchema: Option[StructType],
-           mutationScan: Boolean = true): BootstrapInfo = {
+           leftSchema: Option[StructType]): BootstrapInfo = {
 
     // Enrich each join part with the expected output schema
     logger.info(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
     var joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
       .getOrElse(Seq.empty)
       .map(part => {
-        val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency = true, mutationScan = mutationScan)
+        val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency = true)
         val keySchema = SparkConversions
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))

@@ -76,10 +76,9 @@ class Join(joinConf: api.Join,
            endPartition: String,
            tableUtils: TableUtils,
            skipFirstHole: Boolean = true,
-           mutationScan: Boolean = true,
            showDf: Boolean = false,
            selectedJoinParts: Option[List[String]] = None)
-    extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf, selectedJoinParts) {
+    extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, showDf, selectedJoinParts) {
 
   private def padFields(df: DataFrame, structType: sql.types.StructType): DataFrame = {
     structType.foldLeft(df) {

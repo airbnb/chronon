@@ -38,7 +38,6 @@ abstract class JoinBase(joinConf: api.Join,
                         endPartition: String,
                         tableUtils: TableUtils,
                         skipFirstHole: Boolean,
-                        mutationScan: Boolean = true,
                         showDf: Boolean = false,
                         selectedJoinParts: Option[Seq[String]] = None) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -234,7 +233,6 @@ abstract class JoinBase(joinConf: api.Join,
                    computeDependency = true,
                    rightBloomMap,
                    rightSkewFilter,
-                   mutationScan = mutationScan,
                    showDf = showDf)
 
     // all lazy vals - so evaluated only when needed by each case.
@@ -471,7 +469,7 @@ abstract class JoinBase(joinConf: api.Join,
 
     val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
     // build bootstrap info once for the entire job
-    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
+    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
 
     val wholeRange = PartitionRange(unfilledRanges.minBy(_.start).start, unfilledRanges.maxBy(_.end).end)(tableUtils)
 

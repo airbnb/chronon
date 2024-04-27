@@ -417,7 +417,7 @@ object GroupBy {
           groupByConf.dataModel == DataModel.Events && groupByConf.inferredAccuracy == Accuracy.TEMPORAL
         val endDate = if (isPreShifted) beforeDs else queryRange.end
 
-        val join = new Join(joinConf, endDate, tableUtils, mutationScan = false, showDf = showDf)
+        val join = new Join(joinConf, endDate, tableUtils, showDf = showDf)
         if (computeDependency) {
           val df = join.computeJoin()
           if (showDf) {
