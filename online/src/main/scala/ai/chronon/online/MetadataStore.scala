@@ -276,8 +276,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
     val puts: Seq[PutRequest] = kvPairs.map {
       case (key, list) => {
-        val gson = new Gson()
-        val jsonString = gson.toJson(list)
+        val jsonString = "[" + list.map(name => "\"" + name + "\"").mkString(",") + "]"
         logger.info(s"""Putting metadata for
              |key: $key
              |conf: $jsonString""".stripMargin)
