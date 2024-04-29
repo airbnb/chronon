@@ -13,7 +13,6 @@ import scala.collection.Seq;
 import scala.collection.mutable.ArrayBuffer;
 import scala.compat.java8.FutureConverters;
 import scala.concurrent.Future;
-import scala.concurrent.JavaConversions;
 import scala.collection.JavaConverters;
 
 
@@ -23,17 +22,15 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.function.BiPredicate;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
-import static java.util.Map.*;
 
 public class JavaFetcher {
   Fetcher fetcher;
 
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, Boolean asyncLogging, BiPredicate<String, Map<String, String>> featureFlags) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, asyncLogging, featureFlags);
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, Boolean asyncLogging, FlagStore flagStore) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, asyncLogging, flagStore);
   }
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {

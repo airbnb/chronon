@@ -25,10 +25,10 @@ import scala.util.{Failure, Success, Try}
 //   2. does the fan out and fan in from kv store in a parallel fashion
 //   3. does the post aggregation
 class BaseFetcher(kvStore: KVStore,
-                  featureFlags: BiPredicate[String, java.util.Map[String, String]],
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
-                  debug: Boolean = false)
+                  debug: Boolean = false,
+                  flagStore: FlagStore = null)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis)
     with FetcherCache {
   import BaseFetcher._
@@ -163,7 +163,7 @@ class BaseFetcher(kvStore: KVStore,
                  |""".stripMargin)
         }
 
-        val useTileLayering = featureFlags.test(
+        val useTileLayering = flagStore.isSet(
           "zoolander.shepherd.enable_tile_layering_reads",
           Map("feature_group_dataset" -> servingInfo.groupByOps.streamingDataset).asJava)
         val aggregatorStartTime = System.currentTimeMillis()
@@ -280,7 +280,7 @@ class BaseFetcher(kvStore: KVStore,
   override def isCachingEnabled(groupBy: GroupBy): Boolean = {
     if (!isCacheSizeConfigured || groupBy.getMetaData == null || groupBy.getMetaData.getName == null) return false
 
-    val isCachingFlagEnabled = featureFlags.test("zoolander.shepherd.enable_fetcher_batch_ir_cache",
+    val isCachingFlagEnabled = flagStore.isSet("zoolander.shepherd.enable_fetcher_batch_ir_cache",
                                                  Map("feature_group_dataset" -> groupBy.streamingDataset).asJava)
 
     if (debug)

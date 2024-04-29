@@ -12,13 +12,12 @@ import org.junit.Test
 import org.mockito.Mockito._
 import org.mockito.ArgumentMatchers.any
 
-import java.util.function.BiPredicate
 import scala.util.{Success, Try}
 
 class BaseFetcherTest extends MockitoHelper {
   @Test
   def test_getServingInfo_ShouldCallUpdateServingInfoIfBatchResponseIsFromKvStore(): Unit = {
-    val baseFetcher = new BaseFetcher(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
+    val baseFetcher = new BaseFetcher(mock[KVStore])
     val spiedBaseFetcher = spy(baseFetcher)
     val oldServingInfo = mock[GroupByServingInfoParsed]
     val updatedServingInfo = mock[GroupByServingInfoParsed]
@@ -34,7 +33,7 @@ class BaseFetcherTest extends MockitoHelper {
 
   @Test
   def test_getServingInfo_ShouldRefreshServingInfoIfBatchResponseIsCached(): Unit = {
-    val baseFetcher = new BaseFetcher(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
+    val baseFetcher = new BaseFetcher(mock[KVStore])
     val spiedBaseFetcher = spy(baseFetcher)
     val oldServingInfo = mock[GroupByServingInfoParsed]
     val metaData = mock[MetaData]
@@ -56,7 +55,7 @@ class BaseFetcherTest extends MockitoHelper {
 
   @Test
   def test_checkLateBatchData_ShouldHandle_BatchDataIsLate(): Unit = {
-    val baseFetcher = new BaseFetcher(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
+    val baseFetcher = new BaseFetcher(mock[KVStore])
 
     // lookup request - 03/20/2024 01:00 UTC
     // batch landing time 03/17/2024 00:00 UTC
@@ -73,7 +72,7 @@ class BaseFetcherTest extends MockitoHelper {
 
   @Test
   def test_checkLateBatchData_ShouldHandle_BatchDataIsNotLate(): Unit = {
-    val baseFetcher = new BaseFetcher(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
+    val baseFetcher = new BaseFetcher(mock[KVStore])
 
     // lookup request - 03/20/2024 01:00 UTC
     // batch landing time 03/19/2024 00:00 UTC
