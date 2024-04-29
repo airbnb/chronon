@@ -207,20 +207,31 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     }
   }
 
-  // upload the materialized JSONs to KV store:
-  // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
-  def putConfByName(configPath: String): Future[Seq[Boolean]] = {
+  def putConf(configPath: String): Future[Seq[Boolean]] = {
     val configFile = new File(configPath)
     assert(configFile.exists(), s"$configFile does not exist")
     logger.info(s"Uploading Chronon configs from $configPath")
-    val fileList = listFiles(configFile)
+    val fileList = listFiles(configFile).filter { file =>
+      val name = parseName(file.getPath)
+      if (name.isEmpty) logger.info(s"Skipping invalid file ${file.getPath}")
+      name.isDefined
+    }
 
-    val puts: Seq[PutRequest] = fileList
-      .filter { file =>
-        val name = parseName(file.getPath)
-        if (name.isEmpty) logger.info(s"Skipping invalid file ${file.getPath}")
-        name.isDefined
-      }
+    val putsByName: Seq[PutRequest] = putConfByName(fileList)
+    val putsByTeam: Seq[PutRequest] = putConfByName(fileList)
+
+    val puts = putsByName ++ putsByTeam
+
+    val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
+    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
+    val futures = putsBatches.map(batch => kvStore.multiPut(batch))
+    Future.sequence(futures).map(_.flatten)
+  }
+
+  // upload the materialized JSONs to KV store:
+  // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
+  def putConfByName(fileList: Seq[File]): Seq[PutRequest] = {
+    fileList
       .flatMap { file =>
         val path = file.getPath
         val key = pathToKey(path)
@@ -241,30 +252,13 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
                      tsMillis = Some(System.currentTimeMillis()))
         }
       }
-    val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
-    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
-    val futures = putsBatches.map(batch => kvStore.multiPut(batch))
-    Future.sequence(futures).map(_.flatten)
   }
 
   // upload the configs list by team to KV store:
   // key = <conf_type>/<team> in bytes, e.g group_bys/host_churn
   // value = list of config names in bytes, e.g List(group_bys/host_churn/agg_p2_impressions.v1, group_bys/host_churn/agg_deactivations.v1)
-  def putConfByTeam(configPath: String): Future[Seq[Boolean]] = {
-
-    val configFile = new File(configPath)
-    assert(configFile.exists(), s"$configFile does not exist")
-    logger.info(s"Uploading Chronon configs from $configPath")
-    val fileList = listFiles(configFile)
-    val nameByTeam: Map[String, List[String]] = Map()
-    val validFileList = fileList
-      .filter { file =>
-        val name = parseName(file.getPath)
-        if (name.isEmpty) logger.info(s"Skipping invalid file ${file.getPath}")
-        name.isDefined
-      }
-
-    val kvPairs: Map[String, List[String]] = validFileList.foldLeft(Map.empty[String, List[String]]) { (map, file) =>
+  def putConfByTeam(fileList: Seq[File]): Seq[PutRequest] = {
+    val kvPairs: Map[String, List[String]] = fileList.foldLeft(Map.empty[String, List[String]]) { (map, file) =>
       {
         val path = file.getPath
         val key = pathToTeam(path)
@@ -274,7 +268,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       }
     }
 
-    val puts: Seq[PutRequest] = kvPairs.map {
+    kvPairs.map {
       case (key, list) => {
         val jsonString = "[" + list.map(name => "\"" + name + "\"").mkString(",") + "]"
         logger.info(s"""Putting metadata for
@@ -286,10 +280,5 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
                    tsMillis = Some(System.currentTimeMillis()))
       }
     }.toSeq
-
-    val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
-    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
-    val futures = putsBatches.map(batch => kvStore.multiPut(batch))
-    Future.sequence(futures).map(_.flatten)
   }
 }
