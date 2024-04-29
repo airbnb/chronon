@@ -162,7 +162,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
   }
 
   // list file recursively
-  def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
+  private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
     if (base.isFile) {
       Seq(base)
     } else {
@@ -178,7 +178,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   // process chronon configs only. others will be ignored
   // todo: add metrics
-  def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
+  private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
     try {
       val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)
       Some(ThriftJsonCodec.toJsonStr(configConf))
@@ -207,6 +207,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     }
   }
 
+  // upload the metadata to KV store:
   def putConf(configPath: String): Future[Seq[Boolean]] = {
     val configFile = new File(configPath)
     assert(configFile.exists(), s"$configFile does not exist")
@@ -217,7 +218,10 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       name.isDefined
     }
 
+    // Upload materialized JSONs to KV store by name to KV store
     val putsByName: Seq[PutRequest] = putConfByName(fileList)
+
+    // Upload entities list to KV store by team to KV store
     val putsByTeam: Seq[PutRequest] = putConfByName(fileList)
 
     val puts = putsByName ++ putsByTeam
