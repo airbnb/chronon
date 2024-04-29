@@ -171,6 +171,10 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   private var timeoutMillis: Long = 10000
 
+  private var flagStore: FlagStore = null
+
+  def setFlagStore(customFlagStore: FlagStore): Unit = { flagStore = customFlagStore }
+
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
 
   // kafka has built-in support - but one can add support to other types using this method.
@@ -198,7 +202,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 debug = debug,
                 externalSourceRegistry = externalRegistry,
                 timeoutMillis = timeoutMillis,
-                callerName = callerName)
+                callerName = callerName,
+                flagStore = flagStore)
 
   final def buildJavaFetcher(callerName: String = null): JavaFetcher =
     new JavaFetcher(genKvStore,
@@ -206,7 +211,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                     timeoutMillis,
                     responseConsumer,
                     externalRegistry,
-                    callerName)
+                    callerName,
+                    flagStore)
 
   final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(null)
 
