@@ -222,7 +222,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     val putsByName: Seq[PutRequest] = putConfByName(fileList)
 
     // Upload entities list to KV store by team to KV store
-    val putsByTeam: Seq[PutRequest] = putConfByName(fileList)
+    val putsByTeam: Seq[PutRequest] = putConfByTeam(fileList)
 
     val puts = putsByName ++ putsByTeam
 
