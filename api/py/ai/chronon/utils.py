@@ -348,10 +348,7 @@ def run_databricks_assertions_for_join(team_slug: str, name: str, output_namespa
     assert team_slug, "team_slug is required for databricks_mode"
     assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
     assert name, "a name for the join is required for databricks_mode"
-    # TODO:
-    # Once https://jira.corp.stripe.com/browse/DPPROD-2313 is resolved we can only use CHRONON_POC_USERTABLES_NAMESPACE
-    # For now we will tell users to write to DATABRICKS_NAMESPACE
-    assert output_namespace==DATABRICKS_NAMESPACE or output_namespace==CHRONON_POC_USERTABLES_NAMESPACE, f"output_namespace should be '{DATABRICKS_NAMESPACE}' for databricks_mode"
+    assert output_namespace==CHRONON_POC_USERTABLES_NAMESPACE, f"output_namespace should be '{CHRONON_POC_USERTABLES_NAMESPACE}' for databricks_mode"
     for join_part in right_parts:
         run_databricks_assertions_for_group_by(join_part.groupBy.metaData.name, join_part.groupBy.metaData.team, output_namespace) 
 
@@ -359,10 +356,7 @@ def run_databricks_assertions_for_group_by(name: str, team_slug: str, output_nam
     assert name, "When using a GroupBy in a databricks notebook you must specify a `name` in the GroupBy definition."
     assert team_slug, "When using a GroupBy in a databricks notebook you must specify a `team_slug` in the GroupBy definition."
     assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
-    # TODO:
-    # Once https://jira.corp.stripe.com/browse/DPPROD-2313 is resolved we can only use CHRONON_POC_USERTABLES_NAMESPACE
-    # For now we will tell users to write to DATABRICKS_NAMESPACE
-    assert output_namespace==DATABRICKS_NAMESPACE or output_namespace==CHRONON_POC_USERTABLES_NAMESPACE, f"output_namespace should be '{DATABRICKS_NAMESPACE}' for databricks_mode"
+    assert output_namespace==CHRONON_POC_USERTABLES_NAMESPACE, f"output_namespace should be '{CHRONON_POC_USERTABLES_NAMESPACE}' for databricks_mode"
 
 def confirm_databricks_mode_is_set_correctly():
     cwd = os.getcwd()

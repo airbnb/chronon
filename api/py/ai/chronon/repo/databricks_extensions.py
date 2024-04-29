@@ -1,4 +1,4 @@
-from ai.chronon.api.ttypes import GroupBy, Join, Source, EventSource, EntitySource, Query
+from ai.chronon.api.ttypes import GroupBy, Join, Source, Query
 from ai.chronon.repo.serializer import thrift_simple_json
 from pyspark.sql.session import SparkSession
 from pyspark.sql.dataframe import DataFrame
@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 
 class DatabricksExecutable:
-    def __init__(self, spark_session: SparkSession, use_stripe_table_utils: bool = False) -> None:
+    def __init__(self, spark_session: SparkSession) -> None:
         self._spark: SparkSession = spark_session
         self._jvm: JVMView = self._spark._jvm
 
@@ -15,15 +15,8 @@ class DatabricksExecutable:
         self._constants_provider: JavaObject = self._jvm.com.stripe.shepherd.common.StripeEventConstantNameProvider()
         self._jvm.ai.chronon.api.Constants.initConstantNameProvider(self._constants_provider)
 
-        # TODO:
-        # In the future we would like to only use the stripe table utils.
-        # We are using the base table utils for now because of https://jira.corp.stripe.com/browse/DPPROD-2313
-        # We are leaving the ability to choose table utils for now so that databricks team can easily test if the stripe table utils works for them.
-        if use_stripe_table_utils:
-            partition_spec = self._constants_provider.STRIPE_DAILY_PARTITION_SPEC()
-            self._table_utils: JavaObject = self._spark._jvm.com.stripe.chronon.cli.StripeTableUtils(self._spark._jsparkSession, self._constants_provider, partition_spec)
-        else:
-            self._table_utils: JavaObject = self._jvm.ai.chronon.spark.TableUtils(self._spark._jsparkSession)
+        # Table Utils
+        self._table_utils: JavaObject = self._jvm.ai.chronon.spark.DatabricksTableUtils(spark_session._jsparkSession)
 
         # Start date / end date defaults for analyze + validate operations
         self._default_start_date = (datetime.now() - timedelta(days=8)).strftime('%Y%m%d')
@@ -67,9 +60,9 @@ class DatabricksExecutable:
         print(f'{time_str} {message}')
 
 class DatabricksGroupBy(DatabricksExecutable):
-    def __init__(self, group_by: GroupBy, spark_session: SparkSession, use_stripe_table_utils: bool = False) -> None:
+    def __init__(self, group_by: GroupBy, spark_session: SparkSession) -> None:
         self.group_by: GroupBy = group_by
-        super().__init__(spark_session, use_stripe_table_utils)
+        super().__init__(spark_session)
 
     def _get_group_by_to_execute(self, start_date: str, end_date: str) -> GroupBy:
         group_by_to_execute: GroupBy = self.group_by
@@ -98,8 +91,8 @@ class DatabricksGroupBy(DatabricksExecutable):
             self._constants_provider
         )
 
-        self._print_with_timestamp(f"GroupBy {self.group_by.metaData.name} executed successfully and was written to {self.group_by.metaData.outputNamespace}.{self.group_by.metaData.name}.")
-        self._print_with_timestamp("See Cluster Details > Standard Output for additional details.")
+        self._print_with_timestamp(f"GroupBy {self.group_by.metaData.name} executed successfully and was written to iceberg.{self.group_by.metaData.outputNamespace}.{self.group_by.metaData.name}.")
+        self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
         return DataFrame(result_df_scala, self._spark)
     
     def analyze(self, start_date:str = None, end_date: str = None, enable_hitter_analysis: bool = False):
@@ -129,7 +122,7 @@ class DatabricksGroupBy(DatabricksExecutable):
         )
 
         self._print_with_timestamp(f"GroupBy {self.group_by.metaData.name} analyzed successfully.")
-        self._print_with_timestamp("See Cluster Details > Standard Output for additional details.")
+        self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
     
     def validate(self, start_date:str = None, end_date: str = None):
         """
@@ -158,15 +151,17 @@ class DatabricksGroupBy(DatabricksExecutable):
         if errors_list.length() > 0:
             self._print_with_timestamp("Validation failed for GroupBy with the following errors:")
             self._print_with_timestamp(errors_list)
+        else:
+            self._print_with_timestamp("Validation passed for GroupBy.")
 
         self._print_with_timestamp(f"Validation for GroupBy {self.group_by.metaData.name} has completed.")
-        self._print_with_timestamp("See Cluster Details > Standard Output for additional details.")
+        self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
         
 
 class DatabricksJoin(DatabricksExecutable):
-    def __init__(self, join: Join, spark_session: SparkSession, use_stripe_table_utils: bool = False) -> None:
+    def __init__(self, join: Join, spark_session: SparkSession) -> None:
         self.join: Join = join
-        super().__init__(spark_session, use_stripe_table_utils)
+        super().__init__(spark_session)
     
     def _get_join_to_execute(self, start_date: str, end_date: str) -> Join:
         join_to_execute: Join = self.join
@@ -199,9 +194,9 @@ class DatabricksJoin(DatabricksExecutable):
 
         self._print_with_timestamp("The following intermediate tables were created or written to as part of this join:")
         for jp in self.join.joinParts:
-            self._print_with_timestamp(f"Intermediate table: {jp.groupBy.metaData.outputNamespace}.{self.join.metaData.name}_{jp.groupBy.metaData.name}")
-        self._print_with_timestamp(f"Join {self.join.metaData.name} executed successfully and was written to {self.join.metaData.outputNamespace}.{self.join.metaData.name}.")
-        self._print_with_timestamp("See Cluster Details > Standard Output for additional details.")
+            self._print_with_timestamp(f"Intermediate table: iceberg.{jp.groupBy.metaData.outputNamespace}.{self.join.metaData.name}_{jp.groupBy.metaData.name}")
+        self._print_with_timestamp(f"Join {self.join.metaData.name} executed successfully and was written to iceberg.{self.join.metaData.outputNamespace}.{self.join.metaData.name}.")
+        self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
         return DataFrame(result_df_scala, self._spark)
 
     def analyze(self, start_date:str = None, end_date: str = None, enable_hitter_analysis: bool = False):
@@ -232,7 +227,7 @@ class DatabricksJoin(DatabricksExecutable):
         )
 
         self._print_with_timestamp(f"Join {self.join.metaData.name} analyzed successfully.")
-        self._print_with_timestamp("See Cluster Details > Standard Output for additional details.")
+        self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
     
     def validate(self, start_date:str = None, end_date: str = None):
         """
@@ -262,6 +257,8 @@ class DatabricksJoin(DatabricksExecutable):
         if errors_list.length() > 0:
             self._print_with_timestamp("Validation failed for Join with the following errors:")
             self._print_with_timestamp(errors_list)
+        else:
+            self._print_with_timestamp("Validation passed for Join.")
         
         self._print_with_timestamp(f"Validation for Join {self.join.metaData.name} has completed.")
-        self._print_with_timestamp("See Cluster Details > Standard Output for additional details.")
+        self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
