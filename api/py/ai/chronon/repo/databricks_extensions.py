@@ -69,6 +69,18 @@ class DatabricksGroupBy(DatabricksExecutable):
         group_by_to_execute.backfillStartDate = start_date
         group_by_to_execute.sources = self._get_sources_with_updated_start_and_end_date(group_by_to_execute.sources, start_date, end_date)
         return group_by_to_execute
+    
+    def _get_java_group_by(self, group_by: GroupBy, end_date: str) -> JavaObject:
+        """
+        Converts our Python GroupBy object to a Java GroupBy object and handles raw S3 prefixes.
+        """
+        java_group_by: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseGroupBy(
+            thrift_simple_json(group_by)
+        )
+
+        java_group_by_with_updated_s3_prefixes = self._jvm.ai.chronon.spark.S3Utils.readAndUpdateS3PrefixesForGroupBy(java_group_by, end_date, self._spark._jsparkSession)
+        
+        return java_group_by_with_updated_s3_prefixes
 
     def run(self, start_date:str, end_date: str, step_days: int = 30) -> DataFrame:
         """
@@ -79,12 +91,10 @@ class DatabricksGroupBy(DatabricksExecutable):
 
         group_by_to_execute: GroupBy = self._get_group_by_to_execute(start_date, end_date)
 
-        java_thrift_group_by: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseGroupBy(
-            thrift_simple_json(group_by_to_execute)
-        )
+        java_group_by: JavaObject = self._get_java_group_by(group_by_to_execute, end_date)
 
         result_df_scala: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.runGroupBy(
-            java_thrift_group_by,
+            java_group_by,
             end_date,
             self._jvm.ai.chronon.spark.PySparkUtils.getIntOptional(str(step_days)),
             self._table_utils,
@@ -108,12 +118,10 @@ class DatabricksGroupBy(DatabricksExecutable):
 
         group_by_to_analyze: GroupBy = self._get_group_by_to_execute(start_date, end_date)
 
-        java_thrift_group_by: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseGroupBy(
-            thrift_simple_json(group_by_to_analyze)
-        )
+        java_group_by: JavaObject = self._get_java_group_by(group_by_to_analyze, end_date)
 
         self._jvm.ai.chronon.spark.PySparkUtils.analyzeGroupBy(
-            java_thrift_group_by,
+            java_group_by,
             start_date, 
             end_date, 
             enable_hitter_analysis, 
@@ -136,12 +144,10 @@ class DatabricksGroupBy(DatabricksExecutable):
 
         group_by_to_validate: GroupBy = self._get_group_by_to_execute(start_date, end_date)
 
-        java_thrift_group_by: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseGroupBy(
-            thrift_simple_json(group_by_to_validate)
-        )
+        java_group_by: JavaObject = self._get_java_group_by(group_by_to_validate, end_date)
 
         errors_list: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.validateGroupBy(
-            java_thrift_group_by, 
+            java_group_by, 
             start_date, 
             end_date, 
             self._table_utils,
@@ -168,6 +174,18 @@ class DatabricksJoin(DatabricksExecutable):
         join_to_execute.left = self._get_source_with_updated_start_and_end_date(join_to_execute.left, start_date, end_date)
         return join_to_execute
     
+    def _get_java_join(self, join: Join, end_date: str) -> JavaObject:
+        """
+        Converts our Python Join object to a Java Join object and handles raw S3 prefixes.
+        """
+        java_join: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseJoin(
+            thrift_simple_json(join)
+        )
+
+        java_join_with_updated_s3_prefixes = self._jvm.ai.chronon.spark.S3Utils.readAndUpdateS3PrefixesForJoin(java_join, end_date, self._spark._jsparkSession)
+        
+        return java_join_with_updated_s3_prefixes
+    
     def run(self, start_date:str, end_date: str, step_days: int = 30, skip_first_hole: bool = False, sample_num_of_rows: int = None) -> DataFrame:
         """
         Performs a Join Backfill operation.
@@ -178,12 +196,10 @@ class DatabricksJoin(DatabricksExecutable):
 
         join_to_execute: Join = self._get_join_to_execute(start_date, end_date)
 
-        java_thrift_join: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseJoin(
-            thrift_simple_json(join_to_execute)
-        )
+        java_join: JavaObject = self._get_java_join(join_to_execute, end_date)
 
         result_df_scala = self._jvm.ai.chronon.spark.PySparkUtils.runJoin(
-            java_thrift_join,
+            java_join,
             end_date,
             self._jvm.ai.chronon.spark.PySparkUtils.getIntOptional(None if not step_days else str(step_days)),
             skip_first_hole,
@@ -213,12 +229,10 @@ class DatabricksJoin(DatabricksExecutable):
 
         join_to_analyze: Join = self._get_join_to_execute(start_date, end_date)
 
-        java_thrift_join: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseJoin(
-            thrift_simple_json(join_to_analyze)
-        )
+        java_join: JavaObject = self._get_java_join(join_to_analyze, end_date)
 
         self._jvm.ai.chronon.spark.PySparkUtils.analyzeJoin(
-            java_thrift_join,
+            java_join,
             start_date, 
             end_date, 
             enable_hitter_analysis, 
@@ -242,12 +256,10 @@ class DatabricksJoin(DatabricksExecutable):
 
         join_to_validate: Join = self._get_join_to_execute(start_date, end_date)
 
-        java_thrift_join: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseJoin(
-            thrift_simple_json(join_to_validate)
-        )
+        java_join: JavaObject = self._get_java_join(join_to_validate, end_date)
 
         errors_list: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.validateJoin(
-            java_thrift_join, 
+            java_join, 
             start_date, 
             end_date, 
             self._table_utils,

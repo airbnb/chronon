@@ -6,6 +6,9 @@ import org.apache.spark.sql.{Column, SparkSession}
 
 case class DatabricksTableUtils (override val sparkSession: SparkSession) extends BaseTableUtils {
 
+  private def isTempView(tableName: String): Boolean =
+    sparkSession.sessionState.catalog.isTempView(tableName.split('.'))
+
   override def createTableSql(tableName: String, schema: StructType, partitionColumns: Seq[String], tableProperties: Map[String, String], fileFormat: String): String = {
 
     // Side effect: Creates the table in iceberg and then confirms the table creation was successfully by issuing a SHOW CREATE TABLE.
@@ -69,6 +72,46 @@ case class DatabricksTableUtils (override val sparkSession: SparkSession) extend
         .toSeq
     }
   }
+
+  override def partitions(
+                           tableName: String,
+                           subPartitionsFilter: Map[String, String] = Map.empty,
+                           partitionColumnOverride: String = Constants.PartitionColumn
+                         ): Seq[String] =
+    // This is part of the hacks / workarounds to support s3 prefix inputs. See:
+    // https://jira.corp.stripe.com/browse/FCOMP-2478
+    if (isTempView(tableName)) {
+      if (subPartitionsFilter.nonEmpty) {
+        throw new NotImplementedError(
+          s"partitions cannot be called with tableName ${tableName} subPartitionsFilter ${subPartitionsFilter} because subPartitionsFilter is not supported on tempViews yet."
+        )
+      }
+      // If the table is a temp view, fallback to querying for the distinct partition columns because SHOW PARTITIONS
+      // doesn't work on temp views. This can be inefficient for large tables.
+      println(
+        s"Selecting partitions for temp view table tableName=$tableName, " +
+          s"partitionColumnOverride=$partitionColumnOverride."
+      )
+      val outputPartitionsRowsDf = sql(
+        s"select distinct ${partitionColumnOverride} from $tableName"
+      )
+      val outputPartitionsRows = outputPartitionsRowsDf.collect()
+      // Users have ran into issues where the partition column is not a string, so add logging to facilitate debug.
+      println(
+        s"Found ${outputPartitionsRows.length} partitions for temp view table tableName=$tableName. The partition schema is ${outputPartitionsRowsDf.schema}."
+      )
+
+      val outputPartitionsRowsDistinct = outputPartitionsRows.map(_.getString(0)).distinct
+      println(
+        s"Converted ${outputPartitionsRowsDistinct.length} distinct partitions for temp view table to String. " +
+          s"tableName=$tableName."
+      )
+
+      outputPartitionsRowsDistinct
+    } else {
+      super.partitions(tableName, subPartitionsFilter, partitionColumnOverride)
+    }
+
 
 
 }
