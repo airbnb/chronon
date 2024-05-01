@@ -250,7 +250,7 @@ case class TableUtils(sparkSession: SparkSession) {
       sparkSession.sql(s"SELECT * FROM $tableName where $partitionColumn='$partitionFilter' LIMIT 1").collect()
       true
     } catch {
-      case e: RuntimeException =>
+      case e: Exception =>
         if (e.getMessage.contains("ACCESS DENIED"))
           logger.error(s"[Error] No access to table: $tableName ")
         else {
@@ -258,10 +258,6 @@ case class TableUtils(sparkSession: SparkSession) {
           e.printStackTrace()
         }
         false
-      case ex: Exception =>
-        logger.error(s"[Error] Encountered exception when reading table: $tableName.")
-        ex.printStackTrace()
-        true
     }
   }
 
