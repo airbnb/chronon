@@ -89,8 +89,8 @@ class JoinBackfill:
     def run_final_join(self):
         return self.command_template() + " --mode=backfill-final"
 
-    def run(self, orchestrator: str, plugins=None):
-        ADAPTERS.update(plugins)
+    def run(self, orchestrator: str, overrides=None):
+        ADAPTERS.update(overrides)
         orchestrator = ADAPTERS[orchestrator](dag_id=self.dag_id, start_date=self.start_date)
         orchestrator.setup()
         orchestrator.build_dag_from_flow(self.build_flow())
