@@ -13,11 +13,11 @@ class DatabricksExecutable:
         self._jvm: JVMView = self._spark._jvm
 
         # Constants Provider
-        self._constants_provider: JavaObject = self._jvm.com.stripe.shepherd.common.StripeEventConstantNameProvider()
+        self._constants_provider: JavaObject = self._jvm.ai.chronon.spark.databricks.DatabricksConstantsNameProvider()
         self._jvm.ai.chronon.api.Constants.initConstantNameProvider(self._constants_provider)
 
         # Table Utils
-        self._table_utils: JavaObject = self._jvm.ai.chronon.spark.DatabricksTableUtils(spark_session._jsparkSession)
+        self._table_utils: JavaObject = self._jvm.ai.chronon.spark.databricks.DatabricksTableUtils(spark_session._jsparkSession)
 
         # Start date / end date defaults for analyze + validate operations
         self._default_start_date = (datetime.now() - timedelta(days=8)).strftime('%Y%m%d')
