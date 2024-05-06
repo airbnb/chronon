@@ -732,14 +732,14 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val acceptedEndPoints = List("ZIPLINE_METADATA")
+      val acceptedEndPoints = List("ZIPLINE_METADATA", "ZIPLINE_METADATA_BY_TEAM")
       val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
       val kvMap = dirWalker.run
       implicit val ec: ExecutionContext = ExecutionContext.global
-      val putRequestsIterable: Iterable[Future[Seq[Boolean]]] = kvMap.map {
+      val putRequestsIterable: Iterable[Future[scala.collection.Seq[Boolean]]] = kvMap.map {
         case (endPoint, kvMap) => args.metaDataStore.put(kvMap, endPoint)
       }
-      val putRequests: Future[Seq[Boolean]] =
+      val putRequests: Future[scala.collection.Seq[Boolean]] =
         Future.sequence(putRequestsIterable).flatMap(seq => Future.successful(seq.flatten.toSeq))
       val res = Await.result(putRequests, 1.hour)
       logger.info(

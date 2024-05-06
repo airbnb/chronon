@@ -14,7 +14,7 @@ object MetadataEndPoint {
   )
 
   val NameByTeamEndPoint = new MetadataEndPoint(
-    extractFn = confPath => (confPath.confPathToTeam, confPath.confPathToOptConfStr),
+    extractFn = confPath => (confPath.confPathToTeam, Some(confPath.confPathToKey)),
     name = "ZIPLINE_METADATA_BY_TEAM"
   )
 
