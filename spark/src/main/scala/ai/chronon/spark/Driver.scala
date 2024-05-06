@@ -17,9 +17,9 @@
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps, filePathOps}
 import ai.chronon.api.ThriftJsonCodec
-import ai.chronon.online.{Api, Fetcher, MetadataStore}
+import ai.chronon.online.{Api, Fetcher, MetadataDirWalker, MetadataStore}
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -27,11 +27,7 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{
-  QueryProgressEvent,
-  QueryStartedEvent,
-  QueryTerminatedEvent
-}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -41,7 +37,7 @@ import java.io.File
 import java.nio.file.{Files, Paths}
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.concurrent.Await
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
 import scala.io.Source
 import scala.reflect.ClassTag
@@ -732,8 +728,15 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val putRequest = args.metaDataStore.putConf(args.confPath())
-      val res = Await.result(putRequest, 1.hour)
+      val acceptedEndPoints = List("ZIPLINE_METADATA")
+      val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
+      val kvMap = dirWalker.run
+      implicit val ec: ExecutionContext = ExecutionContext.global
+      val putRequestsIterable: Iterable[Future[Seq[Boolean]]] = kvMap.map {
+        case (endPoint, kvMap) => args.metaDataStore.put(kvMap, endPoint)
+      }
+      val putRequests: Future[Seq[Boolean]] = Future.sequence(putRequestsIterable).flatMap(seq => Future.successful(seq.flatten.toSeq))
+      val res = Await.result(putRequests, 1.hour)
       logger.info(
         s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
     }
