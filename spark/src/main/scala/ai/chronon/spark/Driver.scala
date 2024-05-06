@@ -27,7 +27,11 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{
+  QueryProgressEvent,
+  QueryStartedEvent,
+  QueryTerminatedEvent
+}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -735,7 +739,8 @@ object Driver {
       val putRequestsIterable: Iterable[Future[Seq[Boolean]]] = kvMap.map {
         case (endPoint, kvMap) => args.metaDataStore.put(kvMap, endPoint)
       }
-      val putRequests: Future[Seq[Boolean]] = Future.sequence(putRequestsIterable).flatMap(seq => Future.successful(seq.flatten.toSeq))
+      val putRequests: Future[Seq[Boolean]] =
+        Future.sequence(putRequestsIterable).flatMap(seq => Future.successful(seq.flatten.toSeq))
       val res = Await.result(putRequests, 1.hour)
       logger.info(
         s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")

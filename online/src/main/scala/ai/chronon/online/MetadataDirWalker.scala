@@ -64,23 +64,22 @@ class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
   }
 
   def run: Map[String, Map[String, List[String]]] = {
-    nonEmptyFileList.foldLeft(Map.empty[String, Map[String, List[String]]]) {
-      (acc, file) =>
-      val kvPairToEndPoint: List[(String, (Option[String], Option[String]))] = metadataEndPointNames.map { metadataEndPointName =>
-        (metadataEndPointName, extractKVPair(metadataEndPointName, file.getPath))
+    nonEmptyFileList.foldLeft(Map.empty[String, Map[String, List[String]]]) { (acc, file) =>
+      val kvPairToEndPoint: List[(String, (Option[String], Option[String]))] = metadataEndPointNames.map {
+        metadataEndPointName =>
+          (metadataEndPointName, extractKVPair(metadataEndPointName, file.getPath))
       }
-      kvPairToEndPoint.flatMap(
-        kvPair => {
+      kvPairToEndPoint
+        .flatMap(kvPair => {
           val endPoint = kvPair._1
           val (key, value) = kvPair._2
           if (value.isDefined && key.isDefined) {
             val map = acc.getOrElse(endPoint, Map.empty[String, List[String]])
             val list = map.getOrElse(key.get, List.empty[String]) ++ List(value.get)
             acc.updated(endPoint, map.updated(key.get, list))
-          }
-          else acc
-        }
-      ).toMap
+          } else acc
+        })
+        .toMap
     }
   }
 }

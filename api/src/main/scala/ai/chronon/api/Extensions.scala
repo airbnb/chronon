@@ -673,9 +673,9 @@ object Extensions {
       try {
         filePath match {
           case value if value.contains("staging_queries/") => loadJsonToConf[StagingQuery](value).map(_.metaData.team)
-          case value if value.contains("joins/") => loadJsonToConf[Join](value).map(_.metaData.team)
-          case value if value.contains("group_bys/") => loadJsonToConf[GroupBy](value).map(_.metaData.team)
-          case _ => logger.info(s"unknown config type in file $filePath"); None
+          case value if value.contains("joins/")           => loadJsonToConf[Join](value).map(_.metaData.team)
+          case value if value.contains("group_bys/")       => loadJsonToConf[GroupBy](value).map(_.metaData.team)
+          case _                                           => logger.info(s"unknown config type in file $filePath"); None
         }
       } catch {
         case e: Throwable =>

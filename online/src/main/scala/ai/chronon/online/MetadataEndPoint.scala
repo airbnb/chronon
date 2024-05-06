@@ -3,7 +3,7 @@ package ai.chronon.online
 import ai.chronon.api.Extensions.{filePathOps}
 import org.slf4j.LoggerFactory
 
-case class MetadataEndPoint (extractFn: String => (Option[String], Option[String]), name: String)
+case class MetadataEndPoint(extractFn: String => (Option[String], Option[String]), name: String)
 
 object MetadataEndPoint {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
