@@ -18,7 +18,7 @@ package ai.chronon.online
 
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps, WindowOps, WindowUtils}
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps, WindowOps, WindowUtils, filePathOps}
 import ai.chronon.api._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest, TimedValue}
 import com.google.gson.{Gson, GsonBuilder}
@@ -26,9 +26,7 @@ import org.apache.thrift.TBase
 
 import java.io.File
 import java.nio.file.{Files, Paths}
-import scala.collection.JavaConverters.{mapAsJavaMapConverter, mapAsScalaMapConverter}
 import scala.collection.immutable.SortedMap
-import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import scala.reflect.ClassTag
 import scala.util.{Failure, Success, Try}
@@ -165,12 +163,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       }
       .flatMap { file =>
         val path = file.getPath
-        val confJsonOpt = path match {
-          case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
-          case value if value.contains("joins/")           => loadJson[Join](value)
-          case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
-          case _                                           => logger.info(s"unknown config type in file $path"); None
-        }
+        val confJsonOpt = path.confPathToOptConfStr
         val key = path.confPathToKey
         confJsonOpt.map { conf =>
           logger.info(s"""Putting metadata for 
@@ -188,6 +181,34 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     Future.sequence(futures).map(_.flatten)
   }
 
+  def put(
+      kVPairs: Map[String, Seq[String]],
+      datasetName: String = ChrononMetadataKey,
+      batchSize: Int = CONF_BATCH_SIZE
+  ): Future[Seq[Boolean]] = {
+    val puts = kVPairs.map {
+      case (k, v) => {
+        logger.info(s"""Putting metadata for
+             |dataset: $datasetName
+             |key: $k
+             |conf: $v""".stripMargin)
+        val kBytes = k.getBytes()
+        val vBytes =
+          if (v.isEmpty) Array.emptyByteArray
+          else if (v.length == 1) v.head.getBytes()
+          else v.mkString("\n").getBytes()
+        PutRequest(keyBytes = kBytes,
+                   valueBytes = vBytes,
+                   dataset = dataset,
+                   tsMillis = Some(System.currentTimeMillis()))
+      }
+    }.toSeq
+    val putsBatches = puts.grouped(batchSize).toSeq
+    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
+    val futures = putsBatches.map(batch => kvStore.multiPut(batch))
+    Future.sequence(futures).map(_.flatten)
+  }
+
   // list file recursively
   private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
     if (base.isFile) {
@@ -200,19 +221,6 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
           .filter(_.isDirectory)
           .filter(_ => recursive)
           .flatMap(listFiles(_, recursive))
-    }
-  }
-
-  // process chronon configs only. others will be ignored
-  // todo: add metrics
-  private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
-    try {
-      val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)
-      Some(ThriftJsonCodec.toJsonStr(configConf))
-    } catch {
-      case e: Throwable =>
-        logger.error(s"Failed to parse compiled Chronon config file: $file, \nerror=${e.getMessage}")
-        None
     }
   }
 
