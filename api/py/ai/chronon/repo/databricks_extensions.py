@@ -1,5 +1,6 @@
-from ai.chronon.api.ttypes import GroupBy, Join, Source, Query
+from ai.chronon.api.ttypes import GroupBy, Join, Source, Query, StagingQuery
 from ai.chronon.repo.serializer import thrift_simple_json
+from ai.chronon.utils import output_table_name
 from pyspark.sql.session import SparkSession
 from pyspark.sql.dataframe import DataFrame
 from py4j.java_gateway import JavaObject, JVMView
@@ -274,3 +275,58 @@ class DatabricksJoin(DatabricksExecutable):
         
         self._print_with_timestamp(f"Validation for Join {self.join.metaData.name} has completed.")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
+
+class DatabricksStagingQuery(DatabricksExecutable):
+    def __init__(self, staging_query: StagingQuery, spark_session: SparkSession) -> None:
+        assert staging_query.metaData.name, "Staging Query name is required."
+        assert staging_query.metaData.outputNamespace, "Staging Query outputNamespace is required and must be set to `chronon_poc_usertables`."
+
+
+        self.staging_query: StagingQuery = staging_query
+        super().__init__(spark_session)
+
+    def _get_staging_query_to_execute(self, start_date: str) -> StagingQuery:
+        staging_query_to_execute: StagingQuery = self.staging_query
+        staging_query_to_execute.startPartition = start_date
+        return staging_query_to_execute
+    
+    def __drop_table_if_exists(self, table_name: str):
+        """
+        Every time we run a staging query in Databricks we will drop the staging query table if it exists.
+        We do this to avoid any issues with the table already existing.
+        """
+        self._print_with_timestamp(f"Dropping table {table_name} if it exists.")
+        self._spark.sql(f"DROP TABLE IF EXISTS {table_name}")
+    
+    def run(self, start_date:str, end_date: str, step_days: int = 30, skip_first_hole: bool = False) -> DataFrame:
+        """
+        Executes a Staging Query.
+        """
+        self._print_with_timestamp(f"Executing Staging Query {self.staging_query.metaData.name} from {start_date} to {end_date}")
+        self._print_with_timestamp(f"Skip First Hole: {skip_first_hole}")
+
+
+        staging_query_to_execute: StagingQuery = self._get_staging_query_to_execute(start_date)
+        staging_query_output_table_name = output_table_name(staging_query_to_execute, full_name=True)
+
+        self.__drop_table_if_exists(staging_query_output_table_name)
+        
+        java_staging_query: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseStagingQuery(
+            thrift_simple_json(staging_query_to_execute)
+        )
+
+        self._jvm.ai.chronon.spark.PySparkUtils.runStagingQuery(
+            java_staging_query,
+            end_date,
+            self._jvm.ai.chronon.spark.PySparkUtils.getIntOptional(None if not step_days else str(step_days)),
+            skip_first_hole,
+            self._table_utils,
+            self._constants_provider
+        )
+
+
+        result_df = self._spark.sql(f"SELECT * FROM {staging_query_output_table_name}")
+
+        self._print_with_timestamp(f"Staging Query {self.staging_query.metaData.name} executed successfully and was written to {staging_query_output_table_name} .")
+        self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
+        return result_df

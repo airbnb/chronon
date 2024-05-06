@@ -65,6 +65,15 @@ object PySparkUtils {
   }
 
   /**
+    * Type parameters are difficult to support in Pyspark, so we provide these helper methods for ThriftJsonCodec.fromJsonStr
+    * @param stagingQueryJson a JSON string representing a staging query
+    * @return Chronon Scala API StagingQuery object
+    */
+  def parseStagingQuery(stagingQueryJson: String): api.StagingQuery = {
+    ThriftJsonCodec.fromJsonStr[api.StagingQuery](stagingQueryJson, check = true, classOf[api.StagingQuery])
+  }
+
+  /**
     * Helper function to get Temporal or Snapshot Accuracy
     *
     * @param getTemporal boolean value that will decide if we return temporal or snapshot accuracy .
@@ -203,6 +212,28 @@ object PySparkUtils {
     val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = enableHitterAnalysis)
     analyzer.analyzeJoin(joinConf, enableHitter = enableHitterAnalysis)
     println(s"Finished analyzing Join: ${joinConf.metaData.name}")
+  }
+
+  /**
+    * Helper function to run a Staging Query
+    *
+    * @param stagingQueryConf api.StagingQuery Chronon scala StagingQuery API object
+    * @param endDate end date for the staging query
+    * @param stepDays int this will determine how we chunk filling the missing partitions
+    * @param skipFirstHole boolean if true we will skip the first hole
+    * @param tableUtils TableUtils this will be used to perform ops against our data sources
+    * @param constantsProvider ConstantsProvider must be set from the Scala side. Doing so from PySpark will not properly set it.
+    */
+  def runStagingQuery(stagingQueryConf: api.StagingQuery, endDate: String, stepDays: Option[Int], skipFirstHole: Boolean, tableUtils: BaseTableUtils, constantsProvider: ConstantNameProvider) : Unit = {
+    println(s"Executing Staging Query: ${stagingQueryConf.metaData.name}")
+    Constants.initConstantNameProvider(constantsProvider)
+    val stagingQuery = new StagingQuery(
+      stagingQueryConf,
+      endDate,
+      tableUtils
+    )
+    stagingQuery.computeStagingQuery(stepDays)
+    println(s"Finished executing Staging Query: ${stagingQueryConf.metaData.name}")
   }
 
 }

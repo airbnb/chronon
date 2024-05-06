@@ -26,7 +26,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     Option(stagingQueryConf.setups).foreach(_.asScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
     if (stagingQueryConf.startPartition == null) {
-      tableUtils.sql(stagingQueryConf.query).save(outputTable)
+      tableUtils.sql(stagingQueryConf.query).saveWithTableUtils(tableUtils, outputTable)
       return
     }
     val unfilledRanges =
