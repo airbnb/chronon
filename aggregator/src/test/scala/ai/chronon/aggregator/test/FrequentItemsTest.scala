@@ -4,6 +4,9 @@ import ai.chronon.aggregator.base.{FrequentItemType, FrequentItems, FrequentItem
 import junit.framework.TestCase
 import org.junit.Assert._
 
+import java.util
+import scala.jdk.CollectionConverters._
+
 class FrequentItemsTest extends TestCase {
   def testNonPowerOfTwoAndTruncate(): Unit = {
     val size = 3
@@ -19,12 +22,11 @@ class FrequentItemsTest extends TestCase {
 
     val result = items.finalize(ir)
 
-    assert(
-      Map(
-        "4" -> 4,
-        "3" -> 3,
-        "2" -> 2
-      ) == result)
+    assertEquals(toHashMap(Map(
+      "4" -> 4,
+      "3" -> 3,
+      "2" -> 2
+    )), result)
   }
 
   def testLessItemsThanSize(): Unit = {
@@ -40,12 +42,11 @@ class FrequentItemsTest extends TestCase {
 
     val result = items.finalize(ir)
 
-    assert(
-      Map(
-        3 -> 3,
-        2 -> 2,
-        1 -> 1
-      ) == result)
+    assertEquals(toHashMap(Map(
+      3L -> 3L,
+      2L -> 2L,
+      1L -> 1L
+    )), result)
   }
 
   def testZeroSize(): Unit = {
@@ -61,7 +62,7 @@ class FrequentItemsTest extends TestCase {
 
     val result = items.finalize(ir)
 
-    assert(Map() == result)
+    assertEquals(new util.HashMap[String, Double](), result)
   }
 
   def testSketchSizes(): Unit = {
@@ -125,11 +126,11 @@ class FrequentItemsTest extends TestCase {
 
      val ir = sketch.bulkMerge(irs)
 
-     assertEquals(Map(
+     assertEquals(toHashMap(Map(
        "3" -> 3,
        "2" -> 2,
        "1" -> 1
-     ), sketch.finalize(ir))
+     )), sketch.finalize(ir))
    }
 
   private def toSketch[T: FrequentItemsFriendly](counts: Map[T, Int]): (FrequentItems[T], ItemsSketchIR[T]) = {
@@ -146,4 +147,6 @@ class FrequentItemsTest extends TestCase {
 
     (sketch, ir)
   }
+
+  def toHashMap[T](map: Map[T, Long]): java.util.HashMap[T, Long] = new java.util.HashMap[T, Long](map.asJava)
 }
