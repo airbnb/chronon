@@ -673,9 +673,9 @@ object Extensions {
     def confPathToTeamKey: Option[String] = {
       try {
         filePath match {
-          case value if value.contains("staging_queries/") => loadJsonToConf[StagingQuery](value).map("staging_queries" + _.metaData.team)
-          case value if value.contains("joins/")           => loadJsonToConf[Join](value).map("joins" + _.metaData.team)
-          case value if value.contains("group_bys/")       => loadJsonToConf[GroupBy](value).map("group_bys" + _.metaData.team)
+          case value if value.contains("staging_queries/") => loadJsonToConf[StagingQuery](value).map("staging_queries/" + _.metaData.team)
+          case value if value.contains("joins/")           => loadJsonToConf[Join](value).map("joins/" + _.metaData.team)
+          case value if value.contains("group_bys/")       => loadJsonToConf[GroupBy](value).map("group_bys/" + _.metaData.team)
           case _                                           => logger.info(s"unknown config type in file $filePath"); None
         }
       } catch {
