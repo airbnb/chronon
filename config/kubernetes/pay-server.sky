@@ -32,7 +32,23 @@ default_pay_server_image = image_defaults(
     artifact = "pay-server-image",
 )
 
-def pay_server_pod(ctx, **kwargs):
+def _default_gem_override_policy(ctx, **kwargs):
+    """
+    The default policy for whether services should opt in to the current gem upgrade experiment
+    """
+    return False
+
+def _gem_override_plugin(value):
+    if value == True:
+        return _enable_gem_override()
+    elif value == False:
+        return compose_plugins()
+    elif type(value) == "int":
+        return _1_in_n_enable_gem_override(value)
+    else:
+        fail("_gem_override_plugin invalid return value, must be integer (1/N frequency) or boolean. (Got %s)" % value)
+
+def pay_server_pod(ctx, gem_override_policy=_default_gem_override_policy, **kwargs):
     """
     Create a standard pay-server job or service with a main container.
 
@@ -57,6 +73,13 @@ def pay_server_pod(ctx, **kwargs):
             schedule on. This will also be the namespace of the pods in Kubernetes.
             Must be set iff shared_msp=False (the default).
         namespace: The namespace of the pods in Kubernetes. Must be set iff deploying to shared MSP.
+        gem_override_policy: Iff provided, a function(ctx, **kwrargs) that must return a boolean or integer 0 <= N <= 100
+            See go/gem-overrides for more details.
+            kwargs are remaining args to pay_server_pod
+            Return values affect pod environment in the following way:
+              True:   Opt-in to the current experimental gem upgrade
+              False:  Do not opt-in to the current experimental gem upgrade
+              Int(N): N% of pods (randomized by STRIPE_POD_NAME) will use gem upgrade
         **kwargs: The same arguments that `stripe_pod` supports.
 
     Returns:
@@ -86,6 +109,7 @@ def pay_server_pod(ctx, **kwargs):
         labels({
           "stripe.io/platform": "pay-server",
         }),
+        _gem_override_plugin(gem_override_policy(ctx, **kwargs)),
     )
     pay_health_mount = compose_plugins()
     if kwargs.get("opt_out_of_safe_deploys", False):
@@ -696,6 +720,24 @@ def bapi_gc_config():
         "RUBY_GC_OLDMALLOC_LIMIT_MAX": "300000000",
     }
 
+def _enable_gem_override():
+    return compose_plugins(
+        container_env_vars({
+            "STRIPE_BUNDLE_MSP_GEM_OVERRIDE": "Y",
+            "STRIPE_BUNDLE_MSP_GEM_OVERRIDE_FREQUENCY": "100",
+        }),
+        labels({
+            "pay-server.stripe.io/gem_override": "True",
+        }),
+    )
+
+def _1_in_n_enable_gem_override(n):
+    if type(n) != "int" or n < 0 or n > 100:
+        fail("_1_in_n_enable_gem_override: n must be an integer 100 >= N >= 0. (Got %s)" % n)
+    return container_env_vars({
+        "STRIPE_BUNDLE_MSP_GEM_OVERRIDE": "Y",
+        "STRIPE_BUNDLE_MSP_GEM_OVERRIDE_FREQUENCY": str(n),
+    })
 
 _einhorn_socket_dir = "/pay/einhorn_sockets"
 _einhorn_socket_name = "einhorn.sock"

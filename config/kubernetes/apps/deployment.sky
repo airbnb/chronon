@@ -178,6 +178,7 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
             metadata = registered_services[0].get("service", {}).get("meta", {})
             priority_tier = metadata.get("envoy-lb_subsets-header_value", None)
             priority_tier_header = metadata.get("envoy-lb_subsets-header_name", None)
+            service_name = get_name(ctx)
 
             # This file is often vendored to gocode, which results in this
             # ratchet getting applied to gocode services and blocking PR's.  To
@@ -192,23 +193,11 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
                         not is_isolated_deploy(ctx),
                         priority_tier,
                         priority_tier_header,
-                        k8s_workload_name not in HOST_ISOLATION_ALLOWLIST,
+                        service_name not in HOST_ISOLATION_ALLOWLIST,
                     ]
                 )
                 if host_isolation_enabled_without_allowlist_config:
-                    fail(k8s_workload_name + " must be added to host_isolation_allowlist.sky")
-
-                # Check that the service is removed from the host isolation allowlist if disabling.
-                host_isolation_disabled_with_allowlist_config = all(
-                    [
-                        not is_isolated_deploy(ctx),
-                        not priority_tier,
-                        not priority_tier_header,
-                        k8s_workload_name in HOST_ISOLATION_ALLOWLIST,
-                    ]
-                )
-                if host_isolation_disabled_with_allowlist_config:
-                    fail(k8s_workload_name + " must be removed from host_isolation_allowlist.sky")
+                    fail(service_name + " must be added to host_isolation_allowlist.sky")
 
             # These will either both be set OR both be unset.
             if priority_tier and priority_tier_header:
@@ -380,7 +369,7 @@ def _render_deployment(ctx, deployment_def):
 
     if "scaledobject" in deployment_def and get_env(ctx) == "qa":
         # Custom Scaling is currently in POC in QA only
-        so_obj = deployment.scaledobject["render"](ctx, deployment.scaledobject, deployment.kwargs["replicas"])
+        so_obj = deployment.scaledobject["render"](ctx, deployment.scaledobject, deployment.kwargs["replicas"], shared_msp)
 
     if sgp_yaml == None and hpa_obj == None and vpa_obj == None and so_obj == None:
         return rendered_deployment

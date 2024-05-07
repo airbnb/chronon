@@ -19,13 +19,16 @@ SUPPORTED_MSP_INSTANCE_TYPES = [
     'c5d.12xlarge', 'c5d.18xlarge', 'c5d.24xlarge', 'c5d.2xlarge', 'c5d.4xlarge', 'c5d.9xlarge', 'c5d.xlarge',
     'c5n.xlarge', 'c5n.2xlarge', 'c5n.4xlarge', 'c5n.9xlarge', 'c5n.18xlarge', 'c5n.metal',
     'c6a.12xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
-    'c6i.12xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
+    'c6i.12xlarge', 'c6i.4xlarge', 'c6i.2xlarge', 'c6i.xlarge', # Only officially supported for mono-bapi/dioramaworkers. Contact #msp before using.
+    'c7a.4xlarge', 'c7a.2xlarge', 'c7a.xlarge', # Only officially supported for dioramaworkers. Contact #msp before using.
     'i3.2xlarge', 'i3.xlarge', 'i3.4xlarge',
     'i3en.xlarge', 'i3en.2xlarge',
     'm5.12xlarge', 'm5.16xlarge', 'm5.24xlarge', 'm5.2xlarge', 'm5.4xlarge', 'm5.8xlarge', 'm5.large', 'm5.xlarge',
     'm5d.12xlarge', 'm5d.16xlarge', 'm5d.24xlarge', 'm5d.2xlarge', 'm5d.4xlarge', 'm5d.8xlarge', 'm5d.large', 'm5d.xlarge',
     'm6a.12xlarge', 'm6a.16xlarge', 'm6a.24xlarge', 'm6a.xlarge',
-    'm6i.12xlarge', 'm6i.4xlarge', 'm7i.12xlarge', 'm7a.12xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
+    'm6i.12xlarge', 'm6i.4xlarge', 'm6i.2xlarge', 'm6i.xlarge', 'm6i.large', # Only officially supported for mono-bapi/dioramaworkers. Contact #msp before using.
+    'm7i.12xlarge', # Only officially supported for mono-bapi. Contact #msp before using.
+    'm7a.12xlarge', 'm7a.2xlarge', 'm7a.xlarge', 'm7a.large', # Only officially supported for mono-bapi/dioramaworkers. Contact #msp before using.
     'r5.12xlarge', 'r5.16xlarge', 'r5.24xlarge', 'r5.2xlarge', 'r5.4xlarge', 'r5.8xlarge', 'r5.large', 'r5.xlarge',
     'r5d.12xlarge', 'r5d.16xlarge', 'r5d.24xlarge', 'r5d.2xlarge', 'r5d.4xlarge', 'r5d.8xlarge', 'r5d.large', 'r5d.xlarge',
     'c6g.12xlarge', 'c6g.16xlarge', 'c6g.2xlarge', 'c6g.4xlarge', 'c6g.8xlarge', 'c6g.xlarge', # Graviton 2
@@ -105,6 +108,7 @@ def aws_instance_size(instance_type):
         "c6a": 750,  # Assuming same values as c5
         "c6g": 750,  # Assuming same values as c5
         "c7g": 750,  # Assuming same values as c5
+        "c7a": 750, # Assuming same values as c5
         "m5": 700,
         "m6i": 700,  # Assuming same values as m5
         "m6g": 700,  # Assuming same values as m5
@@ -775,6 +779,21 @@ _AWS_INSTANCE_SIZES = {
     "instance_storage_gib": 0
   },
   "c6in.xlarge": {
+    "vcpu": 4,
+    "memory_mib": 8192,
+    "instance_storage_gib": 0
+  },
+  "c7a.2xlarge": {
+    "vcpu": 8,
+    "memory_mib": 16384,
+    "instance_storage_gib": 0
+  },
+  "c7a.4xlarge": {
+    "vcpu": 16,
+    "memory_mib": 32768,
+    "instance_storage_gib": 0
+  },
+  "c7a.xlarge": {
     "vcpu": 4,
     "memory_mib": 8192,
     "instance_storage_gib": 0
@@ -2022,6 +2041,21 @@ _AWS_INSTANCE_SIZES = {
   "m7a.12xlarge": {
     "vcpu": 48,
     "memory_mib": 196608,
+    "instance_storage_gib": 0
+  },
+  "m7a.2xlarge": {
+    "vcpu": 8,
+    "memory_mib": 32768,
+    "instance_storage_gib": 0
+  },
+  "m7a.xlarge": {
+    "vcpu": 4,
+    "memory_mib": 16384,
+    "instance_storage_gib": 0
+  },
+  "m7a.large": {
+    "vcpu": 2,
+    "memory_mib": 8192,
     "instance_storage_gib": 0
   },
   "m7g.12xlarge": {
@@ -3441,6 +3475,36 @@ c6i_12xlarge = struct(
     slack_cpu_millicores=1000,
 )
 
+c6i_4xlarge = struct(
+    name='c6i.4xlarge',
+    slack_cpu_millicores=1000,
+)
+
+c6i_2xlarge = struct(
+    name='c6i.2xlarge',
+    slack_cpu_millicores=1000,
+)
+
+c6i_xlarge = struct(
+    name='c6i.xlarge',
+    slack_cpu_millicores=1000,
+)
+
+c7a_4xlarge = struct(
+    name='c7a.4xlarge',
+    slack_cpu_millicores=1000,
+)
+
+c7a_2xlarge = struct(
+    name='c7a.2xlarge',
+    slack_cpu_millicores=1000,
+)
+
+c7a_xlarge = struct(
+    name='c7a.xlarge',
+    slack_cpu_millicores=1000,
+)
+
 c7g_xlarge = struct(
     name="c7g.xlarge",
     slack_cpu_millicores=1000,
@@ -3631,6 +3695,21 @@ m6g_16xlarge = struct(
     slack_cpu_millicores=1000,
 )
 
+m6i_large = struct(
+    name="m6i.large",
+    slack_cpu_millicores=1000,
+)
+
+m6i_xlarge = struct(
+    name="m6i.xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m6i_2xlarge = struct(
+    name="m6i.2xlarge",
+    slack_cpu_millicores=1000,
+)
+
 m6i_4xlarge = struct(
     name="m6i.4xlarge",
     slack_cpu_millicores=1000,
@@ -3648,6 +3727,21 @@ m7i_12xlarge = struct(
 
 m7a_12xlarge = struct(
     name="m7a.12xlarge",
+    slack_cpu_millicores=1000,
+)
+
+m7a_2xlarge = struct(
+    name='m7a.2xlarge',
+    slack_cpu_millicores=1000,
+)
+
+m7a_xlarge = struct(
+    name='m7a.xlarge',
+    slack_cpu_millicores=1000,
+)
+
+m7a_large = struct(
+    name='m7a.large',
     slack_cpu_millicores=1000,
 )
 
@@ -3871,6 +3965,12 @@ _INSTANCE_TYPES_BY_NAME = {
     c6g_12xlarge.name: c6g_12xlarge,
     c6g_16xlarge.name: c6g_16xlarge,
     c6i_12xlarge.name: c6i_12xlarge,
+    c6i_4xlarge.name: c6i_4xlarge,
+    c6i_2xlarge.name: c6i_2xlarge,
+    c6i_xlarge.name: c6i_xlarge,
+    c7a_4xlarge.name: c7a_4xlarge,
+    c7a_2xlarge.name: c7a_2xlarge,
+    c7a_xlarge.name: c7a_xlarge,
     c7g_xlarge.name: c7g_xlarge,
     c7g_2xlarge.name: c7g_2xlarge,
     c7g_4xlarge.name: c7g_4xlarge,
@@ -3909,10 +4009,16 @@ _INSTANCE_TYPES_BY_NAME = {
     m6g_8xlarge.name: m6g_8xlarge,
     m6g_12xlarge.name: m6g_12xlarge,
     m6g_16xlarge.name: m6g_16xlarge,
+    m6i_large.name: m6i_large,
+    m6i_xlarge.name: m6i_xlarge,
+    m6i_2xlarge.name: m6i_2xlarge,
     m6i_4xlarge.name: m6i_4xlarge,
     m6i_12xlarge.name: m6i_12xlarge,
     m7i_12xlarge.name: m7i_12xlarge,
     m7a_12xlarge.name: m7a_12xlarge,
+    m7a_2xlarge.name: m7a_2xlarge,
+    m7a_xlarge.name: m7a_xlarge,
+    m7a_large.name: m7a_large,
     m7g_large.name: m7g_large,
     m7g_xlarge.name: m7g_xlarge,
     m7g_2xlarge.name: m7g_2xlarge,

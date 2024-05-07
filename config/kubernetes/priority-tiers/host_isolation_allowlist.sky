@@ -1,142 +1,34 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 # This allowlist serves as a ratchet to protect against potentially dangerous behaviors when enabling and disabling host isolation.
-# To add yourself to the allowlist, use the "{service_name}-{priority_tier}" format.
+# To add yourself to the allowlist, use the "{service_name}" format.
 
 # If you are **enabling host isolation**, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-enable-host-isolation-for-your-service).
 
-# If you are **disabling host isolation**, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-disable-host-isolation). Failure to do so can be EXTREMELY DANGEROUS, as
-# all requests to your service will begin to fail. Removing yourself from the allowlist is an acknowledgement that you have followed the guide.
-
-# If you are **adding a new tier to an already host-isolated service**, you must follow this guide (https://trailhead.corp.stripe.com/docs/service-platform/priority-tiering/how-to-provision-a-new-host-isolated-tier). Failure to do so can be EXTREMELY DANGEROUS, as
-# all requests tagged with the new tier to your service will begin to fail. Adding yourself to the allowlist is an acknowledgement that you have followed the guide.
 
 HOST_ISOLATION_ALLOWLIST = [
-    "grpc-upload-srv-p2",
-    "grpc-upload-srv-p3",
-    "grpc-upload-srv-p4",
-    "grpc-upload-srv-p5",
-
-    "manage-srv-p2",
-    "manage-srv-p3",
-    "manage-srv-p4",
-    "manage-srv-p5",
-    "manage-srv-canary-p2",
-    "manage-srv-canary-p3",
-    "manage-srv-canary-p4",
-    "manage-srv-canary-p5",
-
-    "grpc-manage-srv-p2",
-    "grpc-manage-srv-p3",
-    "grpc-manage-srv-p4",
-    "grpc-manage-srv-p5",
-
-    "user-auth-bridge-srv-production",
-
-    "sample-api-srv-p2",
-    "sample-api-srv-p5",
-    "sample-api-grpc-srv-p2",
-    "sample-api-grpc-srv-p5",
-
-    "apps-bapi-srv-p2",
-    "apps-bapi-srv-p5",
-
+    "accounts-bridge-srv",
+    "api-platform-bapi-srv",
+    "apps-bapi-srv",
+    "bankcon-cred-gateway-srv",
+    "billing-api-srv",
+    "capital-api-srv",
+    "charges-render-srv",
+    "consumer-bridge-srv",
+    "crypto-onramp-api-srv",
+    "goldmansachs-proxy-grpc-srv",
+    "grpc-manage-srv",
+    "grpc-upload-srv",
+    "manage-srv",
+    "mastercard-settlement-services-srv",
+    "mono-bapi-srv",
+    "payins-bapi-srv",
+    "payment-method-sharing-srv",
     "policy-bridge-srv",
-    "policy-bridge-srv-async",
-
-    "accounts-bridge-srv-fallback",
-    "accounts-bridge-srv-replication",
-    "accounts-bridge-srv-batch",
-    "accounts-bridge-srv-backfill",
-
-    "capital-api-srv-p2",
-    "capital-api-srv-p5",
-
-    "ruby-grpc-test-srv-low",
-    "ruby-grpc-test-srv-high",
-
-    "crypto-onramp-api-srv-p2",
-    "crypto-onramp-api-srv-p5",
-
-    "mono-bapi-srv-p0-canary",
-    "mono-bapi-srv-p0-performance",
-    "mono-bapi-srv-p0-holdout",
-    "mono-bapi-srv-p0-high-priority",
-    "mono-bapi-srv-p0",
-    "mono-bapi-srv-p1",
-    "mono-bapi-srv-p1-canary",
-    "mono-bapi-srv-p1-performance",
-    "mono-bapi-srv-p1-holdout",
-    "mono-bapi-srv-p1-high-priority",
-    "mono-bapi-srv-p2",
-    "mono-bapi-srv-p2-canary",
-    "mono-bapi-srv-p2-performance",
-    "mono-bapi-srv-p2-holdout",
-    "mono-bapi-srv-p3",
-    "mono-bapi-srv-p3-canary",
-    "mono-bapi-srv-p3-performance",
-    "mono-bapi-srv-p3-holdout",
-    "mono-bapi-srv-p4",
-    "mono-bapi-srv-p4-canary",
-    "mono-bapi-srv-p4-performance",
-    "mono-bapi-srv-p4-holdout",
-    "mono-bapi-srv-p5",
-    "mono-bapi-srv-p5-canary",
-    "mono-bapi-srv-p5-performance",
-    "mono-bapi-srv-p5-heavy-preload",
-    "mono-bapi-srv-p5-holdout",
-
-    "billing-api-srv-p1",
-    "billing-api-srv-p2",
-    "billing-api-srv-p3",
-    "billing-api-srv-p4",
-    "billing-api-srv-p5",
-
-    "ruby-sample-grpc-srv-livemode-critical",
-    "ruby-sample-grpc-srv-livemode",
-    "ruby-sample-grpc-srv-api-testmode",
-    "ruby-sample-grpc-srv-batch-critical",
-    "ruby-sample-grpc-srv-batch",
-    "ruby-sample-grpc-srv-synthetic",
-
-    "api-platform-bapi-srv-p1",
-    "api-platform-bapi-srv-p2",
-    "api-platform-bapi-srv-p3",
-    "api-platform-bapi-srv-p4",
-    "api-platform-bapi-srv-p5",
-
-    "payins-bapi-srv-p0",
-    "payins-bapi-srv-p1",
-    "payins-bapi-srv-p2",
-    "payins-bapi-srv-p3",
-    "payins-bapi-srv-p4",
-    "payins-bapi-srv-p5",
-
-    "privacy-products-bapi-srv-p2",
-    "privacy-products-bapi-srv-p5",
-
-    "transfer-photon-srv-livemode-critical",
-    "transfer-photon-srv-livemode",
-    "transfer-photon-srv-api-testmode",
-
-    "mastercard-settlement-services-srv-livemode-critical",
-    "mastercard-settlement-services-srv-batch-critical",
-    "mastercard-settlement-services-srv-batch",
-
-    "goldmansachs-proxy-grpc-srv-batch",
-    "goldmansachs-proxy-grpc-srv-api-testmode",
-    "goldmansachs-proxy-grpc-srv-synthetic",
-
-    "payment-method-sharing-srv-livemode-critical",
-    "payment-method-sharing-srv-api-testmode",
-
-    "bankcon-cred-gateway-srv-livemode-critical",
-    "bankcon-cred-gateway-srv-batch-critical",
-    "bankcon-cred-gateway-srv-batch",
-
-    # We can probably remove these gocode services.
-    "reldb-proxy-dev-srv",
-    "envoy-shape-srv",
-    "reldb-proxy-srv",
-    "echo-msp-srv",
-    # End go-code services
+    "privacy-products-bapi-srv",
+    "ruby-grpc-test-srv",
+    "ruby-sample-grpc-srv",
+    "sample-api-grpc-srv",
+    "sample-api-srv",
+    "transfer-photon-srv",
+    "user-auth-bridge-srv",
 ]

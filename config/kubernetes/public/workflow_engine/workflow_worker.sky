@@ -42,7 +42,7 @@ def deployment_strategy_serverless_func(ctx):
   return rolling_update_strategy(
     ctx,
     max_unavailable = 0,
-    max_surge = 1,
+    max_surge = "20%",
   )
 
 

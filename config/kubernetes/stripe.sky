@@ -371,33 +371,10 @@ CONSUL_AGENT_ENABLED_LABEL_DISABLED = "disabled"
 def _with_consul_agent_enablement(ctx, requires_consul = False):
     """Returns plugins to make possible the enablement mechanism to turn Consul agent On/Off
 
-    Returns plugins to make possible the enablement mechanism to turn Consul agent On/Off. This will
-    depends on whether services require Consul agent or not to run. Service owners should explicitly
-    set that dependency by setting `requires_consul` to True/False. It is also possible to leave this
-    parameter unset that technically means it's required.
+    Consul is no longer support on Shared MSP Services. 
 
-    The're are basically two plugins to add: a label and an init container.
-
-    +-----------------+------------------------+----------------+-----------------------------------------------+
-    | requires_consul | stripe.io/consul-agent | Init container | Explanation                                   |
-    +-----------------+------------------------+----------------+-----------------------------------------------+
-    | True            | enabled                | Added          | Service owners are requesting that their      |
-    |                 |                        |                | service runs in a node with Consul enabled.   |
-    |                 |                        |                | The label will be added as `enabled` and the  |
-    |                 |                        |                | init container attached to wait for Consul    |
-    |                 |                        |                | agent to be ready.                            |
-    +-----------------+------------------------+----------------+-----------------------------------------------+
-    | False           | disabled               | Not added      | Service owners identified that their service  |
-    |                 |                        |                | doesn't need Consul. We then set the label to |
-    |                 |                        |                | `disabled` and skip the init container since  |
-    |                 |                        |                | there's nothing to wait for.                  |
-    +-----------------+------------------------+----------------+-----------------------------------------------+
-    | None            | disabled               | Not added      | In this case, we will default to NOT running  |
-    |                 |                        |                | Consul, as it is officially a not a supported |
-    |                 |                        |                | infrastructure component at Stripe. Please    |
-    |                 |                        |                | refer to http://go/consul-replacement for     |
-    |                 |                        |                | more.                                          |
-    +-----------------+------------------------+----------------+-----------------------------------------------+
+    If you have a use case that Consul could fit, there is likely an alternative ready for you to
+    use instead: http://go/consul-replacement
     """
 
     # Get the label value
@@ -405,7 +382,7 @@ def _with_consul_agent_enablement(ctx, requires_consul = False):
 
     plugins = [labels({CONSUL_AGENT_ENABLED_LABEL: consul_agent_label_value})]
     if consul_agent_label_value != CONSUL_AGENT_ENABLED_LABEL_DISABLED:
-        plugins.append(consul_agent_init(ctx))
+        fail("Consul is no longer supported on Shared MSP services.")
 
     return compose_plugins(*plugins)
 
@@ -420,7 +397,7 @@ def _determine_consul_enablement_label_value(requires_consul = False):
     # usage of Consul, as it is not a supported infrastructure component anymore.
     consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_DISABLED
     if requires_consul == True:
-        consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_ENABLED
+        fail("Consul is no longer supported on Shared MSP services.")
     elif requires_consul == False:
         consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_DISABLED
 

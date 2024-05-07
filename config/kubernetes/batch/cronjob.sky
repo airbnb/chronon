@@ -16,7 +16,7 @@ load("config/kubernetes/helpers/context.sky", "is_isolated_deploy", "get_env")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "CronJob", "CronJobSpec", "JobTemplateSpec", "JobSpec")
 load("config/kubernetes/helpers/cron.sky", "DEFAULT_SUCCESSFUL_JOB_HISTORY_LIMIT", "DEFAULT_FAILED_JOB_HISTORY_LIMIT")
 
-def cronjob(ctx, *plugins, ttl_secs_after_finish=2592000, job_backoff_limit=6, **kwargs):
+def cronjob(ctx, *plugins, ttl_secs_after_finish=2592000, job_backoff_limit=6, active_deadline_seconds=None, **kwargs):
     """
     Define a batch job that will run on a schedule.
 
@@ -33,6 +33,8 @@ def cronjob(ctx, *plugins, ttl_secs_after_finish=2592000, job_backoff_limit=6, *
         ttl_secs_after_finish: Number of seconds after which to delete the Job related to this Cron.
             This is set as "ttlSecondsAfterFinished" field in the Cron's Job Spec. Defaults to 30 days.
         job_backoff_limit: Number of times to backoff. This is set in the Job template spec. Defaults to 6.
+        active_deadline_seconds: Number of seconds after which the Job is forcibly terminated and marked as failed.
+            Defaults to unlimited.
         **kwargs: Options for the [CronJobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#cronjobspec-v1beta1-batch).
             A shortcut for the `cronjob_options` plugin.
 
@@ -51,6 +53,7 @@ def cronjob(ctx, *plugins, ttl_secs_after_finish=2592000, job_backoff_limit=6, *
         "kwargs": {},
         "ttl_secs_after_finish": ttl_secs_after_finish,
         "backoff_limit": job_backoff_limit,
+        "active_deadline_seconds": active_deadline_seconds,
     }
 
     all_plugins = [
@@ -129,6 +132,7 @@ def _render_cronjob(ctx, cronjob_def):
                     ttlSecondsAfterFinished = cronjob.ttl_secs_after_finish,
                     backoffLimit = cronjob.backoff_limit,
                     template = pod_template,
+                    activeDeadlineSeconds = cronjob.active_deadline_seconds,
                 ),
             ),
             **kwargs

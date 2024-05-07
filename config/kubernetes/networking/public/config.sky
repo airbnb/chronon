@@ -104,6 +104,7 @@ def networking_config(
         enable_envoy_config_srv_debug_sidecar = NOT_PROVIDED,
         max_headers_count = NOT_PROVIDED,
         enable_local_reachability = NOT_PROVIDED,
+        envoy_rlimit_nofile = NOT_PROVIDED,
         _sn_breakglass = breakglass_settings()):
     """
     Deployment plugin that injects custom networking features for your pod.
@@ -147,6 +148,8 @@ def networking_config(
             The maximum number of headers supported by the proxy on listeners and all inbound/outbound clusters
         enable_local_reachability: Boolean value indicating whether to enable local reachability for the service.
             By default this is true for all Shared MSP services.
+        envoy_rlimit_nofile: Integer; sets the rlimit nofile for the envoy sidecar container.
+            By default, if not set, envoy will set rlimit nofile to 262144.
         _sn_breakglass: these are internal networking customizations for use by the
             Service Networking Team. While service owners are generally not expected
             to need to set these arguments, we expose them via the `breakglass_settings` API
@@ -190,6 +193,7 @@ def networking_config(
             enable_inbound_websockets = enable_inbound_websockets,
             enable_grpc_web = enable_grpc_web,
             allowed_machine_orgs = allowed_machine_orgs,
+            envoy_rlimit_nofile = envoy_rlimit_nofile,
         ),
         envoy_concurrency = network_config_updater(
             _update_envoy_sidecar_cli_args = _override_matching_keys,

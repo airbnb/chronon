@@ -10,7 +10,7 @@ load("config/kubernetes/core/env_var.sky", "container_env_vars")
 
 SIDECAR_NAME = "go-profiler-sidecar"
 
-def go_profiler_sidecar(ctx, srv_addr = "127.0.0.1", http_port = "6060", prof_duration = 30, prof_interval = 600):
+def go_profiler_sidecar(ctx, srv_addr = "127.0.0.1", http_port = "6060", prof_duration = 30, prof_interval = 600, prof_mode = ["cpu"]):
     """
     Sidecar process to merge and offload Go profile dumps from disk to S3.
 
@@ -28,7 +28,7 @@ def go_profiler_sidecar(ctx, srv_addr = "127.0.0.1", http_port = "6060", prof_du
         "--http-port=%s" % http_port,
         "--prof-duration=%s" % prof_duration,
         "--prof-interval=%s" % prof_interval,
-    ]
+    ] + ["--prof-mode=%s" % mode for mode in prof_mode]
 
     shared_plugins = compose_plugins(
         mount_host_volume(path = iam_aws_cred_ini, container_name = SIDECAR_NAME, volume_args = {"type": "File"}),

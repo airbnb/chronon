@@ -20,30 +20,44 @@ load("config/kubernetes/networking/public/consul.sky", "consul_meta_envoy_priori
 load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
 load("config/kubernetes/helpers/scheduling.sky", "msp_fleet_manager_scheduling_delay")
 load("config/kubernetes/sidecars/offload_profiles.sky", "use_offload_profiles")
+load("config/kubernetes/helpers/availability_tiers.sky", "A100", "A110", "A120", "A130", "A140", "A150")
+load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size")
 
 P0 = struct(
   name="p0",
-  mproxy_tier="bapi-p1-p0"
+  mproxy_tier="bapi-p1-p0",
+  egress_proxy_tier="p0",
+  availability_tier=A100
 )
 P1 = struct(
   name="p1",
-  mproxy_tier="bapi-p1-p0"
+  mproxy_tier="bapi-p1-p0",
+  egress_proxy_tier="p0",
+  availability_tier=A110
 )
 P2 = struct(
   name="p2",
-  mproxy_tier="bapi-p4-p2"
+  mproxy_tier="bapi-p4-p2",
+  egress_proxy_tier="",
+  availability_tier=A120
 )
 P3 = struct(
   name="p3",
-  mproxy_tier="bapi-p4-p2"
+  mproxy_tier="bapi-p4-p2",
+  egress_proxy_tier="",
+  availability_tier=A130
 )
 P4 = struct(
   name="p4",
-  mproxy_tier="bapi-p4-p2"
+  mproxy_tier="bapi-p4-p2",
+  egress_proxy_tier="",
+  availability_tier=A140
 )
 P5 = struct(
   name="p5",
-  mproxy_tier="bapi-p5"
+  mproxy_tier="bapi-p5",
+  egress_proxy_tier="",
+  availability_tier=A150
 )
 
 PRIORITIES_BY_NAME = {
@@ -108,6 +122,8 @@ def bapi_service(ctx,
   workers,
   image_artifact = None,
   override_msp_shard = "kubeapicc", # only kubeapicc has m6i instances so use that shard
+  override_name = None,
+  strict_priority_tiering = False,
 ):
   if image_artifact:
     image = image_defaults(
@@ -121,23 +137,40 @@ def bapi_service(ctx,
   }
   env_vars.update(bapi_gc_config())
 
+  if strict_priority_tiering:
+    receive_non_priority_traffic = False
+  else:
+    # Always keep test-mode traffic isolated
+    receive_non_priority_traffic = priority != P5
+
+  name = get_name(ctx) + "-" + priority.name
+  if override_name:
+    name = override_name
+
   # only northwest has multiple MSP shards
   if get_cluster(ctx) == "northwest":
     shard = override_msp_shard
   else:
     shard = "kubemaster"
 
+  # envoy_concurrency should be scaled in proportion to the number of CPUs on the chosen instance size.
+  # On Intel hosts, this is 1/6 of the CPUs. For instance with 48 vCPUs this is 8, or with 16 vCPUs this is 3
+  cpus = aws_instance_size(instance_type.name).cpu_millicores // 1000
+  envoy_concurrency = cpus // 6
+  # round up if not a perfect multiple of 6
+  if cpus % 6 != 0:
+    envoy_concurrency += 1
 
   return compose_plugins(
     pay_server_pod(
       ctx,
-      name = get_name(ctx) + "-" + priority.name,
+      name = name,
       namespace = get_identity(ctx),
       command = get_entrypoint_command(ctx),
       # Choose your instance type. See go/shared-msp/skycfg-changes.
       instance_type = instance_type,
       use_shared_msp_service_account = True,
-      availability_tier = get_pod_availability_tier_by_name(get_availability_tier(ctx)),
+      availability_tier = priority.availability_tier,
       image = image,
       requires_consul = False,
     ),
@@ -158,16 +191,21 @@ def bapi_service(ctx,
       meta = consul_meta_envoy_priority_routing(
           "X-Stripe-Api-Path-Priority",
           priority.name,
-          # Keep test-mode traffic isolated
-          receive_non_priority_traffic = priority != P5,
+          receive_non_priority_traffic = receive_non_priority_traffic,
       ),
-      hack_kick_interval = "60m",
+      # slow startup generally means a bad host or bad code change,
+      # either way prefer crashing at deploy time instead of allowing the
+      # bad change to rollout so reduce startup time from 600s => 450s
+      startup_failure_threshold = 450,
+      hack_kick_interval = "90m",
       hack_kick_start_delay = "30m",
       hack_kick_restart_only = True,
     ),
     networking_config(
         enable_global_ratelimit = True,
-        mproxy_tier = priority.mproxy_tier
+        mproxy_tier = priority.mproxy_tier,
+        egress_proxy_tier = priority.egress_proxy_tier,
+        envoy_concurrency = envoy_concurrency
     ),
 
     msp_shard(shard),

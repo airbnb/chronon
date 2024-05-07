@@ -20,13 +20,14 @@ DEFAULT_WORKER_MEM_SCALES = {
     # with fewer replicas is currently believed to be superior
     # to adding extra replicas for low traffic use cases
     "bom": 1250,
-    "cmh": 1250
+    "cmh": 1000
 }
 
 # Default instance type per env/cluster
 DEFAULT_INSTANCE_TYPE_BY_ENV_CLUSTER = {
     "prod": {
         "northwest": r6g_8xlarge,
+        "cmh": r6g_8xlarge,
     },
 }
 # Any env/cluster not specified will use this by default

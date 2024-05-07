@@ -63,6 +63,7 @@ ENV_CLUSTER_SHARDS = {
             _shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
             _shard("msppink", account="msp-shared-all-pink", shard_type=SHARD_TYPE.TEST, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
             _shard("mspyellow", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
+            _shard("mspaa", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.PROVISIONING),
         ],
     },
     "preprod": {

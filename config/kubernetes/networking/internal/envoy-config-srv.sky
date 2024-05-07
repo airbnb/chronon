@@ -60,22 +60,20 @@ load(
 )
 load(
     "config/kubernetes/networking/internal/proxyless.sky",
-    "proxyless_service_registration",
+    "augment_with_proxyless_registrations",
 )
 
 ENVOY_MONITOR_PORT = 18300
 ENVOYCONTROL_V2_CIRCUIT_BREAKER_LIMITS = 4096
 _veneur_sock_dir = "/veneur-sockets"
 _consul_proxy_dir = "/run/stripe/consul-proxy"
-_OPEN_FILES_LIMIT = 262144
 ENVOY_CONFIG_SRV_CONTAINER_FALLBACK_ENV = "prod"
 ENVOY_CONFIG_SRV_IMAGE_NAME = "stripe/traffic/envoy-config-srv"
 ENVOY_CONFIG_SRV_SIDECAR_SERVICE_NAME = "envoy-config-srv-sidecar"
 ENVOY_CONFIG_SRV_DEBUG_SIDECAR_SERVICE_NAME = "envoy-config-srv-debug-sidecar"
 
 def envoy_config_srv_sidecar(ctx, namespace, config_target, user_overrides, consul_agent_services, host_network, consul_deprecated, k8s_workload_name):
-    proxyless_services = proxyless_service_registration(ctx, consul_agent_services, k8s_workload_name)
-    consul_agent_services += proxyless_services
+    consul_agent_services = augment_with_proxyless_registrations(ctx, consul_agent_services, k8s_workload_name)
     local_consul_services = _consul_agent_services_to_sidecar_consul_config(consul_agent_services)
     apply_user_config_ratchets(config_target, user_overrides)
     name = "envoy-config-srv"
@@ -306,7 +304,7 @@ def envoy_config_srv_container(ctx, self, namespace, local_consul_services, conf
         # envoy-config-srv merely compares the flag value against the string "{}" to decide whether
         # envoy-sidecar should be started.
         "--envoy-sidecar-config-json=enable",
-        "--envoy-sidecar-rlimit-no-file=%d" % _OPEN_FILES_LIMIT,
+        "--envoy-sidecar-rlimit-no-file=%d" % args["envoy_rlimit_nofile"],
     ])
     if cli_args["envoy_concurrency"] != None:
         command.append("--envoy-sidecar-concurrency=%s" % cli_args["envoy_concurrency"])

@@ -16,10 +16,6 @@ _spec_scheme = {
     "maxReplicaCount": None,
     "minReplicaCount": None,
     "scaleTargetRef": {},
-    "pollingInterval": None,
-    "cooldownPeriod": None,
-    "fallback": {},
-    "advanced": {},
     "triggers": [],
 }
 
@@ -227,7 +223,7 @@ def _default_scale_down_behavior(ctx):
 
 def _default_min_replicas(ctx, replicas):
     if get_env(ctx) == "qa":
-        if replicas == 2:
+        if replicas <= 2:
             return 1
         else:
             return 2
@@ -297,11 +293,11 @@ def scaled_object(
     fallback_threshold = None,
     fallback_replicas = None,
     restore_to_original_replica_count = None,
-    schedule_triggers = [],
-    prometheus_triggers = [],
+    schedule_triggers = None,
+    prometheus_triggers = None,
     cpu_trigger = None,
-    memory_trigger = None
-
+    memory_trigger = None,
+    enable_immediate_scaling = False,
 ):
     """
     Returns a plugin that creates an KEDA ScaledObject CRD in QA only.
@@ -352,9 +348,12 @@ def scaled_object(
 
         prometheus_triggers: Array of Prometheus Triggers. These trigger the targeted deployment to scale based on Prometheus Metrics.
 
-        cpu_trigger: A CPU trigger to be attached to the deployment. The trigger target deployment to scale based on CPU Metrics.
+        cpu_trigger: A CPU trigger to be attached to the deployment. The trigger causes the target deployment to scale based on CPU Metrics.
 
-        memory_trigger: A Memory trigger to be attached to the deployment. The trigger target deployment to scale based on Memory Metrics.
+        memory_trigger: A Memory trigger to be attached to the deployment. The trigger causes the target deployment to scale based on Memory Metrics.
+
+        enable_immediate_scaling: When True, the targeted deployment will scale immediately upon deployment, without waiting for or requiring the "Enable Autoscaling" stage
+            in Henson to complete. This is not supported when min_replicas is set to 0. Default is False.
     Returns:
         A plugin to add a ScaledObject to a resource
     """
@@ -380,6 +379,7 @@ def scaled_object(
             prometheus_triggers = prometheus_triggers,
             cpu_trigger = cpu_trigger,
             memory_trigger = memory_trigger,
+            enable_immediate_scaling = enable_immediate_scaling,
         ),
     )
 
@@ -424,9 +424,14 @@ def _update_resource(ctx, args, resource_def):
         "prometheus_triggers": args.prometheus_triggers,
         "cpu_trigger": args.cpu_trigger,
         "memory_trigger": args.memory_trigger,
+        "enable_immediate_scaling": args.enable_immediate_scaling,
     }
 
-def _render_scaledobject(ctx, so_mapping, replicas):
+def _render_scaledobject(ctx, so_mapping, default_replicas, shared_msp):
+    if not shared_msp:
+        # We don't support HPAs in dedicated MSP
+        return None
+
     if get_env(ctx) != "qa":
         fail("Custom Metrics Scaling is only support in QA")
 
@@ -436,32 +441,47 @@ def _render_scaledobject(ctx, so_mapping, replicas):
     so_obj = dict(_scaledobject_scheme)
     spec = dict(_spec_scheme)
 
-    min_replicas = _default_min_replicas(ctx, replicas)
+    spec["minReplicaCount"] = _default_min_replicas(ctx, default_replicas)
     if so_mapping.min_replicas != None:
-        min_replicas = int(so_mapping.min_replicas or 0)
-    if min_replicas == 0:
-        # This is a fail case as it means someone added the scaledObject plugin to their deployment
-        # to try and set min replicas to 0 (or something broke in our math)
-        fail("0 minReplicas is not supported")
+        spec["minReplicaCount"] = so_mapping.min_replicas
 
-    # min_replicas is set as an annotation so it can be read by henson to enable
-    # autoscaling in the final stage of a deployment
-    metadata.annotations.update({
-        "stripe.io/hpa-min-replicas": "%d" % min_replicas,
-    })
+    if so_mapping.max_replicas != None:
+        spec["maxReplicaCount"] = so_mapping.max_replicas
+    else:
+        spec["maxReplicaCount"] = default_replicas
+
+    # Replica configuration checks
+    if default_replicas < 1:
+        # This is an unsupported state. We don't support scaling on 0 replica deployments yet.
+        # We require deployments to have at least 1 replica at deployment time so that healthchecks can pass.
+        return None
+
+    if spec["minReplicaCount"] > default_replicas:
+        # The defaults do not allow for a min replica count higher than the default replica count, so we assume
+        # this is service owner misconfiguration
+        fail("Min Replica Count set higher than default deployment replica count, please check your configuration")
+
+    if default_replicas > spec["maxReplicaCount"]:
+        # The defaults do not allow for a max replica count lower than the default replica count, so we assume
+        # this is service owner misconfiguration
+        fail("Max Replica Count set lower than default deployment replica count, please check your configuration")
+
+    if (default_replicas == spec["minReplicaCount"]) and (default_replicas == spec["maxReplicaCount"]):
+        # If we get here, it means the defaults or the service owner created a situation
+        # where all values are equal and scaling is technically disabled. Therefore, we just render nothing
+        return None
+
+    # disable scaling initially and set the replicas at deployment to the value set for the deployment if enable_immediate_scaling
+    # is set to false or min_replica count is 0.
+    if so_mapping.enable_immediate_scaling == False or spec["minReplicaCount"] == 0:
+        metadata.annotations.update({
+            "autoscaling.keda.sh/paused-replicas": "%d" % default_replicas,
+        })
 
     metadata_obj = render_metadata(
         ctx,
         metadata,
     )
-
-    # disable autoscaling by default, enabled by henson at enable autoscaling stage
-    spec["minReplicaCount"] = replicas
-
-    if so_mapping.max_replicas != None:
-        spec["maxReplicaCount"] = so_mapping.max_replicas
-    else:
-        spec["maxReplicaCount"] = replicas
 
     scaling_target = dict(_scale_target_ref_scheme)
     scaling_target["name"] = metadata_obj["name"] # get target from rendered metadata as that will account for b/g color
@@ -474,10 +494,18 @@ def _render_scaledobject(ctx, so_mapping, replicas):
         spec["cooldownPeriod"] = so_mapping.cool_down_period
 
     fallback_configuration = dict(_fallback_scheme)
-    if so_mapping.fallback_threshold != None and so_mapping.fallback_replicas != None:
+
+    # Default fallback for AverageValue type scalers (Prometheus and Schedule) will be 3 failures and scale to DefaultReplicas
+    fallback_configuration["failureThreshold"] = 3
+    fallback_configuration["replicas"] = default_replicas
+
+    if so_mapping.fallback_threshold != None:
         fallback_configuration["failureThreshold"] = so_mapping.fallback_threshold
+
+    if so_mapping.fallback_replicas != None:
         fallback_configuration["replicas"] = so_mapping.fallback_replicas
-        spec["fallback"] = fallback_configuration
+
+    spec["fallback"] = fallback_configuration
 
     behavior = HorizontalPodAutoscalerBehavior(
         ctx,
@@ -500,30 +528,32 @@ def _render_scaledobject(ctx, so_mapping, replicas):
     spec["advanced"] = advanced
 
     triggers = []
-    for schedule_trigger in so_mapping.schedule_triggers:
-        trigger = dict(_cron_trigger_scheme)
-        trigger["metadata"] = dict(_cron_trigger_metadata_scheme)
+    if so_mapping.schedule_triggers != None:
+        for schedule_trigger in so_mapping.schedule_triggers:
+            trigger = dict(_cron_trigger_scheme)
+            trigger["metadata"] = dict(_cron_trigger_metadata_scheme)
 
-        trigger["metadata"]["start"] = schedule_trigger["start"]
-        trigger["metadata"]["end"] = schedule_trigger["end"]
-        if schedule_trigger["timezone"] != None:
-            trigger["metadata"]["timezone"] = schedule_trigger["timezone"]
+            trigger["metadata"]["start"] = schedule_trigger["start"]
+            trigger["metadata"]["end"] = schedule_trigger["end"]
+            if schedule_trigger["timezone"] != None:
+                trigger["metadata"]["timezone"] = schedule_trigger["timezone"]
 
-        # Desired Replica field is a string
-        if schedule_trigger["desired_replicas"] != None:
-            trigger["metadata"]["desiredReplicas"] = "%d" % schedule_trigger["desired_replicas"]
-        else:
-            trigger["metadata"]["desiredReplicas"] = "%d" % replicas
+            # Desired Replica field is a string
+            if schedule_trigger["desired_replicas"] != None:
+                trigger["metadata"]["desiredReplicas"] = "%d" % schedule_trigger["desired_replicas"]
+            else:
+                trigger["metadata"]["desiredReplicas"] = "%d" % default_replicas
 
-        triggers.append(trigger)
+            triggers.append(trigger)
 
-    for prometheus_trigger in so_mapping.prometheus_triggers:
-        trigger = dict(_prom_trigger_scheme)
-        trigger["metadata"] = dict(_prom_trigger_metadata_scheme)
+    if so_mapping.prometheus_triggers != None:
+        for prometheus_trigger in so_mapping.prometheus_triggers:
+            trigger = dict(_prom_trigger_scheme)
+            trigger["metadata"] = dict(_prom_trigger_metadata_scheme)
 
-        trigger["metadata"]["query"] = prometheus_trigger["query"]
-        trigger["metadata"]["threshold"] = prometheus_trigger["threshold"]
-        triggers.append(trigger)
+            trigger["metadata"]["query"] = prometheus_trigger["query"]
+            trigger["metadata"]["threshold"] = prometheus_trigger["threshold"]
+            triggers.append(trigger)
 
     if so_mapping.cpu_trigger != None:
         trigger = dict(_cpu_trigger_scheme)

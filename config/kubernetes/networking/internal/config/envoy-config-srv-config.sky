@@ -85,6 +85,7 @@ def _default_sidecar_cli_args(target):
         "allowed_machine_orgs": [
             "stripe.io",
         ],
+        "envoy_rlimit_nofile": 262144,
     }
 
 def _default_sidecar_config(target):

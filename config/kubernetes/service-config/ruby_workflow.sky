@@ -141,11 +141,13 @@ def requires_consul_in_computev2_config(compute_config):
         compute_config != None and
         "platform_options" in compute_config and
         compute_config["platform_options"] != None and
-        "disable_consul" in compute_config["platform_options"]
+        "disable_consul" in compute_config["platform_options"] and
+        compute_config["platform_options"]["disable_consul"] != None
     ):
-        return not bool(compute_config["platform_options"]["disable_consul"])
-    else:
-        return False # As of April 17th, 2024 Consul is Deprecated by default.
+        if not bool(compute_config["platform_options"]["disable_consul"]):
+            fail("Consul is no longer supported on Shared MSP services.")
+    
+    return False # As of April 17th, 2024 Consul is Deprecated by default.
 
 def _build_args(ctx, compute_config):
     args = {}

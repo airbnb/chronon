@@ -2,7 +2,7 @@
 ENVOY_CONFIG_SRV_PB = proto.package("stripe_internal.envoy_config_srv")
 
 
-def proxyless_service_registration(ctx, consul_agent_services, k8s_workload_name):
+def augment_with_proxyless_registrations(ctx, consul_agent_services, k8s_workload_name):
     """
     This function converts the proxyful service registrations to proxyless service registrations
     based on the service config.
@@ -15,56 +15,79 @@ def proxyless_service_registration(ctx, consul_agent_services, k8s_workload_name
     Returns:
          proxyless registrations.
     """
-    networking = ctx.vars.get("service.config.networking")
-    if networking == None:
-        return []
-    mesh_service_configs = networking.mesh_services
+    mesh_service_configs = _get_mesh_service_configs(ctx)
     if mesh_service_configs == None:
-        return []
+        return consul_agent_services
+    registrations = []
     proxyless_registrations = []
     for consul_service in consul_agent_services:
-        configured = _configure_proxyless_registration(ctx, consul_service, mesh_service_configs, consul_agent_services, k8s_workload_name)
-        if configured != None:
-            proxyless_registrations.append(configured)
+        registration_type = _get_registration_type(ctx, consul_service, mesh_service_configs, k8s_workload_name)
+        if registration_type == ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.UNSPECIFIED:
+            registrations.append(consul_service)
+        elif registration_type == ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC_SEPARATE or registration_type == ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC:
+            registrations.append(consul_service)
+            proxyless_registration = _configure_proxyless_registration_separate(ctx, consul_service, mesh_service_configs, consul_agent_services, k8s_workload_name)
+            registrations.append(proxyless_registration)
+            proxyless_registrations.append(proxyless_registration)
+        elif registration_type == ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC_INPLACE:
+            proxyless_registration = _configure_proxyless_registration_inplace(ctx, consul_service, mesh_service_configs)
+            registrations.append(proxyless_registration)
+            proxyless_registrations.append(proxyless_registration)
     _sanity_check_proxyless_registrations(proxyless_registrations)
-    return proxyless_registrations
+    return registrations
 
-def _enable_proxyless_registration(proxyless_registration_config, k8s_workload_name):
-    if proxyless_registration_config == None:
-        return False
-    if proxyless_registration_config.type == ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.UNSPECIFIED:
-        fail("Invalid service config: proxyless_registration must have non-UNSPECIFIED type")
-    filter = proxyless_registration_config.filter
+def _get_mesh_service_configs(ctx):
+    networking = ctx.vars.get("service.config.networking")
+    if networking == None:
+        return None
+    return networking.mesh_services
+
+def _get_registration_type(ctx, consul_service, mesh_service_configs, k8s_workload_name):
+    name = consul_service["name"]
+    if name not in mesh_service_configs:
+        return ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.UNSPECIFIED
+    service_config = _get_service_config_by_env(ctx, mesh_service_configs[name])
+    if service_config == None:
+        return ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.UNSPECIFIED
+
+    proxyless_registration = service_config.proxyless_registration
+    if proxyless_registration == None or proxyless_registration.type == ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.UNSPECIFIED:
+        return ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.UNSPECIFIED
+
+    if proxyless_registration.type == ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC_INPLACE:
+        return ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC_INPLACE
+
+    filter = proxyless_registration.filter
     ## No filters to apply, defaults to enable
     if filter == None:
-        return True
+        return ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC_SEPARATE
     if len(filter.k8s_workloads) == 0:
-        return True
+        return ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC_SEPARATE
     k8s_workload_name = _k8s_workload_name_no_color(k8s_workload_name)
     for workload in filter.k8s_workloads:
         if k8s_workload_name == workload:
-            return True
-    return False
+            return ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC_SEPARATE
+    return ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.UNSPECIFIED
 
 def _k8s_workload_name_no_color(k8s_workload_name):
     k8s_workload_name = k8s_workload_name.removesuffix("-blue")
     return k8s_workload_name.removesuffix("-green")
 
-def _configure_proxyless_registration(ctx, consul_service, mesh_service_configs, consul_agent_services, k8s_workload_name):
-    all_consul_service_names = [consul_service["name"] for consul_service in consul_agent_services]
+def _get_registration_config(ctx, mesh_service_configs, consul_service):
     name = consul_service["name"]
-    if name not in mesh_service_configs:
-        return None
     service_config = _get_service_config_by_env(ctx, mesh_service_configs[name])
-    if service_config == None:
-        return None
-    proxyless_registration_config = service_config.proxyless_registration
-    if not _enable_proxyless_registration(proxyless_registration_config, k8s_workload_name):
-        return None
+    return service_config.proxyless_registration
+
+def _configure_proxyless_registration_separate(ctx, consul_service, mesh_service_configs, consul_agent_services, k8s_workload_name):
+    all_consul_service_names = [consul_service["name"] for consul_service in consul_agent_services]
     if _proxyless_name(consul_service) in all_consul_service_names:
-        fail("Invalid service config: found duplicate proxyless registration for mesh service: " + name)
-    configured = _convert_to_grpc_proxyless_registration(ctx, consul_service, proxyless_registration_config)
-    return configured
+        fail("Invalid service config: found duplicate proxyless registration for mesh service: " + consul_service["name"])
+    registration_config = _get_registration_config(ctx, mesh_service_configs, consul_service)
+    return _convert_to_grpc_proxyless_registration_separate(consul_service, registration_config)
+
+def _configure_proxyless_registration_inplace(ctx, consul_service, mesh_service_configs):
+    registration_config = _get_registration_config(ctx, mesh_service_configs, consul_service)
+    return _convert_to_grpc_proxyless_registration_inplace(consul_service, registration_config)
 
 def _proxyless_port(proxyless_reg):
     port = proxyless_reg.port
@@ -88,8 +111,10 @@ def _proxyless_checks(consul_service, port):
     checks = []
     for check in consul_service["checks"]:
         if "grpc" not in check:
+            # horizon services use HTTP for service health check, same applies to proxyless endpoints.
             checks.append(check)
         else:
+            # otherwise, convert to gRPC mTLS health check
             copy = dict(check)
             copy["grpc"] = dict(check["grpc"])
             copy["grpc"]["port"] = port
@@ -106,7 +131,17 @@ def _get_service_config_by_env(ctx, service_config):
         return service_config.preprod
     return service_config.prod
 
-def _convert_to_grpc_proxyless_registration(ctx, consul_service, proxyless_reg_config):
+def _convert_to_grpc_proxyless_registration_inplace(consul_service, proxyless_reg_config):
+    proxyless_registration = dict(consul_service)
+    port = _proxyless_port(proxyless_reg_config)
+    checks = _proxyless_checks(consul_service, port)
+
+    proxyless_registration["port"] = port
+    proxyless_registration["checks"] = checks
+    proxyless_registration["meta"]["proxyless"] = "true"
+    return proxyless_registration
+
+def _convert_to_grpc_proxyless_registration_separate(consul_service, proxyless_reg_config):
     proxyless_registration = dict(consul_service)
     port = _proxyless_port(proxyless_reg_config)
     tags = _proxyless_tags(consul_service, proxyless_reg_config)

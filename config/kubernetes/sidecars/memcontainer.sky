@@ -13,11 +13,20 @@ def memento_sidecar(ctx):
         mount_host_credentials_proxy(container_name = sidecar_name),
         mount_ldap_host_volumes(container_name = sidecar_name),
         mount_host_volume("/pay/cache", container_name = sidecar_name, volume_args = {"type": "Directory"}),
+        mount_host_volume("/pay/conf", container_name = sidecar_name, volume_args = {"type": "Directory"}),
         sidecar_container(
             name = sidecar_name,
             sidecar_service = "memcontainer",
-            command = ["/pay/deploy/gocode/current/memcontainer/memcontainer"],
-            container_image = "stripe/gocode/memcontainer",
+            command = [
+                "/build/memrouter",
+                "-c1000",
+                "-ustripe",
+                "-p8787",
+                "-t2",
+                "-o",
+                "proxy_config=/build/memcontainer-lua/topology_loader.lua",
+            ],
+            container_image = "stripe/stripe-private-oss-forks/memrouter/memrouter-container",
             plugins = [],
         ),
     )
