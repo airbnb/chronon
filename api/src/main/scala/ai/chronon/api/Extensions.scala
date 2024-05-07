@@ -664,12 +664,12 @@ object Extensions {
       }
     }
     // derive a feature name key from path to file
+    // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
     def confPathToKey: String = {
-      // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
       filePath.split("/").takeRight(3).mkString("/")
     }
 
-    // derive a feature team key from config, ex: joins/team
+    // derive a feature team key from config, e.g: joins/team
     def confPathToTeamKey: Option[String] = {
       try {
         filePath match {
