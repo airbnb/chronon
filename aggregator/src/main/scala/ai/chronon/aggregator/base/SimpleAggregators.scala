@@ -364,7 +364,7 @@ case class FrequentItems[T: FrequentItemsFriendly](mapSize: Int, errorType: Erro
   // Initialize the sketch with the next closest power of 2
   val sketchSize: Int = if (mapSize > 1) Integer.highestOneBit(mapSize - 1) << 1 else 2
 
-  override def outputType: DataType = MapType(StringType, IntType)
+  override def outputType: DataType = MapType(StringType, LongType)
 
   override def irType: DataType = BinaryType
 
@@ -478,7 +478,7 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
     }
   }
 
-  override def outputType: DataType = MapType(StringType, IntType)
+  override def outputType: DataType = MapType(StringType, LongType)
   override def irType: DataType = BinaryType
 
   override def merge(ir1: ApproxHistogramIr[T], ir2: ApproxHistogramIr[T]): ApproxHistogramIr[T] = {

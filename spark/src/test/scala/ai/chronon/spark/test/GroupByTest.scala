@@ -679,7 +679,7 @@ class GroupByTest {
           |select explode(map_values(item_approx_histogram_k_15d)) as item_values
           |from test_approx_histograms.unit_test_group_by_approx_histograms
           |""".stripMargin)
-      .map(row => row.getAs[Int]("item_values"))(Encoders.scalaInt)
+      .map(row => row.getAs[Long]("item_values"))(Encoders.scalaLong)
       .collect()
       .toSet
 
