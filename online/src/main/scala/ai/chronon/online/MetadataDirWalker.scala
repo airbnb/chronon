@@ -30,7 +30,8 @@ class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
       val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
       Option(map.get("metaData"))
         .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
-        .flatMap(Option(_.get("name")))
+        .map(_.get("name"))
+        .flatMap(Option(_))
         .map(_.asInstanceOf[String])
     } catch {
       case ex: Throwable =>
