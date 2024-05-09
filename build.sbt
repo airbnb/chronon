@@ -80,26 +80,39 @@ enablePlugins(GitVersioning, GitBranchPrompt)
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded, flink)
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
-    name := "chronon"
+    name := "chronon",
+    version := git.versionProperty.value
   )
   .settings(releaseSettings: _*)
 
 // Git related config
 git.useGitDescribe := true
-git.gitTagToVersionNumber := { tag: String =>
-  // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
-  val versionStr = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
+git.gitTagToVersionNumber := { tag: String => {
+    // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
+    val versionStr = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
+    val branchTag = git.gitCurrentBranch.value.replace("/", "-")
+    if (branchTag == "main" || branchTag == "master") {
+      // For main branches, we tag the packages as <package-name>-<build-version>
+      Some(s"${versionStr}")
+    } else {
+      // For user branches, we tag the packages as <package-name>-<user-branch>-<build-version>
+      Some(s"${branchTag}-${versionStr}")
+    }
+  }
+}
+git.versionProperty := {
+  val versionStr = version.value
   val branchTag = git.gitCurrentBranch.value.replace("/", "-")
   if (branchTag == "main" || branchTag == "master") {
     // For main branches, we tag the packages as <package-name>-<build-version>
-    Some(s"${versionStr}")
+    s"${versionStr}"
   } else {
     // For user branches, we tag the packages as <package-name>-<user-branch>-<build-version>
-    Some(s"${branchTag}-${versionStr}")
+    s"${branchTag}-${versionStr}"
   }
 }
 
@@ -198,6 +211,7 @@ def fromMatrix(scalaVersion: String, modules: String*): Seq[ModuleID] =
 lazy val api = project
   .settings(
     publishSettings,
+    version := git.versionProperty.value,
     Compile / sourceGenerators += Def.task {
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
@@ -214,7 +228,7 @@ lazy val api = project
           "com.novocode" % "junit-interface" % "0.11" % "test",
           "org.scalatest" %% "scalatest" % "3.2.15" % "test",
           "org.scalatestplus" %% "mockito-3-4" % "3.2.10.0" % "test"
-        )
+        ),
   )
 
 lazy val py_thrift = taskKey[Seq[File]]("Build thrift generated files")
@@ -275,6 +289,7 @@ lazy val aggregator = project
   .dependsOn(api.%("compile->compile;test->test"))
   .settings(
     publishSettings,
+    version := git.versionProperty.value,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
       fromMatrix(scalaVersion.value, "spark-sql/provided") ++ Seq(
@@ -285,6 +300,7 @@ lazy val aggregator = project
 
 lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
+  .enablePlugins(BuildInfoPlugin)
   .settings(
     publishSettings,
     crossScalaVersions := supportedVersions,
@@ -296,11 +312,13 @@ lazy val online = project
       "net.jodah" % "typetools" % "0.4.1",
       "com.github.ben-manes.caffeine" % "caffeine" % "2.9.3"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer"),
+    version := git.versionProperty.value
   )
 
 lazy val online_unshaded = (project in file("online"))
   .dependsOn(aggregator.%("compile->compile;test->test"))
+  .enablePlugins(BuildInfoPlugin)
   .settings(
     target := target.value.toPath.resolveSibling("target-no-assembly").toFile,
     crossScalaVersions := supportedVersions,
@@ -319,6 +337,7 @@ lazy val online_unshaded = (project in file("online"))
                                        "scala-parallel-collections",
                                        "netty-buffer")
   )
+
 
 def cleanSparkMeta(): Unit = {
   Folder.clean(file(".") / "spark" / "spark-warehouse",
@@ -344,6 +363,7 @@ lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
+    version := git.versionProperty.value,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "jackson", "spark-all/provided")
   )
@@ -352,6 +372,7 @@ lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
+    version := git.versionProperty.value,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
@@ -394,3 +415,6 @@ ThisBuild / assemblyMergeStrategy := {
   case _                                   => MergeStrategy.first
 }
 exportJars := true
+
+
+

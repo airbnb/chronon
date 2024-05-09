@@ -26,16 +26,18 @@ import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
 import com.google.gson.Gson
 import org.apache.avro.generic.GenericRecord
-import java.util.function.Consumer
 
+import java.util.function.Consumer
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.collection.immutable.Map
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
-
 import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildDerivedFields}
+import com.timgroup.statsd.Event
+import com.timgroup.statsd.Event.AlertType
+import buildinfo.BuildInfo
 
 object Fetcher {
   case class Request(name: String,
@@ -81,10 +83,27 @@ class Fetcher(val kvStore: KVStore,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
-              val externalSourceRegistry: ExternalSourceRegistry = null)
-    extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
+              val externalSourceRegistry: ExternalSourceRegistry = null,
+              callerName: String = null,
+              flagStore: FlagStore = null)
+    extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug, flagStore) {
 
-  def buildJoinCodec(joinConf: api.Join): JoinCodec = {
+  private def reportCallerNameFetcherVersion(): Unit = {
+    val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
+    val ctx = Metrics.Context(Environment.Fetcher)
+    val event = Event
+      .builder()
+      .withTitle("FetcherInitialization")
+      .withText(message)
+      .withAlertType(AlertType.INFO)
+      .build()
+    ctx.recordEvent("caller_name_fetcher_version", event)
+  }
+
+  // run during initialization
+  reportCallerNameFetcherVersion()
+
+  def buildJoinCodec(joinConf: Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
     // collect keyFields and valueFields from joinParts/GroupBys
@@ -172,9 +191,10 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+  override def fetchJoin(requests: scala.collection.Seq[Request],
+                         joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
-    val internalResponsesF = super.fetchJoin(requests)
+    val internalResponsesF = super.fetchJoin(requests, joinConf)
     val externalResponsesF = fetchExternal(requests)
     val combinedResponsesF = internalResponsesF.zip(externalResponsesF).map {
       case (internalResponses, externalResponses) =>

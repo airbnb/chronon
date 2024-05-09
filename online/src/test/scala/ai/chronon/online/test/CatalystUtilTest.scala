@@ -251,9 +251,9 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
     val res = cu.performSql(CommonScalarsRow)
     assertEquals(res.get.size, 5)
-    assertEquals(res.get("a"),"2038-01-19 03:14:07")
+    assertEquals(res.get("a"), "2038-01-19 03:14:07")
     assertTrue(res.get("b").isInstanceOf[java.lang.Long])
-    assertEquals(res.get("c"),1425546000000000L)
+    assertEquals(res.get("c"), 1425546000000000L)
     assertEquals(res.get("d"), 17)
     assertEquals(res.get("e"), 5)
   }
@@ -584,4 +584,46 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertTrue(res.get("c").asInstanceOf[util.ArrayList[Any]].contains("world"))
   }
 
+  val inputEventStruct: StructType = StructType.from(
+    "InputEventStruct",
+    Array(
+      ("created_ts", LongType),
+      ("tag", StringType),
+      ("key", StringType),
+      ("json_prediction", StringType)
+    )
+  )
+  val inputEventRow: Map[String, Any] = Map(
+    "created_ts" -> 1000L,
+    "tag" -> "v1.0",
+    "key" -> "unique_key",
+    "json_prediction" -> "{ \"score\": 0.5}"
+  )
+
+  def testWhereClauseShouldFilterEventOut(): Unit = {
+    val selects = Map(
+      "id" -> "key",
+      "created" -> "created_ts",
+      "score" -> "CAST(get_json_object(json_prediction, '$.score') as Double)"
+    ).toSeq
+    val wheres = Seq("tag = 'inexistent'")
+    val cu = new CatalystUtil(selects, inputEventStruct, wheres)
+    val res = cu.performSql(inputEventRow)
+    assertTrue(res.isEmpty)
+  }
+
+  def testJsonInSelectAndValidWhereClause(): Unit = {
+    val selects = Map(
+      "id" -> "key",
+      "created" -> "created_ts",
+      "score" -> "CAST(get_json_object(json_prediction, '$.score') as Double)"
+    ).toSeq
+    val wheres = Seq("tag = 'v1.0'")
+    val cu = new CatalystUtil(selects, inputEventStruct, wheres)
+    val res = cu.performSql(inputEventRow)
+    assertTrue(res.get.size == 3)
+    assertTrue(res.get("id") == "unique_key")
+    assertTrue(res.get("created") == 1000L)
+    assertTrue(res.get("score") == 0.5)
+  }
 }

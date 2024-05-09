@@ -171,6 +171,10 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   private var timeoutMillis: Long = 10000
 
+  private var flagStore: FlagStore = null
+
+  def setFlagStore(customFlagStore: FlagStore): Unit = { flagStore = customFlagStore }
+
   def setTimeout(millis: Long): Unit = { timeoutMillis = millis }
 
   // kafka has built-in support - but one can add support to other types using this method.
@@ -191,16 +195,26 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   def logResponse(resp: LoggableResponse): Unit
 
   // helper functions
-  final def buildFetcher(debug: Boolean = false): Fetcher =
+  final def buildFetcher(debug: Boolean = false, callerName: String = null): Fetcher =
     new Fetcher(genKvStore,
                 Constants.ChrononMetadataKey,
                 logFunc = responseConsumer,
                 debug = debug,
                 externalSourceRegistry = externalRegistry,
-                timeoutMillis = timeoutMillis)
+                timeoutMillis = timeoutMillis,
+                callerName = callerName,
+                flagStore = flagStore)
 
-  final def buildJavaFetcher(): JavaFetcher =
-    new JavaFetcher(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
+  final def buildJavaFetcher(callerName: String = null): JavaFetcher =
+    new JavaFetcher(genKvStore,
+                    Constants.ChrononMetadataKey,
+                    timeoutMillis,
+                    responseConsumer,
+                    externalRegistry,
+                    callerName,
+                    flagStore)
+
+  final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(null)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {

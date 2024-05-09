@@ -49,7 +49,8 @@ import ai.chronon.online.OnlineDerivationUtil.{
 class FetcherBase(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
-                  debug: Boolean = false)
+                  debug: Boolean = false,
+                  flagStore: FlagStore = null)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis)
     with FetcherCache {
   import FetcherBase._
@@ -145,11 +146,11 @@ class FetcherBase(kvStore: KVStore,
         if (debug) {
           val gson = new Gson()
           logger.info(s"""
-                 |batch ir: ${gson.toJson(batchIr)}
-                 |streamingIrs: ${gson.toJson(streamingIrs)}
-                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-                 |queryTime in millis: $queryTimeMs
-                 |""".stripMargin)
+                         |batch ir: ${gson.toJson(batchIr)}
+                         |streamingIrs: ${gson.toJson(streamingIrs)}
+                         |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                         |queryTime in millis: $queryTimeMs
+                         |""".stripMargin)
         }
 
         aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
@@ -167,11 +168,11 @@ class FetcherBase(kvStore: KVStore,
         if (debug) {
           val gson = new Gson()
           logger.info(s"""
-                 |batch ir: ${gson.toJson(batchIr)}
-                 |streamingRows: ${gson.toJson(streamingRows)}
-                 |batchEnd in millis: ${servingInfo.batchEndTsMillis}
-                 |queryTime in millis: $queryTimeMs
-                 |""".stripMargin)
+                         |batch ir: ${gson.toJson(batchIr)}
+                         |streamingRows: ${gson.toJson(streamingRows)}
+                         |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                         |queryTime in millis: $queryTimeMs
+                         |""".stripMargin)
         }
 
         aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
@@ -243,8 +244,8 @@ class FetcherBase(kvStore: KVStore,
     val name = groupByServingInfo.groupBy.metaData.name
     if (batchEndTs > groupByServingInfo.batchEndTsMillis) {
       logger.info(s"""$name's value's batch timestamp of $batchEndTs is
-           |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
-           |Forcing an update of schema.""".stripMargin)
+                     |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
+                     |Forcing an update of schema.""".stripMargin)
       getGroupByServingInfo
         .force(name)
         .recover {
@@ -471,12 +472,18 @@ class FetcherBase(kvStore: KVStore,
 
   // prioritize passed in joinOverrides over the ones in metadata store
   // used in stream-enrichment and in staging testing
-  def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+  def fetchJoin(requests: scala.collection.Seq[Request],
+                joinConf: Option[Join] = None): Future[scala.collection.Seq[Response]] = {
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
     val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, KeyMissingException]]])] =
       requests.map { request =>
-        val joinTry: Try[JoinOps] = getJoinConf(request.name)
+        val joinTry: Try[JoinOps] = if (joinConf.isEmpty) {
+          getJoinConf(request.name)
+        } else {
+          logger.debug(s"Using passed in join configuration: ${joinConf.get.metaData.getName}")
+          Success(JoinOps(joinConf.get))
+        }
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
           joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))

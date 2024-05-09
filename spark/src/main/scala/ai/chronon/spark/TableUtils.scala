@@ -17,7 +17,6 @@
 package ai.chronon.spark
 
 import java.io.{PrintWriter, StringWriter}
-
 import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
@@ -25,16 +24,17 @@ import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
 import jnr.ffi.annotations.Synchronized
+import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SaveMode, SparkSession}
 import org.apache.spark.storage.StorageLevel
+
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
 import java.util.concurrent.{ExecutorService, Executors}
-
 import scala.collection.{Seq, mutable}
 import scala.collection.immutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
@@ -250,17 +250,17 @@ case class TableUtils(sparkSession: SparkSession) {
       sparkSession.sql(s"SELECT * FROM $tableName where $partitionColumn='$partitionFilter' LIMIT 1").collect()
       true
     } catch {
-      case e: RuntimeException =>
+      case e: SparkException =>
         if (e.getMessage.contains("ACCESS DENIED"))
           logger.error(s"[Error] No access to table: $tableName ")
         else {
           logger.error(s"[Error] Encountered exception when reading table: $tableName.")
-          e.printStackTrace()
         }
+        e.printStackTrace()
         false
-      case ex: Exception =>
+      case e: Exception =>
         logger.error(s"[Error] Encountered exception when reading table: $tableName.")
-        ex.printStackTrace()
+        e.printStackTrace()
         true
     }
   }
