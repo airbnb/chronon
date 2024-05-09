@@ -58,24 +58,13 @@ class FetcherBase(kvStore: KVStore,
   /**
     * A groupBy request is split into batchRequest and optionally a streamingRequest. This method decodes bytes
     * (of the appropriate avro schema) into chronon rows aggregates further if necessary.
-    *
-    * @param batchResponses a BatchResponses, which encapsulates either a response from kv store or a cached batch IR.
-    * @param streamingResponsesOpt a response from kv store, if the GroupBy was streaming data.
-    * @param oldServingInfo the GroupByServingInfo used to fetch the GroupBys.
-    * @param queryTimeMs the Request timestamp
-    * @param startTimeMs time when we started fetching the KV store
-    * @param overallLatency the time it took to get the values from the KV store
-    * @param context the Metrics.Context to use for recording metrics
-    * @param totalResponseValueBytes the total size of the response from the KV store
-    * @param keys the keys used to fetch the GroupBy
-    * @return
     */
   private def constructGroupByResponse(batchResponses: BatchResponses,
                                        streamingResponsesOpt: Option[Seq[TimedValue]],
                                        oldServingInfo: GroupByServingInfoParsed,
-                                       queryTimeMs: Long,
-                                       startTimeMs: Long,
-                                       overallLatency: Long,
+                                       queryTimeMs: Long, // the timestamp of the Request being served.
+                                       startTimeMs: Long, // timestamp right before the KV store fetch.
+                                       overallLatency: Long, // the time it took to get the values from the KV store
                                        context: Metrics.Context,
                                        totalResponseValueBytes: Int,
                                        keys: Map[String, Any] // The keys are used only for caching
