@@ -249,6 +249,19 @@ class FetcherBase(kvStore: KVStore,
     }
   }
 
+  override def isCachingEnabled(groupBy: GroupBy): Boolean = {
+    if (!isCacheSizeConfigured || groupBy.getMetaData == null || groupBy.getMetaData.getName == null) return false
+
+    val isCachingFlagEnabled = flagStore.isSet("enable_fetcher_batch_ir_cache",
+                                               Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).asJava)
+
+    if (debug)
+      println(
+        s"Online IR caching is ${if (isCachingFlagEnabled) "enabled" else "disabled"} for ${groupBy.getMetaData.getName}")
+
+    isCachingFlagEnabled
+  }
+
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.

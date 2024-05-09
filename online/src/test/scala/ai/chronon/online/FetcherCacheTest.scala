@@ -2,14 +2,13 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.windowing.FinalBatchIr
 import ai.chronon.api.Extensions.GroupByOps
-import ai.chronon.api.{Builders, GroupBy}
+import ai.chronon.api.GroupBy
 import ai.chronon.online.FetcherBase._
-import ai.chronon.online.{AvroCodec, FetcherCache, GroupByServingInfoParsed, KVStore, Metrics}
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.FetcherCache.{BatchIrCache, BatchResponses, CachedMapBatchResponse}
 import ai.chronon.online.KVStore.TimedValue
 import ai.chronon.online.Metrics.Context
-import org.junit.Assert.{assertArrayEquals, assertEquals, assertFalse, assertNull, assertTrue, fail}
+import org.junit.Assert.{assertArrayEquals, assertEquals, assertNull, fail}
 import org.junit.Test
 import org.mockito.Mockito._
 import org.mockito.ArgumentMatchers.any
@@ -331,51 +330,5 @@ class FetcherCacheTest extends MockitoHelper {
                                                                                keys)
     verify(servingInfo.outputCodec.decodeMap(any()), times(1)) // decoding did happen
     assertEquals(mapResponse, decodedMapResponse)
-  }
-
-  @Test
-  def test_isCachingEnabled_CorrectlyDetermineIfCacheIsEnabled(): Unit = {
-    val baseFetcher = new TestableFetcherCache(Some(new BatchIrCache("test", batchIrCacheMaximumSize)))
-    def buildGroupByWithCustomJson(name: String, customJson: String = null): GroupBy =
-      Builders.GroupBy(
-        metaData = Builders.MetaData(name = name, customJson = customJson)
-      )
-
-    assertFalse(baseFetcher.isCachingEnabled(buildGroupByWithCustomJson("test_groupby_1")))
-    assertFalse(baseFetcher.isCachingEnabled(buildGroupByWithCustomJson("test_groupby_2", "{}")))
-    assertTrue(
-      baseFetcher
-        .isCachingEnabled(buildGroupByWithCustomJson("test_groupby_3", "{\"enable_caching\": true}"))
-    )
-    assertFalse(
-      baseFetcher
-        .isCachingEnabled(buildGroupByWithCustomJson("test_groupby_4", "{\"enable_caching\": false}"))
-    )
-    assertFalse(
-      baseFetcher
-        .isCachingEnabled(
-          buildGroupByWithCustomJson("test_groupby_5", "{\"enable_caching\": \"string instead of bool\"}")
-        )
-    )
-  }
-
-  @Test
-  def test_isCachingEnabled_Memoizes(): Unit = {
-    val baseFetcher = new TestableFetcherCache(Some(new BatchIrCache("test", batchIrCacheMaximumSize)))
-    def buildGroupByWithCustomJson(name: String, customJson: String = null): GroupBy =
-      Builders.GroupBy(
-        metaData = Builders.MetaData(name = name, customJson = customJson)
-      )
-
-    // the map is clean at the start
-    assertFalse(baseFetcher.isCachingEnabledForGroupBy.contains("test_memo_gb_1"))
-    assertFalse(baseFetcher.isCachingEnabledForGroupBy.contains("test_memo_gb_2"))
-
-    // memoization works for both true and false
-    baseFetcher.isCachingEnabled(buildGroupByWithCustomJson("test_memo_gb_1"))
-    assertFalse(baseFetcher.isCachingEnabledForGroupBy("test_memo_gb_1"))
-
-    baseFetcher.isCachingEnabled(buildGroupByWithCustomJson("test_memo_gb_2", "{\"enable_caching\": true}"))
-    assertTrue(baseFetcher.isCachingEnabledForGroupBy("test_memo_gb_2"))
   }
 }

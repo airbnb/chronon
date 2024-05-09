@@ -18,10 +18,11 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.windowing.FinalBatchIr
 import ai.chronon.api.Extensions.GroupByOps
-import ai.chronon.api.MetaData
+import ai.chronon.api.{Builders, GroupBy, MetaData}
 import ai.chronon.online.Fetcher.{ColumnSpec, Request, Response}
 import ai.chronon.online.FetcherCache.BatchResponses
 import ai.chronon.online.KVStore.TimedValue
+import org.junit.Assert.{assertFalse, assertTrue, fail}
 import org.junit.{Before, Test}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
@@ -188,5 +189,35 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     result shouldEqual oldServingInfo
     verify(ttlCache).refresh(any())
     verify(fetcherBase, never()).updateServingInfo(any(), any())
+  }
+
+  @Test
+  def test_isCachingEnabled_CorrectlyDetermineIfCacheIsEnabled(): Unit = {
+    val flagStore: FlagStore = (flagName: String, attributes: java.util.Map[String, String]) => {
+      flagName match {
+        case "enable_fetcher_batch_ir_cache" =>
+          attributes.get("groupby_streaming_dataset") match {
+            case "test_groupby_2" => false
+            case "test_groupby_3" => true
+            case other @ _ =>
+              fail(s"Unexpected groupby_streaming_dataset: $other")
+              false
+          }
+        case _ => false
+      }
+    }
+
+    kvStore = mock[KVStore](Answers.RETURNS_DEEP_STUBS)
+    when(kvStore.executionContext).thenReturn(ExecutionContext.global)
+    val fetcherBaseWithFlagStore = spy(new FetcherBase(kvStore, flagStore = flagStore))
+    when(fetcherBaseWithFlagStore.isCacheSizeConfigured).thenReturn(true)
+
+    def buildGroupByWithCustomJson(name: String): GroupBy = Builders.GroupBy(metaData = Builders.MetaData(name = name))
+
+    // no name set
+    assertFalse(fetcherBaseWithFlagStore.isCachingEnabled(Builders.GroupBy()))
+
+    assertFalse(fetcherBaseWithFlagStore.isCachingEnabled(buildGroupByWithCustomJson("test_groupby_2")))
+    assertTrue(fetcherBaseWithFlagStore.isCachingEnabled(buildGroupByWithCustomJson("test_groupby_3")))
   }
 }
