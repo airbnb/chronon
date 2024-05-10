@@ -640,8 +640,6 @@ object Extensions {
 
   implicit class filePathOps(filePath: String) {
     @transient lazy val logger = LoggerFactory.getLogger(getClass)
-    // process chronon configs only. others will be ignored
-    // todo: add metrics
 
     private def loadJsonToConf[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[T] = {
       try {
@@ -667,22 +665,6 @@ object Extensions {
     // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
     def confPathToKey: String = {
       filePath.split("/").takeRight(3).mkString("/")
-    }
-
-    // derive a feature team key from config, e.g: joins/team
-    def confPathToTeamKey: Option[String] = {
-      try {
-        filePath match {
-          case value if value.contains("staging_queries/") => loadJsonToConf[StagingQuery](value).map("staging_queries/" + _.metaData.team)
-          case value if value.contains("joins/")           => loadJsonToConf[Join](value).map("joins/" + _.metaData.team)
-          case value if value.contains("group_bys/")       => loadJsonToConf[GroupBy](value).map("group_bys/" + _.metaData.team)
-          case _                                           => logger.info(s"unknown config type in file $filePath"); None
-        }
-      } catch {
-        case e: Throwable =>
-          logger.error(s"Failed to parse compiled team from file path: $filePath, \nerror=${e.getMessage}")
-          None
-      }
     }
 
     def confPathToOptConfStr: Option[String] = {

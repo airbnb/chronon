@@ -729,11 +729,20 @@ object Driver {
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Chronon config file or directory")
+      val `type`: ScallopOption[String] =
+        choice(Seq("join", "group-by", "staging-query"), descr = "the type of conf to fetch", default = Some("join"))
     }
 
     def run(args: Args): Unit = {
       val acceptedEndPoints = List("ZIPLINE_METADATA", "ZIPLINE_METADATA_BY_TEAM")
-      val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
+      val dirWalker = {
+        args.confPath() match {
+          case value if value.contains("joins/")     => new MetadataDirWalker[api.Join](args.confPath(), acceptedEndPoints)
+          case value if value.contains("group_bys/")     => new MetadataDirWalker[api.GroupBy](args.confPath(), acceptedEndPoints)
+          case value if value.contains("staging_queries/")     => new MetadataDirWalker[api.StagingQuery](args.confPath(), acceptedEndPoints)
+        }
+      }
+
       val kvMap = dirWalker.run
       implicit val ec: ExecutionContext = ExecutionContext.global
       val putRequestsIterable: Iterable[Future[scala.collection.Seq[Boolean]]] = kvMap.map {
