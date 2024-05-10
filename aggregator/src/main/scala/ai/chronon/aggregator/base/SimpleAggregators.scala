@@ -357,7 +357,7 @@ object FrequentItemsFriendly {
 }
 
 case class FrequentItems[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorType = ErrorType.NO_FALSE_POSITIVES)
-    extends SimpleAggregator[T, ItemsSketchIR[T], util.Map[T, Long]] {
+    extends SimpleAggregator[T, ItemsSketchIR[T], util.Map[String, Long]] {
   private type Sketch = ItemsSketchIR[T]
 
   // The ItemsSketch implementation requires a size with a positive power of 2
@@ -393,9 +393,9 @@ case class FrequentItems[T: FrequentItemsFriendly](mapSize: Int, errorType: Erro
     ItemsSketchIR(clonedSketch, ir.sketchType)
   }
 
-  override def finalize(ir: Sketch): util.Map[T, Long] = {
+  override def finalize(ir: Sketch): util.Map[String, Long] = {
     if (mapSize <= 0) {
-      return new util.HashMap[T, Long]()
+      return new util.HashMap[String, Long]()
     }
 
     val items = ir.sketch.getFrequentItems(errorType).map(sk => sk.getItem -> sk.getEstimate)
@@ -411,8 +411,8 @@ case class FrequentItems[T: FrequentItemsFriendly](mapSize: Int, errorType: Erro
         }
     })
 
-    val result = new util.HashMap[T, Long]()
-    heap.dequeueAll.foreach({ case (k, v) => result.put(k, v)})
+    val result = new util.HashMap[String, Long]()
+    heap.dequeueAll.foreach({ case (k, v) => result.put(String.valueOf(k), v)})
     result
   }
 
@@ -458,7 +458,7 @@ case class ApproxHistogramIrSerializable[T: FrequentItemsFriendly](
 // This keeps an exact aggregation for entries where the number of keys is < k, and switches over to the sketch
 // when the underlying map exceeds k keys.
 class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorType = ErrorType.NO_FALSE_POSITIVES)
-    extends SimpleAggregator[T, ApproxHistogramIr[T], util.Map[T, Long]] {
+    extends SimpleAggregator[T, ApproxHistogramIr[T], util.Map[String, Long]] {
   private val frequentItemsAggregator = new FrequentItems[T](mapSize, errorType)
   override def prepare(input: T): ApproxHistogramIr[T] = {
     val histogram = new util.HashMap[T, Long]()
@@ -491,10 +491,10 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
     }
   }
 
-  override def finalize(ir: ApproxHistogramIr[T]): util.Map[T, Long] = {
+  override def finalize(ir: ApproxHistogramIr[T]): util.Map[String, Long] = {
     (ir.sketch, ir.histogram) match {
       case (Some(sketch), None) => frequentItemsAggregator.finalize(sketch)
-      case (None, Some(hist))   => hist
+      case (None, Some(hist))   => toOutputMap(hist)
       case _ => throw new IllegalStateException("Histogram state is missing")
     }
   }
@@ -574,6 +574,12 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
 
   private def increment(value: T, times: Long, values: util.Map[T, Long]): Unit = {
     values.put(value, values.getOrDefault(value, 0) + times)
+  }
+
+  private def toOutputMap(map: util.Map[T, Long]): util.Map[String, Long] = {
+    val result = new util.HashMap[String, Long](map.size())
+    map.entrySet().forEach(e => result.put(String.valueOf(e.getKey), e.getValue))
+    result
   }
 }
 

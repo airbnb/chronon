@@ -43,9 +43,9 @@ class FrequentItemsTest extends TestCase {
     val result = items.finalize(ir)
 
     assertEquals(toHashMap(Map(
-      3L -> 3L,
-      2L -> 2L,
-      1L -> 1L
+      "3" -> 3L,
+      "2" -> 2L,
+      "1" -> 1L
     )), result)
   }
 
