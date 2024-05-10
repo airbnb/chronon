@@ -1,13 +1,16 @@
 package ai.chronon.online
 
+import ai.chronon.api.ThriftJsonCodec
 import org.slf4j.LoggerFactory
 import ai.chronon.online.MetadataEndPoint
 import com.google.gson.Gson
+import org.apache.thrift.TBase
 
 import java.io.File
 import java.nio.file.{Files, Paths}
+import scala.reflect.ClassTag
 
-class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
+class MetadataDirWalker[Conf <: TBase[_, _]: Manifest: ClassTag](dirPath: String, metadataEndPointNames: List[String]) {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
   private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
     if (base.isFile) {
@@ -23,6 +26,16 @@ class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
     }
   }
 
+  private def loadJsonToConf[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[T] = {
+    try {
+      val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)
+      Some(configConf)
+    } catch {
+      case e: Throwable =>
+        logger.error(s"Failed to parse compiled Chronon config file: $file, \nerror=${e.getMessage}")
+        None
+    }
+  }
   private def parseName(path: String): Option[String] = {
     val gson = new Gson()
     val reader = Files.newBufferedReader(Paths.get(path))
@@ -57,29 +70,47 @@ class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
       }
   }
 
-  def extractKVPair(metadataEndPointName: String, filePath: String): (Option[String], Option[String]) = {
-    val endPoint: MetadataEndPoint = MetadataEndPoint.NameToEndPoint(metadataEndPointName)
-    val (key, value) = endPoint.extractFn(filePath)
-    (key, value)
+  private def extractkvPairToEndPoint(filePath: String, conf: Conf): List[(String, (String, String))] = {
+    metadataEndPointNames.map { endPointName =>
+      (endPointName, MetadataEndPoint.getEndPoint(endPointName).extractFn(filePath, conf))
+    }
   }
 
+  /**
+    * Iterate over the list of files and extract the key value pairs for each file
+    * @return Map of endpoint -> (Map of key -> List of values)
+    *         e.g. (
+    *            ZIPLINE_METADATA_BY_TEAM -> (team -> List("join1", "join2")),
+    *            ZIPLINE_METADATA -> (teams/joins/join1 -> config1)
+    *         )
+    */
   def run: Map[String, Map[String, List[String]]] = {
     nonEmptyFileList.foldLeft(Map.empty[String, Map[String, List[String]]]) { (acc, file) =>
-      val kvPairToEndPoint: List[(String, (Option[String], Option[String]))] = metadataEndPointNames.map {
-        metadataEndPointName =>
-          (metadataEndPointName, extractKVPair(metadataEndPointName, file.getPath))
-      }
-      kvPairToEndPoint
-        .flatMap(kvPair => {
-          val endPoint = kvPair._1
-          val (key, value) = kvPair._2
-          if (value.isDefined && key.isDefined) {
+      // For each end point we apply the extractFn to the file path to extract the key value pair
+      val filePath = file.getPath
+      val optConf =
+        try {
+          loadJsonToConf[Conf](filePath)
+        } catch {
+          case e: Throwable =>
+            logger.error(s"Failed to parse compiled team from file path: $filePath, \nerror=${e.getMessage}")
+            None
+        }
+      if (optConf.isDefined) {
+        val kvPairToEndPoint: List[(String, (String, String))] = extractkvPairToEndPoint(filePath, optConf.get)
+        kvPairToEndPoint
+          .flatMap(kvPair => {
+            val endPoint = kvPair._1
+            val (key, value) = kvPair._2
             val map = acc.getOrElse(endPoint, Map.empty[String, List[String]])
-            val list = map.getOrElse(key.get, List.empty[String]) ++ List(value.get)
-            acc.updated(endPoint, map.updated(key.get, list))
-          } else acc
-        })
-        .toMap
+            val list = map.getOrElse(key, List.empty[String]) ++ List(value)
+            acc.updated(endPoint, map.updated(key, list))
+          })
+          .toMap
+      } else {
+        logger.info(s"Skipping invalid file ${file.getPath}")
+        acc
+      }
     }
   }
 }
