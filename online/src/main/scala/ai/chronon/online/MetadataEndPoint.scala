@@ -1,6 +1,6 @@
 package ai.chronon.online
 
-import ai.chronon.api.Extensions.filePathOps
+import ai.chronon.api.Extensions.StringOps
 import ai.chronon.api.{GroupBy, Join, StagingQuery, ThriftJsonCodec}
 import org.apache.thrift.TBase
 import org.slf4j.LoggerFactory

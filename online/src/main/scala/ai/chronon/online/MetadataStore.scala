@@ -18,7 +18,7 @@ package ai.chronon.online
 
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps, WindowOps, WindowUtils, filePathOps}
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps, WindowOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest, TimedValue}
 import com.google.gson.{Gson, GsonBuilder}
