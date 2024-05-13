@@ -166,12 +166,12 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
           else v.mkString("\n").getBytes()
         PutRequest(keyBytes = kBytes,
                    valueBytes = vBytes,
-                   dataset = dataset,
+                   dataset = datasetName,
                    tsMillis = Some(System.currentTimeMillis()))
       }
     }.toSeq
     val putsBatches = puts.grouped(batchSize).toSeq
-    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
+    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$datasetName")
     val futures = putsBatches.map(batch => kvStore.multiPut(batch))
     Future.sequence(futures).map(_.flatten)
   }
