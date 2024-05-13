@@ -344,7 +344,7 @@ def get_related_table_names(conf: ChrononJobTypes) -> List[str]:
     return related_tables
 
 
-def run_databricks_assertions_for_join(team_slug: str, name: str, output_namespace: str, right_parts: List[api.JoinPart]):
+def run_databricks_assertions_for_join(name: str, team_slug: str, output_namespace: str, right_parts: List[api.JoinPart]):
     assert team_slug, "team_slug is required for databricks_mode"
     assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
     assert name, "a name for the join is required for databricks_mode"
