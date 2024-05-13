@@ -148,40 +148,6 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       },
       { gb => Metrics.Context(environment = "group_by.serving_info.fetch", groupBy = gb) })
 
-  // upload the materialized JSONs to KV store:
-  // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
-  def putConf(configPath: String): Future[Seq[Boolean]] = {
-    val configFile = new File(configPath)
-    assert(configFile.exists(), s"$configFile does not exist")
-    logger.info(s"Uploading Chronon configs from $configPath")
-    val fileList = listFiles(configFile)
-
-    val puts = fileList
-      .filter { file =>
-        val name = parseName(file.getPath)
-        if (name.isEmpty) logger.info(s"Skipping invalid file ${file.getPath}")
-        name.isDefined
-      }
-      .flatMap { file =>
-        val path = file.getPath
-        val confJsonOpt = path.confPathToOptConfStr
-        val key = path.confPathToKey
-        confJsonOpt.map { conf =>
-          logger.info(s"""Putting metadata for 
-               |key: $key 
-               |conf: $conf""".stripMargin)
-          PutRequest(keyBytes = key.getBytes(),
-                     valueBytes = conf.getBytes(),
-                     dataset = dataset,
-                     tsMillis = Some(System.currentTimeMillis()))
-        }
-      }
-    val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
-    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
-    val futures = putsBatches.map(batch => kvStore.multiPut(batch))
-    Future.sequence(futures).map(_.flatten)
-  }
-
   def put(
       kVPairs: Map[String, Seq[String]],
       datasetName: String = ChrononMetadataKey,
@@ -208,38 +174,5 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
     val futures = putsBatches.map(batch => kvStore.multiPut(batch))
     Future.sequence(futures).map(_.flatten)
-  }
-
-  // list file recursively
-  private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
-    if (base.isFile) {
-      Seq(base)
-    } else {
-      val files = base.listFiles
-      val result = files.filter(_.isFile)
-      result ++
-        files
-          .filter(_.isDirectory)
-          .filter(_ => recursive)
-          .flatMap(listFiles(_, recursive))
-    }
-  }
-
-  def parseName(path: String): Option[String] = {
-    val gson = new Gson()
-    val reader = Files.newBufferedReader(Paths.get(path))
-    try {
-      val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
-      Option(map.get("metaData"))
-        .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
-        .map(_.get("name"))
-        .flatMap(Option(_))
-        .map(_.asInstanceOf[String])
-    } catch {
-      case ex: Throwable =>
-        logger.error(s"Failed to parse Chronon config file at $path as JSON", ex)
-        ex.printStackTrace()
-        None
-    }
   }
 }
