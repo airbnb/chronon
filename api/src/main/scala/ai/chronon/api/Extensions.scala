@@ -23,13 +23,11 @@ import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
 import org.apache.spark.sql.Column
 import org.apache.spark.sql.functions.expr
-import org.apache.thrift.TBase
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
 import java.util.regex.Pattern
 import scala.collection.{Seq, mutable}
-import scala.reflect.ClassTag
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
 
@@ -636,45 +634,11 @@ object Extensions {
     def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
 
     def cleanSpec: String = string.split("/").head
-  }
 
-  implicit class filePathOps(filePath: String) {
-    @transient lazy val logger = LoggerFactory.getLogger(getClass)
-
-    private def loadJsonToConf[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[T] = {
-      try {
-        val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)
-        Some(configConf)
-      } catch {
-        case e: Throwable =>
-          logger.error(s"Failed to parse compiled Chronon config file: $file, \nerror=${e.getMessage}")
-          None
-      }
-    }
-    private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
-      try {
-        val configConf = loadJsonToConf[T](file).get
-        Some(ThriftJsonCodec.toJsonStr(configConf))
-      } catch {
-        case e: Throwable =>
-          logger.error(s"Failed to parse compiled Chronon config file: $file, \nerror=${e.getMessage}")
-          None
-      }
-    }
     // derive a feature name key from path to file
-    // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
     def confPathToKey: String = {
-      filePath.split("/").takeRight(3).mkString("/")
-    }
-
-    def confPathToOptConfStr: Option[String] = {
-      val confJsonOpt = filePath match {
-        case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
-        case value if value.contains("joins/")           => loadJson[Join](value)
-        case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
-        case _                                           => logger.info(s"unknown config type in file $filePath"); None
-      }
-      confJsonOpt
+      // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
+      string.split("/").takeRight(3).mkString("/")
     }
   }
 
