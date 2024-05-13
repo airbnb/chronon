@@ -733,22 +733,15 @@ object Driver {
 
     def run(args: Args): Unit = {
       val acceptedEndPoints = List("ZIPLINE_METADATA", "ZIPLINE_METADATA_BY_TEAM")
-      val dirWalker = {
-        args.confPath() match {
-          case value if value.contains("joins/")     => new MetadataDirWalker[api.Join](args.confPath(), acceptedEndPoints)
-          case value if value.contains("group_bys/")     => new MetadataDirWalker[api.GroupBy](args.confPath(), acceptedEndPoints)
-          case value if value.contains("staging_queries/")     => new MetadataDirWalker[api.StagingQuery](args.confPath(), acceptedEndPoints)
-        }
-      }
-
-      val kvMap = dirWalker.run
+      val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
+      val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
       implicit val ec: ExecutionContext = ExecutionContext.global
-      val putRequestsIterable: Iterable[Future[scala.collection.Seq[Boolean]]] = kvMap.map {
+      val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
         case (endPoint, kvMap) => args.metaDataStore.put(kvMap, endPoint)
       }
-      val putRequests: Future[scala.collection.Seq[Boolean]] =
-        Future.sequence(putRequestsIterable).flatMap(seq => Future.successful(seq.flatten.toSeq))
-      val res = Await.result(putRequests, 1.hour)
+      val res = putRequestsSeq.flatMap(
+        putRequests => Await.result(putRequests, 1.hour)
+      )
       logger.info(
         s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
     }

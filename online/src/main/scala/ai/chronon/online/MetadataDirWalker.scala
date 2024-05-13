@@ -1,8 +1,8 @@
 package ai.chronon.online
 
 import ai.chronon.api.ThriftJsonCodec
+import ai.chronon.api
 import org.slf4j.LoggerFactory
-import ai.chronon.online.MetadataEndPoint
 import com.google.gson.Gson
 import org.apache.thrift.TBase
 
@@ -10,7 +10,7 @@ import java.io.File
 import java.nio.file.{Files, Paths}
 import scala.reflect.ClassTag
 
-class MetadataDirWalker[Conf <: TBase[_, _]: Manifest: ClassTag](dirPath: String, metadataEndPointNames: List[String]) {
+class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
   private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
     if (base.isFile) {
@@ -70,12 +70,6 @@ class MetadataDirWalker[Conf <: TBase[_, _]: Manifest: ClassTag](dirPath: String
       }
   }
 
-  private def extractkvPairToEndPoint(filePath: String, conf: Conf): List[(String, (String, String))] = {
-    metadataEndPointNames.map { endPointName =>
-      (endPointName, MetadataEndPoint.getEndPoint(endPointName).extractFn(filePath, conf))
-    }
-  }
-
   /**
     * Iterate over the list of files and extract the key value pairs for each file
     * @return Map of endpoint -> (Map of key -> List of values)
@@ -90,23 +84,36 @@ class MetadataDirWalker[Conf <: TBase[_, _]: Manifest: ClassTag](dirPath: String
       val filePath = file.getPath
       val optConf =
         try {
-          loadJsonToConf[Conf](filePath)
+          filePath match {
+            case value if value.contains("joins/")     => loadJsonToConf[api.Join](filePath)
+            case value if value.contains("group_bys/")     => loadJsonToConf[api.GroupBy](filePath)
+            case value if value.contains("staging_queries/")     =>loadJsonToConf[api.StagingQuery](filePath)
+          }
         } catch {
           case e: Throwable =>
             logger.error(s"Failed to parse compiled team from file path: $filePath, \nerror=${e.getMessage}")
             None
         }
       if (optConf.isDefined) {
-        val kvPairToEndPoint: List[(String, (String, String))] = extractkvPairToEndPoint(filePath, optConf.get)
+        val kvPairToEndPoint: List[(String, (String, String))] = metadataEndPointNames.map { endPointName =>
+          val conf = optConf.get
+          val kVPair = filePath match {
+            case value if value.contains("joins/")     => MetadataEndPoint.getEndPoint[api.Join](endPointName).extractFn(filePath, conf.asInstanceOf[api.Join])
+            case value if value.contains("group_bys/")     => MetadataEndPoint.getEndPoint[api.GroupBy](endPointName).extractFn(filePath, conf.asInstanceOf[api.GroupBy])
+            case value if value.contains("staging_queries/")     => MetadataEndPoint.getEndPoint[api.StagingQuery](endPointName).extractFn(filePath, conf.asInstanceOf[api.StagingQuery])
+          }
+          (endPointName, kVPair)
+        }
+        logger.info(s"Skipping invalid file ${kvPairToEndPoint}")
+
         kvPairToEndPoint
-          .flatMap(kvPair => {
+          .map(kvPair => {
             val endPoint = kvPair._1
             val (key, value) = kvPair._2
             val map = acc.getOrElse(endPoint, Map.empty[String, List[String]])
             val list = map.getOrElse(key, List.empty[String]) ++ List(value)
-            acc.updated(endPoint, map.updated(key, list))
-          })
-          .toMap
+            (endPoint, map.updated(key, list))
+          }).toMap
       } else {
         logger.info(s"Skipping invalid file ${file.getPath}")
         acc
