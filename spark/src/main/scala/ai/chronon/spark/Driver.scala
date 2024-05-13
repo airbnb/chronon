@@ -729,8 +729,6 @@ object Driver {
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Chronon config file or directory")
-      val `type`: ScallopOption[String] =
-        choice(Seq("join", "group-by", "staging-query"), descr = "the type of conf to fetch", default = Some("join"))
     }
 
     def run(args: Args): Unit = {
