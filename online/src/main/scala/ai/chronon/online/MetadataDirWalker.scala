@@ -85,9 +85,9 @@ class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
       val optConf =
         try {
           filePath match {
-            case value if value.contains("joins/")     => loadJsonToConf[api.Join](filePath)
-            case value if value.contains("group_bys/")     => loadJsonToConf[api.GroupBy](filePath)
-            case value if value.contains("staging_queries/")     =>loadJsonToConf[api.StagingQuery](filePath)
+            case value if value.contains("joins/")           => loadJsonToConf[api.Join](filePath)
+            case value if value.contains("group_bys/")       => loadJsonToConf[api.GroupBy](filePath)
+            case value if value.contains("staging_queries/") => loadJsonToConf[api.StagingQuery](filePath)
           }
         } catch {
           case e: Throwable =>
@@ -98,13 +98,19 @@ class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
         val kvPairToEndPoint: List[(String, (String, String))] = metadataEndPointNames.map { endPointName =>
           val conf = optConf.get
           val kVPair = filePath match {
-            case value if value.contains("joins/")     => MetadataEndPoint.getEndPoint[api.Join](endPointName).extractFn(filePath, conf.asInstanceOf[api.Join])
-            case value if value.contains("group_bys/")     => MetadataEndPoint.getEndPoint[api.GroupBy](endPointName).extractFn(filePath, conf.asInstanceOf[api.GroupBy])
-            case value if value.contains("staging_queries/")     => MetadataEndPoint.getEndPoint[api.StagingQuery](endPointName).extractFn(filePath, conf.asInstanceOf[api.StagingQuery])
+            case value if value.contains("joins/") =>
+              MetadataEndPoint.getEndPoint[api.Join](endPointName).extractFn(filePath, conf.asInstanceOf[api.Join])
+            case value if value.contains("group_bys/") =>
+              MetadataEndPoint
+                .getEndPoint[api.GroupBy](endPointName)
+                .extractFn(filePath, conf.asInstanceOf[api.GroupBy])
+            case value if value.contains("staging_queries/") =>
+              MetadataEndPoint
+                .getEndPoint[api.StagingQuery](endPointName)
+                .extractFn(filePath, conf.asInstanceOf[api.StagingQuery])
           }
           (endPointName, kVPair)
         }
-        logger.info(s"Skipping invalid file ${kvPairToEndPoint}")
 
         kvPairToEndPoint
           .map(kvPair => {
@@ -113,7 +119,8 @@ class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
             val map = acc.getOrElse(endPoint, Map.empty[String, List[String]])
             val list = map.getOrElse(key, List.empty[String]) ++ List(value)
             (endPoint, map.updated(key, list))
-          }).toMap
+          })
+          .toMap
       } else {
         logger.info(s"Skipping invalid file ${file.getPath}")
         acc

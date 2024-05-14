@@ -739,9 +739,7 @@ object Driver {
       val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
         case (endPoint, kvMap) => args.metaDataStore.put(kvMap, endPoint)
       }
-      val res = putRequestsSeq.flatMap(
-        putRequests => Await.result(putRequests, 1.hour)
-      )
+      val res = putRequestsSeq.flatMap(putRequests => Await.result(putRequests, 1.hour))
       logger.info(
         s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
     }
