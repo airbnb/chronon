@@ -163,7 +163,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         val vBytes =
           if (v.isEmpty) Array.emptyByteArray
           else if (v.length == 1) v.head.getBytes()
-          else v.mkString("\n").getBytes()
+          else v.mkString(",").getBytes()
         PutRequest(keyBytes = kBytes,
                    valueBytes = vBytes,
                    dataset = datasetName,
