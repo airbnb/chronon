@@ -14,8 +14,8 @@ case class MetadataEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag](
 object MetadataEndPoint {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
-  val ConfByKeyEndPointName = "ZIPLINE_METADATA"
-  val NameByTeamEndPointName = "ZIPLINE_METADATA_BY_TEAM"
+  val ConfByKeyEndPointName = "CHRONON_METADATA"
+  val NameByTeamEndPointName = "CHRONON_METADATA_BY_TEAM"
 
   private def parseTeam[Conf <: TBase[_, _]: Manifest: ClassTag](conf: Conf): String = {
     conf match {
