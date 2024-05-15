@@ -19,7 +19,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
-import ai.chronon.online.{Api, Fetcher, MetadataDirWalker, MetadataStore}
+import ai.chronon.online.{Api, Fetcher, MetadataDirWalker, MetadataEndPoint, MetadataStore}
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -27,11 +27,7 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{
-  QueryProgressEvent,
-  QueryStartedEvent,
-  QueryTerminatedEvent
-}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -732,7 +728,7 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val acceptedEndPoints = List("CHRONON_METADATA")
+      val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
       val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
       val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
       implicit val ec: ExecutionContext = ExecutionContext.global
