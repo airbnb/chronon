@@ -44,7 +44,7 @@ case class TableUtils(sparkSession: SparkSession) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
-  private lazy val archiveTimestampFormatter = DateTimeFormatter
+  @transient private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
   val partitionColumn: String =
