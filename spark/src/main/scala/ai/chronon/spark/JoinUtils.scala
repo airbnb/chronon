@@ -17,7 +17,6 @@
 package ai.chronon.spark
 
 import java.util
-
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
@@ -28,11 +27,12 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 import org.apache.spark.util.sketch.BloomFilter
+
 import scala.collection.compat._
 import scala.jdk.CollectionConverters._
-import scala.util.ScalaJavaConversions.MapOps
-
+import scala.util.ScalaJavaConversions.{JIteratorOps, JMapOps, MapOps}
 import ai.chronon.api
+import ai.chronon.online.TTLCache.Entry
 
 object JoinUtils {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -316,7 +316,7 @@ object JoinUtils {
         }.toMap)
       }
 
-      val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
+      val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).map(identity)
       val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
       logger.info(s"""
            Generating bloom filter for joinPart:
