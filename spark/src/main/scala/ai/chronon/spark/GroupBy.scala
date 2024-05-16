@@ -516,20 +516,19 @@ object GroupBy {
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
     val mutationSources = groupByConf.sources.toScala.filter { _.isSetEntities }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
-    val mutationQueriesTry = Try(
-      mutationSources.map(ms =>
-        renderDataSourceQuery(groupByConf,
-                              ms,
-                              groupByConf.getKeyColumns.toScala,
-                              queryRange.shift(1),
-                              tableUtils,
-                              groupByConf.maxWindow,
-                              groupByConf.inferredAccuracy,
-                              mutations = true)))
 
     def mutationDfFn(): DataFrame = {
       val df: DataFrame = if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
-        val mutationDf = mutationQueriesTry.get
+        val mutationDf = mutationSources
+          .map(ms =>
+            renderDataSourceQuery(groupByConf,
+                                  ms,
+                                  groupByConf.getKeyColumns.toScala,
+                                  queryRange.shift(1),
+                                  tableUtils,
+                                  groupByConf.maxWindow,
+                                  groupByConf.inferredAccuracy,
+                                  mutations = true))
           .map { tableUtils.sql }
           .reduce { (df1, df2) =>
             val columns1 = df1.schema.fields.map(_.name)
