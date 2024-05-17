@@ -30,6 +30,7 @@ import org.junit.Assert.assertEquals
 
 import scala.io.Source
 import java.io.File
+import java.net.URL
 
 class MetadataExporterTest extends TestCase {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -83,7 +84,8 @@ class MetadataExporterTest extends TestCase {
     printFilesInDirectory(s"${confResource.getPath}/joins/team")
     printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
     // Read the files.
-    val jsonString = Source.fromFile(s"${tmpDir.getAbsolutePath}/joins/example_join.v1").getLines().mkString("\n")
+    val file = Source.fromFile(s"${tmpDir.getAbsolutePath}/joins/example_join.v1")
+    val jsonString = file.getLines().mkString("\n")
     val objectMapper = new ObjectMapper()
     objectMapper.registerModule(DefaultScalaModule)
     val jsonNode = objectMapper.readTree(jsonString)
