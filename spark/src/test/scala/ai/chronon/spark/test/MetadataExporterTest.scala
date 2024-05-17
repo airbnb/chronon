@@ -65,7 +65,7 @@ class MetadataExporterTest extends TestCase {
     // Create the tables.
     val namespace = "example_namespace"
     val tablename = "table"
-    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val sampleData = List(
       Column("a", api.StringType, 10),
       Column("b", api.StringType, 10),
