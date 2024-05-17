@@ -21,11 +21,11 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps, DerivationOps}
+import ai.chronon.api.Extensions.{DerivationOps, JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataDirWalker, MetadataEndPoint, MetadataStore, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
@@ -42,7 +42,7 @@ import java.util.concurrent.Executors
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.io.Source
 import scala.util.ScalaJavaConversions._
 
@@ -74,7 +74,10 @@ class FetcherTest extends TestCase {
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFilePut = singleFileMetadataStore.putConf(confResource.getPath)
+    val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
+    val singleFileDirWalker = new MetadataDirWalker(confResource.getPath, acceptedEndPoints)
+    val singleFileKvMap: Map[String, List[String]] = singleFileDirWalker.run(MetadataEndPoint.ConfByKeyEndPointName)
+    val singleFilePut = singleFileMetadataStore.put(singleFileKvMap, MetadataEndPoint.ConfByKeyEndPointName)
     Await.result(singleFilePut, Duration.Inf)
     val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
@@ -86,7 +89,9 @@ class FetcherTest extends TestCase {
     val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryPut = directoryMetadataStore.putConf(confResource.getPath.replace(s"/$joinPath", ""))
+    val directoryDataDirWalker = new MetadataDirWalker(confResource.getPath.replace(s"/$joinPath", ""), acceptedEndPoints)
+    val directoryDataKvMap: Map[String, List[String]] = directoryDataDirWalker.run(MetadataEndPoint.ConfByKeyEndPointName)
+    val directoryPut = singleFileMetadataStore.put(directoryDataKvMap, MetadataEndPoint.ConfByKeyEndPointName)
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
       inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))
