@@ -56,21 +56,38 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
       s"""
         |BatchIR Element Size: ${SparkEnv.get.serializer.newInstance().serialize(sawtoothOnlineAggregator.init).capacity()}
         |""".stripMargin)
-    val outputRdd = groupBy.inputDf.rdd
-      .keyBy(keyBuilder)
-      .mapValues(SparkConversions.toChrononRow(_, groupBy.tsIndex))
-      .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
-        seqOp = sawtoothOnlineAggregator.update,
-        combOp = sawtoothOnlineAggregator.merge
-      )
-      .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
-      .map {
-        case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
-          val irArray = new Array[Any](2)
-          irArray.update(0, finalBatchIr.collapsed)
-          irArray.update(1, finalBatchIr.tailHops)
-          keyWithHash.data -> irArray
-      }
+    val splitUpWork = sparkSession.conf.get(SparkConstants.ChrononGroupByUploadSplits, "1").toInt
+    assert(splitUpWork > 0)
+
+    val keyed = if (splitUpWork > 1) {
+      groupBy.inputDf.rdd
+        .keyBy(keyBuilder)
+        .cache
+    } else {
+      groupBy.inputDf.rdd
+        .keyBy(keyBuilder)
+    }
+
+    val outputRdd = (0 until splitUpWork).map {
+      i =>
+        println(s"Splitting up GroupByUpload computation: slice ${i+1} of $splitUpWork")
+        keyed
+          .filter(_._1.hashInt % splitUpWork == i)
+          .mapValues(SparkConversions.toChrononRow(_, groupBy.tsIndex))
+          .aggregateByKey(sawtoothOnlineAggregator.init)( // shuffle point
+            seqOp = sawtoothOnlineAggregator.update,
+            combOp = sawtoothOnlineAggregator.merge
+          )
+          .mapValues(sawtoothOnlineAggregator.normalizeBatchIr)
+          .map {
+            case (keyWithHash: KeyWithHash, finalBatchIr: FinalBatchIr) =>
+              val irArray = new Array[Any](2)
+              irArray.update(0, finalBatchIr.collapsed)
+              irArray.update(1, finalBatchIr.tailHops)
+              keyWithHash.data -> irArray
+          }
+    }.reduce(_.union(_))
+    keyed.unpersist()
     KvRdd(outputRdd, groupBy.keySchema, irSchema)
   }
 
