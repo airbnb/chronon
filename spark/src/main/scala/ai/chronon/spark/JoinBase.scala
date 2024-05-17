@@ -122,7 +122,8 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeRightTable(leftDf: Option[DfWithStats],
                         joinPart: JoinPart,
-                        leftRange: PartitionRange,
+                        leftRange: PartitionRange, // missing left partitions
+                        leftTimeRangeOpt: Option[PartitionRange], // range of timestamps within missing left partitions
                         joinLevelBloomMapOpt: Option[util.Map[String, BloomFilter]],
                         smallMode: Boolean = false): Option[DataFrame] = {
 
@@ -135,7 +136,19 @@ abstract class JoinBase(joinConf: api.Join,
       } else {
         0
       }
-    val rightRange = leftRange.shift(shiftDays)
+
+    //  left  | right  | acc
+    // events | events | snapshot  => right part tables are not aligned - so scan by leftTimeRange
+    // events | events | temporal  => already aligned - so scan by leftRange
+    // events | entities | snapshot => right part tables are not aligned - so scan by leftTimeRange
+    // events | entities | temporal => right part tables are aligned - so scan by leftRange
+    // entities | entities | snapshot => right part tables are aligned - so scan by leftRange
+    val rightRange = if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+      leftTimeRangeOpt.get.shift(shiftDays)
+    } else {
+      leftRange
+    }
+
     try {
       val unfilledRanges = tableUtils
         .unfilledRanges(
