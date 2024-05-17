@@ -286,6 +286,13 @@ class Join(joinConf: api.Join,
       }
     }
 
+    val leftTimeRangeOpt = if (leftTaggedDf.schema.fieldNames.contains(Constants.TimePartitionColumn)) {
+      val leftTimePartitionMinMax = leftTaggedDf.range[String](Constants.TimePartitionColumn)
+      Some(PartitionRange(leftTimePartitionMinMax._1, leftTimePartitionMinMax._2)(tableUtils))
+    } else {
+      None
+    }
+
     implicit val executionContext: ExecutionContextExecutorService =
       ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(tableUtils.joinPartParallelism))
 
@@ -328,8 +335,9 @@ class Join(joinConf: api.Join,
                 } else {
                   joinLevelBloomMapOpt
                 }
-                val df = computeRightTable(unfilledLeftDf, joinPart, leftRange, bloomFilterOpt, runSmallMode).map(df =>
-                  joinPart -> df)
+                val df =
+                  computeRightTable(unfilledLeftDf, joinPart, leftRange, leftTimeRangeOpt, bloomFilterOpt, runSmallMode)
+                    .map(df => joinPart -> df)
                 Thread.currentThread().setName(s"done-$threadName")
                 df
               }
