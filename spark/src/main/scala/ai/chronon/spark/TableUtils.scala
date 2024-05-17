@@ -24,6 +24,7 @@ import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
 import jnr.ffi.annotations.Synchronized
+import org.apache.hadoop.hive.metastore.api.AlreadyExistsException
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
@@ -125,9 +126,11 @@ case class TableUtils(sparkSession: SparkSession) {
       sql(command)
       true
     } catch {
+      case _: AlreadyExistsException =>
+        false // 'already exists' is a swallowable exception
       case e: Exception =>
         logger.error(s"Failed to create database $database", e)
-        false
+        throw e
     }
   }
 
