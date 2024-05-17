@@ -38,8 +38,8 @@ class LogBootstrapTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   val namespace = "test_log_bootstrap"
-  tableUtils.createDatabase(namespace)
   private implicit val tableUtils: TableUtils = TableUtils(spark)
+  tableUtils.createDatabase(namespace)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
 
   @Test
@@ -50,7 +50,7 @@ class LogBootstrapTest {
     val groupBy2 = groupBy
       .deepCopy()
       .setAggregations(
-          Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "amount_dollars")).toJava
+        Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "amount_dollars")).toJava
       )
       .setMetaData(Builders.MetaData(name = "unit_test.user_transactions_v2", namespace = namespace, team = "chronon"))
 
