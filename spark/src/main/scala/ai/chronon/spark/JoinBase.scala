@@ -32,6 +32,7 @@ import java.time.Instant
 
 import scala.collection.JavaConverters._
 import scala.collection.Seq
+import java.util
 import scala.util.ScalaJavaConversions.ListOps
 
 abstract class JoinBase(joinConf: api.Join,
@@ -122,7 +123,7 @@ abstract class JoinBase(joinConf: api.Join,
   def computeRightTable(leftDf: Option[DfWithStats],
                         joinPart: JoinPart,
                         leftRange: PartitionRange,
-                        joinLevelBloomMapOpt: Option[Map[String, BloomFilter]],
+                        joinLevelBloomMapOpt: Option[util.Map[String, BloomFilter]],
                         smallMode: Boolean = false): Option[DataFrame] = {
 
     val partTable = joinConf.partOutputTable(joinPart)
@@ -199,7 +200,7 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeJoinPart(leftDfWithStats: Option[DfWithStats],
                       joinPart: JoinPart,
-                      joinLevelBloomMapOpt: Option[Map[String, BloomFilter]],
+                      joinLevelBloomMapOpt: Option[util.Map[String, BloomFilter]],
                       skipBloom: Boolean = false): Option[DataFrame] = {
 
     if (leftDfWithStats.isEmpty) {
@@ -217,13 +218,7 @@ abstract class JoinBase(joinConf: api.Join,
     val rightBloomMap = if (skipBloom) {
       None
     } else {
-      JoinUtils.genBloomFilterIfNeeded(leftDf,
-                                       joinPart,
-                                       joinConf,
-                                       rowCount,
-                                       unfilledRange,
-                                       tableUtils,
-                                       joinLevelBloomMapOpt)
+      JoinUtils.genBloomFilterIfNeeded(joinPart, joinConf, rowCount, unfilledRange, joinLevelBloomMapOpt)
     }
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     def genGroupBy(partitionRange: PartitionRange) =

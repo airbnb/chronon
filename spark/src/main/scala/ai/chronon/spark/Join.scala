@@ -270,7 +270,7 @@ class Join(joinConf: api.Join,
     // info to filter records that need backfills vs can be waived from backfills
     val bootstrapCoveringSets = findBootstrapSetCoverings(bootstrapDf, bootstrapInfo, leftRange)
 
-    // compute a single bloomfilter at join level if there is no bootstrap operation
+    // compute a single bloom filter at join level if there is no bootstrap operation
     lazy val joinLevelBloomMapOpt = if (bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // do not compute if any bootstrap is involved
       None
@@ -279,9 +279,9 @@ class Join(joinConf: api.Join,
       if (leftRowCount > tableUtils.bloomFilterThreshold) {
         None
       } else {
-        val leftBlooms = joinConf.leftKeyCols.toSeq.map { key =>
+        val leftBlooms = joinConf.leftKeyCols.iterator.map { key =>
           key -> bootstrapDf.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange)
-        }.toMap
+        }.toJMap
         Some(leftBlooms)
       }
     }

@@ -459,7 +459,7 @@ object GroupBy {
            queryRange: PartitionRange,
            tableUtils: TableUtils,
            computeDependency: Boolean,
-           bloomMapOpt: Option[Map[String, BloomFilter]] = None,
+           bloomMapOpt: Option[util.Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true,
            showDf: Boolean = false): GroupBy = {
