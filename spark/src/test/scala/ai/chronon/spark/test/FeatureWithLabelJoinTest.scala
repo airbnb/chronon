@@ -31,8 +31,8 @@ class FeatureWithLabelJoinTest {
 
   private val namespace = "final_join"
   private val tableName = "test_feature_label_join"
-  tableUtils.createDatabase(namespace)
   private val tableUtils = TableUtils(spark)
+  tableUtils.createDatabase(namespace)
 
   private val labelDS = "2022-10-30"
   private val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
@@ -56,16 +56,16 @@ class FeatureWithLabelJoinTest {
     val labelDf = runner.computeLabelJoin()
     logger.info(" == First Run Label version 2022-10-30 == ")
     prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn))
-                                                        .show()
+      .show()
     val featureDf = tableUtils.sparkSession.table(joinConf.metaData.outputTable)
     logger.info(" == Features == ")
     featureDf.show()
     val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
-    val expectedFinal = featureDf.join(prefixColumnName(labelDf,
-                                                        exceptions = labelJoinConf.rowIdentifier(null,
-                                                                                                  tableUtils.partitionColumn)),
-                                       labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn),
-                                       "left_outer")
+    val expectedFinal = featureDf.join(
+      prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn)),
+      labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn),
+      "left_outer"
+    )
     assertResult(computed, expectedFinal)
 
     // add another label version
@@ -141,15 +141,16 @@ class FeatureWithLabelJoinTest {
     val labelDf = runner.computeLabelJoin()
     logger.info(" == Label DF == ")
     prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn))
-                                                        .show()
+      .show()
     val featureDf = tableUtils.sparkSession.table(joinConf.metaData.outputTable)
     logger.info(" == Features DF == ")
     featureDf.show()
     val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
-    val expectedFinal = featureDf.join(prefixColumnName(labelDf,
-                                                        exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn)),
-                                       labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn),
-                                       "left_outer")
+    val expectedFinal = featureDf.join(
+      prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn)),
+      labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn),
+      "left_outer"
+    )
     assertResult(computed, expectedFinal)
 
     // add new labels
