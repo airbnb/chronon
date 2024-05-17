@@ -386,7 +386,7 @@ object TestUtils {
   }
 
   def getParentJoin(spark: SparkSession, namespace: String, name: String, gbName: String): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val topic = "kafka://test_topic/schema=my_schema/host=X/port=Y"
     val listingCol = Column("listing", StringType, 50)
     // price for listing

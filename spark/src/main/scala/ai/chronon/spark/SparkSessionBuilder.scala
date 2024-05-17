@@ -26,9 +26,10 @@ import scala.reflect.io.Path
 import scala.util.Properties
 
 object SparkSessionBuilder {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
+  @transient private lazy val logger = LoggerFactory.getLogger(getClass)
 
-  val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse")
+  private val warehouseId = java.util.UUID.randomUUID().toString.takeRight(6)
+  private val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse_" + warehouseId)
 
   def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
   // we would want to share locally generated warehouse during CI testing

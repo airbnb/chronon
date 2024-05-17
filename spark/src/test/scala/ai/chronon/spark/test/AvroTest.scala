@@ -36,7 +36,7 @@ class AvroTest {
   def testDecimal(): Unit = {
 
     val namespace = "test_decimal"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     /* create group by that uses a decimal field */
     val txnTable = s"$namespace.transactions"

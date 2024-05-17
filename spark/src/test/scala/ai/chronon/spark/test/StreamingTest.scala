@@ -50,7 +50,7 @@ class StreamingTest extends TestCase {
   private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
 
   def testStructInStreaming(): Unit = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val topicName = "fake_topic"
     val inMemoryKvStore = buildInMemoryKvStore()
     val nameSuffix = "_struct_streaming_test"
