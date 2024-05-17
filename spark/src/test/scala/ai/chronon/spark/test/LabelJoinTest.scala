@@ -24,15 +24,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class LabelJoinTest {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
+  @transient private lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("LabelJoinTest", local = true)
 
   private val namespace = "label_join"
   private val tableName = "test_label_join"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
   private val labelDS = "2022-10-30"
   private val tableUtils = TableUtils(spark)
+  tableUtils.createDatabase(namespace)
 
   private val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
   private val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark)
@@ -65,9 +65,7 @@ class LabelJoinTest {
     assertEquals(computed.count(), expected.count())
     assertEquals(computed.select("label_ds").first().get(0), labelDS)
 
-    val diff = Comparison.sideBySide(computed,
-      expected,
-      List("listing", "ds"))
+    val diff = Comparison.sideBySide(computed, expected, List("listing", "ds"))
     if (diff.count() > 0) {
       logger.info(s"Actual count: ${computed.count()}")
       logger.info(s"Expected count: ${expected.count()}")
@@ -147,10 +145,10 @@ class LabelJoinTest {
     computed.show()
     assertEquals(computed.select("label_ds").first().get(0), "2022-11-01")
     assertEquals(computed
-      .select("listing_label_not_exist_dim_room_type")
-      .first()
-      .get(0),
-      null)
+                   .select("listing_label_not_exist_dim_room_type")
+                   .first()
+                   .get(0),
+                 null)
   }
 
   @Test
@@ -258,11 +256,12 @@ class LabelJoinTest {
     val agg_label_conf = Builders.GroupBy(
       sources = Seq(labelGroupBy.groupByConf.sources.get(0)),
       keyColumns = Seq("listing"),
-      aggregations = Seq(Builders.Aggregation(
-        inputColumn = "is_active",
-        operation = Operation.MAX,
-        windows = Seq(new Window(5, TimeUnit.DAYS), new Window(10, TimeUnit.DAYS))
-      )),
+      aggregations = Seq(
+        Builders.Aggregation(
+          inputColumn = "is_active",
+          operation = Operation.MAX,
+          windows = Seq(new Window(5, TimeUnit.DAYS), new Window(10, TimeUnit.DAYS))
+        )),
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
@@ -290,11 +289,12 @@ class LabelJoinTest {
     val agg_label_conf = Builders.GroupBy(
       sources = Seq(labelGroupBy.groupByConf.sources.get(0)),
       keyColumns = Seq("listing"),
-      aggregations = Seq(Builders.Aggregation(
-        inputColumn = "is_active",
-        operation = Operation.MAX,
-        windows = Seq(new Window(5, TimeUnit.DAYS), new Window(10, TimeUnit.DAYS))
-      )),
+      aggregations = Seq(
+        Builders.Aggregation(
+          inputColumn = "is_active",
+          operation = Operation.MAX,
+          windows = Seq(new Window(5, TimeUnit.DAYS), new Window(10, TimeUnit.DAYS))
+        )),
       accuracy = Accuracy.SNAPSHOT,
       metaData = Builders.MetaData(name = s"${tableName}", namespace = namespace, team = "chronon")
     )
@@ -325,9 +325,13 @@ class LabelJoinTest {
       Row(3L, 10L, "2022-10-02 11:00:00", "2022-10-02"),
       Row(1L, 20L, "2022-10-03 11:00:00", "2022-10-03"),
       Row(2L, 35L, "2022-10-04 11:00:00", "2022-10-04"),
-      Row(3L, 15L, "2022-10-05 11:00:00", "2022-10-05"))
-    val leftSource = TestUtils.createViewsGroupBy(namespace, spark, tableName = "listing_view_agg", customRows = rows)
-      .groupByConf.sources.get(0)
+      Row(3L, 15L, "2022-10-05 11:00:00", "2022-10-05")
+    )
+    val leftSource = TestUtils
+      .createViewsGroupBy(namespace, spark, tableName = "listing_view_agg", customRows = rows)
+      .groupByConf
+      .sources
+      .get(0)
 
     // 5 day window
     val labelJoinConf = createTestLabelJoinWithAgg(5)
@@ -342,8 +346,7 @@ class LabelJoinTest {
     logger.info(" == computed == ")
     computed.show()
     val expected =
-      tableUtils.sql(
-        s"""
+      tableUtils.sql(s"""
            |SELECT listing, ds, listing_label_group_by_is_active_max_5d, DATE_ADD(ds, 4) as label_ds
            |FROM(
            | SELECT v.listing_id as listing,
@@ -385,7 +388,8 @@ class LabelJoinTest {
       joinParts = Seq.empty,
       labelPart = Builders.LabelPart(
         labels = Seq(
-          Builders.JoinPart(groupBy = TestUtils.buildLabelGroupBy(namespace, spark, windowSize = 5, tableName = labelTableName))
+          Builders.JoinPart(groupBy =
+            TestUtils.buildLabelGroupBy(namespace, spark, windowSize = 5, tableName = labelTableName))
         ),
         leftStartOffset = 5,
         leftEndOffset = 5
@@ -402,8 +406,7 @@ class LabelJoinTest {
     // For window based label, given specific label_ds and window, only one ds will be updated with label.
     // The expected query would filter on this ds.
     val expected =
-      tableUtils.sql(
-        s"""
+      tableUtils.sql(s"""
            |SELECT listing_id, ds, listing_label_table_active_status_max_5d, DATE_ADD(ds, 4) as label_ds
            |FROM(
            | SELECT v.listing_id,

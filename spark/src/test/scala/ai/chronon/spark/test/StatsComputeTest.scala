@@ -53,7 +53,7 @@ class StatsComputeTest {
 
   @Test
   def snapshotSummaryTest(): Unit = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val data = Seq(
       ("1", Some(1L), Some(1.0), Some("a")),
       ("1", Some(1L), None, Some("b")),

@@ -36,7 +36,7 @@ class JoinUtilsTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("JoinUtilsTest", local = true)
   private val tableUtils = TableUtils(spark)
-
+  private val namespace = "joinUtil"
   @Test
   def testUDFSetAdd(): Unit = {
     val data = Seq(
@@ -238,7 +238,7 @@ class JoinUtilsTest {
     val finalViewName = "testCreateView"
     val leftTableName = "joinUtil.testFeatureTable"
     val rightTableName = "joinUtil.testLabelTable"
-    spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
+    tableUtils.createDatabase(namespace)
     TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
     TestUtils.createSampleLabelTableDf(spark).write.saveAsTable(rightTableName)
     val keys = Array("listing_id", tableUtils.partitionColumn)
@@ -277,7 +277,7 @@ class JoinUtilsTest {
     val finalViewName = "joinUtil.testFinalView"
     val leftTableName = "joinUtil.testFeatureTable2"
     val rightTableName = "joinUtil.testLabelTable2"
-    spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
+    tableUtils.createDatabase(namespace)
     TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
     tableUtils.insertPartitions(TestUtils.createSampleLabelTableDf(spark),
                                 rightTableName,
@@ -328,7 +328,7 @@ class JoinUtilsTest {
 
   @Test
   def testGetRangesToFill(): Unit = {
-    spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
+    tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = "joinUtil.item_queries_table"
@@ -345,7 +345,7 @@ class JoinUtilsTest {
 
   @Test
   def testGetRangesToFillWithOverride(): Unit = {
-    spark.sql("CREATE DATABASE IF NOT EXISTS joinUtil")
+    tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = "joinUtil.queries_table"

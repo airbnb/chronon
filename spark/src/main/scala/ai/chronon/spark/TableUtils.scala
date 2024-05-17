@@ -118,6 +118,19 @@ case class TableUtils(sparkSession: SparkSession) {
     schema.fieldNames.contains(partitionColumn)
   }
 
+  def createDatabase(database: String): Boolean = {
+    try {
+      val command = s"CREATE DATABASE IF NOT EXISTS $database"
+      logger.info(s"Creating database with command: $command")
+      sql(command)
+      true
+    } catch {
+      case e: Exception =>
+        logger.error(s"Failed to create database $database", e)
+        false
+    }
+  }
+
   // return all specified partition columns in a table in format of Map[partitionName, PartitionValue]
   def allPartitions(tableName: String, partitionColumnsFilter: Seq[String] = Seq.empty): Seq[Map[String, String]] = {
     if (!tableExists(tableName)) return Seq.empty[Map[String, String]]

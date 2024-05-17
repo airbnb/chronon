@@ -31,7 +31,7 @@ class FeatureWithLabelJoinTest {
 
   private val namespace = "final_join"
   private val tableName = "test_feature_label_join"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+  tableUtils.createDatabase(namespace)
   private val tableUtils = TableUtils(spark)
 
   private val labelDS = "2022-10-30"

@@ -38,7 +38,7 @@ class LogBootstrapTest {
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   val namespace = "test_log_bootstrap"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+  tableUtils.createDatabase(namespace)
   private implicit val tableUtils: TableUtils = TableUtils(spark)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
 

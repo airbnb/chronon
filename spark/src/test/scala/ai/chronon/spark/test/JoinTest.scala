@@ -40,9 +40,7 @@ import scala.util.ScalaJavaConversions.ListOps
 
 class JoinTest {
 
-  val spark: SparkSession = SparkSessionBuilder.build(
-    "JoinTest",
-    local = true)
+  val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
   private val tableUtils = TableUtils(spark)
 
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
@@ -51,7 +49,7 @@ class JoinTest {
   private val dayAndMonthBefore = tableUtils.partitionSpec.before(monthAgo)
 
   private val namespace = "test_namespace_jointest"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+  tableUtils.createDatabase(namespace)
 
   @Test
   def testEventsEntitiesSnapshot(): Unit = {
@@ -375,7 +373,7 @@ class JoinTest {
     println(s"std out message =\n $stdOutMsg")
     // make sure that the program exits with target print statements
     assertTrue(stdOutMsg.contains(s"There is no data to compute based on end partition of $end."))
-    */
+     */
   }
 
   @Test
@@ -662,7 +660,8 @@ class JoinTest {
 
     val source = Builders.Source.events(
       table = table,
-      query = Builders.Query(selects = Builders.Selects("message", s"{{ ${Constants.ChrononRunDs}  }}"), startPartition = "2021-01-01")
+      query = Builders.Query(selects = Builders.Selects("message", s"{{ ${Constants.ChrononRunDs}  }}"),
+                             startPartition = "2021-01-01")
     )
 
     Builders.GroupBy(
@@ -1176,12 +1175,12 @@ class JoinTest {
   }
 
   /**
-   * Create a event table as left side, 3 group bys as right side.
-   * Generate data using DataFrameGen and save to the tables.
-   * Create a join with only one join part selected.
-   * Run computeJoin().
-   * Check if the selected join part is computed and the other join parts are not computed.
-   */
+    * Create a event table as left side, 3 group bys as right side.
+    * Generate data using DataFrameGen and save to the tables.
+    * Create a join with only one join part selected.
+    * Run computeJoin().
+    * Check if the selected join part is computed and the other join parts are not computed.
+    */
   @Test
   def testSelectedJoinParts(): Unit = {
     // Left
@@ -1219,8 +1218,9 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "10"), inputColumn = "user"),
         Builders.Aggregation(operation = Operation.MAX, argMap = Map("k" -> "2"), inputColumn = "value")
       ),
-      metaData =
-        Builders.MetaData(name = s"unit_test.item_views_selected_join_parts_1", namespace = namespace, team = "item_team"),
+      metaData = Builders.MetaData(name = s"unit_test.item_views_selected_join_parts_1",
+                                   namespace = namespace,
+                                   team = "item_team"),
       accuracy = Accuracy.SNAPSHOT
     )
 
@@ -1234,8 +1234,9 @@ class JoinTest {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.MIN, argMap = Map("k" -> "1"), inputColumn = "value")
       ),
-      metaData =
-        Builders.MetaData(name = s"unit_test.item_views_selected_join_parts_2", namespace = namespace, team = "item_team"),
+      metaData = Builders.MetaData(name = s"unit_test.item_views_selected_join_parts_2",
+                                   namespace = namespace,
+                                   team = "item_team"),
       accuracy = Accuracy.SNAPSHOT
     )
 
@@ -1249,8 +1250,9 @@ class JoinTest {
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "value")
       ),
-      metaData =
-        Builders.MetaData(name = s"unit_test.item_views_selected_join_parts_3", namespace = namespace, team = "item_team"),
+      metaData = Builders.MetaData(name = s"unit_test.item_views_selected_join_parts_3",
+                                   namespace = namespace,
+                                   team = "item_team"),
       accuracy = Accuracy.SNAPSHOT
     )
 
@@ -1263,9 +1265,9 @@ class JoinTest {
         Builders.JoinPart(groupBy = gb3, prefix = "user3")
       ),
       metaData = Builders.MetaData(name = s"unit_test.item_temporal_features.selected_join_parts",
-        namespace = namespace,
-        team = "item_team",
-        online = true)
+                                   namespace = namespace,
+                                   team = "item_team",
+                                   online = true)
     )
 
     // Drop Join Part tables if any
@@ -1277,7 +1279,10 @@ class JoinTest {
     spark.sql(s"DROP TABLE IF EXISTS $partTable3")
 
     // Compute daily join.
-    val joinJob = new Join(joinConf, today, tableUtils, selectedJoinParts = Some(List("user1_unit_test_item_views_selected_join_parts_1")))
+    val joinJob = new Join(joinConf,
+                           today,
+                           tableUtils,
+                           selectedJoinParts = Some(List("user1_unit_test_item_views_selected_join_parts_1")))
 
     joinJob.computeJoinOpt()
 
@@ -1290,6 +1295,7 @@ class JoinTest {
     val thrown3 = intercept[AnalysisException] {
       spark.sql(s"SELECT * FROM $partTable3")
     }
-    assert(thrown2.getMessage.contains("Table or view not found") && thrown3.getMessage.contains("Table or view not found"))
+    assert(
+      thrown2.getMessage.contains("Table or view not found") && thrown3.getMessage.contains("Table or view not found"))
   }
 }
