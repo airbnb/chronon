@@ -254,7 +254,7 @@ class Analyzer(tableUtils: TableUtils,
                   validateTablePermission: Boolean = true,
                   validationAssert: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
-    println(s"""|Running join analysis for $name ...""".stripMargin)
+    logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
     joinConf.setups.foreach(tableUtils.sql)
 
@@ -283,7 +283,7 @@ class Analyzer(tableUtils: TableUtils,
 
     val rangeToFill =
       JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate, historicalBackfill = joinConf.historicalBackfill)
-    println(s"Join range to fill $rangeToFill")
+    logger.info(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
       .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)))
       .getOrElse(Seq.empty)
@@ -317,9 +317,9 @@ class Analyzer(tableUtils: TableUtils,
     val rightSchema: Map[String, DataType] =
       aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
     if (silenceMode) {
-      println(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
+      logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
-      println(s"""
+      logger.info(s"""
            |ANALYSIS for join/${joinConf.metaData.cleanName}:
            |$analysis
            |----- OUTPUT TABLE NAME -----
@@ -332,26 +332,27 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
-    println(s"----- Validations for join/${joinConf.metaData.cleanName} -----")
-    if (!gbStartPartitions.isEmpty) {
-      println(
+    logger.info(s"----- Validations for join/${joinConf.metaData.cleanName} -----")
+    if (gbStartPartitions.nonEmpty) {
+      logger.info(
         "----- Following Group_Bys contains a startPartition. Please check if any startPartition will conflict with your backfill. -----")
       gbStartPartitions.foreach {
         case (gbName, startPartitions) =>
-          println(s"$gbName : ${startPartitions.mkString(",")}")
+          logger.info(s"$gbName : ${startPartitions.mkString(",")}")
       }
     }
     if (keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty) {
-      println("----- Backfill validation completed. No errors found. -----")
+      logger.info("----- Backfill validation completed. No errors found. -----")
     } else {
-      println(s"----- Schema validation completed. Found ${keysWithError.size} errors")
+      logger.info(s"----- Schema validation completed. Found ${keysWithError.size} errors")
       val keyErrorSet: Set[(String, String)] = keysWithError.toSet
-      println(keyErrorSet.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
-      println(s"---- Table permission check completed. Found permission errors in ${noAccessTables.size} tables ----")
-      println(noAccessTables.mkString("\n"))
-      println(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
+      logger.info(keyErrorSet.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
+      logger.info(
+        s"---- Table permission check completed. Found permission errors in ${noAccessTables.size} tables ----")
+      logger.info(noAccessTables.mkString("\n"))
+      logger.info(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
       dataAvailabilityErrors.foreach(error =>
-        println(s"Table ${error._1} : Group_By ${error._2} : Expected start ${error._3}"))
+        logger.info(s"Table ${error._1} : Group_By ${error._2} : Expected start ${error._3}"))
     }
 
     if (validationAssert) {
