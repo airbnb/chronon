@@ -433,7 +433,7 @@ class Analyzer(tableUtils: TableUtils,
             val table = source.table
             logger.info(s"Checking table $table for data availability ... Expected start partition: $expectedStart")
             val existingPartitions = tableUtils.partitions(table)
-            val minPartition = existingPartitions.reduceOption(Ordering[String].min)
+            val minPartition = existingPartitions.reduceOption((a, b) => Ordering[String].min(a, b))
             //check if partition available or table is cumulative
             if (!tableUtils.ifPartitionExistsInTable(table, expectedStart) && !source.isCumulative) {
               println(s"""
