@@ -83,6 +83,12 @@ trait KVStore {
                      dataset: String): Array[Byte] = {
     groupByServingInfo.keyCodec.encode(keys)
   }
+
+  // Method for taking the sequence of values and constructing the byte array sent to the KVStore
+  // e.g: [a, b, c] -> ["a", "b", "c"]
+  def createValueBytes(values: Seq[String]): Array[Byte] = {
+    values.map(s => s""""$s"""").mkString("[", ", ", "]").getBytes
+  }
 }
 
 /**
