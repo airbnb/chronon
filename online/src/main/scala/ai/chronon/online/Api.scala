@@ -20,6 +20,8 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
+import java.util.Base64
+import java.nio.charset.StandardCharsets
 
 import java.util.function.Consumer
 import scala.collection.Seq
@@ -84,10 +86,16 @@ trait KVStore {
     groupByServingInfo.keyCodec.encode(keys)
   }
 
-  // Method for taking the sequence of values and constructing the byte array sent to the KVStore
-  // e.g: [a, b, c] -> ["a", "b", "c"]
-  def createValueBytes(values: Seq[String]): Array[Byte] = {
-    values.map(s => s""""$s"""").mkString("[", ", ", "]").getBytes
+  // Method to convert an array of strings to a byte array using Base64 encoding for each element
+  def stringsToBytes(strings: Seq[String]): Array[Byte] = {
+    val base64EncodedStrings = strings.map(s => Base64.getEncoder.encodeToString(s.getBytes(StandardCharsets.UTF_8)))
+    base64EncodedStrings.mkString(",").getBytes(StandardCharsets.UTF_8)
+  }
+
+  // Method to convert a byte array back to an array of strings by decoding Base64
+  def bytesToStrings(bytes: Array[Byte]): Seq[String] = {
+    val encodedString = new String(bytes, StandardCharsets.UTF_8)
+    encodedString.split(",").map(s => new String(Base64.getDecoder.decode(s), StandardCharsets.UTF_8))
   }
 }
 

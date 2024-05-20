@@ -161,10 +161,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
              |conf: $v""".stripMargin)
         val kBytes = k.getBytes()
         // if value is a single string, use it as is, else join the strings into a json list
-        val vBytes =
-          if (v.isEmpty) Array.emptyByteArray
-          else if (v.length == 1) v.head.getBytes()
-          else kvStore.createValueBytes(v)
+        val vBytes = kvStore.stringsToBytes(v)
         PutRequest(keyBytes = kBytes,
                    valueBytes = vBytes,
                    dataset = datasetName,
