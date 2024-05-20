@@ -91,7 +91,7 @@ class FetcherTest extends TestCase {
     inMemoryKvStore.create(directoryDataSetDataSet)
     val directoryDataDirWalker = new MetadataDirWalker(confResource.getPath.replace(s"/$joinPath", ""), acceptedEndPoints)
     val directoryDataKvMap: Map[String, List[String]] = directoryDataDirWalker.run(MetadataEndPoint.ConfByKeyEndPointName)
-    val directoryPut = singleFileMetadataStore.put(directoryDataKvMap, MetadataEndPoint.ConfByKeyEndPointName)
+    val directoryPut = directoryMetadataStore.put(directoryDataKvMap, MetadataEndPoint.ConfByKeyEndPointName)
     Await.result(directoryPut, Duration.Inf)
     val dirResponse =
       inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))
