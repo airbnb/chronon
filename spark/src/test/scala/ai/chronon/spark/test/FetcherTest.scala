@@ -69,12 +69,12 @@ class FetcherTest extends TestCase {
       finally src.close()
     }.replaceAll("\\s+", "")
 
+    val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
     val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
     val singleFileDataSet = ChrononMetadataKey + "_single_file_test"
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
     val singleFileDirWalker = new MetadataDirWalker(confResource.getPath, acceptedEndPoints)
     val singleFileKvMap: Map[String, List[String]] = singleFileDirWalker.run(MetadataEndPoint.ConfByKeyEndPointName)
     val singleFilePut = singleFileMetadataStore.put(singleFileKvMap, MetadataEndPoint.ConfByKeyEndPointName)
