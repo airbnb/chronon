@@ -77,7 +77,15 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Seriali
       case PutRequest(keyBytes, valueBytes, dataset, millis) =>
         val table = database.get(dataset)
         val key = encode(keyBytes)
-        table.compute(key, putFunc(millis.getOrElse(System.currentTimeMillis()) -> valueBytes))
+        val m = millis.getOrElse(System.currentTimeMillis())
+        logger.info(s"[test] ${valueBytes}")
+        table.compute(
+          key,
+          putFunc(
+            1L ->
+              Array()
+          )
+        )
         true
     }
 
