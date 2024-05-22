@@ -77,33 +77,33 @@ class FetcherTest extends TestCase {
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
     val singleFileDirWalker = new MetadataDirWalker(confResource.getPath, acceptedEndPoints)
     val singleFileKvMap = singleFileDirWalker.run
-    val vBytes = inMemoryKvStore.stringsToBytes(singleFileKvMap(MetadataEndPoint.ConfByKeyEndPointName).values.head)
-    //assertEquals(s"[test] ${vBytes}", "test")
     val singleFilePut: Seq[Future[scala.collection.Seq[Boolean]]] = singleFileKvMap.toSeq.map {
-      case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, endPoint)
+      case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, singleFileDataSet)
     }
     singleFilePut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
     val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     assertTrue(res.latest.isSuccess)
-    val actual = new String(res.values.get.head.bytes)
+    val actual = inMemoryKvStore.bytesToStrings(res.values.get.head.bytes).head
 
     assertEquals(expected, actual.replaceAll("\\s+", ""))
 
-    /*val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
+    val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
     val directoryDataDirWalker = new MetadataDirWalker(confResource.getPath.replace(s"/$joinPath", ""), acceptedEndPoints)
-    val directoryDataKvMap: Map[String, List[String]] = directoryDataDirWalker.run(MetadataEndPoint.ConfByKeyEndPointName)
-    val directoryPut = directoryMetadataStore.put(directoryDataKvMap, MetadataEndPoint.ConfByKeyEndPointName)
-    Await.result(directoryPut, Duration.Inf)
+    val directoryDataKvMap = directoryDataDirWalker.run
+    val directoryPut = directoryDataKvMap.toSeq.map {
+      case (endPoint, kvMap) => directoryMetadataStore.put(kvMap, directoryDataSetDataSet)
+    }
+    directoryPut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
     val dirResponse =
       inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
     assertTrue(dirRes.latest.isSuccess)
-    val dirActual = new String(dirRes.values.get.head.bytes)
+    val dirActual = inMemoryKvStore.bytesToStrings(res.values.get.head.bytes).head
 
-    assertEquals(expected, dirActual.replaceAll("\\s+", ""))*/
+    assertEquals(expected, dirActual.replaceAll("\\s+", ""))
 
     val emptyResponse =
       inMemoryKvStore.get(GetRequest("NoneExistKey".getBytes(), "NonExistDataSetName"))

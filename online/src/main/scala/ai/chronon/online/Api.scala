@@ -64,7 +64,7 @@ trait KVStore {
     if (response.values.isFailure) {
       Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", response.values.failed.get))
     } else {
-      Success(new String(response.latest.get.bytes, Constants.UTF8))
+      Success(bytesToStrings(response.latest.get.bytes).head)
     }
   }
 
