@@ -4,6 +4,9 @@ import ai.chronon.aggregator.base.{FrequentItemType, FrequentItems, FrequentItem
 import junit.framework.TestCase
 import org.junit.Assert._
 
+import java.util
+import scala.jdk.CollectionConverters._
+
 class FrequentItemsTest extends TestCase {
   def testNonPowerOfTwoAndTruncate(): Unit = {
     val size = 3
@@ -19,12 +22,11 @@ class FrequentItemsTest extends TestCase {
 
     val result = items.finalize(ir)
 
-    assert(
-      Map(
-        "4" -> 4,
-        "3" -> 3,
-        "2" -> 2
-      ) == result)
+    assertEquals(toHashMap(Map(
+      "4" -> 4,
+      "3" -> 3,
+      "2" -> 2
+    )), result)
   }
 
   def testLessItemsThanSize(): Unit = {
@@ -40,12 +42,11 @@ class FrequentItemsTest extends TestCase {
 
     val result = items.finalize(ir)
 
-    assert(
-      Map(
-        3 -> 3,
-        2 -> 2,
-        1 -> 1
-      ) == result)
+    assertEquals(toHashMap(Map(
+      "3" -> 3L,
+      "2" -> 2L,
+      "1" -> 1L
+    )), result)
   }
 
   def testZeroSize(): Unit = {
@@ -61,7 +62,7 @@ class FrequentItemsTest extends TestCase {
 
     val result = items.finalize(ir)
 
-    assert(Map() == result)
+    assertEquals(new util.HashMap[String, Double](), result)
   }
 
   def testSketchSizes(): Unit = {
@@ -114,26 +115,25 @@ class FrequentItemsTest extends TestCase {
     assertEquals(expectedStringValues, actualStringValues)
   }
 
-  def testBulkMerge(): Unit = {
-    val sketch = new FrequentItems[String](3)
+   def testBulkMerge(): Unit = {
+     val sketch = new FrequentItems[String](3)
 
-    val irs = Seq(
-      toSketch(Map("3" -> 3)),
-      toSketch(Map("2" -> 2)),
-      toSketch(Map("1" -> 1))
-    ).map(i => i._2).iterator
+     val irs = Seq(
+       toSketch(Map("3" -> 3)),
+       toSketch(Map("2" -> 2)),
+       toSketch(Map("1" -> 1)),
+     ).map(i => i._2).iterator
 
-    val ir = sketch.bulkMerge(irs)
+     val ir = sketch.bulkMerge(irs)
 
-    assertEquals(Map(
-                   "3" -> 3,
-                   "2" -> 2,
-                   "1" -> 1
-                 ),
-                 sketch.finalize(ir))
-  }
+     assertEquals(toHashMap(Map(
+       "3" -> 3,
+       "2" -> 2,
+       "1" -> 1
+     )), sketch.finalize(ir))
+   }
 
-  def toSketch[T: FrequentItemsFriendly](counts: Map[T, Int]): (FrequentItems[T], ItemsSketchIR[T]) = {
+  private def toSketch[T: FrequentItemsFriendly](counts: Map[T, Int]): (FrequentItems[T], ItemsSketchIR[T]) = {
     val sketch = new FrequentItems[T](4)
     val items = counts.toSeq.sortBy(_._2).reverse
     val ir = sketch.prepare(items.head._1)
@@ -147,4 +147,6 @@ class FrequentItemsTest extends TestCase {
 
     (sketch, ir)
   }
+
+  def toHashMap[T](map: Map[T, Long]): java.util.HashMap[T, Long] = new java.util.HashMap[T, Long](map.asJava)
 }
