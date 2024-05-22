@@ -115,7 +115,7 @@ class FetcherTest extends TestCase {
     * Generate deterministic data for testing and checkpointing IRs and streaming data.
     */
   def generateMutationData(namespace: String): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
     val eventData = Seq(
       Row(595125622443733822L, toTs("2021-04-10 09:00:00"), "2021-04-10"),
@@ -247,7 +247,7 @@ class FetcherTest extends TestCase {
   }
 
   def generateRandomData(namespace: String, keyCount: Int = 10, cardinality: Int = 100): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val rowCount = cardinality * keyCount
     val userCol = Column("user", StringType, keyCount)
     val vendorCol = Column("vendor", StringType, keyCount)
@@ -425,7 +425,7 @@ class FetcherTest extends TestCase {
   }
 
   def generateEventOnlyData(namespace: String, groupByCustomJson: Option[String] = None): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
 

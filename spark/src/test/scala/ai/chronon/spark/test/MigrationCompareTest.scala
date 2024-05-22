@@ -35,7 +35,7 @@ class MigrationCompareTest {
   private val namespace = "migration_compare_chronon_test"
   private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
   private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+  tableUtils.createDatabase(namespace)
 
   def setupTestData(): (api.Join, api.StagingQuery) = {
     // ------------------------------------------JOIN------------------------------------------

@@ -32,13 +32,13 @@ import java.time.Instant
 
 import scala.collection.JavaConverters._
 import scala.collection.Seq
+import java.util
 import scala.util.ScalaJavaConversions.ListOps
 
 abstract class JoinBase(joinConf: api.Join,
                         endPartition: String,
                         tableUtils: TableUtils,
                         skipFirstHole: Boolean,
-                        mutationScan: Boolean = true,
                         showDf: Boolean = false,
                         selectedJoinParts: Option[Seq[String]] = None) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -122,8 +122,9 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeRightTable(leftDf: Option[DfWithStats],
                         joinPart: JoinPart,
-                        leftRange: PartitionRange,
-                        joinLevelBloomMapOpt: Option[Map[String, BloomFilter]],
+                        leftRange: PartitionRange, // missing left partitions
+                        leftTimeRangeOpt: Option[PartitionRange], // range of timestamps within missing left partitions
+                        joinLevelBloomMapOpt: Option[util.Map[String, BloomFilter]],
                         smallMode: Boolean = false): Option[DataFrame] = {
 
     val partTable = joinConf.partOutputTable(joinPart)
@@ -135,7 +136,19 @@ abstract class JoinBase(joinConf: api.Join,
       } else {
         0
       }
-    val rightRange = leftRange.shift(shiftDays)
+
+    //  left  | right  | acc
+    // events | events | snapshot  => right part tables are not aligned - so scan by leftTimeRange
+    // events | events | temporal  => already aligned - so scan by leftRange
+    // events | entities | snapshot => right part tables are not aligned - so scan by leftTimeRange
+    // events | entities | temporal => right part tables are aligned - so scan by leftRange
+    // entities | entities | snapshot => right part tables are aligned - so scan by leftRange
+    val rightRange = if (joinConf.left.dataModel == Events && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+      leftTimeRangeOpt.get.shift(shiftDays)
+    } else {
+      leftRange
+    }
+
     try {
       val unfilledRanges = tableUtils
         .unfilledRanges(
@@ -200,7 +213,7 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeJoinPart(leftDfWithStats: Option[DfWithStats],
                       joinPart: JoinPart,
-                      joinLevelBloomMapOpt: Option[Map[String, BloomFilter]],
+                      joinLevelBloomMapOpt: Option[util.Map[String, BloomFilter]],
                       skipBloom: Boolean = false): Option[DataFrame] = {
 
     if (leftDfWithStats.isEmpty) {
@@ -218,13 +231,7 @@ abstract class JoinBase(joinConf: api.Join,
     val rightBloomMap = if (skipBloom) {
       None
     } else {
-      JoinUtils.genBloomFilterIfNeeded(leftDf,
-                                       joinPart,
-                                       joinConf,
-                                       rowCount,
-                                       unfilledRange,
-                                       tableUtils,
-                                       joinLevelBloomMapOpt)
+      JoinUtils.genBloomFilterIfNeeded(joinPart, joinConf, rowCount, unfilledRange, joinLevelBloomMapOpt)
     }
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     def genGroupBy(partitionRange: PartitionRange) =
@@ -234,7 +241,6 @@ abstract class JoinBase(joinConf: api.Join,
                    computeDependency = true,
                    rightBloomMap,
                    rightSkewFilter,
-                   mutationScan = mutationScan,
                    showDf = showDf)
 
     // all lazy vals - so evaluated only when needed by each case.
@@ -347,7 +353,7 @@ abstract class JoinBase(joinConf: api.Join,
       logger.info(s"Range to fill already computed. Skipping query execution...")
     } else {
       val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
-      val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
+      val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
       logger.info(s"Running ranges: $unfilledRanges")
       unfilledRanges.foreach { unfilledRange =>
         val leftDf = JoinUtils.leftDf(joinConf, unfilledRange, tableUtils)
@@ -380,7 +386,7 @@ abstract class JoinBase(joinConf: api.Join,
       logger.info(s"Range to fill already computed. Skipping query execution...")
     } else {
       val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
-      val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
+      val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
       logger.info(s"Running ranges: $unfilledRanges")
       unfilledRanges.foreach { unfilledRange =>
         val leftDf = JoinUtils.leftDf(joinConf, unfilledRange, tableUtils)
@@ -410,16 +416,6 @@ abstract class JoinBase(joinConf: api.Join,
              s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
     }
 
-    val source = joinConf.left
-    if (useBootstrapForLeft) {
-      logger.info("Overwriting left side to use saved Bootstrap table...")
-      source.overwriteTable(bootstrapTable)
-      val query = source.query
-      // sets map and where clauses already applied to bootstrap transformation
-      query.setSelects(null)
-      query.setWheres(null)
-    }
-
     // Run validations before starting the job
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val analyzer = new Analyzer(tableUtils, joinConf, today, today, silenceMode = true)
@@ -439,8 +435,20 @@ abstract class JoinBase(joinConf: api.Join,
 
     // First run command to archive tables that have changed semantically since the last run
     val archivedAtTs = Instant.now()
+    // TODO: We should not archive the output table in the case of selected join parts mode
     tablesToRecompute(joinConf, outputTable, tableUtils).foreach(
       tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
+
+    // Check semantic hash before overwriting left side
+    val source = joinConf.left
+    if (useBootstrapForLeft) {
+      logger.info("Overwriting left side to use saved Bootstrap table...")
+      source.overwriteTable(bootstrapTable)
+      val query = source.query
+      // sets map and where clauses already applied to bootstrap transformation
+      query.setSelects(null)
+      query.setWheres(null)
+    }
 
     // detect holes and chunks to fill
     // OverrideStartPartition is used to replace the start partition of the join config. This is useful when
@@ -469,7 +477,7 @@ abstract class JoinBase(joinConf: api.Join,
 
     val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
     // build bootstrap info once for the entire job
-    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema, mutationScan = mutationScan)
+    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
 
     val wholeRange = PartitionRange(unfilledRanges.minBy(_.start).start, unfilledRanges.maxBy(_.end).end)(tableUtils)
 

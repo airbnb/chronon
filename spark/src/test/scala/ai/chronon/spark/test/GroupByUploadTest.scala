@@ -44,7 +44,7 @@ class GroupByUploadTest {
   def temporalEventsLastKTest(): Unit = {
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
-    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
     val eventsTable = "events_last_k_dup" // occurs in groupByTest
     val eventSchema = List(
@@ -73,7 +73,7 @@ class GroupByUploadTest {
   def structSupportTest(): Unit = {
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
-    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
     val eventsBase = "events_source"
     val eventsTable = "events_table_struct"
@@ -115,7 +115,7 @@ class GroupByUploadTest {
   def multipleAvgCountersTest(): Unit = {
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
-    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
     val eventsTable = "my_events"
     val eventSchema = List(
@@ -148,7 +148,7 @@ class GroupByUploadTest {
   // groupBy = keys:[listing, category], aggs:[avg(rating)]
   @Test
   def listingRatingCategoryJoinSourceTest(): Unit = {
-    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
 
     val ratingsTable = s"${namespace}.ratings"

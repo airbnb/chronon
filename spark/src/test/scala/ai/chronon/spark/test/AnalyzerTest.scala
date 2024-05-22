@@ -36,7 +36,7 @@ class AnalyzerTest {
   private val oneYearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
 
   private val namespace = "analyzer_test_ns"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+  tableUtils.createDatabase(namespace)
 
   private val viewsSource = getTestEventSource()
 

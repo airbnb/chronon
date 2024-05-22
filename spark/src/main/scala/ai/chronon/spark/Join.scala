@@ -76,10 +76,9 @@ class Join(joinConf: api.Join,
            endPartition: String,
            tableUtils: TableUtils,
            skipFirstHole: Boolean = true,
-           mutationScan: Boolean = true,
            showDf: Boolean = false,
            selectedJoinParts: Option[List[String]] = None)
-    extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, mutationScan, showDf, selectedJoinParts) {
+    extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, showDf, selectedJoinParts) {
 
   private def padFields(df: DataFrame, structType: sql.types.StructType): DataFrame = {
     structType.foldLeft(df) {
@@ -271,7 +270,7 @@ class Join(joinConf: api.Join,
     // info to filter records that need backfills vs can be waived from backfills
     val bootstrapCoveringSets = findBootstrapSetCoverings(bootstrapDf, bootstrapInfo, leftRange)
 
-    // compute a single bloomfilter at join level if there is no bootstrap operation
+    // compute a single bloom filter at join level if there is no bootstrap operation
     lazy val joinLevelBloomMapOpt = if (bootstrapDf.columns.contains(Constants.MatchedHashes)) {
       // do not compute if any bootstrap is involved
       None
@@ -280,11 +279,18 @@ class Join(joinConf: api.Join,
       if (leftRowCount > tableUtils.bloomFilterThreshold) {
         None
       } else {
-        val leftBlooms = joinConf.leftKeyCols.toSeq.map { key =>
+        val leftBlooms = joinConf.leftKeyCols.iterator.map { key =>
           key -> bootstrapDf.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange)
-        }.toMap
+        }.toJMap
         Some(leftBlooms)
       }
+    }
+
+    val leftTimeRangeOpt = if (leftTaggedDf.schema.fieldNames.contains(Constants.TimePartitionColumn)) {
+      val leftTimePartitionMinMax = leftTaggedDf.range[String](Constants.TimePartitionColumn)
+      Some(PartitionRange(leftTimePartitionMinMax._1, leftTimePartitionMinMax._2)(tableUtils))
+    } else {
+      None
     }
 
     implicit val executionContext: ExecutionContextExecutorService =
@@ -329,8 +335,9 @@ class Join(joinConf: api.Join,
                 } else {
                   joinLevelBloomMapOpt
                 }
-                val df = computeRightTable(unfilledLeftDf, joinPart, leftRange, bloomFilterOpt, runSmallMode).map(df =>
-                  joinPart -> df)
+                val df =
+                  computeRightTable(unfilledLeftDf, joinPart, leftRange, leftTimeRangeOpt, bloomFilterOpt, runSmallMode)
+                    .map(df => joinPart -> df)
                 Thread.currentThread().setName(s"done-$threadName")
                 df
               }
