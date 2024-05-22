@@ -770,8 +770,6 @@ case class MomentsIR(
 )
 
 // Uses Welford/Knuth method as the traditional sum of squares based formula has serious numerical stability problems
-// http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
-// https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Higher-order_statistics
 trait MomentAggregator extends SimpleAggregator[Double, MomentsIR, Double] {
   override def prepare(input: Double): MomentsIR = {
     val ir = MomentsIR(
@@ -785,6 +783,10 @@ trait MomentAggregator extends SimpleAggregator[Double, MomentsIR, Double] {
     update(ir, input)
   }
 
+  // Implementation is similar to the variance calculation above, but is extended to calculate the 3rd and 4th moments.
+  // References for the approach are here:
+  // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Higher-order_statistics
+  // https://www.johndcook.com/blog/skewness_kurtosis/
   override def update(ir: MomentsIR, x: Double): MomentsIR = {
     val n1 = ir.n
     val n = ir.n + 1
@@ -810,6 +812,10 @@ trait MomentAggregator extends SimpleAggregator[Double, MomentsIR, Double] {
 
   override def irType: DataType = ListType(DoubleType)
 
+  // Implementation is similar to the variance calculation above, but is extended to calculate the 3rd and 4th moments.
+  // References for the approach are here:
+  // https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Higher-order_statistics
+  // https://www.johndcook.com/blog/skewness_kurtosis/
   override def merge(a: MomentsIR, b: MomentsIR): MomentsIR = {
     val n = a.n + b.n
     val delta = b.m1 - a.m1
