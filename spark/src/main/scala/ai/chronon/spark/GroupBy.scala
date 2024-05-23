@@ -514,7 +514,9 @@ object GroupBy {
     }
 
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
-    val mutationSources = groupByConf.sources.toScala.filter { _.isSetEntities }
+    val mutationSources = groupByConf.sources.toScala.filter { source =>
+      source.isSetEntities && source.getEntities.isSetMutationTable
+    }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
 
     def mutationDfFn(): DataFrame = {
