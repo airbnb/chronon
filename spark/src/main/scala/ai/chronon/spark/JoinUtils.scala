@@ -140,11 +140,12 @@ object JoinUtils {
     val leftJoinDf = leftDf.alias("leftDf")
     val rightJoinDf = rightDf.alias("rightDf")
 
-    val joinCondition = keys.map {
-      key =>
+    val joinCondition = keys
+      .map { key =>
         (col(s"leftDf.$key") === col(s"rightDf.$key")) or
           (col(s"leftDf.$key").isNull and col(s"rightDf.$key").isNull)
-    }.reduce(_ && _)
+      }
+      .reduce(_ && _)
 
     val joinedDf = leftJoinDf.join(rightJoinDf, joinCondition, joinType)
 

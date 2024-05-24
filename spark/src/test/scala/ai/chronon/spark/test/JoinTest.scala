@@ -27,7 +27,7 @@ import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
-import org.apache.spark.sql.{DataFrame, Row, SparkSession, types}
+import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}
 import org.junit.Assert._
 import org.junit.Test
 import org.scalatest.Assertions.intercept
