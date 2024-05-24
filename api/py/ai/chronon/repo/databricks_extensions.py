@@ -60,6 +60,16 @@ class DatabricksExecutable:
         time_str = current_utc_time.strftime('[%Y-%m-%d %H:%M:%S UTC]')
         print(f'{time_str} {message}')
 
+    def _drop_table_if_exists(self, table_name: str):
+        """
+        Every time we run a staging query or group by backfill in Databricks we will drop the output table if it exists.
+        We do this to avoid any issues with the table already existing.
+        We don't need to do this for joins because we have archiving setup for that code flow. 
+        """
+        self._print_with_timestamp(f"Dropping table {table_name} if it exists.")
+        self._spark.sql(f"DROP TABLE IF EXISTS {table_name}")
+        
+
 class DatabricksGroupBy(DatabricksExecutable):
     def __init__(self, group_by: GroupBy, spark_session: SparkSession) -> None:
         self.group_by: GroupBy = group_by
@@ -91,6 +101,9 @@ class DatabricksGroupBy(DatabricksExecutable):
         self._print_with_timestamp(f"Executing GroupBy {self.group_by.metaData.name} from {start_date} to {end_date} with step_days {step_days}")
 
         group_by_to_execute: GroupBy = self._get_group_by_to_execute(start_date, end_date)
+        group_by_output_table: str = f"{self.group_by.metaData.outputNamespace}.{self.group_by.metaData.name}"
+
+        self._drop_table_if_exists(group_by_output_table)
 
         java_group_by: JavaObject = self._get_java_group_by(group_by_to_execute, end_date)
 
@@ -102,7 +115,7 @@ class DatabricksGroupBy(DatabricksExecutable):
             self._constants_provider
         )
 
-        self._print_with_timestamp(f"GroupBy {self.group_by.metaData.name} executed successfully and was written to iceberg.{self.group_by.metaData.outputNamespace}.{self.group_by.metaData.name}.")
+        self._print_with_timestamp(f"GroupBy {self.group_by.metaData.name} executed successfully and was written to iceberg.{group_by_output_table}")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
         return DataFrame(result_df_scala, self._spark)
     
@@ -290,14 +303,6 @@ class DatabricksStagingQuery(DatabricksExecutable):
         staging_query_to_execute.startPartition = start_date
         return staging_query_to_execute
     
-    def __drop_table_if_exists(self, table_name: str):
-        """
-        Every time we run a staging query in Databricks we will drop the staging query table if it exists.
-        We do this to avoid any issues with the table already existing.
-        """
-        self._print_with_timestamp(f"Dropping table {table_name} if it exists.")
-        self._spark.sql(f"DROP TABLE IF EXISTS {table_name}")
-    
     def run(self, start_date:str, end_date: str, step_days: int = 30, skip_first_hole: bool = False) -> DataFrame:
         """
         Executes a Staging Query.
@@ -309,7 +314,7 @@ class DatabricksStagingQuery(DatabricksExecutable):
         staging_query_to_execute: StagingQuery = self._get_staging_query_to_execute(start_date)
         staging_query_output_table_name = output_table_name(staging_query_to_execute, full_name=True)
 
-        self.__drop_table_if_exists(staging_query_output_table_name)
+        self._drop_table_if_exists(staging_query_output_table_name)
         
         java_staging_query: JavaObject = self._jvm.ai.chronon.spark.PySparkUtils.parseStagingQuery(
             thrift_simple_json(staging_query_to_execute)
