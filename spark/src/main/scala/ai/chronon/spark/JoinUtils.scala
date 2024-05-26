@@ -376,7 +376,7 @@ object JoinUtils {
             }.toSet
 
             // Form the final WHERE clause for injection
-            s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
+            s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")}) or $groupByKeyExpression is null"
         }
         .foreach { whereClause =>
           val currentWheres = Option(source.rootQuery.getWheres).getOrElse(new util.ArrayList[String]())
