@@ -71,13 +71,13 @@ class MetadataDirWalker(dirPath: String, metadataEndPointNames: List[String]) {
   }
 
   /**
-   * Iterate over the list of files and extract the key value pairs for each file
-   * @return Map of endpoint -> (Map of key -> List of values)
-   *         e.g. (
-   *            CHRONON_METADATA_BY_TEAM -> (team -> List("join1", "join2")),
-   *            CHRONON_METADATA -> (teams/joins/join1 -> config1)
-   *         )
-   */
+    * Iterate over the list of files and extract the key value pairs for each file
+    * @return Map of endpoint -> (Map of key -> List of values)
+    *         e.g. (
+    *            CHRONON_METADATA_BY_TEAM -> (team -> List("join1", "join2")),
+    *            CHRONON_METADATA -> (teams/joins/join1 -> config1)
+    *         )
+    */
   def run: Map[String, Map[String, List[String]]] = {
     nonEmptyFileList.foldLeft(Map.empty[String, Map[String, List[String]]]) { (acc, file) =>
       // For each end point we apply the extractFn to the file path to extract the key value pair

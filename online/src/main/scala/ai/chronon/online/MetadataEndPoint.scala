@@ -8,9 +8,9 @@ import org.slf4j.LoggerFactory
 import scala.reflect.ClassTag
 
 case class MetadataEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag](
-                                                                      extractFn: (String, Conf) => (String, String),
-                                                                      name: String
-                                                                    )
+    extractFn: (String, Conf) => (String, String),
+    name: String
+)
 object MetadataEndPoint {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
