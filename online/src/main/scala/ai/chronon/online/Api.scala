@@ -64,7 +64,7 @@ trait KVStore {
     if (response.values.isFailure) {
       Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", response.values.failed.get))
     } else {
-      Success(bytesToStrings(response.latest.get.bytes).head)
+      Success(StringArrayConverter.bytesToStrings(response.latest.get.bytes).head)
     }
   }
 
@@ -85,16 +85,23 @@ trait KVStore {
                      dataset: String): Array[Byte] = {
     groupByServingInfo.keyCodec.encode(keys)
   }
+}
 
+object StringArrayConverter {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // Method to convert an array of strings to a byte array using Base64 encoding for each element
   def stringsToBytes(strings: Seq[String]): Array[Byte] = {
     val base64EncodedStrings = strings.map(s => Base64.getEncoder.encodeToString(s.getBytes(StandardCharsets.UTF_8)))
-    base64EncodedStrings.mkString(",").getBytes(StandardCharsets.UTF_8)
+    logger.info(s"Encoding: $base64EncodedStrings")
+    val a = base64EncodedStrings.mkString(",").getBytes(StandardCharsets.UTF_8)
+    logger.info(s"put: $a")
+    a
   }
 
   // Method to convert a byte array back to an array of strings by decoding Base64
   def bytesToStrings(bytes: Array[Byte]): Seq[String] = {
     val encodedString = new String(bytes, StandardCharsets.UTF_8)
+    logger.info(s"Decoding: $encodedString")
     encodedString.split(",").map(s => new String(Base64.getDecoder.decode(s), StandardCharsets.UTF_8))
   }
 }
