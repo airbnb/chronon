@@ -58,6 +58,7 @@ trait KVStore {
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): Try[String] = {
+    logger.info(s"[test] key = ${key} dataset = ${dataset}")
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFutureOpt = get(fetchRequest)
     val response = Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
