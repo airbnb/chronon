@@ -25,7 +25,7 @@ import ai.chronon.api.Extensions.{DerivationOps, JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataDirWalker, MetadataEndPoint, MetadataStore, SparkConversions}
+import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataDirWalker, MetadataEndPoint, MetadataStore, SparkConversions, StringArrayConverter}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
@@ -84,7 +84,7 @@ class FetcherTest extends TestCase {
     val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     assertTrue(res.latest.isSuccess)
-    val actual = inMemoryKvStore.bytesToStrings(res.values.get.head.bytes).head
+    val actual = StringArrayConverter.bytesToStrings(res.values.get.head.bytes).head
 
     assertEquals(expected, actual.replaceAll("\\s+", ""))
 
@@ -101,7 +101,7 @@ class FetcherTest extends TestCase {
       inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
     assertTrue(dirRes.latest.isSuccess)
-    val dirActual = inMemoryKvStore.bytesToStrings(res.values.get.head.bytes).head
+    val dirActual = StringArrayConverter.bytesToStrings(res.values.get.head.bytes).head
 
     assertEquals(expected, dirActual.replaceAll("\\s+", ""))
 
