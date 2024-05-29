@@ -58,17 +58,28 @@ trait KVStore {
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): Try[String] = {
-    logger.info(s"[test] key = ${key} dataset = ${dataset}")
-    val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
-    val responseFutureOpt = get(fetchRequest)
-    val response = Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
+    val response = getResponse(key, dataset, timeoutMillis)
     if (response.values.isFailure) {
       Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", response.values.failed.get))
     } else {
-      Success(StringArrayConverter.bytesToStrings(response.latest.get.bytes).head)
+      Success(new String(response.latest.get.bytes, Constants.UTF8))
     }
   }
 
+  def getStringArray(key: String, dataset: String, timeoutMillis: Long): Try[Seq[String]] = {
+    val response = getResponse(key, dataset, timeoutMillis)
+    if (response.values.isFailure) {
+      Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", response.values.failed.get))
+    } else {
+      Success(StringArrayConverter.bytesToStrings(response.latest.get.bytes))
+    }
+  }
+
+  private def getResponse(key: String, dataset: String, timeoutMillis: Long): GetResponse = {
+    val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
+    val responseFutureOpt = get(fetchRequest)
+    Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
+  }
   def get(request: GetRequest): Future[GetResponse] = {
     multiGet(Seq(request))
       .map(_.head)
