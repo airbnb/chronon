@@ -19,7 +19,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
-import ai.chronon.online.{Api, Fetcher, MetadataStore}
+import ai.chronon.online.{Api, Fetcher, MetadataDirWalker, MetadataEndPoint, MetadataStore}
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -41,7 +41,7 @@ import java.io.File
 import java.nio.file.{Files, Paths}
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.concurrent.Await
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
 import scala.io.Source
 import scala.reflect.ClassTag
@@ -732,8 +732,14 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val putRequest = args.metaDataStore.putConf(args.confPath())
-      val res = Await.result(putRequest, 1.hour)
+      val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
+      val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
+      val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
+      implicit val ec: ExecutionContext = ExecutionContext.global
+      val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
+        case (endPoint, kvMap) => args.metaDataStore.put(kvMap, endPoint)
+      }
+      val res = putRequestsSeq.flatMap(putRequests => Await.result(putRequests, 1.hour))
       logger.info(
         s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
     }

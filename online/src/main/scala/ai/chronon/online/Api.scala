@@ -22,6 +22,8 @@ import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
 
 import java.util.function.Consumer
+import java.util.Base64
+import java.nio.charset.StandardCharsets
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
@@ -56,9 +58,7 @@ trait KVStore {
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): Try[String] = {
-    val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
-    val responseFutureOpt = get(fetchRequest)
-    val response = Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
+    val response = getResponse(key, dataset, timeoutMillis)
     if (response.values.isFailure) {
       Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", response.values.failed.get))
     } else {
@@ -77,11 +77,45 @@ trait KVStore {
       }
   }
 
+  def getStringArray(key: String, dataset: String, timeoutMillis: Long): Try[Seq[String]] = {
+    val response = getResponse(key, dataset, timeoutMillis)
+    if (response.values.isFailure) {
+      Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", response.values.failed.get))
+    } else {
+      Success(StringArrayConverter.bytesToStrings(response.latest.get.bytes))
+    }
+  }
+
+  private def getResponse(key: String, dataset: String, timeoutMillis: Long): GetResponse = {
+    val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
+    val responseFutureOpt = get(fetchRequest)
+    Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
+  }
+
   // Method for taking the set of keys and constructing the byte array sent to the KVStore
   def createKeyBytes(keys: Map[String, AnyRef],
                      groupByServingInfo: GroupByServingInfoParsed,
                      dataset: String): Array[Byte] = {
     groupByServingInfo.keyCodec.encode(keys)
+  }
+}
+
+object StringArrayConverter {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
+  // Method to convert an array of strings to a byte array using Base64 encoding for each element
+  def stringsToBytes(strings: Seq[String]): Array[Byte] = {
+    val base64EncodedStrings = strings.map(s => Base64.getEncoder.encodeToString(s.getBytes(StandardCharsets.UTF_8)))
+    logger.info(s"Encoding: $base64EncodedStrings")
+    val a = base64EncodedStrings.mkString(",").getBytes(StandardCharsets.UTF_8)
+    logger.info(s"put: $a")
+    a
+  }
+
+  // Method to convert a byte array back to an array of strings by decoding Base64
+  def bytesToStrings(bytes: Array[Byte]): Seq[String] = {
+    val encodedString = new String(bytes, StandardCharsets.UTF_8)
+    logger.info(s"Decoding: $encodedString")
+    encodedString.split(",").map(s => new String(Base64.getDecoder.decode(s), StandardCharsets.UTF_8))
   }
 }
 
