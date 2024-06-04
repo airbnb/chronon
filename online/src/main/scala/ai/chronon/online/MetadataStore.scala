@@ -68,6 +68,20 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       }
   }
 
+  def getEntityList[T <: TBase[_, _]: Manifest](team: String, dataset: String): Try[Seq[String]] = {
+    val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
+    kvStore
+      .getStringArray(team, dataset, timeoutMillis)
+      .recoverWith {
+        case th: Throwable =>
+          Failure(
+            new RuntimeException(
+              s"Couldn't fetch ${clazz.getName} for key $team. Perhaps metadata upload wasn't successful.",
+              th
+            ))
+      }
+  }
+
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]](
     { name =>
       val startTimeMs = System.currentTimeMillis()
