@@ -339,6 +339,8 @@ abstract class JoinBase(joinConf: api.Join,
   }
 
   def computeLeft(overrideStartPartition: Option[String] = None): Unit = {
+    // Register UDFs for the left part computation
+    joinConf.setups.foreach(tableUtils.sql)
     // Runs the left side query for a join and saves the output to a table, for reuse by joinPart
     // Computation in parallelized joinPart execution mode.
     if (shouldRecomputeLeft(joinConf, bootstrapTable, tableUtils)) {
