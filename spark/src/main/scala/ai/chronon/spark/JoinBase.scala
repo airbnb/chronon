@@ -339,8 +339,6 @@ abstract class JoinBase(joinConf: api.Join,
   }
 
   def computeLeft(overrideStartPartition: Option[String] = None): Unit = {
-    // Register UDFs for the left part computation
-    joinConf.setups.foreach(tableUtils.sql)
     // Runs the left side query for a join and saves the output to a table, for reuse by joinPart
     // Computation in parallelized joinPart execution mode.
     if (shouldRecomputeLeft(joinConf, bootstrapTable, tableUtils)) {
@@ -354,6 +352,8 @@ abstract class JoinBase(joinConf: api.Join,
     if (unfilledRanges.isEmpty) {
       logger.info(s"Range to fill already computed. Skipping query execution...")
     } else {
+      // Register UDFs for the left part computation
+      joinConf.setups.foreach(tableUtils.sql)
       val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
       val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
       logger.info(s"Running ranges: $unfilledRanges")
