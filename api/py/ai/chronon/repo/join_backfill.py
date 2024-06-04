@@ -2,7 +2,6 @@ import json
 import os
 from typing import Optional
 
-from ai.chronon.constants import ADAPTERS
 from ai.chronon.scheduler.interfaces.flow import Flow
 from ai.chronon.scheduler.interfaces.node import Node
 from ai.chronon.utils import (
@@ -97,6 +96,8 @@ class JoinBackfill:
         return self.export_template(settings) + " && " + self.command_template(extra_args={"mode": "backfill-final"})
 
     def run(self, orchestrator: str, overrides: Optional[dict] = None):
+        from ai.chronon.constants import ADAPTERS
+
         ADAPTERS.update(overrides)
         orchestrator = ADAPTERS[orchestrator](dag_id=self.dag_id, start_date=self.start_date)
         orchestrator.setup()
