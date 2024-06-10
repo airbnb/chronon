@@ -11,12 +11,10 @@ import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{StructField, StructType, StringType => SparkStringType}
-import org.apache.spark.sql.{DataFrame, Row, SparkSession, types}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.{Before, Test}
 
-import java.time.{LocalDateTime, ZoneOffset}
-import java.time.format.DateTimeFormatter
 import scala.collection.JavaConverters._
 import scala.util.ScalaJavaConversions.ListOps
 
@@ -1563,111 +1561,5 @@ class JoinTest {
       "test_namespace_jointest.test_join_migration_bootstrap" -> "1B2M2Y8Asg"
     )
     assertEquals(0, join.tablesToDrop(productionHashV2).length)
-  }
-
-  @Test
-  def testPartialJoins(): Unit = {
-    import spark.implicits._
-
-    val userTable = s"$namespace.users"
-    spark.sql(s"DROP TABLE IF EXISTS $userTable")
-
-    val start = "2024-01-01"
-    val end = "2024-12-01"
-
-    val schema = StructType(Array(
-      StructField("user", types.StringType, nullable = true),
-      StructField("email", types.StringType, nullable = true),
-      StructField("order", types.StringType, nullable = true),
-      StructField("amount", types.IntegerType, nullable = true),
-      StructField("created", types.LongType, nullable = true),
-      StructField("ds", types.StringType, nullable = true),
-    ))
-
-    val rows = Seq(
-      ("user", "email", "order", 0, LocalDateTime.of(2024, 5, 10, 0, 0)),
-      ("user", "email", "order", 0, LocalDateTime.of(2024, 5, 10, 6, 0)),
-      ("user", "email2", "order", 1, LocalDateTime.of(2024, 5, 10, 0, 0)),
-      ("user", "email2", "order", 1, LocalDateTime.of(2024, 5, 10, 6, 0)),
-      ("user", null, "order", null, LocalDateTime.of(2024, 5, 10, 0, 0)),
-      ("user", null, "order", null, LocalDateTime.of(2024, 5, 10, 6, 0))
-    ).map({
-      case (user, email, order, amount, dt) => Row(
-        user,
-        email,
-        order,
-        amount,
-        dt.toInstant(ZoneOffset.UTC).toEpochMilli,
-        dt.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-      )
-    })
-
-    val events = spark.createDataFrame(spark.sparkContext.parallelize(rows), schema)
-
-    TableUtils(events.sparkSession).insertPartitions(events, tableName = userTable)
-
-    val source = Builders.Source.events(
-      query = Builders.Query(
-        selects = Builders.Selects("user", "email", "order", "amount"),
-        timeColumn = "created",
-        startPartition = start
-      ),
-      table = userTable
-    )
-
-    def makeJoinConf(keys: Seq[String]) = {
-      val groupBy = Builders.GroupBy(
-        sources = Seq(source),
-        keyColumns = keys,
-        aggregations = Seq(
-          Builders.Aggregation(
-            operation = Operation.COUNT,
-            inputColumn = "order",
-            windows = Seq(new Window(30, TimeUnit.DAYS))
-          )
-        ),
-        accuracy=Accuracy.TEMPORAL,
-        metaData = Builders.MetaData(
-          name = "unit_test.user_email_orders"
-        )
-      )
-
-      Builders.Join(
-        left = source,
-        joinParts = Seq(
-          Builders.JoinPart(
-            groupBy = groupBy
-          )
-        ),
-        metaData = Builders.MetaData(
-          name = "test.user_features",
-          namespace = namespace,
-          team = "chronon"
-        )
-      )
-    }
-
-    def assertJoin(columnNames: Seq[String]) = {
-      val joinConf = makeJoinConf(columnNames)
-      val join = new Join(joinConf, end, tableUtils)
-      val results = join.computeJoin()
-      val columns = columnNames.map(col)
-
-      val window = org.apache.spark.sql.expressions.Window.partitionBy(columns: _*).orderBy(col("ts").desc)
-
-      val mostRecentResults = results.withColumn("rank", row_number().over(window))
-        .filter(col("rank") === 1)
-
-      val expectedCounts = List(1, 1, 1)
-      val actualCounts = mostRecentResults.map(r => r.getAs[Long]("unit_test_user_email_orders_order_count_30d")).collectAsList().asScala
-
-      assertEquals(expectedCounts, actualCounts)
-    }
-
-    // Check string nulls
-    assertJoin(Seq("user", "email"))
-
-    // Check non-string nulls
-    assertJoin(Seq("user", "amount"))
   }
 }

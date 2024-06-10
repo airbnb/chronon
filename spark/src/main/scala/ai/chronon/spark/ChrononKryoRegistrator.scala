@@ -105,7 +105,6 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.TimestampType$",
       "org.apache.spark.util.sketch.BitArray",
       "org.apache.spark.util.sketch.BloomFilterImpl",
-      "org.apache.spark.util.collection.BitSet",
       "org.apache.spark.util.collection.CompactBuffer",
       "scala.reflect.ClassTag$$anon$1",
       "scala.reflect.ClassTag$GenericClassTag",
