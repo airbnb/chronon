@@ -297,7 +297,9 @@ class BaseFetcher(kvStore: KVStore,
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     val requestTimeMillis = System.currentTimeMillis()
     // split a groupBy level request into its kvStore level requests
-    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
+    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator
+      .filter(r => r.keys == null || r.keys.values == null || r.keys.values.exists(_ != null))
+      .map { request =>
       val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
         .map { groupByServingInfo =>
           val context =
