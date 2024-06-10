@@ -136,16 +136,12 @@ class Fetcher(val kvStore: KVStore,
               val keySchema = StructType(s"${joinName}_key", keyFields.toArray)
               val entityKeySchema = StructType(s"${joinName}_entity_key", entityKeyFields.toArray)
               val externalKeySchema = StructType(s"${joinName}_external_key", externalKeyFields.toArray)
-              val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
               val baseValueSchema = StructType(s"${joinName}_value", valueFields.toArray)
-              val baseValueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
               val joinCodec = JoinCodec(joinConf,
                                         keySchema,
                                         entityKeySchema,
                                         externalKeySchema,
-                                        baseValueSchema,
-                                        keyCodec,
-                                        baseValueCodec)
+                                        baseValueSchema)
               logControlEvent(joinCodec)
               joinCodec
           }
@@ -276,6 +272,12 @@ class Fetcher(val kvStore: KVStore,
     val loggingTry: Try[Unit] = joinCodecTry.map(codec => {
       val metaData = codec.conf.join.metaData
       val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
+
+      // Exit early if sample percent is 0
+      if (samplePercent == 0) {
+        return Response(resp.request, Success(resp.derivedValues))
+      }
+
       val keyBytes = encode(codec.keySchema, codec.keyCodec, resp.request.keys, cast = true)
 
       val hash = if (samplePercent > 0) {
@@ -329,6 +331,7 @@ class Fetcher(val kvStore: KVStore,
       getJoinCodecs.refresh(resp.request.name)
       joinContext.foreach(_.incrementException(exception))
       println(s"logging failed due to ${exception.traceString}")
+      println(s"logging failed due to stacktrace: ${exception.getStackTrace.mkString("Array(", ", ", ")")}")
     }
     Response(resp.request, Success(resp.derivedValues))
   }

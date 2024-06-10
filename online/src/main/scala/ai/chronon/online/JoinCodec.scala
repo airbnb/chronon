@@ -12,9 +12,7 @@ case class JoinCodec(conf: JoinOps,
                      keySchema: StructType,
                      entityKeySchema: StructType,
                      externalKeySchema: StructType,
-                     baseValueSchema: StructType,
-                     keyCodec: AvroCodec,
-                     baseValueCodec: AvroCodec)
+                     baseValueSchema: StructType)
     extends Serializable {
   type DerivationFunc = (Map[String, Any], Map[String, Any]) => Map[String, Any]
   case class SchemaAndDeriveFunc(valueSchema: StructType,
@@ -83,7 +81,9 @@ case class JoinCodec(conf: JoinOps,
       derivedSchema
     }
   }
-  @transient lazy val valueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
+  def valueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
+  def keyCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
+  def baseValueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
 
   /*
    * Get the serialized string repr. of the logging schema.
