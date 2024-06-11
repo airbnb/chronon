@@ -5,9 +5,10 @@ import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.{MetaData, TimeUnit, Window}
 import ai.chronon.online.FetcherCache.BatchResponses
 import ai.chronon.api.Extensions.WindowOps
+import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.{BaseFetcher, GroupByServingInfoParsed, KVStore, TTLCache}
 import ai.chronon.online.KVStore.TimedValue
-import org.junit.Assert.assertSame
+import org.junit.Assert.{assertEquals, assertSame}
 import org.junit.Test
 import org.mockito.Mockito._
 import org.mockito.ArgumentMatchers.any
@@ -85,5 +86,51 @@ class BaseFetcherTest extends MockitoHelper {
     val shortWindows = Seq(new Window(1, TimeUnit.DAYS), new Window(10, TimeUnit.HOURS))
     val result2 = baseFetcher.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, shortWindows)
     assertSame(result2, 0L)
+  }
+
+  @Test
+  def testParsingGroupByResponse_HappyHase(): Unit = {
+    val baseFetcher = new BaseFetcher(mock[KVStore])
+    val request = Request(name = "name", keys = Map("email" -> "email"), atMillis = None, context = None)
+    val response: Map[Request, Try[Map[String, AnyRef]]] = Map(
+      request -> Success(Map(
+        "key" -> "value"
+      ))
+    )
+
+    val result = baseFetcher.parseGroupByResponse("prefix", request, response)
+    assertEquals(result, Map("prefix_key" -> "value"))
+  }
+
+  @Test
+  def testParsingGroupByResponse_NullKey(): Unit = {
+    val baseFetcher = new BaseFetcher(mock[KVStore])
+    val request = Request(name = "name", keys = Map("email" -> null), atMillis = None, context = None)
+    val request2 = Request(name = "name2", keys = Map("email" -> null), atMillis = None, context = None)
+
+    val response: Map[Request, Try[Map[String, AnyRef]]] = Map(
+      request2 -> Success(Map(
+        "key" -> "value"
+      ))
+    )
+
+    val result = baseFetcher.parseGroupByResponse("prefix", request, response)
+    assertEquals(result, Map())
+  }
+
+  @Test
+  def testParsingGroupByResponse_MissingKey(): Unit = {
+    val baseFetcher = new BaseFetcher(mock[KVStore])
+    val request = Request(name = "name", keys = Map("email" -> "email"), atMillis = None, context = None)
+    val request2 = Request(name = "name2", keys = Map("email" -> "email"), atMillis = None, context = None)
+
+    val response: Map[Request, Try[Map[String, AnyRef]]] = Map(
+      request2 -> Success(Map(
+        "key" -> "value"
+      ))
+    )
+
+    val result = baseFetcher.parseGroupByResponse("prefix", request, response)
+    assertEquals(result.keySet, Set("name_exception"))
   }
 }
