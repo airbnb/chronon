@@ -112,16 +112,16 @@ class FetcherBase(kvStore: KVStore,
         val output: Array[Any] = if (servingInfo.isTilingEnabled) {
           val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-            .map { tVal =>
+            .flatMap { tVal =>
               Try(servingInfo.tiledCodec.decodeTileIr(tVal.bytes)) match {
-                case Success((tile, _)) => TiledIr(tVal.millis, tile)
+                case Success((tile, _)) => Array(TiledIr(tVal.millis, tile))
                 case Failure(_) =>
                   logger.error(
                     s"Failed to decode tile ir for groupBy ${servingInfo.groupByOps.metaData.getName}" +
                       s"Streaming tiled IRs will be ignored")
-                  Iterator.empty[TiledIr]
+                  Array.empty[TiledIr]
               }
-            }
+            }.toArray.iterator
 
           if (debug) {
             val gson = new Gson()
@@ -144,12 +144,12 @@ class FetcherBase(kvStore: KVStore,
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
             .flatMap(tVal =>
               Try(selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations)) match {
-                case Success(row) => Array(row)
+                case Success(row) => Seq(row)
                 case Failure(_) =>
                   logger.error(
                     s"Failed to decode streaming rows for groupBy ${servingInfo.groupByOps.metaData.getName}" +
                       s"Streaming rows will be ignored")
-                  Array.empty[Row]
+                  Seq.empty[Row]
               })
             .toArray
 
