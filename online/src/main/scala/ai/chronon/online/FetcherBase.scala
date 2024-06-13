@@ -121,7 +121,9 @@ class FetcherBase(kvStore: KVStore,
                       s"Streaming tiled IRs will be ignored")
                   Array.empty[TiledIr]
               }
-            }.toArray.iterator
+            }
+            .toArray
+            .iterator
 
           if (debug) {
             val gson = new Gson()
