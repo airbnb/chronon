@@ -108,12 +108,19 @@ class FetcherBase(kvStore: KVStore,
                          totalResponseValueBytes)
 
         val batchIr = toBatchIr(batchBytes, servingInfo)
+        // todo: handle group by schema evolution for tiled ir and streaming rows
         val output: Array[Any] = if (servingInfo.isTilingEnabled) {
           val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
             .map { tVal =>
-              val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
-              TiledIr(tVal.millis, tile)
+              Try(servingInfo.tiledCodec.decodeTileIr(tVal.bytes)) match {
+                case Success((tile, _)) => TiledIr(tVal.millis, tile)
+                case Failure(_) =>
+                  logger.error(
+                    s"Failed to decode tile ir for groupBy ${servingInfo.groupByOps.metaData.getName}" +
+                      s"Streaming tiled IRs will be ignored")
+                  Iterator.empty[TiledIr]
+              }
             }
 
           if (debug) {
@@ -135,7 +142,15 @@ class FetcherBase(kvStore: KVStore,
 
           val streamingRows: Array[Row] = streamingResponses.iterator
             .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-            .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+            .flatMap(tVal =>
+              Try(selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations)) match {
+                case Success(row) => Array(row)
+                case Failure(_) =>
+                  logger.error(
+                    s"Failed to decode streaming rows for groupBy ${servingInfo.groupByOps.metaData.getName}" +
+                      s"Streaming rows will be ignored")
+                  Array.empty[Row]
+              })
             .toArray
 
           if (debug) {
