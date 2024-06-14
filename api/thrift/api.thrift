@@ -159,7 +159,8 @@ enum Operation {
     TOP_K = 15,
     BOTTOM_K = 16
 
-    HISTOGRAM = 17 // use this only if you know the set of inputs is bounded
+    HISTOGRAM = 17, // use this only if you know the set of inputs is bounded
+    APPROX_HISTOGRAM_K = 18
 }
 
 // integers map to milliseconds in the timeunit
