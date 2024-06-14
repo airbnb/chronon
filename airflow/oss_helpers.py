@@ -18,12 +18,7 @@ from airflow.sensors.named_hive_partition_sensor import NamedHivePartitionSensor
 NO_SKIP_MODES = ["stats-summary", "label-join"]
 # For spark 3 migration into streaming client mode, we'll migrate per team.
 STREAMING_CLIENT_TEAMS = [
-    "zipline_test",
-    #    "claim_v21",
-    "china_trust_defense",
-    #    "cs_ds",
-    #    "psx",
-    #    "payments_risk",
+    # todo
 ]
 
 
@@ -36,16 +31,7 @@ def dag_default_args(team_conf, team_name, dag_owner_override=None, **kwargs):
 
     # find DAG owner
     user = base.get("user")
-    default_dag_owner_str = "one_airbnb_team_id_" + str(base.get("one_airbnb_team_id"))
-
-    if dag_owner_override:
-        override = team_conf["default"].copy()
-        override.update(team_conf.get(dag_owner_override, {}))
-        if override.get("one_airbnb_team_id"):
-            default_dag_owner_str = "one_airbnb_team_id_" + str(
-                override.get("one_airbnb_team_id")
-            )
-        user = override.get("user")
+    default_dag_owner_str = "" # TODO
 
     airflow_base = {
         "owner": default_dag_owner_str,
