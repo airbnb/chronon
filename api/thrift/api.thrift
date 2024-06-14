@@ -150,8 +150,8 @@ enum Operation {
     SUM = 7
     AVERAGE = 8
     VARIANCE = 9
-    SKEW = 10     // TODO
-    KURTOSIS = 11  // TODO
+    SKEW = 10
+    KURTOSIS = 11
     APPROX_PERCENTILE = 12
 
     LAST_K = 13

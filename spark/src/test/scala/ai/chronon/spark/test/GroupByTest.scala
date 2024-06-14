@@ -339,12 +339,12 @@ class GroupByTest {
 
     print(aggregationsMetadata)
     assertTrue(aggregationsMetadata.length == 2)
+
     val columns = aggregationsMetadata.map(a => a.name -> a.columnType).toMap
     assertEquals(Map(
-                   "time_spent_ms" -> LongType,
-                   "price" -> DoubleType
-                 ),
-                 columns)
+      "time_spent_ms" -> LongType,
+      "price" -> DoubleType
+    ), columns)
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
@@ -414,8 +414,8 @@ class GroupByTest {
     tableUtils.createDatabase(namespace)
     DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
     val source = Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms", "price"),
-                             startPartition = startPartition),
+      query =
+        Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms", "price"), startPartition = startPartition),
       table = sourceTable
     )
     (source, endPartition)
@@ -616,5 +616,44 @@ class GroupByTest {
       diff.show()
     }
     assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testDescriptiveStats(): Unit = {
+    val (source, endPartition) = createTestSource(suffix = "_descriptive_stats")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_descriptive_stats"
+    val aggs = Seq(
+      Builders.Aggregation(
+        operation = Operation.VARIANCE,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.SKEW,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.KURTOSIS,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+    )
+    backfill(name = "unit_test_group_by_descriptive_stats",
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils,
+      additionalAgg = aggs)
   }
 }

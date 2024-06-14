@@ -68,6 +68,8 @@ class Operation:
     SUM = ttypes.Operation.SUM
     AVERAGE = ttypes.Operation.AVERAGE
     VARIANCE = ttypes.Operation.VARIANCE
+    SKEW = ttypes.Operation.SKEW
+    KURTOSIS = ttypes.Operation.KURTOSIS
     HISTOGRAM = ttypes.Operation.HISTOGRAM
     # k truncates the map to top_k most frequent items, 0 turns off truncation
     HISTOGRAM_K = collector(ttypes.Operation.HISTOGRAM)

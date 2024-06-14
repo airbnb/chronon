@@ -133,19 +133,20 @@ Limitations:
 
 ## Table of properties for aggregations
 
-| aggregation         | input type      | nesting allowed? | output type       | reversible | parameters         | bounded memory |
-|---------------------|-----------------|------------------|-------------------|------------|--------------------|----------------|
-| count               | all types       | list, map        | long              | yes        |                    | yes            |
-| min, max            | primitive types | list, map        | input             | no         |                    | yes            |
-| top_k, bottom_k     | primitive types | list, map        | list<input,>      | no         | k                  | yes            |
-| first, last         | all types       | NO               | input             | no         |                    | yes            |
-| first_k, last_k     | all types       | NO               | list<input,>      | no         | k                  | yes            |
-| average, variance   | numeric types   | list, map        | double            | yes        |                    | yes            |
-| histogram           | string          | list, map        | map<string, long> | yes        | k=inf              | no             |
-| approx_histogram_k  | primitive types | list, map        | map<string, long> | yes        | k=inf              | yes            |
-| approx_unique_count | primitive types | list, map        | long              | no         | k=8                | yes            |
-| approx_percentile   | primitive types | list, map        | list<input,>      | no         | k=128, percentiles | yes            |
-| unique_count        | primitive types | list, map        | long              | no         |                    | no             |
+| aggregation              | input type      | nesting allowed? | output type       | reversible | parameters         | bounded memory |
+|--------------------------|-----------------|------------------|-------------------|------------|--------------------|----------------|
+| count                    | all types       | list, map        | long              | yes        |                    | yes            |
+| min, max                 | primitive types | list, map        | input             | no         |                    | yes            |
+| top_k, bottom_k          | primitive types | list, map        | list<input,>      | no         | k                  | yes            |
+| first, last              | all types       | NO               | input             | no         |                    | yes            |
+| first_k, last_k          | all types       | NO               | list<input,>      | no         | k                  | yes            |
+| average                  | numeric types   | list, map        | double            | yes        |                    | yes            |
+| variance, skew, kurtosis | numeric types   | list, map        | double            | no         |                    | yes            |
+| histogram                | string          | list, map        | map<string, long> | yes        | k=inf              | no             |
+| approx_histogram_k       | primitive types | list, map        | map<string, long> | yes        | k=inf              | yes            |
+| approx_unique_count      | primitive types | list, map        | long              | no         | k=8                | yes            |
+| approx_percentile        | primitive types | list, map        | list<input,>      | no         | k=128, percentiles | yes            |
+| unique_count             | primitive types | list, map        | long              | no         |                    | no             |
 
 
 ## Accuracy
