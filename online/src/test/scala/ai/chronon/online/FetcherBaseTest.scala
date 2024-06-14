@@ -144,7 +144,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers {
 
   @Test
   def testParsingGroupByResponse_HappyHase(): Unit = {
-    val baseFetcher = new FetcherBase((mock[KVStore])
+    val baseFetcher = new FetcherBase(mock[KVStore])
     val request = Request(name = "name", keys = Map("email" -> "email"), atMillis = None, context = None)
     val response: Map[Request, Try[Map[String, AnyRef]]] = Map(
       request -> Success(Map(
