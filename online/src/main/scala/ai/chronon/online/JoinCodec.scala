@@ -30,10 +30,7 @@ import ai.chronon.online.OnlineDerivationUtil.{
   timeFields
 }
 
-case class JoinCodec(conf: JoinOps,
-                     keySchema: StructType,
-                     baseValueSchema: StructType)
-    extends Serializable {
+case class JoinCodec(conf: JoinOps, keySchema: StructType, baseValueSchema: StructType) extends Serializable {
 
   @transient lazy val valueSchema: StructType = {
     val fields = if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
