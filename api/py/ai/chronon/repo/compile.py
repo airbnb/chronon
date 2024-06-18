@@ -2,6 +2,21 @@
 # tool to materialize feature_sources and feature_sets into thrift configurations
 # that chronon jobs can consume
 
+
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import logging
 import os
 
@@ -15,7 +30,7 @@ from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME, TEAMS_FILE_PATH
 from ai.chronon.repo import teams
 from ai.chronon.repo.serializer import thrift_simple_json_protected
-from ai.chronon.repo.validator import ChrononRepoValidator
+from ai.chronon.repo.validator import ChrononRepoValidator, get_join_output_columns, get_group_by_output_columns
 
 # This is set in the main function -
 # from command line or from env variable during invocation
@@ -54,7 +69,11 @@ def get_folder_name_from_class_name(class_name):
     '--force-overwrite',
     help='Force overwriting existing materialized conf.',
     is_flag=True)
-def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite):
+@click.option(
+    '--feature-display',
+    help='Print out the features list created by the conf.',
+    is_flag=True)
+def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite, feature_display):
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
     The materialized objects are what will be submitted to spark jobs - driven by airflow, or by manual user testing.
@@ -65,6 +84,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         log_level = logging.INFO
     _print_highlighted("Using chronon root path", chronon_root)
     chronon_root_path = os.path.expanduser(chronon_root)
+    utils.chronon_root_path = chronon_root_path
     path_split = input_path.split('/')
     obj_folder_name = path_split[0]
     obj_class = FOLDER_NAME_TO_CLASS[obj_folder_name]
@@ -89,6 +109,12 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         _set_templated_values(obj, obj_class, teams_path, team_name)
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
             num_written_objs += 1
+
+            if obj_class is Join and feature_display:
+                _print_features_names("Output Join Features", get_join_output_columns(obj))
+
+            if obj_class is GroupBy and feature_display:
+                _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
 
             # In case of online join, we need to materialize the underlying online group_bys.
             if obj_class is Join and obj.metaData.online:
@@ -125,6 +151,12 @@ def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     obj.metaData.outputNamespace = obj.metaData.outputNamespace or namespace
     obj.metaData.tableProperties = obj.metaData.tableProperties or table_properties
     obj.metaData.team = team_name
+
+    # set metadata for JoinSource
+    if isinstance(obj, api.GroupBy):
+        for source in obj.sources:
+            if source.joinSource:
+                _set_team_level_metadata(source.joinSource.join, teams_path, team_name)
 
 
 def __fill_template(table, obj, namespace):
@@ -203,6 +235,11 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
 def _print_highlighted(left, right):
     # print in blue.
     print(f"{left:>25} - \u001b[34m{right}\u001b[0m")
+
+
+def _print_features_names(left, right):
+    # Print in green and separate lines.
+    print(f"{left:>25} - \u001b[32m{right}\u001b[0m")
 
 
 def _print_error(left, right):

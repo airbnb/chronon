@@ -1,0 +1,166 @@
+{
+  "metaData": {
+    "name": "sample_team.sample_chaining_join.parent_join",
+    "online": 1,
+    "production": 0,
+    "customJson": "{\"check_consistency\": true, \"lag\": 0, \"join_tags\": null, \"join_part_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}",
+      "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
+      "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "chronon_db",
+    "team": "sample_team",
+    "samplePercent": 100.0,
+    "offlineSchedule": "@daily",
+    "consistencySamplePercent": 5.0,
+    "historicalBackfill": 0
+  },
+  "left": {
+    "events": {
+      "table": "sample_namespace.sample_table_group_by",
+      "query": {
+        "selects": {
+          "event": "event_expr",
+          "group_by_subject": "group_by_expr",
+          "ts": "ts"
+        },
+        "startPartition": "2021-04-09",
+        "timeColumn": "ts",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "sample_team.event_sample_group_by.v1",
+          "online": 1,
+          "customJson": "{\"lag\": 0, \"groupby_tags\": {\"TO_DEPRECATE\": true}, \"column_tags\": {\"event_sum_7d\": {\"DETAILED_TYPE\": \"CONTINUOUS\"}}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
+          ],
+          "tableProperties": {
+            "source": "chronon"
+          },
+          "outputNamespace": "sample_namespace",
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "events": {
+              "table": "sample_namespace.sample_table_group_by",
+              "query": {
+                "selects": {
+                  "event": "event_expr",
+                  "group_by_subject": "group_by_expr"
+                },
+                "startPartition": "2021-04-09",
+                "timeColumn": "ts",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "event",
+            "operation": 7,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 7,
+                "timeUnit": 1
+              }
+            ]
+          },
+          {
+            "inputColumn": "event",
+            "operation": 7,
+            "argMap": {}
+          },
+          {
+            "inputColumn": "event",
+            "operation": 12,
+            "argMap": {
+              "k": "200",
+              "percentiles": "[0.99, 0.95, 0.5]"
+            }
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    },
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "sample_team.entity_sample_group_by_from_module.v1",
+          "online": 1,
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
+            "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}"
+          ],
+          "tableProperties": {
+            "source": "chronon"
+          },
+          "outputNamespace": "chronon_db",
+          "team": "sample_team",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "sample_table.sample_entity_snapshot",
+              "mutationTable": "sample_table.sample_entity_mutations/hr=00:00",
+              "mutationTopic": "sample_topic",
+              "query": {
+                "selects": {
+                  "group_by_subject": "group_by_subject_expr",
+                  "entity": "entity_expr"
+                },
+                "startPartition": "2021-03-01",
+                "timeColumn": "ts",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "entity",
+            "operation": 3,
+            "argMap": {}
+          },
+          {
+            "inputColumn": "entity",
+            "operation": 3,
+            "argMap": {},
+            "windows": [
+              {
+                "length": 7,
+                "timeUnit": 1
+              }
+            ]
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    }
+  ]
+}

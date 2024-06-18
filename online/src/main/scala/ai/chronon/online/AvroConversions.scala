@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.online
 
 import ai.chronon.api._
@@ -96,7 +112,7 @@ object AvroConversions {
     }
   }
 
-  def fromChrononRow(value: Any, dataType: DataType,  extraneousRecord: Any => Array[Any] = null): Any = {
+  def fromChrononRow(value: Any, dataType: DataType, extraneousRecord: Any => Array[Any] = null): Any = {
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
     Row.to[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any]](
       value,
@@ -151,7 +167,7 @@ object AvroConversions {
   def encodeBytes(schema: StructType, extraneousRecord: Any => Array[Any] = null): Any => Array[Byte] = {
     val codec: AvroCodec = new AvroCodec(fromChrononSchema(schema).toString(true));
     { data: Any =>
-      val record = fromChrononRow(data, schema, extraneousRecord).asInstanceOf[GenericData.Record]
+      val record = fromChrononRow(data, codec.chrononSchema, extraneousRecord).asInstanceOf[GenericData.Record]
       val bytes = codec.encodeBinary(record)
       bytes
     }
@@ -160,7 +176,7 @@ object AvroConversions {
   def encodeJson(schema: StructType, extraneousRecord: Any => Array[Any] = null): Any => String = {
     val codec: AvroCodec = new AvroCodec(fromChrononSchema(schema).toString(true));
     { data: Any =>
-      val record = fromChrononRow(data, schema, extraneousRecord).asInstanceOf[GenericData.Record]
+      val record = fromChrononRow(data, codec.chrononSchema, extraneousRecord).asInstanceOf[GenericData.Record]
       val json = codec.encodeJson(record)
       json
     }

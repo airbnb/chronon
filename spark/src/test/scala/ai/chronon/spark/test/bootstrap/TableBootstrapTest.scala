@@ -1,5 +1,22 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test.bootstrap
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
@@ -9,9 +26,10 @@ import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse}
 import org.junit.Test
 
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.JListOps
 
 class TableBootstrapTest {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   private val tableUtils = TableUtils(spark)
@@ -59,7 +77,7 @@ class TableBootstrapTest {
   def testBootstrap(): Unit = {
 
     val namespace = "test_table_bootstrap"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     // group by
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
@@ -90,10 +108,7 @@ class TableBootstrapTest {
     // Create bootstrap join using base join as template
     val bootstrapJoin = baseJoin.deepCopy()
     bootstrapJoin.getMetaData.setName("test.user_transaction_features.bootstrap")
-    bootstrapJoin
-      .setBootstrapParts(
-        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(Seq(bootstrapPart1, bootstrapPart2))
-      )
+    bootstrapJoin.setBootstrapParts(Seq(bootstrapPart1, bootstrapPart2).toJava)
 
     // Runs through boostrap backfill which combines backfill and bootstrap
     val runner2 = new ai.chronon.spark.Join(bootstrapJoin, today, tableUtils)
@@ -123,7 +138,7 @@ class TableBootstrapTest {
     val overlapBaseBootstrap1 = baseOutput.join(bootstrapDf1, Seq("request_id", "ds")).count()
     val overlapBaseBootstrap2 = baseOutput.join(bootstrapDf2, Seq("request_id", "ds")).count()
     val overlapBootstrap12 = bootstrapDf1.join(bootstrapDf2, Seq("request_id", "ds")).count()
-    println(s"""Debug information:
+    logger.info(s"""Debug information:
          |base count: ${baseOutput.count()}
          |overlap keys between base and bootstrap1 count: ${overlapBaseBootstrap1}
          |overlap keys between base and bootstrap2 count: ${overlapBaseBootstrap2}
@@ -132,10 +147,10 @@ class TableBootstrapTest {
 
     val diff = Comparison.sideBySide(computed, expected, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 
@@ -146,7 +161,7 @@ class TableBootstrapTest {
   def testBootstrapSameJoinPartMultipleSources(): Unit = {
 
     val namespace = "test_bootstrap_multi_source"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
     val endDs = spark.table(queryTable).select(max(tableUtils.partitionColumn)).head().getString(0)

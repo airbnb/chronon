@@ -1,35 +1,18 @@
 version: 2.1
 
-early_exit_for_release_prs: &early_exit_for_release_prs
-    run:
-        name: Early exit for release PRs
-        command: |
-            if expr "${CIRCLE_BRANCH}" : '^release-branch--[a-z][a-z]-v[0-9.]*$' ; then
-                circleci-agent step halt
-            fi
-
 base_defaults: &base_defaults
     resource_class: xlarge
-    working_directory: /zipline
-
-commands:
-    full_checkout:
-        description: Checks out repo and updates submodules
-        steps:
-            - checkout
-            - run:
-                  name: Checkout submodules
-                  command: git submodule update --init --recursive
+    working_directory: /chronon
 
 executors:
     docker_baseimg_executor:
         resource_class: xlarge
-        working_directory: /zipline
+        working_directory: /chronon
         docker:
-            - image: houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
+            - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
 
 jobs:
-    "Docker Base Build":
+    "Pull Docker Image":
         <<: *base_defaults
         docker:
             - image: docker:17.05.0-ce-git
@@ -41,136 +24,135 @@ jobs:
                 name: Pull existing docker image
                 command: |
                     set +o pipefail
-                    docker pull houpy0829/chronon-ci:base || true
-            - run:
-                name: Build docker image
-                command: |
-                    set +o pipefail
-                    docker build -t houpy0829/chronon-ci:base--${CIRCLE_BRANCH} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
-            - deploy:
-                name: Push docker image
-                command: |
-                    set +o pipefail
-                    docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
-                    docker push houpy0829/chronon-ci:base--${CIRCLE_BRANCH}
-                    if [ "${CIRCLE_BRANCH}" == "master" ]; then
-                        docker tag houpy0829/chronon-ci:base--${CIRCLE_BRANCH} houpy0829/chronon-ci:base
-                        docker push houpy0829/chronon-ci:base
-                    fi
-
-    "Scala 11 -- Spark 2 Tests":
-        executor: docker_baseimg_executor
-        steps:
-            - full_checkout
-            - run:
-                  name: Run Spark 2.4.0 tests
-                  shell: /bin/bash -leuxo pipefail
-                  command: |
-                      conda activate zipline_py
-                      # Increase if we see OOM.
-                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      sbt "++ 2.11.12 test"
-            - store_test_results:
-                  path: /zipline/spark/target/test-reports
-            - store_test_results:
-                  path: /zipline/aggregator/target/test-reports
+                    docker pull houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 || true
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
         steps:
-            - full_checkout
+            - checkout
             - run:
                   name: Run Spark 3.1.1 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
-                      conda activate zipline_py
+                      conda activate chronon_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                       sbt "++ 2.12.12 test"
             - store_test_results:
-                  path: /zipline/spark/target/test-reports
+                  path: /chronon/spark/target/test-reports
             - store_test_results:
-                  path: /zipline/aggregator/target/test-reports
+                  path: /chronon/aggregator/target/test-reports
+            - run:
+                  name: Compress spark-warehouse
+                  command: |
+                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
+                  when: on_fail
+            - store_artifacts:
+                  path: /tmp/spark-warehouse.tar.gz
+                  destination: spark_warehouse.tar.gz
+                  when: on_fail
 
     "Scala 13 -- Tests":
         executor: docker_baseimg_executor
         steps:
-            - full_checkout
+            - checkout
             - run:
                   name: Run Scala 13 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
-                      conda activate zipline_py
+                      conda activate chronon_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                       sbt "++ 2.13.6 test"
+            - store_test_results:
+                  path: /chronon/spark/target/test-reports
+            - store_test_results:
+                  path: /chronon/aggregator/target/test-reports
+            - run:
+                  name: Compress spark-warehouse
+                  command: |
+                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
+                  when: on_fail
+            - store_artifacts:
+                  path: /tmp/spark-warehouse.tar.gz
+                  destination: spark_warehouse.tar.gz
+                  when: on_fail
+
+    "Scala 11 -- Compile":
+      executor: docker_baseimg_executor
+      steps:
+        - checkout
+        - run:
+            name: Compile Scala 11
+            shell: /bin/bash -leuxo pipefail
+            command: |
+              conda activate chronon_py
+              # Increase if we see OOM.
+              export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+              sbt "++ 2.11.12 compile"
 
     "Chronon Python Lint":
         executor: docker_baseimg_executor
         steps:
-            - full_checkout
+            - checkout
             - run:
                   name: Run Chronon Python lint
                   shell: /bin/bash -leuxo pipefail
                   command: |
-                      conda activate zipline_py
-                      cd /zipline/api/py/ai/chronon
+                      conda activate chronon_py
+                      cd /chronon/api/py/ai/chronon
                       pip install importlib-metadata==4.11.4 #Install importlib-metadata < 5
                       flake8 --extend-ignore=W605,Q000,F631
 
     "Chronon Python Tests":
         executor: docker_baseimg_executor
         steps:
-            - full_checkout
+            - checkout
             - run:
                   name: Run Chronon Python tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
-                      conda activate zipline_py
-                      pushd /zipline/api/
-                      thrift --gen py -out /zipline/api/py/ai/chronon\
-                         /zipline/api/thrift/api.thrift                 # Generate thrift files
-                      cd /zipline/api/py                                # Go to Python module
+                      conda activate chronon_py
+                      pushd /chronon/api/
+                      thrift --gen py -out /chronon/api/py/ai/chronon\
+                         /chronon/api/thrift/api.thrift                 # Generate thrift files
+                      cd /chronon/api/py                                # Go to Python module
                       pip install -r requirements/dev.txt               # Install latest requirements
                       tox                                               # Run tests
                       popd
             - store_artifacts:
-                  path: /zipline/api/py/htmlcov
+                  path: /chronon/api/py/htmlcov
+
+    "Scalafmt Check":
+        executor: docker_baseimg_executor
+        steps:
+            - checkout
+            - run:
+                  name: Run ScalafmtCheck
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      conda activate chronon_py
+                      sbt +scalafmtCheck
 
 workflows:
     build_test_deploy:
         jobs:
-            - "Docker Base Build":
-                filters:  # required since `Publish JARs` has tag filters AND requires this step
-                    tags:
-                        only: /.*/
-            - "Scala 11 -- Spark 2 Tests":
-                  requires:
-                      - "Docker Base Build"
-                  filters:
-                      tags:
-                          ignore: /^release-zl-.*/
+            - "Pull Docker Image"
+            - "Scala 11 -- Compile":
+                requires:
+                  - "Pull Docker Image"
             - "Scala 12 -- Spark 3 Tests":
                   requires:
-                      - "Docker Base Build"
-                  filters:
-                      tags:
-                          ignore: /^release-zl-.*/
+                      - "Pull Docker Image"
             - "Scala 13 -- Tests":
                   requires:
-                      - "Docker Base Build"
-                  filters:
-                      tags:
-                          ignore: /^release-zl-.*/
+                      - "Pull Docker Image"
+            - "Scalafmt Check":
+                  requires:
+                      - "Pull Docker Image"
             - "Chronon Python Tests":
                   requires:
-                      - "Docker Base Build"
-                  filters:
-                      tags:
-                          ignore: /^release-zl-.*/
+                      - "Pull Docker Image"
             - "Chronon Python Lint":
                   requires:
-                      - "Docker Base Build"
-                  filters:
-                      tags:
-                          ignore: /^release-zl-.*/
+                      - "Pull Docker Image"

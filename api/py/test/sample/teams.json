@@ -42,10 +42,20 @@
             "backfill" : {
                 "EXECUTOR_CORES": "4"
             }
+        },
+        "dev": {
+            "backfill" : {
+                "EXECUTOR_CORES": "2",
+                "DRIVER_MEMORY": "30G"
+            }
         }
     },
     "kaggle": {
         "description": "Workspace for kaggle compeitions",
+        "namespace": "default"
+    },
+    "quickstart": {
+        "description": "Used for the quickstart example",
         "namespace": "default"
     }
 }

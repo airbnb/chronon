@@ -1,5 +1,22 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test.bootstrap
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
@@ -14,14 +31,15 @@ import org.junit.Test
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions._
 
 class LogBootstrapTest {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
   val namespace = "test_log_bootstrap"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
   private implicit val tableUtils: TableUtils = TableUtils(spark)
+  tableUtils.createDatabase(namespace)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
 
   @Test
@@ -32,8 +50,7 @@ class LogBootstrapTest {
     val groupBy2 = groupBy
       .deepCopy()
       .setAggregations(
-        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
-          Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "amount_dollars")))
+        Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "amount_dollars")).toJava
       )
       .setMetaData(Builders.MetaData(name = "unit_test.user_transactions_v2", namespace = namespace, team = "chronon"))
 
@@ -62,24 +79,22 @@ class LogBootstrapTest {
     val baseJoinV2 = baseJoinV1
       .deepCopy()
       .setJoinParts(
-        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
-          Seq(
-            Builders.JoinPart(groupBy = groupBy),
-            Builders.JoinPart(groupBy = groupBy2)
-          ))
+        Seq(
+          Builders.JoinPart(groupBy = groupBy),
+          Builders.JoinPart(groupBy = groupBy2)
+        ).toJava
       )
 
     def createBootstrapJoin(baseJoin: Join): Join = {
       val join = baseJoin.deepCopy()
       join.getMetaData.setName("test.user_transaction_features.bootstrap")
       join.setBootstrapParts(
-        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
-          Seq(
-            Builders.BootstrapPart(
-              table = join.metaData.loggedTable
-            )
+        Seq(
+          Builders.BootstrapPart(
+            table = join.metaData.loggedTable
           )
-        ))
+        ).toJava
+      )
       join
     }
 
@@ -157,17 +172,17 @@ class LogBootstrapTest {
     val computed = joinJob.computeJoin()
 
     val overlapCount = baseOutput.join(logDf, Seq("request_id", "ds")).count()
-    println(s"""Debugging information:
+    logger.info(s"""Debugging information:
          |base count: ${baseOutput.count()}
          |overlap keys between base and log: ${overlapCount}
          |""".stripMargin)
 
     val diff = Comparison.sideBySide(computed, expected, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 

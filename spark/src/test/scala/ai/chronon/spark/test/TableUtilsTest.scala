@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test
 
 import ai.chronon.api._
@@ -6,12 +22,21 @@ import ai.chronon.spark.test.TestUtils.makeDf
 import ai.chronon.api.{StructField, _}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
+import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertTrue}
+import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
 
-import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}
+import scala.util.Try
+
+
+
+class SimpleAddUDF extends UDF {
+  def evaluate(value: Int): Int = {
+    value + 20
+  }
+}
 
 class TableUtilsTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("TableUtilsTest", local = true)
@@ -41,6 +66,23 @@ class TableUtilsTest {
                        "column_g",
                        "column_nested.first.second").sorted
     assertEquals(expected, columns.sorted)
+  }
+
+  @Test
+  def GetFieldNamesTest(): Unit = {
+    val schema = types.StructType(
+      Seq(
+        types.StructField("name", types.StringType, nullable = true),
+        types.StructField("age", types.IntegerType, nullable = false),
+        types.StructField("address", types.StructType(Seq(
+          types.StructField("street", types.StringType, nullable = true),
+          types.StructField("city", types.StringType, nullable = true)
+        )))
+      )
+    )
+    val expectedFieldNames = Seq("name", "age", "address", "address.street", "address.city")
+    val actualFieldNames = tableUtils.getFieldNames(schema)
+    assertEquals(expectedFieldNames, actualFieldNames)
   }
 
   private def testInsertPartitions(tableName: String,
@@ -201,9 +243,11 @@ class TableUtilsTest {
   @Test
   def ChunkTest(): Unit = {
     val actual = tableUtils.chunk(Set("2021-01-01", "2021-01-02", "2021-01-05", "2021-01-07"))
-    val expected = Seq(PartitionRange("2021-01-01", "2021-01-02")(tableUtils),
-                       PartitionRange("2021-01-05", "2021-01-05")(tableUtils),
-                       PartitionRange("2021-01-07", "2021-01-07")(tableUtils))
+    val expected = Seq(
+      PartitionRange("2021-01-01", "2021-01-02")(tableUtils),
+      PartitionRange("2021-01-05", "2021-01-05")(tableUtils),
+      PartitionRange("2021-01-07", "2021-01-07")(tableUtils)
+    )
     assertEquals(expected, actual)
   }
 
@@ -291,7 +335,8 @@ class TableUtilsTest {
     // verify the latest label version
     val labels = JoinUtils.getLatestLabelMapping(tableName, tableUtils)
     assertEquals(labels.get("2022-11-09").get,
-                 List(PartitionRange("2022-10-01", "2022-10-02")(tableUtils), PartitionRange("2022-10-05", "2022-10-05")(tableUtils)))
+                 List(PartitionRange("2022-10-01", "2022-10-02")(tableUtils),
+                      PartitionRange("2022-10-05", "2022-10-05")(tableUtils)))
   }
 
   private def prepareTestDataWithSubPartitions(tableName: String): Unit = {
@@ -365,4 +410,26 @@ class TableUtilsTest {
       tableUtils.columnSizeEstimator(sparkType)
     )
   }
+
+  @Test
+  def testCheckTablePermission(): Unit = {
+    val tableName = "db.test_check_table_permission"
+    prepareTestDataWithSubPartitions(tableName)
+    assertTrue(tableUtils.checkTablePermission(tableName))
+  }
+
+  @Test
+  def testDoubleUDFRegistration(): Unit = {
+    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF'")
+    tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF'")
+  }
+
+  @Test
+  def testIfPartitionExistsInTable(): Unit = {
+    val tableName = "db.test_if_partition_exists"
+    prepareTestDataWithSubPartitions(tableName)
+    assertTrue(tableUtils.ifPartitionExistsInTable(tableName, "2022-11-03"))
+    assertFalse(tableUtils.ifPartitionExistsInTable(tableName, "2023-01-01"))
+  }
+
 }

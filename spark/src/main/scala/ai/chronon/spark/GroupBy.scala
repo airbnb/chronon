@@ -1,31 +1,50 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
 import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
-import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
+import org.slf4j.LoggerFactory
 
 import java.util
-import scala.collection.mutable
-import scala.collection.Seq
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.collection.{Seq, mutable}
+import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
+import scala.util.Try
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
               val inputDf: DataFrame,
-              val mutationDf: DataFrame = null,
+              val mutationDfFn: () => DataFrame = null,
               skewFilter: Option[String] = None,
               finalize: Boolean = true)
     extends Serializable {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   protected[spark] val tsIndex: Int = inputDf.schema.fieldNames.indexOf(Constants.TimeColumn)
   protected val selectedSchema: Array[(String, api.DataType)] = SparkConversions.toChrononSchema(inputDf.schema)
@@ -79,7 +98,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack))
 
   def snapshotEntitiesBase: RDD[(Array[Any], Array[Any])] = {
-    val keyBuilder = FastHashing.generateKeyBuilder((keyColumns :+ tableUtils.partitionColumn).toArray, inputDf.schema)
+    val keys = (keyColumns :+ tableUtils.partitionColumn).toArray
+    val keyBuilder = FastHashing.generateKeyBuilder(keys, inputDf.schema)
     val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
       val partitionTs = "ds_ts"
       val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
@@ -101,10 +121,14 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       inputDf -> updateFunc
     }
 
-    println("prepped input schema")
-    println(preppedInputDf.schema.pretty)
+    logger.info(s"""
+        |Prepped input schema
+        |${preppedInputDf.schema.pretty}
+        |""".stripMargin)
 
-    preppedInputDf.rdd
+    tableUtils
+      .preAggRepartition(preppedInputDf)
+      .rdd
       .keyBy(keyBuilder)
       .aggregateByKey(windowAggregator.init)(seqOp = irUpdateFunc, combOp = windowAggregator.merge)
       .map { case (keyWithHash, ir) => keyWithHash.data -> normalizeOrFinalize(ir) }
@@ -128,12 +152,16 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     hops
       .flatMap {
         case (keys, hopsArrays) =>
+          // filter out if the all the irs are nulls
           val irs = sawtoothAggregator.computeWindows(hopsArrays, shiftedEndTimes)
-          irs.indices.map { i =>
-            (keys.data :+ tableUtils.partitionSpec.at(endTimes(i)), normalizeOrFinalize(irs(i)))
+          irs.indices.flatMap { i =>
+            val result = normalizeOrFinalize(irs(i))
+            if (result.forall(_ == null)) None
+            else Some((keys.data :+ tableUtils.partitionSpec.at(endTimes(i)), result))
           }
       }
   }
+
   // Calculate snapshot accurate windows for ALL keys at pre-defined "endTimes"
   // At this time, we hardcode the resolution to Daily, but it is straight forward to support
   // hourly resolution.
@@ -198,6 +226,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       .mapValues(sawtoothAggregator.finalizeSnapshot)
 
     // Preprocess for mutations: Add a ds of mutation ts column, collect sorted mutations by keys and ds of mutation.
+    val mutationDf = mutationDfFn()
     val mutationsTsIndex = mutationDf.schema.fieldIndex(Constants.MutationTimeColumn)
     val mTsIndex = mutationDf.schema.fieldIndex(Constants.TimeColumn)
     val mutationsReversalIndex = mutationDf.schema.fieldIndex(Constants.ReversalColumn)
@@ -366,17 +395,76 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
 // TODO: truncate queryRange for caching
 object GroupBy {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // Need to use a case class here to allow null matching
   case class SourceDataProfile(earliestRequired: String, earliestPresent: String, latestAllowed: String)
 
-  def from(groupByConf: api.GroupBy,
+  // if the source is a join - we are going to materialize the underlying table
+  // and replace the joinSource with Event or Entity Source
+  def replaceJoinSource(groupByConf: api.GroupBy,
+                        queryRange: PartitionRange,
+                        tableUtils: TableUtils,
+                        computeDependency: Boolean = true,
+                        showDf: Boolean = false): api.GroupBy = {
+    val result = groupByConf.deepCopy()
+    val newSources: java.util.List[api.Source] = groupByConf.sources.toScala.map { source =>
+      if (source.isSetJoinSource) {
+        logger.info("Join source detected. Materializing the join.")
+        val joinSource = source.getJoinSource
+        val joinConf = joinSource.join
+        // materialize the table with the right end date. QueryRange.end could be shifted for temporal events
+        val beforeDs = tableUtils.partitionSpec.before(queryRange.end)
+        val isPreShifted =
+          groupByConf.dataModel == DataModel.Events && groupByConf.inferredAccuracy == Accuracy.TEMPORAL
+        val endDate = if (isPreShifted) beforeDs else queryRange.end
+
+        val join = new Join(joinConf, endDate, tableUtils, showDf = showDf)
+        if (computeDependency) {
+          val df = join.computeJoin()
+          if (showDf) {
+            logger.info(
+              s"printing output data from groupby::join_source: ${groupByConf.metaData.name}::${joinConf.metaData.name}")
+            df.prettyPrint()
+          }
+        }
+        val joinOutputTable = joinConf.metaData.outputTable
+        val topic = joinConf.left.topic
+        val newSource = joinConf.left.deepCopy()
+        if (newSource.isSetEvents) {
+          val events = newSource.getEvents
+          events.setQuery(joinSource.query)
+          events.setTable(joinOutputTable)
+          // set invalid topic to make sure inferAccuracy works as expected
+          events.setTopic(topic + Constants.TopicInvalidSuffix)
+        } else if (newSource.isSetEntities) {
+          val entities = newSource.getEntities
+          entities.setQuery(joinSource.query)
+          entities.setSnapshotTable(joinOutputTable)
+          // TODO: PITC backfill of temporal entity tables require mutations to be set & enriched
+          // Do note that mutations can only be backfilled if the aggregations are all deletable
+          // It is very unlikely that we will ever need to PITC backfill
+          // we don't need mutation enrichment for serving
+          entities.setMutationTopic(joinConf.left.topic + Constants.TopicInvalidSuffix)
+        }
+        newSource
+      } else {
+        source
+      }
+    }.toJava
+    result.setSources(newSources)
+  }
+
+  def from(groupByConfOld: api.GroupBy,
            queryRange: PartitionRange,
            tableUtils: TableUtils,
-           bloomMapOpt: Option[Map[String, BloomFilter]] = None,
+           computeDependency: Boolean,
+           bloomMapOpt: Option[util.Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
-           finalize: Boolean = true): GroupBy = {
-    println(s"\n----[Processing GroupBy: ${groupByConf.metaData.name}]----")
+           finalize: Boolean = true,
+           showDf: Boolean = false): GroupBy = {
+    logger.info(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
+    val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala
       .map { source =>
         renderDataSourceQuery(groupByConf,
@@ -386,8 +474,11 @@ object GroupBy {
                               tableUtils,
                               groupByConf.maxWindow,
                               groupByConf.inferredAccuracy)
+
       }
-      .map { tableUtils.sql }
+      .map {
+        tableUtils.sql
+      }
       .reduce { (df1, df2) =>
         // align the columns by name - when one source has select * the ordering might not be aligned
         val columns1 = df1.schema.fields.map(_.name)
@@ -406,7 +497,7 @@ object GroupBy {
     val keyColumns = groupByConf.getKeyColumns.toScala
     val skewFilteredDf = skewFilter
       .map { sf =>
-        println(s"$logPrefix filtering using skew filter:\n    $sf")
+        logger.info(s"$logPrefix filtering using skew filter:\n    $sf")
         val filtered = inputDf.filter(sf)
         filtered
       }
@@ -417,26 +508,30 @@ object GroupBy {
     // at-least one of the keys should be present in the row.
     val nullFilterClause = groupByConf.keyColumns.toScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
     val nullFiltered = processedInputDf.filter(nullFilterClause)
+    if (showDf) {
+      logger.info(s"printing input date for groupBy: ${groupByConf.metaData.name}")
+      nullFiltered.prettyPrint()
+    }
 
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
-    val mutationSources = groupByConf.sources.toScala.filter { _.isSetEntities }
+    val mutationSources = groupByConf.sources.toScala.filter { source =>
+      source.isSetEntities && source.getEntities.isSetMutationTable
+    }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
-    val mutationDf =
-      if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
+
+    def mutationDfFn(): DataFrame = {
+      val df: DataFrame = if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
         val mutationDf = mutationSources
-          .map {
+          .map(ms =>
             renderDataSourceQuery(groupByConf,
-                                  _,
+                                  ms,
                                   groupByConf.getKeyColumns.toScala,
                                   queryRange.shift(1),
                                   tableUtils,
                                   groupByConf.maxWindow,
                                   groupByConf.inferredAccuracy,
-                                  mutations = true)
-          }
-          .map {
-            tableUtils.sql
-          }
+                                  mutations = true))
+          .map { tableUtils.sql }
           .reduce { (df1, df2) =>
             val columns1 = df1.schema.fields.map(_.name)
             df1.union(df2.selectExpr(columns1: _*))
@@ -445,10 +540,18 @@ object GroupBy {
         bloomMapOpt.map { mutationDf.filterBloom }.getOrElse { mutationDf }
       } else null
 
+      if (showDf && df != null) {
+        logger.info(s"printing mutation data for groupBy: ${groupByConf.metaData.name}")
+        df.prettyPrint()
+      }
+
+      df
+    }
+
     new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
                 keyColumns,
                 nullFiltered,
-                Option(mutationDf).orNull,
+                mutationDfFn,
                 finalize = finalize)
   }
 
@@ -481,7 +584,7 @@ object GroupBy {
     val queryableDataRange =
       PartitionRange(dataProfile.earliestRequired, Seq(queryEnd, dataProfile.latestAllowed).max)(tableUtils)
     val intersectedRange = sourceRange.intersect(queryableDataRange)
-    println(s"""
+    logger.info(s"""
                |Computing intersected range as:
                |   query range: $queryRange
                |   query window: $window
@@ -529,15 +632,14 @@ object GroupBy {
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
     }
-    println(
-      s"""
+    logger.info(s"""
          |Time Mapping: $timeMapping
          |""".stripMargin)
     metaColumns ++= timeMapping
 
     val partitionConditions = intersectedRange.map(_.whereClauses()).getOrElse(Seq.empty)
 
-    println(s"""
+    logger.info(s"""
          |Rendering source query:
          |   intersected/effective scan range: $intersectedRange
          |   partitionConditions: $partitionConditions
@@ -547,9 +649,21 @@ object GroupBy {
     if (mutations && !source.getEntities.isSetMutationTable) {
       throw new Exception(s"mutationTopic is not set for groupby ${groupByConf.metaData.name} with Accuracy.TEMPORAL")
     }
-
+    // chronon run ds macro is only supported for group bys
+    val selects = Option(source.query.selects)
+      .map(_.toScala.map(keyValue => {
+        if (keyValue._2.contains(Constants.ChrononRunDs)) {
+          assert(intersectedRange.isDefined && intersectedRange.get.isSingleDay,
+                 s"ChrononRunDs is only supported for single day queries")
+          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => queryRange.start)
+          (keyValue._1, parametricMacro.replace(keyValue._2))
+        } else {
+          keyValue
+        }
+      }))
+      .orNull
     val query = api.QueryUtils.build(
-      Option(source.query.selects).map(_.toScala).orNull,
+      selects,
       if (mutations) source.getEntities.mutationTable.cleanSpec else source.table,
       Option(source.query.wheres).map(_.toScala).getOrElse(Seq.empty[String]) ++ partitionConditions,
       metaColumns ++ keys.map(_ -> null)
@@ -560,47 +674,64 @@ object GroupBy {
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,
                       tableUtils: TableUtils,
-                      stepDays: Option[Int] = None): Unit = {
+                      stepDays: Option[Int] = None,
+                      overrideStartPartition: Option[String] = None,
+                      skipFirstHole: Boolean = true): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
     groupByConf.setups.foreach(tableUtils.sql)
+    val overrideStart = overrideStartPartition.getOrElse(groupByConf.backfillStartDate)
     val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.toScala)
       .orNull
     val inputTables = groupByConf.getSources.toScala.map(_.table)
+    val isAnySourceCumulative =
+      groupByConf.getSources.toScala.exists(s => s.isSetEvents() && s.getEvents().isCumulative)
     val groupByUnfilledRangesOpt =
       tableUtils.unfilledRanges(outputTable,
-                                PartitionRange(groupByConf.backfillStartDate, endPartition)(tableUtils),
-                                Some(inputTables))
+                                PartitionRange(overrideStart, endPartition)(tableUtils),
+                                if (isAnySourceCumulative) None else Some(inputTables),
+                                skipFirstHole = skipFirstHole)
+
     if (groupByUnfilledRangesOpt.isEmpty) {
-      println(s"""Nothing to backfill for $outputTable - given
+      logger.info(s"""Nothing to backfill for $outputTable - given
            |endPartition of $endPartition
-           |backfill start of ${groupByConf.backfillStartDate}
+           |backfill start of $overrideStart
            |Exiting...""".stripMargin)
       return
     }
     val groupByUnfilledRanges = groupByUnfilledRangesOpt.get
-    println(s"group by unfilled ranges: $groupByUnfilledRanges")
+    logger.info(s"group by unfilled ranges: $groupByUnfilledRanges")
     val exceptions = mutable.Buffer.empty[String]
     groupByUnfilledRanges.foreach {
       case groupByUnfilledRange =>
         try {
           val stepRanges = stepDays.map(groupByUnfilledRange.steps).getOrElse(Seq(groupByUnfilledRange))
-          println(s"Group By ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+          logger.info(s"Group By ranges to compute: ${stepRanges.map {
+            _.toString
+          }.pretty}")
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
-              println(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
-              val groupByBackfill = from(groupByConf, range, tableUtils)
-              (groupByConf.dataModel match {
+              logger.info(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
+              val groupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true)
+              val outputDf = groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
                 case Events   => groupByBackfill.snapshotEvents(range)
-              }).save(outputTable, tableProps)
-              println(s"Wrote to table $outputTable, into partitions: $range")
+              }
+              if (!groupByConf.hasDerivations) {
+                outputDf.save(outputTable, tableProps)
+              } else {
+                val finalOutputColumns = groupByConf.derivationsScala.finalOutputColumn(outputDf.columns).toSeq
+                val result = outputDf.select(finalOutputColumns: _*)
+                result.save(outputTable, tableProps)
+              }
+              logger.info(s"Wrote to table $outputTable, into partitions: $range")
           }
-          println(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
+          logger.info(s"Wrote to table $outputTable for range: $groupByUnfilledRange")
+
         } catch {
           case err: Throwable =>
             exceptions += s"Error handling range ${groupByUnfilledRange} : ${err.getMessage}\n${err.traceString}"

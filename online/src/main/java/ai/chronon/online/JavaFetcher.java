@@ -1,9 +1,26 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.online;
 
 import ai.chronon.online.Fetcher.Request;
 import ai.chronon.online.Fetcher.Response;
 import scala.collection.Iterator;
 import scala.collection.Seq;
+import scala.Option;
 import scala.collection.mutable.ArrayBuffer;
 import scala.compat.java8.FutureConverters;
 import scala.concurrent.Future;
@@ -17,9 +34,18 @@ import java.util.stream.Collectors;
 public class JavaFetcher {
   Fetcher fetcher;
 
-  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
-    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry);
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null);
   }
+
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null);
+  }
+
+  public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, FlagStore flagStore) {
+    this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore);
+  }
+
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {
     List<JavaResponse> result = new ArrayList<>(responseSeq.size());
@@ -44,16 +70,13 @@ public class JavaFetcher {
     List<JavaStatsResponse> result = new ArrayList<>(responseSeq.size());
     Iterator<Fetcher.StatsResponse> it = responseSeq.iterator();
     while(it.hasNext()) {
-      result.add(new JavaStatsResponse(it.next()));
+      result.add(toJavaStatsResponse(it.next()));
     }
     return result;
   }
 
   public static JavaStatsResponse toJavaStatsResponse(Fetcher.StatsResponse response) {
     return new JavaStatsResponse(response);
-  }
-  public static JavaMergedStatsResponse toJavaMergedStatsResponse(Fetcher.MergedStatsResponse response) {
-    return new JavaMergedStatsResponse(response);
   }
   public static JavaSeriesStatsResponse toJavaSeriesStatsResponse(Fetcher.SeriesStatsResponse response) {
     return new JavaSeriesStatsResponse(response);
@@ -92,7 +115,7 @@ public class JavaFetcher {
     // Convert java requests to scala requests
     Seq<Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
     // Get responses from the fetcher
-    Future<FetcherResponseWithTs> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoin(scalaRequests));
+    Future<FetcherResponseWithTs> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoin(scalaRequests, Option.empty()));
     // Convert responses to CompletableFuture
     return convertResponsesWithTs(scalaResponses, false, startTs);
   }
@@ -106,7 +129,7 @@ public class JavaFetcher {
       } else {
         ctx = getJoinContext(s);
       }
-      ctx.histogram(metricName, endTs - startTs);
+      ctx.distribution(metricName, endTs - startTs);
     }
   }
 
@@ -118,20 +141,20 @@ public class JavaFetcher {
     return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null);
   }
 
-  public CompletableFuture<List<JavaStatsResponse>> fetchStats(JavaStatsRequest request) {
-    Future<Seq<Fetcher.StatsResponse>> responses = this.fetcher.fetchStats(request.toScalaRequest());
-    // Convert responses to CompletableFuture
-    return convertStatsResponses(responses);
-  }
-
-  public CompletableFuture<JavaMergedStatsResponse> fetchMergedStatsBetween(JavaStatsRequest request) {
-    Future<Fetcher.MergedStatsResponse> response = this.fetcher.fetchMergedStatsBetween(request.toScalaRequest());
-    // Convert responses to CompletableFuture
-    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaMergedStatsResponse);
-  }
-
   public CompletableFuture<JavaSeriesStatsResponse> fetchStatsTimeseries(JavaStatsRequest request) {
     Future<Fetcher.SeriesStatsResponse> response = this.fetcher.fetchStatsTimeseries(request.toScalaRequest());
+    // Convert responses to CompletableFuture
+    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaSeriesStatsResponse);
+  }
+
+  public CompletableFuture<JavaSeriesStatsResponse> fetchLogStatsTimeseries(JavaStatsRequest request) {
+    Future<Fetcher.SeriesStatsResponse> response = this.fetcher.fetchLogStatsTimeseries(request.toScalaRequest());
+    // Convert responses to CompletableFuture
+    return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaSeriesStatsResponse);
+  }
+
+  public CompletableFuture<JavaSeriesStatsResponse> fetchConsistencyMetricsTimeseries(JavaStatsRequest request) {
+    Future<Fetcher.SeriesStatsResponse> response = this.fetcher.fetchConsistencyMetricsTimeseries(request.toScalaRequest());
     // Convert responses to CompletableFuture
     return FutureConverters.toJava(response).toCompletableFuture().thenApply(JavaFetcher::toJavaSeriesStatsResponse);
   }

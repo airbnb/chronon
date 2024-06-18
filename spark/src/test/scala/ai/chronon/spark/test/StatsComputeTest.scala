@@ -1,4 +1,21 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api._
@@ -11,6 +28,7 @@ import ai.chronon.spark.stats.StatsCompute
 import org.apache.spark.sql.functions.lit
 
 class StatsComputeTest {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("StatsComputeTest", local = true)
   implicit val tableUtils = TableUtils(spark)
   val namespace: String = "stats_compute_test"
@@ -35,7 +53,7 @@ class StatsComputeTest {
 
   @Test
   def snapshotSummaryTest(): Unit = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val data = Seq(
       ("1", Some(1L), Some(1.0), Some("a")),
       ("1", Some(1L), None, Some("b")),
@@ -69,18 +87,18 @@ class StatsComputeTest {
       StructType.from("generatedTest", toChrononSchema(stats.selectedDf.schema)))
     val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
-    println("Daily Stats")
+    logger.info("Daily Stats")
     daily.show()
     val bucketed = stats
       .dailySummary(aggregator)
       .toFlatDf
       .replaceWithReadableTime(Seq(Constants.TimeColumn), false)
 
-    println("Bucketed Stats")
+    logger.info("Bucketed Stats")
     bucketed.show()
 
     val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
-    println("With Derived Data")
+    logger.info("With Derived Data")
     denormalized.show(truncate = false)
   }
 
@@ -99,15 +117,15 @@ class StatsComputeTest {
       StructType.from("noTsTest", toChrononSchema(stats.selectedDf.schema)))
     val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
-    println("Daily Stats")
+    logger.info("Daily Stats")
     daily.show()
     val bucketed = stats.dailySummary(aggregator).toFlatDf
 
-    println("Bucketed Stats")
+    logger.info("Bucketed Stats")
     bucketed.show()
 
     val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
-    println("With Derived Data")
+    logger.info("With Derived Data")
     denormalized.show(truncate = false)
   }
 
@@ -131,18 +149,18 @@ class StatsComputeTest {
       StructType.from("byteTest", toChrononSchema(stats.selectedDf.schema)))
     val daily = stats.dailySummary(aggregator, timeBucketMinutes = 0).toFlatDf
 
-    println("Daily Stats")
+    logger.info("Daily Stats")
     daily.show()
     val bucketed = stats
       .dailySummary(aggregator)
       .toFlatDf
       .replaceWithReadableTime(Seq(Constants.TimeColumn), false)
 
-    println("Bucketed Stats")
+    logger.info("Bucketed Stats")
     bucketed.show()
 
     val denormalized = stats.addDerivedMetrics(bucketed, aggregator)
-    println("With Derived Data")
+    logger.info("With Derived Data")
     denormalized.show(truncate = false)
   }
 }

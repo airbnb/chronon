@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.aggregator.row
 
 import ai.chronon.aggregator.base.SimpleAggregator
@@ -9,7 +25,8 @@ import scala.collection.Seq
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
 class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationParts: Seq[AggregationPart])
-    extends Serializable with SimpleAggregator[Row, Array[Any], Array[Any]] {
+    extends Serializable
+    with SimpleAggregator[Row, Array[Any], Array[Any]] {
 
   val length: Int = aggregationParts.size
   val indices: Range = 0 until length
@@ -28,13 +45,19 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
           assert(bucketType == StringType, s"bucketing column: $bucketCol needs to be a string, but found $bucketType")
           bIndex
         }
-
-        ColumnAggregator.construct(
-          inputType,
-          spec,
-          ColumnIndices(inputIndex, aggregatorIndex),
-          bucketIndex
-        )
+        try {
+          ColumnAggregator.construct(
+            inputType,
+            spec,
+            ColumnIndices(inputIndex, aggregatorIndex),
+            bucketIndex
+          )
+        } catch {
+          case e: Exception =>
+            throw new RuntimeException(
+              s"Failed to create ${spec.operation} aggregator for ${spec.inputColumn} column of type $inputType",
+              e)
+        }
     }
   }.toArray
 

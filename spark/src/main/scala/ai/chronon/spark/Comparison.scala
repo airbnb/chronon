@@ -1,20 +1,40 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.online.Extensions.StructTypeOps
-import com.google.gson.Gson
+import com.google.gson.{Gson, GsonBuilder}
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, MapType}
 
 import java.util
 
 object Comparison {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // used for comparison
   def sortedJson(m: Map[String, Any]): String = {
     if (m == null) return null
     val tm = new util.TreeMap[String, Any]()
     m.iterator.foreach { case (key, value) => tm.put(key, value) }
-    val gson = new Gson()
+    val gson = new GsonBuilder()
+      .serializeSpecialFloatingPointValues()
+      .create()
     gson.toJson(tm)
   }
 
@@ -42,8 +62,12 @@ object Comparison {
                  aName: String = "a",
                  bName: String = "b"): DataFrame = {
 
-    println("====== side-by-side comparison ======")
-    println(s"keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}")
+    logger.info(
+      s"""
+        |====== side-by-side comparison ======
+        |keys: $keys\na_schema:\n${a.schema.pretty}\nb_schema:\n${b.schema.pretty}
+        |""".stripMargin
+    )
 
     val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), s"${aName}_")
     val prefixedOutputDf = prefixColumnName(stringifyMaps(b), s"${bName}_")
@@ -82,7 +106,7 @@ object Comparison {
           } else { s"($left <> $right)" }
         Seq(s"(($left IS NULL AND $right IS NOT NULL) OR ($right IS NULL AND $left IS NOT NULL) OR $compareExpression)")
       }
-    println(s"Using comparison filter:\n  ${comparisonFilters.mkString("\n  ")}")
+    logger.info(s"Using comparison filter:\n  ${comparisonFilters.mkString("\n  ")}")
     if (comparisonFilters.nonEmpty) {
       finalDf.filter(comparisonFilters.mkString(" or "))
     } else {

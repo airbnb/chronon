@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
@@ -13,17 +29,16 @@ import ai.chronon.api.{
   Operation,
   Source,
   StringType,
-  ThriftJsonCodec,
   TimeUnit,
   Window
 }
-import ai.chronon.online.{SparkConversions, RowWrapper}
+import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{Encoders, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 
@@ -121,7 +136,7 @@ class GroupByTest {
   }
 
   @Test
-  def temporalEventsLastKTest(): Unit = {
+  def eventsLastKTest(): Unit = {
     val eventSchema = List(
       Column("user", StringType, 10),
       Column("listing_view", StringType, 100)
@@ -282,7 +297,7 @@ class GroupByTest {
     val namespace = "test_analyzer"
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val aggregationsMetadata =
+    val (aggregationsMetadata, _) =
       new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
     val outputTable = backfill(name = "unit_analyze_test_item_views",
                                source = source,
@@ -319,13 +334,17 @@ class GroupByTest {
                                                          new Window(60, TimeUnit.DAYS))
     )
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val aggregationsMetadata =
+    val (aggregationsMetadata, _) =
       new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
 
     print(aggregationsMetadata)
-    assertTrue(aggregationsMetadata.length == 1)
-    assertEquals(aggregationsMetadata(0).name, "time_spent_ms")
-    assertEquals(aggregationsMetadata(0).columnType, LongType)
+    assertTrue(aggregationsMetadata.length == 2)
+
+    val columns = aggregationsMetadata.map(a => a.name -> a.columnType).toMap
+    assertEquals(Map(
+      "time_spent_ms" -> LongType,
+      "price" -> DoubleType
+    ), columns)
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
@@ -386,16 +405,17 @@ class GroupByTest {
     val sourceSchema = List(
       Column("user", StringType, 10000),
       Column("item", StringType, 100),
-      Column("time_spent_ms", LongType, 5000)
+      Column("time_spent_ms", LongType, 5000),
+      Column("price", DoubleType, 100)
     )
     val namespace = "chronon_test"
     val sourceTable = s"$namespace.test_group_by_steps$suffix"
 
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
     val source = Builders.Source.events(
       query =
-        Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms"), startPartition = startPartition),
+        Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms", "price"), startPartition = startPartition),
       table = sourceTable
     )
     (source, endPartition)
@@ -408,7 +428,7 @@ class GroupByTest {
                tableUtils: TableUtils,
                stepDays: Option[Int] = None,
                additionalAgg: Seq[Aggregation] = Seq.empty): String = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val groupBy = getSampleGroupBy(name, source, namespace, additionalAgg)
 
     GroupBy.computeBackfill(
@@ -467,5 +487,173 @@ class GroupByTest {
              namespace = namespace,
              tableUtils = tableUtils,
              additionalAgg = aggs)
+  }
+
+  @Test
+  def testApproxHistograms(): Unit = {
+    val (source, endPartition) = createTestSource(suffix = "_approx_histogram")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_approx_histograms"
+    val aggs = Seq(
+      Builders.Aggregation(
+        operation = Operation.APPROX_HISTOGRAM_K,
+        inputColumn = "item",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "4")
+      ),
+      Builders.Aggregation(
+        operation = Operation.APPROX_HISTOGRAM_K,
+        inputColumn = "ts",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "4")
+      ),
+      Builders.Aggregation(
+        operation = Operation.APPROX_HISTOGRAM_K,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "4")
+      )
+    )
+    backfill(name = "unit_test_group_by_approx_histograms",
+             source = source,
+             endPartition = endPartition,
+             namespace = namespace,
+             tableUtils = tableUtils,
+             additionalAgg = aggs)
+
+    val histogramValues = spark
+      .sql("""
+          |select explode(map_values(item_approx_histogram_k_15d)) as item_values
+          |from test_approx_histograms.unit_test_group_by_approx_histograms
+          |""".stripMargin)
+      .map(row => row.getAs[Long]("item_values"))(Encoders.scalaLong)
+      .collect()
+      .toSet
+
+    assert(histogramValues.nonEmpty)
+    assert(!histogramValues.contains(0))
+  }
+
+  @Test
+  def testReplaceJoinSource(): Unit = {
+    val namespace = "replace_join_source_ns"
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+
+    val joinSource = TestUtils.getParentJoin(spark, namespace, "parent_join_table", "parent_gb")
+    val query = Builders.Query(startPartition = today)
+    val chainingGroupBy = TestUtils.getTestGBWithJoinSource(joinSource, query, namespace, "chaining_gb")
+    val newGroupBy = GroupBy.replaceJoinSource(chainingGroupBy, PartitionRange(today, today), tableUtils, false)
+
+    assertEquals(joinSource.metaData.outputTable, newGroupBy.sources.get(0).table)
+    assertEquals(joinSource.left.topic + Constants.TopicInvalidSuffix, newGroupBy.sources.get(0).topic)
+    assertEquals(query, newGroupBy.sources.get(0).query)
+  }
+
+  @Test
+  def testGroupByFromChainingGB(): Unit = {
+    val namespace = "test_chaining_gb"
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val joinName = "parent_join_table"
+    val parentGBName = "parent_gb"
+
+    val joinSource = TestUtils.getParentJoin(spark, namespace, joinName, parentGBName)
+    val query = Builders.Query(startPartition = today)
+    val chainingGroupBy = TestUtils.getTestGBWithJoinSource(joinSource, query, namespace, "user_viewed_price_gb")
+    val newGroupBy = GroupBy.from(chainingGroupBy, PartitionRange(today, today), tableUtils, true)
+
+    //verify parent join output table is computed and
+    assertTrue(spark.catalog.tableExists(s"$namespace.parent_join_table"))
+    val expectedSQL =
+      s"""
+         |WITH latestB AS (
+         |    SELECT
+         |        COALESCE(A.listing, '--null--') listing,
+         |        A.user,
+         |        MAX(A.ts) as ts,
+         |        A.ds
+         |    FROM
+         |        $namespace.parent_join_table  A
+         |    LEFT OUTER JOIN
+         |       $namespace.views_table B ON A.listing = B.listing
+         |    WHERE
+         |        B.ts <= A.ts AND A.ds = '$today'
+         |    GROUP BY
+         |        A.listing, A.user, A.ds
+         |)
+         |SELECT
+         |    IF(latestB.listing == '--null--', null, latestB.listing) as listing,
+         |    latestB.user,
+         |    latestB.ts,
+         |    latestB.ds,
+         |    C.parent_gb_price_last
+         |FROM
+         |    latestB
+         |JOIN
+         |   $namespace.parent_join_table C
+         |ON
+         |    latestB.listing = COALESCE(C.listing, '--null--') AND latestB.ts = C.ts
+         |""".stripMargin
+    val expectedInputDf = spark.sql(expectedSQL)
+    println("Expected input DF: ")
+    expectedInputDf.show()
+    println("Computed input DF: ")
+    newGroupBy.inputDf.show()
+
+    val diff = Comparison.sideBySide(newGroupBy.inputDf, expectedInputDf, List("listing", "user", "ds"))
+    if (diff.count() > 0) {
+      println(s"Actual count: ${newGroupBy.inputDf.count()}")
+      println(s"Expected count: ${expectedInputDf.count()}")
+      println(s"Diff count: ${diff.count()}")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testDescriptiveStats(): Unit = {
+    val (source, endPartition) = createTestSource(suffix = "_descriptive_stats")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_descriptive_stats"
+    val aggs = Seq(
+      Builders.Aggregation(
+        operation = Operation.VARIANCE,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.SKEW,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.KURTOSIS,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+    )
+    backfill(name = "unit_test_group_by_descriptive_stats",
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils,
+      additionalAgg = aggs)
   }
 }

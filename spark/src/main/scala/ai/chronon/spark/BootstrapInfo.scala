@@ -1,5 +1,22 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
@@ -7,7 +24,7 @@ import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StringType, StructType}
 
 import scala.collection.{Seq, immutable, mutable}
 import scala.util.ScalaJavaConversions.ListOps
@@ -52,37 +69,66 @@ case class BootstrapInfo(
 }
 
 object BootstrapInfo {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // Build metadata for the join that contains schema information for join parts, external parts and bootstrap parts
-  def from(joinConf: api.Join, range: PartitionRange, tableUtils: TableUtils): BootstrapInfo = {
+  def from(joinConf: api.Join,
+           range: PartitionRange,
+           tableUtils: TableUtils,
+           leftSchema: Option[StructType]): BootstrapInfo = {
 
     // Enrich each join part with the expected output schema
-    println(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
+    logger.info(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
     var joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
       .getOrElse(Seq.empty)
       .map(part => {
-        val gb = GroupBy.from(part.groupBy, range, tableUtils)
+        val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency = true)
         val keySchema = SparkConversions
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
-        val valueSchema = gb.outputSchema.fields.map(part.constructJoinPartSchema)
+
+        val keyAndPartitionFields =
+          gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
+        // todo: this change is only valid for offline use case
+        // we need to revisit logic for the logging part to make sure the derived columns are also logged
+        // to make bootstrap continue to work
+        val outputSchema = if (part.groupBy.hasDerivations) {
+          val sparkSchema = {
+            StructType(SparkConversions.fromChrononSchema(gb.outputSchema).fields ++ keyAndPartitionFields)
+          }
+          val dummyOutputDf = tableUtils.sparkSession
+            .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
+          val finalOutputColumns = part.groupBy.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
+          val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+          val columns = SparkConversions.toChrononSchema(
+            StructType(derivedDummyOutputDf.schema.filterNot(keyAndPartitionFields.contains)))
+          api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
+        } else {
+          gb.outputSchema
+        }
+        val valueSchema = outputSchema.fields.map(part.constructJoinPartSchema)
         JoinPartMetadata(part, keySchema, valueSchema, Map.empty) // will be populated below
       })
 
     // Enrich each external part with the expected output schema
-    println(s"\nCreating BootstrapInfo for ExternalParts for Join ${joinConf.metaData.name}")
+    logger.info(s"\nCreating BootstrapInfo for ExternalParts for Join ${joinConf.metaData.name}")
     val externalParts: Seq[ExternalPartMetadata] = Option(joinConf.onlineExternalParts.toScala)
       .getOrElse(Seq.empty)
       .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
 
-    val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
+    val leftFields = leftSchema
+      .map(schema => SparkConversions.toChrononSchema(schema))
+      .map(_.map(field => StructField(field._1, field._2)))
+      .getOrElse(Array.empty[StructField])
+    val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema) ++ leftFields
     val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
+
     val baseDf = tableUtils.sparkSession.createDataFrame(
       tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()),
       sparkSchema
     )
-    val derivedSchema = if (joinConf.isSetDerivations) {
-      val projections = joinConf.derivationProjection(baseFields.map(_.name))
+    val derivedSchema = if (joinConf.hasDerivations) {
+      val projections = joinConf.derivationsScala.derivationProjection(baseDf.columns)
       val projectionMap = projections.toMap
       val derivedDf = baseDf.select(
         projections.map {
@@ -121,7 +167,7 @@ object BootstrapInfo {
     val exceptionList = mutable.ListBuffer[Throwable]()
     def collectException(assertion: => Unit): Unit = Try(assertion).failed.foreach(exceptionList += _)
 
-    println(s"\nCreating BootstrapInfo for Log Based Bootstraps for Join ${joinConf.metaData.name}")
+    logger.info(s"\nCreating BootstrapInfo for Log Based Bootstraps for Join ${joinConf.metaData.name}")
     // Verify that join keys are valid columns on the log table
     logBootstrapParts
       .foreach(part => {
@@ -143,7 +189,7 @@ object BootstrapInfo {
         .toSeq
     }.toMap
 
-    println(s"\nCreating BootstrapInfo for Table Based Bootstraps for Join ${joinConf.metaData.name}")
+    logger.info(s"\nCreating BootstrapInfo for Table Based Bootstraps for Join ${joinConf.metaData.name}")
     // Verify that join keys are valid columns on the bootstrap source table
     val tableHashes = tableBootstrapParts
       .map(part => {
@@ -248,13 +294,13 @@ object BootstrapInfo {
     }
 
     if (exceptionList.nonEmpty) {
-      exceptionList.foreach(t => println(t.traceString))
+      exceptionList.foreach(t => logger.error(t.traceString))
       throw new Exception(s"Validation failed for bootstrapInfo construction for join ${joinConf.metaData.name}")
     }
 
-    println(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} =======\n")
+    logger.info(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} =======\n")
     joinParts.foreach { metadata =>
-      println(s"""Bootstrap Info for Join Part `${metadata.joinPart.groupBy.metaData.name}`
+      logger.info(s"""Bootstrap Info for Join Part `${metadata.joinPart.groupBy.metaData.name}`
            |Key Schema:
            |${stringify(metadata.keySchema)}
            |Value Schema:
@@ -262,7 +308,7 @@ object BootstrapInfo {
            |""".stripMargin)
     }
     externalParts.foreach { metadata =>
-      println(s"""Bootstrap Info for External Part `${metadata.externalPart.fullName}`
+      logger.info(s"""Bootstrap Info for External Part `${metadata.externalPart.fullName}`
            |Key Schema:
            |${stringify(metadata.keySchema)}
            |Value Schema:
@@ -270,16 +316,16 @@ object BootstrapInfo {
            |""".stripMargin)
     }
     if (derivedSchema.nonEmpty) {
-      println(s"""Bootstrap Info for Derivations
+      logger.info(s"""Bootstrap Info for Derivations
                  |${stringify(derivedSchema.map(_._1))}
                  |""".stripMargin)
     }
-    println(s"""Bootstrap Info for Log Bootstraps
+    logger.info(s"""Bootstrap Info for Log Bootstraps
          |Log Hashes: ${logHashes.keys.prettyInline}
          |""".stripMargin)
     tableHashes.foreach {
       case (hash, (schema, _, query)) =>
-        println(s"""Bootstrap Info for Table Bootstraps
+        logger.info(s"""Bootstrap Info for Table Bootstraps
            |Table Hash: ${hash}
            |Bootstrap Query:
            |\n${query}\n
@@ -288,7 +334,7 @@ object BootstrapInfo {
            |""".stripMargin)
     }
 
-    println(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} END =======\n")
+    logger.info(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} END =======\n")
 
     bootstrapInfo
   }

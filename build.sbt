@@ -11,10 +11,11 @@ lazy val scala213 = "2.13.6"
 lazy val spark2_4_0 = "2.4.0"
 lazy val spark3_1_1 = "3.1.1"
 lazy val spark3_2_1 = "3.2.1"
+lazy val tmp_warehouse = "/tmp/chronon/"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
-ThisBuild / scalaVersion := scala213
+ThisBuild / scalaVersion := scala212
 ThisBuild / description := "Chronon is a feature engineering platform"
 ThisBuild / licenses := List("Apache 2" -> new URL("http://www.apache.org/licenses/LICENSE-2.0.txt"))
 ThisBuild / scmInfo := Some(
@@ -83,22 +84,35 @@ lazy val root = (project in file("."))
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
-    name := "chronon"
+    name := "chronon",
+    version := git.versionProperty.value
   )
   .settings(releaseSettings: _*)
 
 // Git related config
 git.useGitDescribe := true
-git.gitTagToVersionNumber := { tag: String =>
-  // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
-  val versionStr = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
-  val branchTag = git.gitCurrentBranch.value
-  if (branchTag == "master") {
-    // For master branches, we tag the packages as <package-name>-<build-version>
-    Some(s"${versionStr}")
+git.gitTagToVersionNumber := { tag: String => {
+    // Git plugin will automatically add SNAPSHOT for dirty workspaces so remove it to avoid duplication.
+    val versionStr = if (git.gitUncommittedChanges.value) version.value.replace("-SNAPSHOT", "") else version.value
+    val branchTag = git.gitCurrentBranch.value.replace("/", "-")
+    if (branchTag == "main" || branchTag == "master") {
+      // For main branches, we tag the packages as <package-name>-<build-version>
+      Some(s"${versionStr}")
+    } else {
+      // For user branches, we tag the packages as <package-name>-<user-branch>-<build-version>
+      Some(s"${branchTag}-${versionStr}")
+    }
+  }
+}
+git.versionProperty := {
+  val versionStr = version.value
+  val branchTag = git.gitCurrentBranch.value.replace("/", "-")
+  if (branchTag == "main" || branchTag == "master") {
+    // For main branches, we tag the packages as <package-name>-<build-version>
+    s"${versionStr}"
   } else {
     // For user branches, we tag the packages as <package-name>-<user-branch>-<build-version>
-    Some(s"${branchTag}-${versionStr}")
+    s"${branchTag}-${versionStr}"
   }
 }
 
@@ -160,12 +174,23 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Some("1.8.2"),
     Some("1.10.2")
   ),
+  "flink" -> VersionDependency(
+    Seq(
+      "org.apache.flink" %% "flink-streaming-scala",
+      "org.apache.flink" % "flink-metrics-dropwizard",
+      "org.apache.flink" % "flink-clients",
+      "org.apache.flink" % "flink-test-utils"
+    ),
+    None,
+    Some("1.16.1"),
+    None
+  ),
   "netty-buffer" -> VersionDependency(
     Seq(
       "io.netty" % "netty-buffer"
     ),
-    Some("4.1.17.Final"),
-    Some("4.1.51.Final"),
+    None,
+    None,
     Some("4.1.68.Final")
   )
 )
@@ -186,6 +211,7 @@ def fromMatrix(scalaVersion: String, modules: String*): Seq[ModuleID] =
 lazy val api = project
   .settings(
     publishSettings,
+    version := git.versionProperty.value,
     Compile / sourceGenerators += Def.task {
       val inputThrift = baseDirectory.value / "thrift" / "api.thrift"
       val outputJava = (Compile / sourceManaged).value
@@ -202,7 +228,7 @@ lazy val api = project
           "com.novocode" % "junit-interface" % "0.11" % "test",
           "org.scalatest" %% "scalatest" % "3.2.15" % "test",
           "org.scalatestplus" %% "mockito-3-4" % "3.2.10.0" % "test"
-        )
+        ),
   )
 
 lazy val py_thrift = taskKey[Seq[File]]("Build thrift generated files")
@@ -227,7 +253,7 @@ python_api := {
   val thrift = py_thrift.value
   val s: TaskStreams = streams.value
   val versionStr = (api / version).value
-  val branchStr = git.gitCurrentBranch.value
+  val branchStr = git.gitCurrentBranch.value.replace("/", "-")
   s.log.info(s"Building Python API version: ${versionStr}, branch: ${branchStr}, action: ${action} ...")
   if ((s"api/py/python-api-build.sh ${versionStr} ${branchStr} ${action}" !) == 0) {
     s.log.success("Built Python API")
@@ -263,6 +289,7 @@ lazy val aggregator = project
   .dependsOn(api.%("compile->compile;test->test"))
   .settings(
     publishSettings,
+    version := git.versionProperty.value,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
       fromMatrix(scalaVersion.value, "spark-sql/provided") ++ Seq(
@@ -273,6 +300,7 @@ lazy val aggregator = project
 
 lazy val online = project
   .dependsOn(aggregator.%("compile->compile;test->test"))
+  .enablePlugins(BuildInfoPlugin)
   .settings(
     publishSettings,
     crossScalaVersions := supportedVersions,
@@ -283,11 +311,13 @@ lazy val online = project
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1"
     ),
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer"),
+    version := git.versionProperty.value
   )
 
 lazy val online_unshaded = (project in file("online"))
   .dependsOn(aggregator.%("compile->compile;test->test"))
+  .enablePlugins(BuildInfoPlugin)
   .settings(
     target := target.value.toPath.resolveSibling("target-no-assembly").toFile,
     crossScalaVersions := supportedVersions,
@@ -306,11 +336,12 @@ lazy val online_unshaded = (project in file("online"))
                                        "netty-buffer")
   )
 
+
 def cleanSparkMeta(): Unit = {
   Folder.clean(file(".") / "spark" / "spark-warehouse",
-               file(".") / "spark-warehouse",
+               file(tmp_warehouse) / "spark-warehouse",
                file(".") / "spark" / "metastore_db",
-               file(".") / "metastore_db")
+               file(tmp_warehouse) / "metastore_db")
 }
 
 val sparkBaseSettings: Seq[Setting[_]] = Seq(
@@ -320,12 +351,8 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
     art.withClassifier(Some("assembly"))
   },
   mainClass in (Compile, run) := Some("ai.chronon.spark.Driver"),
-  cleanFiles ++= Seq(
-    baseDirectory.value / "spark-warehouse",
-    baseDirectory.value / "metastore_db"
-  ),
+  cleanFiles ++= Seq(file(tmp_warehouse)),
   Test / testOptions += Tests.Setup(() => cleanSparkMeta()),
-  Test / testOptions += Tests.Cleanup(() => cleanSparkMeta()),
   // compatibility for m1 chip laptop
   libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.8.4" % Test
 ) ++ addArtifact(assembly / artifact, assembly) ++ publishSettings
@@ -334,7 +361,8 @@ lazy val spark_uber = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
-    crossScalaVersions := Seq(scala211, scala212, scala213),
+    version := git.versionProperty.value,
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "jackson", "spark-all/provided")
   )
 
@@ -342,10 +370,23 @@ lazy val spark_embedded = (project in file("spark"))
   .dependsOn(aggregator.%("compile->compile;test->test"), online_unshaded)
   .settings(
     sparkBaseSettings,
-    crossScalaVersions := Seq(scala211, scala212),
+    version := git.versionProperty.value,
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     Test / test := {}
+  )
+
+lazy val flink = (project in file("flink"))
+  .dependsOn(aggregator.%("compile->compile;test->test"), online)
+  .settings(
+    publishSettings,
+    crossScalaVersions := List(scala212),
+    libraryDependencies ++= fromMatrix(scalaVersion.value,
+                                       "avro",
+                                       "spark-all/provided",
+                                       "scala-parallel-collections",
+                                       "flink")
   )
 
 // Build Sphinx documentation
@@ -372,3 +413,6 @@ ThisBuild / assemblyMergeStrategy := {
   case _                                   => MergeStrategy.first
 }
 exportJars := true
+
+
+

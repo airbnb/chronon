@@ -1,16 +1,35 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.api
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.DataModel._
 import ai.chronon.api.Operation._
 import com.fasterxml.jackson.core.`type`.TypeReference
 import com.fasterxml.jackson.databind.ObjectMapper
+import org.apache.spark.sql.Column
+import org.apache.spark.sql.functions.expr
 
 import java.io.{PrintWriter, StringWriter}
 import java.util
 import java.util.regex.Pattern
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
-import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
+import scala.util.{Failure, Success, Try}
 
 object Extensions {
 
@@ -92,10 +111,13 @@ object Extensions {
     def comparisonTable = s"${outputTable}_$comparisonPrefix"
 
     def consistencyTable = s"${outputTable}_consistency"
+    def consistencyUploadTable = s"${consistencyTable}_upload"
 
+    def loggingStatsTable = s"${loggedTable}_daily_stats"
     def uploadTable = s"${outputTable}_upload"
     def dailyStatsOutputTable = s"${outputTable}_daily_stats"
-    def dailyStatsUploadTable = s"${dailyStatsOutputTable}_upload"
+
+    def toUploadTable(name: String) = s"${name}_upload"
 
     def copyForVersioningComparison: MetaData = {
       // Changing name results in column rename, therefore schema change, other metadata changes don't effect output table
@@ -106,7 +128,7 @@ object Extensions {
 
     def tableProps: Map[String, String] =
       Option(metaData.tableProperties)
-        .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap)
+        .map(_.toScala.toMap)
         .orNull
 
     def nameToFilePath: String = metaData.name.replaceFirst("\\.", "/")
@@ -117,7 +139,7 @@ object Extensions {
       val mapper = new ObjectMapper();
       val typeRef = new TypeReference[java.util.HashMap[String, Object]]() {}
       val jMap: java.util.Map[String, Object] = mapper.readValue(metaData.customJson, typeRef)
-      ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(jMap).get(key).orNull
+      jMap.toScala.get(key).orNull
     }
 
     def owningTeam: String = {
@@ -132,7 +154,7 @@ object Extensions {
 
     def getInt(arg: String, default: Option[Int] = None): Int = {
       val argOpt = Option(aggregationPart.argMap)
-        .flatMap(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).get(arg))
+        .flatMap(_.toScala.get(arg))
       require(
         argOpt.isDefined || default.isDefined,
         s"$arg needs to be specified in the `argMap` for ${aggregationPart.operation} type"
@@ -187,7 +209,7 @@ object Extensions {
     // ignoring the windowing
     def unWindowed: Seq[AggregationPart] = {
       val buckets = Option(aggregation.buckets)
-        .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+        .map(_.toScala)
         .getOrElse(Seq(null))
         .toSeq
       for (bucket <- buckets) yield {
@@ -197,7 +219,7 @@ object Extensions {
           WindowUtils.Unbounded,
           Option(aggregation.argMap)
             .map(
-              ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap
+              _.toScala.toMap
             )
             .orNull,
           bucket
@@ -217,10 +239,10 @@ object Extensions {
       val perWindow = new mutable.ArrayBuffer[WindowMapping]
       aggregations.foreach { agg =>
         val buckets = Option(agg.buckets)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+          .map(_.toScala)
           .getOrElse(Seq(null))
         val windows = Option(agg.windows)
-          .map(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_))
+          .map(_.toScala)
           .getOrElse(Seq(WindowUtils.Unbounded))
         for (bucket <- buckets) {
           perBucket += Builders.AggregationPart(
@@ -229,7 +251,7 @@ object Extensions {
             WindowUtils.Unbounded,
             Option(agg.argMap)
               .map(
-                ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap
+                _.toScala.toMap
               )
               .orNull,
             bucket
@@ -241,7 +263,7 @@ object Extensions {
                                        window,
                                        Option(agg.argMap)
                                          .map(
-                                           ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(_).toMap
+                                           _.toScala.toMap
                                          )
                                          .orNull,
                                        bucket),
@@ -271,7 +293,7 @@ object Extensions {
         aggs.flatMap { agg =>
           Option(agg.windows)
             .map(
-              ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_)
+              _.toScala
             )
             .getOrElse(Seq(null))
         }
@@ -280,16 +302,58 @@ object Extensions {
 
   implicit class SourceOps(source: Source) {
     def dataModel: DataModel = {
-      assert(source.isSetEntities || source.isSetEvents, "Source type is not specified")
-      if (source.isSetEntities) Entities else Events
+      assert(source.isSetEntities || source.isSetEvents || source.isSetJoinSource, "Source type is not specified")
+      if (source.isSetEntities) Entities
+      else if (source.isSetEvents) Events
+      else source.getJoinSource.getJoin.left.dataModel
+    }
+
+    def rootQuery: Query = {
+      if (source.isSetEntities) {
+        source.getEntities.query
+      } else if (source.isSetEvents) {
+        source.getEvents.query
+      } else {
+        source.getJoinSource.getJoin.getLeft.query
+      }
     }
 
     def query: Query = {
-      if (source.isSetEntities) source.getEntities.query else source.getEvents.query
+      if (source.isSetEntities) {
+        source.getEntities.query
+      } else if (source.isSetEvents) {
+        source.getEvents.query
+      } else {
+        source.getJoinSource.query
+      }
     }
 
-    lazy val rawTable: String =
-      if (source.isSetEntities) source.getEntities.getSnapshotTable else source.getEvents.getTable
+    lazy val rootTable: String = {
+      if (source.isSetEntities) {
+        source.getEntities.getSnapshotTable
+      } else if (source.isSetEvents) {
+        source.getEvents.getTable
+      } else {
+        source.getJoinSource.getJoin.left.table
+      }
+    }
+
+    lazy val rawTable: String = {
+      if (source.isSetEntities) { source.getEntities.getSnapshotTable }
+      else if (source.isSetEvents) { source.getEvents.getTable }
+      else { source.getJoinSource.getJoin.metaData.outputTable }
+    }
+
+    def overwriteTable(table: String): Unit = {
+      if (source.isSetEntities) { source.getEntities.setSnapshotTable(table) }
+      else if (source.isSetEvents) { source.getEvents.setTable(table) }
+      else {
+        val metadata = source.getJoinSource.getJoin.getMetaData
+        val Array(namespace, tableName) = table.split(".")
+        metadata.setOutputNamespace(namespace)
+        metadata.setName(tableName)
+      }
+    }
 
     def table: String = rawTable.cleanSpec
 
@@ -312,8 +376,20 @@ object Extensions {
       }
     }
 
+    def isCumulative: Boolean = {
+      if (source.isSetEntities) false else source.getEvents.isCumulative
+    }
+
     def topic: String = {
-      if (source.isSetEntities) source.getEntities.getMutationTopic else source.getEvents.getTopic
+      if (source.isSetEntities) {
+        source.getEntities.getMutationTopic
+      } else if (source.isSetEvents) {
+        source.getEvents.getTopic
+      } else if (source.isSetJoinSource) {
+        source.getJoinSource.getJoin.getLeft.topic
+      } else {
+        null
+      }
     }
 
     /**
@@ -350,12 +426,19 @@ object Extensions {
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
     def maxWindow: Option[Window] = {
       val allWindowsOpt = Option(groupBy.aggregations)
-        .flatMap(ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq.allWindowsOpt)
+        .flatMap(_.toScala.toSeq.allWindowsOpt)
       allWindowsOpt.flatMap { windows =>
         if (windows.contains(null)) None
         else Some(windows.maxBy(_.millis))
       }
     }
+
+    // Check if tiling is enabled for a given GroupBy. Defaults to false if the 'enable_tiling' flag isn't set.
+    def isTilingEnabled: Boolean =
+      groupBy.getMetaData.customJsonLookUp("enable_tiling") match {
+        case s: Boolean => s
+        case _          => false
+      }
 
     def semanticHash: String = {
       val newGroupBy = groupBy.deepCopy()
@@ -364,8 +447,7 @@ object Extensions {
     }
 
     def dataModel: DataModel = {
-      val models = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(groupBy.sources)
+      val models = groupBy.sources.toScala
         .map(_.dataModel)
       assert(models.distinct.length == 1,
              s"All source of the groupBy: ${groupBy.metaData.name} " +
@@ -379,8 +461,7 @@ object Extensions {
       // if user specified something - respect it
       if (groupBy.accuracy != null) return groupBy.accuracy
       // if a topic is specified - then treat it as temporally accurate
-      val validTopics = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(groupBy.sources)
+      val validTopics = groupBy.sources.toScala
         .map(_.topic)
         .filter(_ != null)
       if (validTopics.nonEmpty) Accuracy.TEMPORAL else Accuracy.SNAPSHOT
@@ -408,43 +489,8 @@ object Extensions {
     def kvTable: String = s"${groupBy.metaData.outputTable}_upload"
 
     def streamingSource: Option[Source] =
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(groupBy.sources)
+      groupBy.sources.toScala
         .find(_.topic != null)
-
-    def buildStreamingQuery: String = {
-      assert(streamingSource.isDefined,
-             s"You should probably define a topic in one of your sources: ${groupBy.metaData.name}")
-      val query = streamingSource.get.query
-      val selects = Option(query.selects)
-        .map(
-          ScalaVersionSpecificCollectionsConverter
-            .convertJavaMapToScala(_)
-            .toMap)
-        .orNull
-      val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
-      val fillIfAbsent = if (selects == null) null else Map(Constants.TimeColumn -> timeColumn)
-      val keys = ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(groupBy.getKeyColumns)
-
-      val baseWheres = Option(query.wheres)
-        .map(_.toScala)
-        .getOrElse(Seq.empty[String])
-      val keyWhereOption =
-        Option(selects)
-          .map { selectsMap =>
-            keys
-              .map(key => s"(${selectsMap(key)} is NOT NULL)")
-              .mkString(" OR ")
-          }
-      val timeWheres = Seq(s"$timeColumn is NOT NULL")
-
-      QueryUtils.build(
-        selects,
-        Constants.StreamingInputTable,
-        baseWheres.toSeq ++ timeWheres.toSeq ++ keyWhereOption.toSeq,
-        fillIfAbsent = fillIfAbsent
-      )
-    }
 
     // de-duplicate all columns necessary for aggregation in a deterministic order
     // so we use distinct instead of toSet here
@@ -478,20 +524,129 @@ object Extensions {
             .filterNot(groupBy.keyColumns.contains)
             .toArray
         )
+
+    def keys(partitionColumn: String): Seq[String] = {
+      val baseKeys = if (groupBy.isSetKeyColumns) groupBy.keyColumns.toScala else List()
+      val partitionKey = if (baseKeys.contains(partitionColumn)) None else Some(partitionColumn)
+      val timeKey =
+        if (groupBy.inferredAccuracy == Accuracy.TEMPORAL && !baseKeys.contains(Constants.TimeColumn))
+          Some(Constants.TimeColumn)
+        else
+          None
+
+      baseKeys ++ partitionKey ++ timeKey
+    }
+
+    def hasDerivations: Boolean = groupBy.isSetDerivations && !groupBy.derivations.isEmpty
+    lazy val derivationsScala: List[Derivation] =
+      if (groupBy.hasDerivations) groupBy.derivations.toScala else List.empty
+    lazy val derivationsContainStar: Boolean = groupBy.hasDerivations && derivationsScala.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] =
+      if (groupBy.hasDerivations) derivationsScala.filterNot(_.name == "*") else List.empty
+    lazy val areDerivationsRenameOnly: Boolean =
+      groupBy.hasDerivations && groupBy.derivations.toScala.areDerivationsRenameOnly
+    lazy val derivationExpressionSet: Set[String] =
+      if (groupBy.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
+
+    case class QueryParts(selects: Option[Seq[String]], wheres: Seq[String])
+
+    def buildQueryParts(query: Query): QueryParts = {
+      val selects = query.getQuerySelects
+      val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
+
+      val fillIfAbsent = (groupBy.dataModel match {
+        case DataModel.Entities =>
+          Map(Constants.ReversalColumn -> Constants.ReversalColumn,
+              Constants.MutationTimeColumn -> Constants.MutationTimeColumn)
+        case DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
+      })
+
+      val baseWheres = Option(query.wheres).map(_.toScala).getOrElse(Seq.empty[String])
+      val wheres = baseWheres ++ timeWheres(timeColumn)
+
+      val allSelects = Option(selects).map(fillIfAbsent ++ _).map { m =>
+        m.map {
+          case (name, expr) => s"($expr) AS $name"
+        }.toSeq
+      }
+      QueryParts(allSelects, wheres)
+    }
+
+    // build left streaming query for join source runner
+    def buildLeftStreamingQuery(query: Query, defaultFieldNames: Seq[String]): String = {
+      val queryParts = groupBy.buildQueryParts(query)
+      val streamingInputTable =
+        Option(groupBy.metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull + "_stream"
+      s"""SELECT
+         |  ${queryParts.selects.getOrElse(defaultFieldNames).mkString(",\n  ")}
+         |FROM $streamingInputTable
+         |WHERE ${queryParts.wheres.map("(" + _ + ")").mkString(" AND ")}
+         |""".stripMargin
+    }
+
+    def buildStreamingQuery: String = {
+      val streamingSource = groupBy.streamingSource.get
+      if (!streamingSource.isSetJoinSource) {
+        val query = streamingSource.query
+        val selects = query.getQuerySelects
+        val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
+        val fillIfAbsent = groupBy.dataModel match {
+          case DataModel.Entities =>
+            Map(Constants.TimeColumn -> timeColumn,
+                Constants.ReversalColumn -> null,
+                Constants.MutationTimeColumn -> null)
+          case DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
+        }
+        val keys = groupBy.getKeyColumns.toScala
+
+        val baseWheres = Option(query.wheres).map(_.toScala).getOrElse(Seq.empty[String])
+        val selectMap = Option(selects).getOrElse(Map.empty[String, String])
+        val keyWhereOption = keys
+          .map { key =>
+            s"${selectMap.getOrElse(key, key)} IS NOT NULL"
+          }
+          .mkString(" OR ")
+        val streamingInputTable =
+          Option(groupBy.metaData.name).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull + "_stream"
+        QueryUtils.build(
+          selects,
+          streamingInputTable,
+          baseWheres ++ timeWheres(timeColumn) :+ s"($keyWhereOption)",
+          fillIfAbsent = if (selects == null) null else fillIfAbsent
+        )
+      } else {
+        //todo: this logic is similar in JoinSourceRunner, we can simplify it to a single place
+        val query = streamingSource.getJoinSource.join.left.query
+        groupBy.buildLeftStreamingQuery(query, groupBy.keyColumns.toScala)
+      }
+    }
+
+    private def timeWheres(timeColumn: String) = {
+      groupBy.dataModel match {
+        case DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
+        case DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
+      }
+    }
+
   }
 
   implicit class StringOps(string: String) {
     def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
 
     def cleanSpec: String = string.split("/").head
+
+    // derive a feature name key from path to file
+    def confPathToKey: String = {
+      // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
+      string.split("/").takeRight(3).mkString("/")
+    }
   }
 
   implicit class ExternalSourceOps(externalSource: ExternalSource) extends ExternalSource(externalSource) {
     private def schemaNames(schema: TDataType): Array[String] = schemaFields(schema).map(_.name)
 
     private def schemaFields(schema: TDataType): Array[StructField] =
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(schema.params)
+      schema.params.toScala
         .map(field => StructField(field.name, DataType.fromTDataType(field.dataType)))
         .toArray
 
@@ -512,8 +667,7 @@ object Extensions {
     def flip(leftToRight: java.util.Map[String, String]): Map[String, String] = {
       Option(leftToRight)
         .map(mp =>
-          ScalaVersionSpecificCollectionsConverter
-            .convertJavaMapToScala(mp)
+          mp.toScala
             .map({ case (key, value) => value -> key }))
         .getOrElse(Map.empty[String, String])
     }
@@ -567,18 +721,12 @@ object Extensions {
     def valueColumns: Seq[String] = joinPart.groupBy.valueColumns.map(fullPrefix + "_" + _)
 
     def rightToLeft: Map[String, String] = {
-      val rightToRight = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(joinPart.groupBy.keyColumns)
-        .map { key => key -> key }
-        .toMap
+      val rightToRight = joinPart.groupBy.keyColumns.toScala.map { key => key -> key }.toMap
       Option(joinPart.keyMapping)
         .map { leftToRight =>
-          val rToL = ScalaVersionSpecificCollectionsConverter
-            .convertJavaMapToScala(leftToRight)
-            .map {
-              case (left, right) => right -> left
-            }
-            .toMap
+          val rToL = leftToRight.toScala.map {
+            case (left, right) => right -> left
+          }.toMap
           rightToRight ++ rToL
         }
         .getOrElse(rightToRight)
@@ -597,8 +745,7 @@ object Extensions {
 
   implicit class LabelPartOps(val labelPart: LabelPart) extends Serializable {
     def leftKeyCols: Array[String] = {
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelPart.labels)
+      labelPart.labels.toScala
         .flatMap {
           _.rightToLeft.values
         }
@@ -607,8 +754,7 @@ object Extensions {
     }
 
     def setups: Seq[String] = {
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(labelPart.labels)
+      labelPart.labels.toScala
         .flatMap(_.groupBy.setups)
         .distinct
     }
@@ -639,9 +785,9 @@ object Extensions {
 
     def keys(join: Join, partitionColumn: String): Seq[String] = {
       val definedKeys = if (bootstrapPart.isSetKeyColumns) {
-        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(bootstrapPart.keyColumns)
+        bootstrapPart.keyColumns.toScala
       } else if (join.isSetRowIds) {
-        ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(join.getRowIds)
+        join.getRowIds.toScala
       } else {
         throw new Exception(s"Bootstrap's join key for bootstrap is NOT set for join ${join.metaData.name}")
       }
@@ -662,10 +808,10 @@ object Extensions {
   }
 
   implicit class JoinOps(val join: Join) extends Serializable {
-    // all keys on left
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    // all keys as they should appear in left that are being used on right
     def leftKeyCols: Array[String] = {
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(join.joinParts)
+      join.joinParts.toScala
         .flatMap {
           _.rightToLeft.values
         }
@@ -673,7 +819,26 @@ object Extensions {
         .toArray
     }
 
-    def computedFeatureCols: Seq[String] = joinPartOps.flatMap(_.valueColumns)
+    def historicalBackfill: Boolean = {
+      if (join.metaData.isSetHistoricalBackfill) {
+        join.metaData.historicalBackfill
+      } else {
+        true
+      }
+    }
+
+    def computedFeatureCols: Array[String] =
+      if (Option(join.derivations).isDefined) {
+        val baseColumns = joinPartOps.flatMap(_.valueColumns).toArray
+        val baseExpressions = if (join.derivationsContainStar) baseColumns.filterNot {
+          join.derivationExpressionSet contains _
+        }
+        else Array.empty[String]
+        baseExpressions ++ join.derivationsWithoutStar.map { d =>
+          d.name
+        }
+      } else
+        joinPartOps.flatMap(_.valueColumns).toArray
 
     def partOutputTable(jp: JoinPart): String =
       (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+ jp.groupBy.metaData.cleanName).mkString("_")
@@ -687,10 +852,7 @@ object Extensions {
      */
     def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
-      val partHashes = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(join.joinParts)
-        .map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }
-        .toMap
+      val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
       val derivedHashMap = Option(join.derivations)
         .map { derivations =>
           val derivedHash =
@@ -708,21 +870,17 @@ object Extensions {
      */
     def getExternalFeatureCols: Seq[String] = {
       Option(join.onlineExternalParts)
-        .map(
-          ScalaVersionSpecificCollectionsConverter
-            .convertJavaListToScala(_)
-            .map { part =>
-              {
-                val keys = ScalaVersionSpecificCollectionsConverter
-                  .convertJavaListToScala(part.source.getKeySchema.params)
-                  .map(_.name)
-                val values = ScalaVersionSpecificCollectionsConverter
-                  .convertJavaListToScala(part.source.getValueSchema.params)
-                  .map(_.name)
-                keys ++ values
-              }
+        .map(_.toScala
+          .map { part =>
+            {
+              val keys = part.source.getKeySchema.params.toScala
+                .map(_.name)
+              val values = part.source.getValueSchema.params.toScala
+                .map(_.name)
+              keys ++ values
             }
-            .flatMap(_.toSet))
+          }
+          .flatMap(_.toSet))
         .getOrElse(Seq.empty)
     }
 
@@ -736,12 +894,16 @@ object Extensions {
         return Map.empty[String, String]
       }
 
-      val externalPartHashes = ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(join.onlineExternalParts)
-        .map { part => part.fullName -> part.semanticHash }
-        .toMap
+      val externalPartHashes = join.onlineExternalParts.toScala.map { part => part.fullName -> part.semanticHash }.toMap
 
       externalPartHashes ++ semanticHash
+    }
+
+    def leftChanged(oldSemanticHash: Map[String, String]): Boolean = {
+      // Checks for semantic changes in left or bootstrap, because those are saved together
+      val bootstrapExistsAndChanged = oldSemanticHash.contains(join.metaData.bootstrapTable) && oldSemanticHash.get(
+        join.metaData.bootstrapTable) != semanticHash.get(join.metaData.bootstrapTable)
+      oldSemanticHash.get(leftSourceKey) != semanticHash.get(leftSourceKey) || bootstrapExistsAndChanged
     }
 
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
@@ -752,7 +914,7 @@ object Extensions {
       }
 
       // drop everything if left source changes
-      val partsToDrop = if (oldSemanticHash(leftSourceKey) != newSemanticHash(leftSourceKey)) {
+      val partsToDrop = if (leftChanged(oldSemanticHash)) {
         partHashes(oldSemanticHash).keys.toSeq
       } else {
         val changed = partHashes(newSemanticHash).flatMap {
@@ -789,8 +951,7 @@ object Extensions {
     // TODO: validate that non keys are not specified in - join.skewKeys
     def skewFilter(keys: Option[Seq[String]] = None, joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).map { jmap =>
-        val result = ScalaVersionSpecificCollectionsConverter
-          .convertJavaMapToScala(jmap)
+        val result = jmap.toScala
           .filterKeys(key =>
             keys.forall {
               _.contains(key)
@@ -802,41 +963,38 @@ object Extensions {
                 s"specified skew filter for $leftKey is not used as a key in any join part. " +
                   s"Please specify key columns in skew filters: [${leftKeyCols.mkString(", ")}]"
               )
-              generateSkewFilterSql(leftKey,
-                                    ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(values).toSeq)
+              generateSkewFilterSql(leftKey, values.toScala.toSeq)
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
-        println(s"Generated join left side skew filter:\n    $result")
+        logger.info(s"Generated join left side skew filter:\n    $result")
         result
       }
     }
 
     def partSkewFilter(joinPart: JoinPart, joiner: String = " OR "): Option[String] = {
       Option(join.skewKeys).flatMap { jmap =>
-        val result = ScalaVersionSpecificCollectionsConverter
-          .convertJavaMapToScala(jmap)
-          .flatMap { case (leftKey, values) =>
-            Option(joinPart.keyMapping)
-              .map(_.toScala.getOrElse(leftKey, leftKey))
-              .orElse(Some(leftKey))
-              .filter(joinPart.groupBy.keyColumns.contains(_))
-              .map(generateSkewFilterSql(_, values.toScala))
+        val result = jmap.toScala
+          .flatMap {
+            case (leftKey, values) =>
+              Option(joinPart.keyMapping)
+                .map(_.toScala.getOrElse(leftKey, leftKey))
+                .orElse(Some(leftKey))
+                .filter(joinPart.groupBy.keyColumns.contains(_))
+                .map(generateSkewFilterSql(_, values.toScala))
           }
           .filter(_.nonEmpty)
           .mkString(joiner)
 
         if (result.nonEmpty) {
-          println(
-            s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
+          logger.info(s"Generated join part skew filter for ${joinPart.groupBy.metaData.name}:\n    $result")
           Some(result)
         } else None
       }
     }
 
     def setups: Seq[String] =
-      (join.left.query.setupsSeq ++ ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(join.joinParts)
+      (join.left.query.setupsSeq ++ join.joinParts.toScala
         .flatMap(_.groupBy.setups)).distinct
 
     def copyForVersioningComparison(): Join = {
@@ -852,52 +1010,22 @@ object Extensions {
     }
 
     lazy val joinPartOps: Seq[JoinPartOps] =
-      ScalaVersionSpecificCollectionsConverter
-        .convertJavaListToScala(Option(join.joinParts).getOrElse(new util.ArrayList[JoinPart]()))
+      Option(join.joinParts)
+        .getOrElse(new util.ArrayList[JoinPart]())
+        .toScala
         .toSeq
         .map(new JoinPartOps(_))
 
-    private lazy val derivationsScala = join.derivations.toScala
-    lazy val derivationsContainStar: Boolean = derivationsScala.iterator.exists(_.name == "*")
-    lazy val derivationsWithoutStar: List[Derivation] = derivationsScala.filterNot(_.name == "*")
-    lazy val areDerivationsRenameOnly: Boolean = derivationsWithoutStar.forall(d => JoinOps.isIdentifier(d.expression))
-    lazy val derivationExpressionSet: Set[String] = derivationsScala.iterator.map(_.expression).toSet
-    lazy val derivationExpressionFlippedMap: Map[String, String] =
-      derivationsWithoutStar.map(d => d.expression -> d.name).toMap
-
-    // Used during offline spark job and this method preserves ordering of derivations
-    def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
-      val wildcardDerivations = if (derivationsContainStar) { // select all baseColumns except renamed ones
-        val expressions = derivationsScala.iterator.map(_.expression).toSet
-        baseColumns.filterNot(expressions)
-      } else {
-        Seq.empty
-      }
-
-      derivationsScala.iterator.flatMap { d =>
-        if (d.name == "*") {
-          wildcardDerivations.map(c => c -> c)
-        } else {
-          Seq(d.name -> d.expression)
-        }
-      }.toSeq
-    }
-
-    // Used only during online fetching to reduce latency
-    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
-      assert(
-        areDerivationsRenameOnly,
-        s"Derivations contain more complex expressions than simple renames: ${derivationsScala.map(d => (d.name, d.expression))}")
-      val wildcardDerivations = if (derivationsContainStar) {
-        baseColumns.filterNot(derivationExpressionSet contains _._1)
-      } else {
-        Map.empty[String, Any]
-      }
-
-      wildcardDerivations ++ derivationsWithoutStar.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
-    }
-
     def logFullValues: Boolean = true // TODO: supports opt-out in the future
+
+    def hasDerivations: Boolean = join.isSetDerivations && !join.derivations.isEmpty
+    lazy val derivationsScala: List[Derivation] = if (join.hasDerivations) join.derivations.toScala else List.empty
+    lazy val derivationsContainStar: Boolean = join.hasDerivations && derivationsScala.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] =
+      if (join.hasDerivations) derivationsScala.filterNot(_.name == "*") else List.empty
+    lazy val areDerivationsRenameOnly: Boolean = join.hasDerivations && derivationsScala.areDerivationsRenameOnly
+    lazy val derivationExpressionSet: Set[String] =
+      if (join.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
@@ -915,10 +1043,12 @@ object Extensions {
     def setupsSeq: Seq[String] = {
       Option(query.setups)
         .map(
-          ScalaVersionSpecificCollectionsConverter.convertJavaListToScala(_).toSeq
+          _.toScala.toSeq
         )
         .getOrElse(Seq.empty)
     }
+
+    def getQuerySelects: Map[String, String] = Option(query.selects).map(_.toScala.toMap).orNull
   }
 
   implicit class ThrowableOps(throwable: Throwable) {
@@ -927,6 +1057,58 @@ object Extensions {
       val pw = new PrintWriter(sw)
       throwable.printStackTrace(pw)
       sw.toString();
+    }
+  }
+
+  implicit class DerivationOps(derivations: List[Derivation]) {
+    lazy val derivationsContainStar: Boolean = derivations.iterator.exists(_.name == "*")
+    lazy val derivationsWithoutStar: List[Derivation] = derivations.filterNot(_.name == "*")
+    lazy val areDerivationsRenameOnly: Boolean = derivationsWithoutStar.forall(d => JoinOps.isIdentifier(d.expression))
+    lazy val derivationExpressionSet: Set[String] = derivations.iterator.map(_.expression).toSet
+    lazy val derivationExpressionFlippedMap: Map[String, String] =
+      derivationsWithoutStar.map(d => d.expression -> d.name).toMap
+    lazy val renameOnlyDerivations: List[Derivation] =
+      derivationsWithoutStar.filter(d => JoinOps.isIdentifier(d.expression))
+
+    // Used during offline spark job and this method preserves ordering of derivations
+    def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
+      val wildcardDerivations = if (derivationsContainStar) { // select all baseColumns except renamed ones
+        val expressions = derivations.iterator.map(_.expression).toSet
+        baseColumns.filterNot(expressions)
+      } else {
+        Seq.empty
+      }
+
+      derivations.iterator.flatMap { d =>
+        if (d.name == "*") {
+          wildcardDerivations.map(c => c -> c)
+        } else {
+          Seq(d.name -> d.expression)
+        }
+      }.toSeq
+    }
+
+    def finalOutputColumn(baseColumns: Seq[String]): Seq[Column] = {
+      val projections = derivationProjection(baseColumns)
+      val finalOutputColumns = projections
+        .flatMap {
+          case (name, expression) => Some(expr(expression).as(name))
+        }
+      finalOutputColumns.toSeq
+    }
+
+    // Used only during online fetching to reduce latency
+    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
+      assert(
+        areDerivationsRenameOnly,
+        s"Derivations contain more complex expressions than simple renames: ${derivations.map(d => (d.name, d.expression))}")
+      val wildcardDerivations = if (derivationsContainStar) {
+        baseColumns.filterNot(derivationExpressionSet contains _._1)
+      } else {
+        Map.empty[String, Any]
+      }
+
+      wildcardDerivations ++ derivationsWithoutStar.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
     }
   }
 }

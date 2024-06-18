@@ -1,5 +1,22 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
@@ -9,12 +26,15 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-
 import java.util.Base64
+
+import scala.+:
 import scala.collection.mutable
 import scala.collection.Seq
-import scala.util.ScalaJavaConversions.IterableOps
-import scala.util.{Failure, ScalaVersionSpecificCollectionsConverter, Success, Try}
+import scala.util.ScalaJavaConversions.{IterableOps, MapOps}
+import scala.util.{Failure, Success, Try}
+
+import ai.chronon.online.OnlineDerivationUtil.timeFields
 
 /**
   * Purpose of LogFlattenerJob is to unpack serialized Avro data from online requests and flatten each field
@@ -34,9 +54,10 @@ class LogFlattenerJob(session: SparkSession,
                       schemaTable: String,
                       stepDays: Option[Int] = None)
     extends Serializable {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   implicit val tableUtils: TableUtils = TableUtils(session)
   val joinTblProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
-    .map(ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala)
+    .map(_.toScala)
     .getOrElse(Map.empty[String, String])
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinLogFlatten, joinConf)
 
@@ -53,13 +74,13 @@ class LogFlattenerJob(session: SparkSession,
 
     val ranges = unfilledRangeTry match {
       case Failure(_: AssertionError) => {
-        println(s"""
+        logger.info(s"""
              |The join name ${joinConf.metaData.nameToFilePath} does not have available logged data yet.
              |Please double check your logging status""".stripMargin)
         Seq()
       }
       case Success(None) => {
-        println(
+        logger.info(
           s"$outputTable seems to be caught up - to either " +
             s"$inputTable(latest ${tableUtils.lastAvailablePartition(inputTable)}) or $endDate.")
         Seq()
@@ -102,7 +123,7 @@ class LogFlattenerJob(session: SparkSession,
     // contextual features are logged twice in keys and values, where values are prefixed with ext_contextual
     // here we exclude the duplicated fields as the two are always identical
     val dataFields = allDataFields.filterNot(_.name.startsWith(Constants.ContextualPrefix))
-    val metadataFields = StructField(Constants.SchemaHash, StringType) +: JoinCodec.timeFields
+    val metadataFields = StructField(Constants.SchemaHash, StringType) +: timeFields
     val outputSchema = StructType("", metadataFields ++ dataFields)
     val (keyBase64Idx, valueBase64Idx, tsIdx, dsIdx, schemaHashIdx) = (0, 1, 2, 3, 4)
     val outputRdd: RDD[Row] = rawDf
@@ -123,7 +144,7 @@ class LogFlattenerJob(session: SparkSession,
             metrics.increment(Metrics.Name.Exception)
             None
           } else {
-            val dataColumns = dataFields.parallel.map { field =>
+            val dataColumns = dataFields.map { field =>
               val keyIdxOpt = joinCodec.keyIndices.get(field)
               val valIdxOpt = joinCodec.valueIndices.get(field)
               if (keyIdxOpt.isDefined) {
@@ -180,7 +201,7 @@ class LogFlattenerJob(session: SparkSession,
 
   def buildLogTable(): Unit = {
     if (!joinConf.metaData.isSetSamplePercent) {
-      println(s"samplePercent is unset for ${joinConf.metaData.name}. Exit.")
+      logger.info(s"samplePercent is unset for ${joinConf.metaData.name}. Exit.")
       return
     }
     val unfilledRanges = getUnfilledRanges(logTable, joinConf.metaData.loggedTable)
@@ -200,8 +221,8 @@ class LogFlattenerJob(session: SparkSession,
       val flattenedDf = flattenKeyValueBytes(rawDf, schemaMap)
 
       val schemaTblProps = buildTableProperties(schemaStringsMap)
-      println("======= Log table schema =======")
-      println(flattenedDf.schema.pretty)
+      logger.info("======= Log table schema =======")
+      logger.info(flattenedDf.schema.pretty)
       tableUtils.insertPartitions(flattenedDf,
                                   joinConf.metaData.loggedTable,
                                   tableProperties =
@@ -221,7 +242,7 @@ class LogFlattenerJob(session: SparkSession,
     val failureCount = totalInputRowCount - totalOutputRowCount
     metrics.gauge(Metrics.Name.RowCount, totalOutputRowCount)
     metrics.gauge(Metrics.Name.FailureCount, failureCount)
-    println(s"Processed logs: ${totalOutputRowCount} rows success, ${failureCount} rows failed.")
+    logger.info(s"Processed logs: ${totalOutputRowCount} rows success, ${failureCount} rows failed.")
     metrics.gauge(Metrics.Name.ColumnBeforeCount, columnBeforeCount)
     metrics.gauge(Metrics.Name.ColumnAfterCount, columnAfterCount)
     val elapsedMins = (System.currentTimeMillis() - start) / 60000

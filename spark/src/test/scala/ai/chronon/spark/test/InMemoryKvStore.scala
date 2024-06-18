@@ -1,5 +1,22 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Constants
 import ai.chronon.online.KVStore
 import ai.chronon.online.KVStore.{PutRequest, TimedValue}
@@ -12,7 +29,7 @@ import scala.collection.mutable
 import scala.concurrent.Future
 import scala.util.Try
 
-class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
+class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Serializable {
   //type aliases for readability
   type Key = String
   type Data = Array[Byte]
@@ -20,9 +37,9 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
   type Version = Long
   type VersionedData = mutable.Buffer[(Version, Data)]
   type Table = ConcurrentHashMap[Key, VersionedData]
-  private val database = new ConcurrentHashMap[DataSet, Table]
+  protected[spark] val database = new ConcurrentHashMap[DataSet, Table]
 
-  private val encoder = Base64.getEncoder
+  @transient lazy val encoder = Base64.getEncoder
   def encode(bytes: Array[Byte]): String = encoder.encodeToString(bytes)
   def toStr(bytes: Array[Byte]): String = new String(bytes, Constants.UTF8)
   override def multiGet(requests: collection.Seq[KVStore.GetRequest]): Future[collection.Seq[KVStore.GetResponse]] = {
@@ -56,14 +73,16 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
     }
 
   override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] = {
+    val result = putRequests.map {
+      case PutRequest(keyBytes, valueBytes, dataset, millis) =>
+        val table = database.get(dataset)
+        val key = encode(keyBytes)
+        table.compute(key, putFunc(millis.getOrElse(System.currentTimeMillis()) -> valueBytes))
+        true
+    }
+
     Future {
-      putRequests.map {
-        case PutRequest(keyBytes, valueBytes, dataset, millis) =>
-          val table = database.get(dataset)
-          val key = encode(keyBytes)
-          table.compute(key, putFunc(millis.getOrElse(System.currentTimeMillis()) -> valueBytes))
-          true
-      }
+      result
     }
   }
 
@@ -97,9 +116,29 @@ class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore {
   override def create(dataset: String): Unit = {
     database.put(dataset, new ConcurrentHashMap[Key, mutable.Buffer[(Version, Data)]])
   }
+
+  def show(): Unit = {
+    val it = database.entrySet().iterator()
+    while (it.hasNext) {
+      val entry = it.next()
+      val tableName = entry.getKey
+      val table = entry.getValue
+      val innerIt = table.entrySet().iterator()
+      while (innerIt.hasNext) {
+        val tableEntry = innerIt.next()
+        val key = tableEntry.getKey
+        val value = tableEntry.getValue
+        value.foreach {
+          case (version, data) =>
+            logger.info(s"table: $tableName, key: $key, value: $data, version: $version")
+        }
+      }
+    }
+  }
 }
 
 object InMemoryKvStore {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[String, InMemoryKvStore]
 
   // We would like to create one instance of InMemoryKVStore per executors, but share SparkContext
@@ -110,7 +149,7 @@ object InMemoryKvStore {
       testName,
       new function.Function[String, InMemoryKvStore] {
         override def apply(name: String): InMemoryKvStore = {
-          println(s"Missing in-memory store for name: $name. Creating one")
+          logger.info(s"Missing in-memory store for name: $name. Creating one")
           new InMemoryKvStore(tableUtils)
         }
       }

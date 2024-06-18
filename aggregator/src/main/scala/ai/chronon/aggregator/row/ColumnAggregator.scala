@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.aggregator.row
 
 import ai.chronon.aggregator.base._
@@ -7,6 +23,7 @@ import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.util
 import scala.collection.JavaConverters.asScalaIteratorConverter
+import scala.util.ScalaJavaConversions.IteratorOps
 
 abstract class ColumnAggregator extends Serializable {
   def outputType: DataType
@@ -17,6 +34,8 @@ abstract class ColumnAggregator extends Serializable {
 
   // ir1 is mutated, ir2 isn't
   def merge(ir1: Any, ir2: Any): Any
+
+  def bulkMerge(irs: Iterator[Any]): Any = irs.reduce(merge)
 
   def finalize(ir: Any): Any
 
@@ -152,16 +171,24 @@ object ColumnAggregator {
                                     columnIndices: ColumnIndices,
                                     toTypedInput: Any => Input,
                                     bucketIndex: Option[Int] = None,
-                                    isVector: Boolean = false): ColumnAggregator = {
+                                    isVector: Boolean = false,
+                                    isMap: Boolean = false): ColumnAggregator = {
+
+    assert(!(isVector && isMap), "Input column cannot simultaneously be map or vector")
     val dispatcher = if (isVector) {
       new VectorDispatcher(agg, columnIndices, toTypedInput)
     } else {
       new SimpleDispatcher(agg, columnIndices, toTypedInput)
     }
-    if (bucketIndex.isEmpty) {
-      new DirectColumnAggregator(agg, columnIndices, dispatcher)
-    } else {
+
+    // TODO: remove the below assertion and add support
+    assert(!(isMap && bucketIndex.isDefined), "Bucketing over map columns is currently unsupported")
+    if (isMap) {
+      new MapColumnAggregator(agg, columnIndices, toTypedInput)
+    } else if (bucketIndex.isDefined) {
       new BucketedColumnAggregator(agg, columnIndices, bucketIndex.get, dispatcher)
+    } else {
+      new DirectColumnAggregator(agg, columnIndices, dispatcher)
     }
   }
 
@@ -182,6 +209,10 @@ object ColumnAggregator {
   private def toFloat[A: Numeric](inp: Any): Float = implicitly[Numeric[A]].toFloat(inp.asInstanceOf[A])
   private def toLong[A: Numeric](inp: Any) = implicitly[Numeric[A]].toLong(inp.asInstanceOf[A])
   private def boolToLong(inp: Any): Long = if (inp.asInstanceOf[Boolean]) 1 else 0
+  private def toJavaLong[A: Numeric](inp: Any) =
+    implicitly[Numeric[A]].toLong(inp.asInstanceOf[A]).asInstanceOf[java.lang.Long]
+  private def toJavaDouble[A: Numeric](inp: Any) =
+    implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A]).asInstanceOf[java.lang.Double]
 
   def construct(baseInputType: DataType,
                 aggregationPart: AggregationPart,
@@ -202,18 +233,24 @@ object ColumnAggregator {
     // to support vector aggregations when input column is an array.
     // avg of [1, 2, 3], [3, 4], [5] = 18 / 6 => 3
     val vectorElementType: Option[DataType] = (aggregationPart.operation.isSimple, baseInputType) match {
-      case (true, ListType(elementType)) =>
-        elementType match {
-          case IntType | LongType | ShortType | DoubleType | FloatType | StringType | BinaryType =>
-            Some(elementType)
-        }
-      case _ => None
+      case (true, ListType(elementType)) if DataType.isScalar(elementType) => Some(elementType)
+      case _                                                               => None
     }
-    val inputType = vectorElementType.getOrElse(baseInputType)
+
+    val mapElementType: Option[DataType] = (aggregationPart.operation.isSimple, baseInputType) match {
+      case (true, MapType(StringType, elementType)) => Some(elementType)
+      case _                                        => None
+    }
+    val inputType = (mapElementType ++ vectorElementType ++ Some(baseInputType)).head
 
     def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                   toTypedInput: Any => Input = cast[Input] _): ColumnAggregator = {
-      fromSimple(agg, columnIndices, toTypedInput, bucketIndex, isVector = vectorElementType.isDefined)
+      fromSimple(agg,
+                 columnIndices,
+                 toTypedInput,
+                 bucketIndex,
+                 isVector = vectorElementType.isDefined,
+                 isMap = mapElementType.isDefined)
     }
 
     def timed[Input, IR, Output](agg: TimedAggregator[Input, IR, Output]): ColumnAggregator = {
@@ -223,6 +260,17 @@ object ColumnAggregator {
     aggregationPart.operation match {
       case Operation.COUNT     => simple(new Count)
       case Operation.HISTOGRAM => simple(new Histogram(aggregationPart.getInt("k", Some(0))))
+      case Operation.APPROX_HISTOGRAM_K =>
+        val k = aggregationPart.getInt("k", Some(8))
+        inputType match {
+          case IntType    => simple(new ApproxHistogram[java.lang.Long](k), toJavaLong[Int])
+          case LongType   => simple(new ApproxHistogram[java.lang.Long](k))
+          case ShortType  => simple(new ApproxHistogram[java.lang.Long](k), toJavaLong[Short])
+          case DoubleType => simple(new ApproxHistogram[java.lang.Double](k))
+          case FloatType  => simple(new ApproxHistogram[java.lang.Double](k), toJavaDouble[Float])
+          case StringType => simple(new ApproxHistogram[String](k))
+          case _          => mismatchException
+        }
       case Operation.SUM =>
         inputType match {
           case IntType     => simple(new Sum[Long](LongType), toLong[Int])
@@ -289,6 +337,26 @@ object ColumnAggregator {
           case ShortType  => simple(new Variance, toDouble[Short])
           case DoubleType => simple(new Variance)
           case FloatType  => simple(new Variance, toDouble[Float])
+          case _          => mismatchException
+        }
+
+      case Operation.SKEW =>
+        inputType match {
+          case IntType    => simple(new Skew, toDouble[Int])
+          case LongType   => simple(new Skew, toDouble[Long])
+          case ShortType  => simple(new Skew, toDouble[Short])
+          case DoubleType => simple(new Skew)
+          case FloatType  => simple(new Skew, toDouble[Float])
+          case _          => mismatchException
+        }
+
+      case Operation.KURTOSIS =>
+        inputType match {
+          case IntType    => simple(new Kurtosis, toDouble[Int])
+          case LongType   => simple(new Kurtosis, toDouble[Long])
+          case ShortType  => simple(new Kurtosis, toDouble[Short])
+          case DoubleType => simple(new Kurtosis)
+          case FloatType  => simple(new Kurtosis, toDouble[Float])
           case _          => mismatchException
         }
 

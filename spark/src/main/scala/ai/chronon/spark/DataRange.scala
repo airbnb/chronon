@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
 import ai.chronon.aggregator.windowing.TsUtils
@@ -21,17 +37,23 @@ case class TimeRange(start: Long, end: Long)(implicit tableUtils: TableUtils) ex
   }
 
   def pretty: String = s"start:[${TsUtils.toStr(start)}]-end:[${TsUtils.toStr(end)}]"
+  override def toString(): String = s"[${TsUtils.toStr(start)}-${TsUtils.toStr(end)}]"
 }
 // start and end can be null - signifies unbounded-ness
 case class PartitionRange(start: String, end: String)(implicit tableUtils: TableUtils)
     extends DataRange
     with Ordered[PartitionRange] {
 
-  def valid: Boolean =
+  def valid: Boolean = {
     (Option(start), Option(end)) match {
       case (Some(s), Some(e)) => s <= e
       case _                  => true
     }
+  }
+
+  def isSingleDay: Boolean = {
+    start == end
+  }
 
   def intersect(other: PartitionRange): PartitionRange = {
     // lots of null handling
@@ -72,12 +94,15 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
     }
   }
 
-  def genScanQuery(query: Query, table: String,
+  def genScanQuery(query: Query,
+                   table: String,
                    fillIfAbsent: Map[String, String] = Map.empty,
                    partitionColumn: String = tableUtils.partitionColumn): String = {
     val queryOpt = Option(query)
     val wheres =
-      whereClauses(partitionColumn) ++ queryOpt.flatMap(q => Option(q.wheres).map(_.asScala)).getOrElse(Seq.empty[String])
+      whereClauses(partitionColumn) ++ queryOpt
+        .flatMap(q => Option(q.wheres).map(_.asScala))
+        .getOrElse(Seq.empty[String])
     QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
                      from = table,
                      wheres = wheres,
@@ -91,8 +116,10 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
       .toSeq
   }
 
+  // no nulls in start or end and start <= end - used as a pre-check before the `partitions` function
+  def wellDefined: Boolean = start != null && end != null && start <= end
   def partitions: Seq[String] = {
-    assert(start != null && end != null && start <= end, s"Invalid partition range ${this}")
+    assert(wellDefined, s"Invalid partition range ${this}")
     Stream
       .iterate(start)(tableUtils.partitionSpec.after)
       .takeWhile(_ <= end)
@@ -126,4 +153,5 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
       compareDate(this.end, that.end)
     }
   }
+  override def toString(): String = s"[$start...$end]"
 }

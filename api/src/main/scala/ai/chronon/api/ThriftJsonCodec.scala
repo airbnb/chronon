@@ -1,5 +1,22 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.api
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.StringsOps
 import com.fasterxml.jackson.databind.{DeserializationFeature, JsonNode, ObjectMapper}
 import org.apache.thrift.protocol.{TCompactProtocol, TSimpleJSONProtocol}
@@ -9,9 +26,10 @@ import java.util
 import java.util.Base64
 import scala.io.Source._
 import scala.reflect.ClassTag
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.ListOps
 
 object ThriftJsonCodec {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def serializer = new TSerializer(new TSimpleJSONProtocol.Factory())
 
@@ -21,9 +39,7 @@ object ThriftJsonCodec {
 
   def toJsonList[T <: TBase[_, _]: Manifest](obj: util.List[T]): String = {
     if (obj == null) return ""
-
-    ScalaVersionSpecificCollectionsConverter
-      .convertJavaListToScala(obj)
+    obj.toScala
       .map(o => new String(serializer.serialize(o)))
       .prettyInline
   }
@@ -49,7 +65,7 @@ object ThriftJsonCodec {
       base
     } catch {
       case e: Exception => {
-        println("Failed to deserialize using compact protocol, trying Json.")
+        logger.error("Failed to deserialize using compact protocol, trying Json.")
         fromJsonStr(new String(bytes), check = false, base.getClass)
       }
     }

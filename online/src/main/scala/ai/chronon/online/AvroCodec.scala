@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.online
 
 import ai.chronon.api.{DataType, Row}
@@ -8,8 +24,8 @@ import org.apache.avro.generic.{GenericData, GenericDatumReader, GenericDatumWri
 import org.apache.avro.io._
 
 import java.io.ByteArrayOutputStream
-import scala.collection.JavaConverters._
 import scala.collection.mutable
+import scala.util.ScalaJavaConversions.ListOps
 
 class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val parser = new Schema.Parser()
@@ -22,12 +38,12 @@ class AvroCodec(val schemaStr: String) extends Serializable {
 
   @transient private lazy val outputStream = new ByteArrayOutputStream()
   @transient private var jsonEncoder: JsonEncoder = null
-  val fieldNames: Array[String] = schema.getFields.asScala.map(_.name()).toArray
+  val fieldNames: Array[String] = schema.getFields.toScala.map(_.name()).toArray
   @transient lazy val chrononSchema: DataType = AvroConversions.toChrononSchema(schema)
 
   @transient private var binaryEncoder: BinaryEncoder = null
   @transient private var decoder: BinaryDecoder = null
-  @transient lazy val schemaElems: Array[Field] = schema.getFields.asScala.toArray
+  @transient lazy val schemaElems: Array[Field] = schema.getFields.toScala.toArray
   def encode(valueMap: Map[String, AnyRef]): Array[Byte] = {
     val record = new GenericData.Record(schema)
     schemaElems.foreach { field =>
@@ -71,6 +87,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   }
 
   def decode(bytes: Array[Byte]): GenericRecord = {
+
     if (bytes == null) return null
     val inputStream = new SeekableByteArrayInput(bytes)
     inputStream.reset()

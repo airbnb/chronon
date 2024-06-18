@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test
 
 import ai.chronon.api.Constants.ChrononMetadataKey
@@ -17,7 +33,7 @@ import java.util.{Base64, TimeZone}
 import scala.collection.Seq
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.util.ScalaVersionSpecificCollectionsConverter
+import scala.util.ScalaJavaConversions.{JListOps, ListOps}
 
 case class GroupByTestSuite(
     name: String,
@@ -37,10 +53,7 @@ object JoinTestSuite {
     val suite = JoinTestSuite(joinConf, groupBys)
     assert(
       groupBys.map(_.groupByConf.metaData.name) ==
-        ScalaVersionSpecificCollectionsConverter
-          .convertJavaListToScala(
-            joinConf.joinParts
-          )
+        joinConf.joinParts.toScala
           .map(_.groupBy.metaData.name)
     )
     suite
@@ -103,7 +116,7 @@ class SchemaEvolutionTest extends TestCase {
       metaData = Builders.MetaData(name = s"unit_test/${name}", namespace = namespace, team = "chronon")
     )
     val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      rows.toJava,
       SparkConversions.fromChrononSchema(schema)
     )
     GroupByTestSuite(
@@ -148,7 +161,7 @@ class SchemaEvolutionTest extends TestCase {
       metaData = Builders.MetaData(name = s"unit_test/${name}", namespace = namespace, team = "chronon")
     )
     val df = spark.createDataFrame(
-      ScalaVersionSpecificCollectionsConverter.convertScalaListToJava(rows),
+      rows.toJava,
       SparkConversions.fromChrononSchema(schema)
     )
     GroupByTestSuite(
@@ -219,7 +232,7 @@ class SchemaEvolutionTest extends TestCase {
       tableUtils: TableUtils,
       inMemoryKvStore: InMemoryKvStore
   ): Unit = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     joinTestSuite.groupBys.foreach { gbTestSuite =>
       val tableName = s"${namespace}.${gbTestSuite.name}"
       gbTestSuite.groupByData.save(tableName)

@@ -1,7 +1,22 @@
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 from collections import Counter
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
+from ai.chronon.group_by import validate_group_by
 import copy
 import gc
 import importlib
@@ -12,10 +27,12 @@ from typing import List, Dict, Tuple
 logging.basicConfig(level=logging.INFO)
 
 
-def JoinPart(group_by: api.GroupBy,
-             key_mapping: Dict[str, str] = None,
-             prefix: str = None,
-             tags: Dict[str, str] = None) -> api.JoinPart:
+def JoinPart(
+    group_by: api.GroupBy,
+    key_mapping: Dict[str, str] = None,
+    prefix: str = None,
+    tags: Dict[str, str] = None,
+) -> api.JoinPart:
     """
     Specifies HOW to join the `left` of a Join with GroupBy's.
 
@@ -40,50 +57,53 @@ def JoinPart(group_by: api.GroupBy,
         components like GroupBys.
     """
     # used for reset for next run
-    import_copy = __builtins__['__import__']
+    import_copy = __builtins__["__import__"]
     # get group_by's module info from garbage collector
     gc.collect()
     group_by_module_name = None
     for ref in gc.get_referrers(group_by):
-        if '__name__' in ref and ref['__name__'].startswith("group_bys"):
-            group_by_module_name = ref['__name__']
+        if "__name__" in ref and ref["__name__"].startswith("group_bys"):
+            group_by_module_name = ref["__name__"]
             break
     if group_by_module_name:
-        logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
+        logging.debug(
+            "group_by's module info from garbage collector {}".format(
+                group_by_module_name
+            )
+        )
         group_by_module = importlib.import_module(group_by_module_name)
-        __builtins__['__import__'] = eo.import_module_set_name(group_by_module, api.GroupBy)
+        __builtins__["__import__"] = eo.import_module_set_name(
+            group_by_module, api.GroupBy
+        )
     else:
         if not group_by.metaData.name:
             logging.error("No group_by file or custom group_by name found")
             raise ValueError(
                 "[GroupBy] Must specify a group_by name if group_by is not defined in separate file. "
-                "You may pass it in via GroupBy.name. \n")
+                "You may pass it in via GroupBy.name. \n"
+            )
     if key_mapping:
-        utils.check_contains(key_mapping.values(),
-                             group_by.keyColumns,
-                             "key",
-                             group_by.metaData.name)
+        utils.check_contains(
+            key_mapping.values(), group_by.keyColumns, "key", group_by.metaData.name
+        )
 
-    join_part = api.JoinPart(
-        groupBy=group_by,
-        keyMapping=key_mapping,
-        prefix=prefix
-    )
+    join_part = api.JoinPart(groupBy=group_by, keyMapping=key_mapping, prefix=prefix)
     join_part.tags = tags
     # reset before next run
-    __builtins__['__import__'] = import_copy
+    __builtins__["__import__"] = import_copy
     return join_part
 
 
 FieldsType = List[Tuple[str, api.TDataType]]
 
 
-class DataType():
+class DataType:
     """
     Helper class to generate data types for declaring schema.
     This supports primitive like numerics, string etc., and complex
     types like Map, List, Struct etc.
     """
+
     BOOLEAN = api.TDataType(api.DataKind.BOOLEAN)
     SHORT = api.TDataType(api.DataKind.SHORT)
     INT = api.TDataType(api.DataKind.INT)
@@ -98,41 +118,38 @@ class DataType():
     # DATE = api.TDataType(api.DataKind.DATE)
     # TIMESTAMP = api.TDataType(api.DataKind.TIMESTAMP)
 
-    def MAP(key_type: api.TDataType,
-            value_type: api.TDataType) -> api.TDataType:
-        assert key_type == api.TDataType(api.DataKind.STRING), "key_type has to STRING for MAP types"
+    def MAP(key_type: api.TDataType, value_type: api.TDataType) -> api.TDataType:
+        assert key_type == api.TDataType(
+            api.DataKind.STRING
+        ), "key_type has to STRING for MAP types"
 
         return api.TDataType(
             api.DataKind.MAP,
-            params=[
-                api.DataField("key", key_type),
-                api.DataField("value", value_type)]
+            params=[api.DataField("key", key_type), api.DataField("value", value_type)],
         )
 
     def LIST(elem_type: api.TDataType) -> api.TDataType:
         return api.TDataType(
-            api.DataKind.LIST,
-            params=[
-                api.DataField("elem", elem_type)]
+            api.DataKind.LIST, params=[api.DataField("elem", elem_type)]
         )
 
-    def STRUCT(name: str,
-               *fields: FieldsType) -> api.TDataType:
+    def STRUCT(name: str, *fields: FieldsType) -> api.TDataType:
         return api.TDataType(
             api.DataKind.STRUCT,
-            params=[api.DataField(name, data_type)
-                    for (name, data_type) in fields],
-            name=name
+            params=[api.DataField(name, data_type) for (name, data_type) in fields],
+            name=name,
         )
 
 
 # TODO: custom_json can take privacy information per column, we can propagate
 # it into a governance system
-def ExternalSource(name: str,
-                   team: str,
-                   key_fields: FieldsType,
-                   value_fields: FieldsType,
-                   custom_json: str = None) -> api.ExternalSource:
+def ExternalSource(
+    name: str,
+    team: str,
+    key_fields: FieldsType,
+    value_fields: FieldsType,
+    custom_json: str = None,
+) -> api.ExternalSource:
     """
     External sources are online only data sources. During fetching, using
     chronon java client, they consume a Request containing a key map
@@ -156,17 +173,19 @@ def ExternalSource(name: str,
     :param key_fields: List of tuples of string and DataType. This is what
         will be given to ExternalSource handler registered in Java API.
         Eg., `[('key1', DataType.INT, 'key2', DataType.STRING)]`
-    :type value_fields: List of tuples of string and DataType. This is what
-        the ExternalSource handler will respond with.
-        Eg.,
-        ```[('value0', DataType.INT),
-            ('value1', DataType.MAP(DataType.STRING, DataType.LONG),
-            ('value2', DataType.STRUCT(
-                name = 'Context',
-                ('field1', DataType.INT),
-                ('field2', DataType.DOUBLE)
-            ))]
-        ```
+    :param value_fields: List of tuples of string and DataType. This is what
+        the ExternalSource handler will respond with::
+
+            [
+                ('value0', DataType.INT),
+                ('value1', DataType.MAP(DataType.STRING, DataType.LONG),
+                ('value2', DataType.STRUCT(
+                    name = 'Context',
+                    ('field1', DataType.INT),
+                    ('field2', DataType.DOUBLE)
+                ))
+            ]
+
     """
     assert name != "contextual", "Please use `ContextualSource`"
     return api.ExternalSource(
@@ -188,9 +207,9 @@ def ContextualSource(fields: FieldsType, team="default") -> api.ExternalSource:
     )
 
 
-def ExternalPart(source: api.ExternalSource,
-                 key_mapping: Dict[str, str] = None,
-                 prefix: str = None) -> api.ExternalPart:
+def ExternalPart(
+    source: api.ExternalSource, key_mapping: Dict[str, str] = None, prefix: str = None
+) -> api.ExternalPart:
     """
     Used to describe which ExternalSources to pull features from while fetching
     online. This data also goes into logs based on sample percent.
@@ -199,7 +218,7 @@ def ExternalPart(source: api.ExternalSource,
     external source's keys. "vendor" and "buyer" on left side (query map)
     could both map to a "user" in an account data external source. You would
     create one ExternalPart for vendor with params:
-        `(key_mapping={vendor: user}, prefix=vendor)`
+    `(key_mapping={vendor: user}, prefix=vendor)`
     another for buyer.
 
     This doesn't have any implications offline besides logging. "right_parts"
@@ -216,17 +235,15 @@ def ExternalPart(source: api.ExternalSource,
                    serivce/source that has information about both buyer &
                    seller
     """
-    return api.ExternalPart(
-        source=source,
-        keyMapping=key_mapping,
-        prefix=prefix
-    )
+    return api.ExternalPart(source=source, keyMapping=key_mapping, prefix=prefix)
 
 
-def LabelPart(labels: List[api.JoinPart],
-              left_start_offset: int,
-              left_end_offset: int,
-              label_offline_schedule: str = '@daily') -> api.LabelPart:
+def LabelPart(
+    labels: List[api.JoinPart],
+    left_start_offset: int,
+    left_end_offset: int,
+    label_offline_schedule: str = "@daily",
+) -> api.LabelPart:
     """
     Used to describe labels in join. Label part can be viewed as regular join part but represent
     label data instead of regular feature data. Once labels are mature, label join job would join
@@ -262,31 +279,38 @@ def LabelPart(labels: List[api.JoinPart],
                                    label join compute tasks
     """
 
-    label_metadata = api.MetaData(
-        offlineSchedule=label_offline_schedule
-    )
+    label_metadata = api.MetaData(offlineSchedule=label_offline_schedule)
 
     for label in labels:
         if label.groupBy.aggregations is not None:
             assert len(labels) == 1, "Multiple label joinPart is not supported yet"
-            valid_agg = (len(label.groupBy.aggregations) == 1
-                         and label.groupBy.aggregations[0].windows is not None
-                         and len(label.groupBy.aggregations[0].windows) == 1)
-            assert valid_agg, "Too many aggregations or invalid windows found. " \
-                              "Single aggregation with one window allowed."
-            valid_time_unit = label.groupBy.aggregations[0].windows[0].timeUnit == api.TimeUnit.DAYS
+            valid_agg = (
+                len(label.groupBy.aggregations) == 1
+                and label.groupBy.aggregations[0].windows is not None
+                and len(label.groupBy.aggregations[0].windows) == 1
+            )
+            assert valid_agg, (
+                "Too many aggregations or invalid windows found. "
+                "Single aggregation with one window allowed."
+            )
+            valid_time_unit = (
+                label.groupBy.aggregations[0].windows[0].timeUnit == api.TimeUnit.DAYS
+            )
             assert valid_time_unit, "Label aggregation window unit must be DAYS"
             window_size = label.groupBy.aggregations[0].windows[0].length
             if left_start_offset != window_size or left_start_offset != left_end_offset:
-                assert left_start_offset == window_size and left_end_offset == window_size, \
-                    "left_start_offset and left_end_offset will be inferred to be same as aggregation" \
+                assert (
+                    left_start_offset == window_size and left_end_offset == window_size
+                ), (
+                    "left_start_offset and left_end_offset will be inferred to be same as aggregation"
                     "window {window_size} and the incorrect values will be ignored. "
+                )
 
     return api.LabelPart(
         labels=labels,
         leftStartOffset=left_start_offset,
         leftEndOffset=left_end_offset,
-        metaData=label_metadata
+        metaData=label_metadata,
     )
 
 
@@ -314,12 +338,12 @@ def Derivation(name: str, expression: str) -> api.Derivation:
     :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
     :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
     """
-    return api.Derivation(
-        name=name, expression=expression
-    )
+    return api.Derivation(name=name, expression=expression)
 
 
-def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = None) -> api.BootstrapPart:
+def BootstrapPart(
+    table: str, key_columns: List[str] = None, query: api.Query = None
+) -> api.BootstrapPart:
     """
     Bootstrap is the concept of using pre-computed feature values and skipping backfill computation during the
     training data generation phase. Bootstrap can be used for many purposes:
@@ -328,6 +352,7 @@ def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = 
     - Initializing a new Join by migrating old data from an older Join and reusing data
 
     One can bootstrap against any of these:
+
     - join part fields:
         Bootstrap can happen at individual field level within a join part.
         If all fields within a group by are bootstrapped, then we skip computation for group by. Otherwise, the whole
@@ -353,38 +378,36 @@ def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = 
     :param key_columns: Keys to join bootstrap table to left table
     :param query: Selected columns (features & keys) and filtering conditions of the bootstrap tables.
     """
-    return api.BootstrapPart(
-        table=table,
-        query=query,
-        keyColumns=key_columns
-    )
+    return api.BootstrapPart(table=table, query=query, keyColumns=key_columns)
 
 
-def Join(left: api.Source,
-         right_parts: List[api.JoinPart],
-         check_consistency: bool = False,
-         additional_args: List[str] = None,
-         additional_env: List[str] = None,
-         dependencies: List[str] = None,
-         online: bool = False,
-         production: bool = False,
-         output_namespace: str = None,
-         table_properties: Dict[str, str] = None,
-         env: Dict[str, Dict[str, str]] = None,
-         lag: int = 0,
-         skew_keys: Dict[str, List[str]] = None,
-         sample_percent: float = 100.0,
-         consistency_sample_percent: float = 5.0,
-         online_external_parts: List[api.ExternalPart] = None,
-         offline_schedule: str = '@daily',
-         row_ids: List[str] = None,
-         bootstrap_parts: List[api.BootstrapPart] = None,
-         bootstrap_from_log: bool = False,
-         label_part: api.LabelPart = None,
-         derivations: List[api.Derivation] = None,
-         tags: Dict[str, str] = None,
-         **kwargs
-         ) -> api.Join:
+def Join(
+    left: api.Source,
+    right_parts: List[api.JoinPart],
+    check_consistency: bool = False,
+    additional_args: List[str] = None,
+    additional_env: List[str] = None,
+    dependencies: List[str] = None,
+    online: bool = False,
+    production: bool = False,
+    output_namespace: str = None,
+    table_properties: Dict[str, str] = None,
+    env: Dict[str, Dict[str, str]] = None,
+    lag: int = 0,
+    skew_keys: Dict[str, List[str]] = None,
+    sample_percent: float = 100.0,
+    consistency_sample_percent: float = 5.0,
+    online_external_parts: List[api.ExternalPart] = None,
+    offline_schedule: str = "@daily",
+    historical_backfill: bool = None,
+    row_ids: List[str] = None,
+    bootstrap_parts: List[api.BootstrapPart] = None,
+    bootstrap_from_log: bool = False,
+    label_part: api.LabelPart = None,
+    derivations: List[api.Derivation] = None,
+    tags: Dict[str, str] = None,
+    **kwargs,
+) -> api.Join:
     """
     Construct a join object. A join can pull together data from various GroupBy's both offline and online. This is also
     the focal point for logging, data quality computation and monitoring. A join maps 1:1 to models in ML usage.
@@ -428,15 +451,22 @@ def Join(left: api.Source,
     :param table_properties:
         Specifies the properties on output hive tables. Can be specified in teams.json.
     :param env:
-        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value".
-        These vars are set in run.py and the underlying spark_submit.sh.
-        There override vars set in teams.json/production/<MODE NAME>
-        The priority order (descending) is::
+        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value"::
 
-            var set while using run.py "VAR=VAL run.py --mode=backfill <name>"
-            var set here in Join's env param
-            var set in team.json/<team>/<production>/<MODE NAME>
-            var set in team.json/default/<production>/<MODE NAME>
+            {
+                'backfill' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' },
+                'upload' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' },
+                'streaming' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' }
+            }
+
+        These vars then flow into run.py and the underlying spark_submit.sh.
+        These vars can be set in other places as well. The priority order (descending) is as below
+
+        1. env vars set while using run.py "VAR=VAL run.py --mode=backfill <name>"
+        2. env vars set here in Join's env param
+        3. env vars set in `team.json['team.production.<MODE NAME>']`
+        4. env vars set in `team.json['default.production.<MODE NAME>']`
+
     :type env: Dict[str, Dict[str, str]]
     :param lag:
         Param that goes into customJson. You can pull this out of the json at path "metaData.customJson.lag"
@@ -468,6 +498,10 @@ def Join(left: api.Source,
     :param tags:
         Additional metadata about the Join that you wish to track. Does not effect computation.
     :type tags: Dict[str, str]
+    :param historical_backfill:
+        Flag to indicate whether join backfill should backfill previous holes.
+        Setting to false will only backfill latest single partition
+    :type historical_backfill: bool
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -475,10 +509,14 @@ def Join(left: api.Source,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
     if left.events and left.events.query.selects:
-        assert "ts" not in left.events.query.selects.keys(), "'ts' is a reserved key word for Chronon," \
-                                                             " please specify the expression in timeColumn"
+        assert "ts" not in left.events.query.selects.keys(), (
+            "'ts' is a reserved key word for Chronon,"
+            " please specify the expression in timeColumn"
+        )
         # mapping ts to query.timeColumn to events only
-        updated_left.events.query.selects.update({"ts": updated_left.events.query.timeColumn})
+        updated_left.events.query.selects.update(
+            {"ts": updated_left.events.query.timeColumn}
+        )
     # name is set externally, cannot be set here.
     # root_keys = set(root_base_source.query.select.keys())
     # for join_part in right_parts:
@@ -496,27 +534,33 @@ def Join(left: api.Source,
 
     left_dependencies = utils.get_dependencies(left, dependencies, lag=lag)
 
-    right_info = [(join_part.groupBy.sources, join_part.groupBy.metaData) for join_part in right_parts]
-    right_info = [(source, meta_data) for (sources, meta_data) in right_info for source in sources]
-    right_dependencies = [dep for (source, meta_data) in right_info for dep in
-                          utils.get_dependencies(source, dependencies, meta_data, lag=lag)]
+    right_info = [
+        (join_part.groupBy.sources, join_part.groupBy.metaData)
+        for join_part in right_parts
+    ]
+    right_info = [
+        (source, meta_data) for (sources, meta_data) in right_info for source in sources
+    ]
+    right_dependencies = [
+        dep
+        for (source, meta_data) in right_info
+        for dep in utils.get_dependencies(source, dependencies, meta_data, lag=lag)
+    ]
 
     if label_part:
         label_dependencies = utils.get_label_table_dependencies(label_part)
         label_metadata = api.MetaData(
             dependencies=utils.dedupe_in_order(left_dependencies + label_dependencies),
-            offlineSchedule=label_part.metaData.offlineSchedule
+            offlineSchedule=label_part.metaData.offlineSchedule,
         )
         label_part = api.LabelPart(
             labels=label_part.labels,
             leftStartOffset=label_part.leftStartOffset,
             leftEndOffset=label_part.leftEndOffset,
-            metaData=label_metadata)
+            metaData=label_metadata,
+        )
 
-    custom_json = {
-        "check_consistency": check_consistency,
-        "lag": lag
-    }
+    custom_json = {"check_consistency": check_consistency, "lag": lag}
 
     if additional_args:
         custom_json["additional_args"] = additional_args
@@ -530,25 +574,36 @@ def Join(left: api.Source,
     for join_part in right_parts:
         if hasattr(join_part, "tags") and join_part.tags:
             join_part_name = "{}{}".format(
-                join_part.prefix + "_" if join_part.prefix else "", join_part.groupBy.metaData.name)
+                join_part.prefix + "_" if join_part.prefix else "",
+                join_part.groupBy.metaData.name,
+            )
             join_part_tags[join_part_name] = join_part.tags
+        validate_group_by(join_part.groupBy)
     custom_json["join_part_tags"] = join_part_tags
 
-    consistency_sample_percent = consistency_sample_percent if check_consistency else None
+    consistency_sample_percent = (
+        consistency_sample_percent if check_consistency else None
+    )
 
     # external parts need to be unique on (prefix, part.source.metaData.name)
     if online_external_parts:
-        count_map = Counter([(part.prefix, part.source.metadata.name) for part in online_external_parts])
+        count_map = Counter(
+            [(part.prefix, part.source.metadata.name) for part in online_external_parts]
+        )
         has_duplicates = False
-        for (key, count) in count_map.items():
+        for key, count in count_map.items():
             if count > 1:
                 has_duplicates = True
                 print(f"Found {count - 1} duplicate(s) for external part {key}")
-        assert has_duplicates is False, "Please address all the above mentioned duplicates."
+        assert (
+            has_duplicates is False
+        ), "Please address all the above mentioned duplicates."
 
     if bootstrap_from_log:
         has_logging = sample_percent > 0 and online
-        assert has_logging, "Join must be online with sample_percent set in order to use bootstrap_from_log option"
+        assert (
+            has_logging
+        ), "Join must be online with sample_percent set in order to use bootstrap_from_log option"
         bootstrap_parts = (bootstrap_parts or []) + [
             api.BootstrapPart(
                 # templated values will be replaced when metaData.name is set at the end
@@ -556,19 +611,26 @@ def Join(left: api.Source,
             )
         ]
 
-    bootstrap_dependencies = [] if dependencies is not None else utils.get_bootstrap_dependencies(bootstrap_parts)
+    bootstrap_dependencies = (
+        []
+        if dependencies is not None
+        else utils.get_bootstrap_dependencies(bootstrap_parts)
+    )
 
     metadata = api.MetaData(
         online=online,
         production=production,
         customJson=json.dumps(custom_json),
-        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies + bootstrap_dependencies),
+        dependencies=utils.dedupe_in_order(
+            left_dependencies + right_dependencies + bootstrap_dependencies
+        ),
         outputNamespace=output_namespace,
         tableProperties=table_properties,
         modeToEnvMap=env,
         samplePercent=sample_percent,
         offlineSchedule=offline_schedule,
-        consistencySamplePercent=consistency_sample_percent
+        consistencySamplePercent=consistency_sample_percent,
+        historicalBackfill=historical_backfill,
     )
 
     return api.Join(
@@ -580,5 +642,5 @@ def Join(left: api.Source,
         bootstrapParts=bootstrap_parts,
         rowIds=row_ids,
         labelPart=label_part,
-        derivations=derivations
+        derivations=derivations,
     )

@@ -1,15 +1,33 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.stats
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api._
 import ai.chronon.online.{SparkConversions, _}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.{TableUtils, TimedKvRdd}
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.DataType
 
 import scala.collection.mutable.ListBuffer
 
 object CompareBaseJob {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def checkConsistency(
       leftFields: Map[String, DataType],
@@ -45,7 +63,7 @@ object CompareBaseJob {
         val leftFieldType = leftFields.get(leftFieldName).get
         if (rightField._2 != leftFieldType) {
           errors += s"Comparison data types do not match for column '${leftFieldName}';" +
-                    s" left side: ${leftFieldType}, right side: ${rightField._2}"
+            s" left side: ${leftFieldType}, right side: ${rightField._2}"
         }
       } else {
         errors += s"Mapping column on the left table is not present; column name: ${leftFieldName}"
@@ -60,18 +78,18 @@ object CompareBaseJob {
     // Verify the mapping has unique keys and values and they are all present in the left and right data frames.
     if (!mapping.keySet.subsetOf(leftFields.keySet)) {
       errors += s"Invalid mapping provided missing fields; provided: ${mapping.keySet}," +
-                s" expected to be subset of: ${leftFields.keySet}"
+        s" expected to be subset of: ${leftFields.keySet}"
     }
     if (!mapping.values.toSet.subsetOf(rightFields.keySet)) {
       errors += s"Invalid mapping provided missing fields; provided: ${mapping.values.toSet}," +
-                s" expected to be subset of: ${rightFields.keySet}"
+        s" expected to be subset of: ${rightFields.keySet}"
     }
 
     // Make sure the key columns are present in both the frames.
     Seq(leftFields, rightFields).foreach { kset =>
       if (!keys.toSet.subsetOf(kset.keySet)) {
         errors += s"Some of the primary keys are missing in the source dataframe; provided: ${keys}," +
-                  s" expected to be subset of: ${kset.keySet}"
+          s" expected to be subset of: ${kset.keySet}"
       }
     }
 
@@ -87,13 +105,14 @@ object CompareBaseJob {
    * Navigate the dataframes and compare them and fetch statistics.
    */
   def compare(
-               leftDf: DataFrame,
-               rightDf: DataFrame,
-               keys: Seq[String],
-               tableUtils: TableUtils,
-               mapping: Map[String, String] = Map.empty,
-               migrationCheck: Boolean = false
-             ): (DataFrame, DataFrame, DataMetrics) = {
+      leftDf: DataFrame,
+      rightDf: DataFrame,
+      keys: Seq[String],
+      tableUtils: TableUtils,
+      mapping: Map[String, String] = Map.empty,
+      migrationCheck: Boolean = false,
+      name: String = "undefined"
+  ): (DataFrame, TimedKvRdd, DataMetrics) = {
     // 1. Check for schema consistency issues
     val leftFields: Map[String, DataType] = leftDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
     val rightFields: Map[String, DataType] = rightDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap
@@ -115,10 +134,10 @@ object CompareBaseJob {
     } else {
       leftDf
     }
-    println(s"Pruning fields from the left source for equivalent comparison - ${prunedColumns.mkString(",")}")
+    logger.info(s"Pruning fields from the left source for equivalent comparison - ${prunedColumns.mkString(",")}")
 
     // 3. Build comparison dataframe
-    println(s"""Join keys: ${keys.mkString(", ")}
+    logger.info(s"""Join keys: ${keys.mkString(", ")}
         |Left Schema:
         |${prunedLeftDf.schema.pretty}
         |
@@ -156,9 +175,9 @@ object CompareBaseJob {
                                          .map(tup => StructField(tup._1, tup._2)))
 
     // 5. Run the consistency check
-    val (metricsDf, metrics) = CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, mapping)
+    val (metricsTimedKvRdd, metrics) = CompareMetrics.compute(leftChrononSchema.fields, compareDf, keys, name, mapping)
 
     // Return the data frame of the actual comparison table, metrics table and the metrics itself
-    (compareDf, metricsDf, metrics)
+    (compareDf, metricsTimedKvRdd, metrics)
   }
 }

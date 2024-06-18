@@ -1,3 +1,17 @@
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import ai.chronon.api.ttypes as ttypes
 import ai.chronon.utils as utils
 import logging
@@ -17,7 +31,9 @@ DEFAULT_PRODUCTION = None
 LOGGER = logging.getLogger()
 
 
-def collector(op: ttypes.Operation) -> Callable[[ttypes.Operation], Tuple[ttypes.Operation, Dict[str, str]]]:
+def collector(
+    op: ttypes.Operation,
+) -> Callable[[ttypes.Operation], Tuple[ttypes.Operation, Dict[str, str]]]:
     return lambda k: (op, {"k": str(k)})
 
 
@@ -28,6 +44,7 @@ def generic_collector(op: ttypes.Operation, required, **kwargs):
             arguments[arg] = args[idx]
         arguments.update(other_args)
         return (op, {k: str(v) for k, v in arguments.items()})
+
     return _collector
 
 
@@ -36,7 +53,7 @@ class Accuracy(ttypes.Accuracy):
     pass
 
 
-class Operation():
+class Operation:
     MIN = ttypes.Operation.MIN
     MAX = ttypes.Operation.MAX
     FIRST = ttypes.Operation.FIRST
@@ -51,14 +68,20 @@ class Operation():
     SUM = ttypes.Operation.SUM
     AVERAGE = ttypes.Operation.AVERAGE
     VARIANCE = ttypes.Operation.VARIANCE
+    SKEW = ttypes.Operation.SKEW
+    KURTOSIS = ttypes.Operation.KURTOSIS
     HISTOGRAM = ttypes.Operation.HISTOGRAM
     # k truncates the map to top_k most frequent items, 0 turns off truncation
     HISTOGRAM_K = collector(ttypes.Operation.HISTOGRAM)
+    # k truncates the map to top_k most frequent items, k is required and results are bounded
+    APPROX_HISTOGRAM_K = collector(ttypes.Operation.APPROX_HISTOGRAM_K)
     FIRST_K = collector(ttypes.Operation.FIRST_K)
     LAST_K = collector(ttypes.Operation.LAST_K)
     TOP_K = collector(ttypes.Operation.TOP_K)
     BOTTOM_K = collector(ttypes.Operation.BOTTOM_K)
-    APPROX_PERCENTILE = generic_collector(ttypes.Operation.APPROX_PERCENTILE, ["percentiles"], k=128)
+    APPROX_PERCENTILE = generic_collector(
+        ttypes.Operation.APPROX_PERCENTILE, ["percentiles"], k=128
+    )
 
 
 def Aggregations(**agg_dict):
@@ -79,22 +102,18 @@ def DefaultAggregation(keys, sources, operation=Operation.LAST, tags=None):
             "is_before",
             "mutation_ts",
             "ds",
-            query.timeColumn
+            query.timeColumn,
         ]
         aggregate_columns += [
-            column
-            for column in columns
-            if column not in non_aggregate_columns
+            column for column in columns if column not in non_aggregate_columns
         ]
     return [
-        Aggregation(
-            operation=operation,
-            input_column=column,
-            tags=tags) for column in aggregate_columns
+        Aggregation(operation=operation, input_column=column, tags=tags)
+        for column in aggregate_columns
     ]
 
 
-class TimeUnit():
+class TimeUnit:
     HOURS = ttypes.TimeUnit.HOURS
     DAYS = ttypes.TimeUnit.DAYS
 
@@ -109,11 +128,13 @@ def op_to_str(operation: OperationType):
 
 
 # See docs/Aggregations.md
-def Aggregation(input_column: str = None,
-                operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
-                windows: List[ttypes.Window] = None,
-                buckets: List[str] = None,
-                tags: Dict[str, str] = None) -> ttypes.Aggregation:
+def Aggregation(
+    input_column: str = None,
+    operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
+    windows: List[ttypes.Window] = None,
+    buckets: List[str] = None,
+    tags: Dict[str, str] = None,
+) -> ttypes.Aggregation:
     """
     :param input_column:
         Column on which the aggregation needs to be performed.
@@ -148,6 +169,20 @@ def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
     return ttypes.Window(length, timeUnit)
 
 
+def Derivation(name: str, expression: str) -> ttypes.Derivation:
+    """
+    Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
+    output schema. It is supported for offline computations for now.
+
+    If both name and expression are set to "*", then every raw column will be included along with the derived columns.
+
+    :param name: output column name of the SQL expression
+    :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
+    :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
+    """
+    return ttypes.Derivation(name=name, expression=expression)
+
+
 def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
     if not aggregations:
         return False
@@ -164,21 +199,31 @@ def validate_group_by(group_by: ttypes.GroupBy):
     # check ts is not included in query.select
     first_source_columns = set(utils.get_columns(sources[0]))
     # TODO undo this check after ml_models CI passes
-    assert "ts" not in first_source_columns, "'ts' is a reserved key word for Chronon," \
-                                             " please specify the expression in timeColumn"
+    assert "ts" not in first_source_columns, (
+        "'ts' is a reserved key word for Chronon,"
+        " please specify the expression in timeColumn"
+    )
     for src in sources:
         query = utils.get_query(src)
         if src.events:
-            assert query.mutationTimeColumn is None, "ingestionTimeColumn should not be specified for " \
+            assert query.mutationTimeColumn is None, (
+                "ingestionTimeColumn should not be specified for "
                 "event source as it should be the same with timeColumn"
-            assert query.reversalColumn is None, "reversalColumn should not be specified for event source " \
-                                                 "as it won't have mutations"
+            )
+            assert query.reversalColumn is None, (
+                "reversalColumn should not be specified for event source "
+                "as it won't have mutations"
+            )
             if group_by.accuracy != Accuracy.SNAPSHOT:
-                assert query.timeColumn is not None, "please specify query.timeColumn for non-snapshot accurate " \
+                assert query.timeColumn is not None, (
+                    "please specify query.timeColumn for non-snapshot accurate "
                     "group by with event source"
+                )
         else:
             if contains_windowed_aggregation(aggregations):
-                assert query.timeColumn, "Please specify timeColumn for entity source with windowed aggregations"
+                assert (
+                    query.timeColumn
+                ), "Please specify timeColumn for entity source with windowed aggregations"
 
     column_set = None
     # all sources should select the same columns
@@ -198,10 +243,23 @@ Keys {unselected_keys}, are unselected in source
     # Aggregations=None is only valid if group_by is Entities
     if aggregations is None:
         is_events = any([s.events for s in sources])
-        has_mutations = any([(s.entities.mutationTable is not None or s.entities.mutationTopic is not None)
-                             for s in sources])
-        assert not (is_events or has_mutations), \
-            "You can only set aggregations=None in an EntitySource without mutations"
+        has_mutations = (
+            any(
+                [
+                    (
+                        s.entities.mutationTable is not None
+                        or s.entities.mutationTopic is not None
+                    )
+                    for s in sources
+                    if s.entities is not None
+                ]
+            )
+            if not is_events
+            else False
+        )
+        assert not (
+            is_events or has_mutations
+        ), "You can only set aggregations=None in an EntitySource without mutations"
     else:
         columns = set([c for src in sources for c in utils.get_columns(src)])
         for agg in aggregations:
@@ -209,32 +267,38 @@ Keys {unselected_keys}, are unselected in source
                 f"input_column is required for all operations, found: input_column = {agg.inputColumn} "
                 f"and operation {op_to_str(agg.operation)}"
             )
-            assert (agg.inputColumn in columns) or (agg.inputColumn == 'ts'), (
+            assert (agg.inputColumn in columns) or (agg.inputColumn == "ts"), (
                 f"input_column: for aggregation is not part of the query. Available columns: {column_set} "
-                f"input_column: {agg.inputColumn}")
+                f"input_column: {agg.inputColumn}"
+            )
             if agg.operation == ttypes.Operation.APPROX_PERCENTILE:
-                if (
-                    agg.argMap is not None and
-                    agg.argMap.get("percentiles") is not None
-                ):
+                if agg.argMap is not None and agg.argMap.get("percentiles") is not None:
                     try:
                         percentile_array = json.loads(agg.argMap["percentiles"])
                         assert isinstance(percentile_array, list)
-                        assert all([float(p) >= 0 and float(p) <= 1 for p in percentile_array])
+                        assert all(
+                            [float(p) >= 0 and float(p) <= 1 for p in percentile_array]
+                        )
                     except Exception as e:
                         LOGGER.exception(e)
                         raise ValueError(
                             "[Percentiles] Unable to decode percentiles value, expected json array with values between"
-                            f" 0 and 1 inclusive (ex: [0.6, 0.1]), received: {agg.argMap['percentiles']}")
+                            f" 0 and 1 inclusive (ex: [0.6, 0.1]), received: {agg.argMap['percentiles']}"
+                        )
                 else:
                     raise ValueError(
                         f"[Percentiles] Unsupported arguments for {op_to_str(agg.operation)}, "
                         "example required: {'k': '128', 'percentiles': '[0.4,0.5,0.95]'},"
-                        f" received: {agg.argMap}\n")
+                        f" received: {agg.argMap}\n"
+                    )
             if agg.windows:
                 assert not (
                     # Snapshot accuracy.
-                    ((group_by.accuracy and group_by.accuracy == Accuracy.SNAPSHOT) or group_by.backfillStartDate) and
+                    (
+                        (group_by.accuracy and group_by.accuracy == Accuracy.SNAPSHOT)
+                        or group_by.backfillStartDate
+                    )
+                    and
                     # Hourly aggregation.
                     any([window.timeUnit == TimeUnit.HOURS for window in agg.windows])
                 ), (
@@ -245,13 +309,19 @@ Keys {unselected_keys}, are unselected in source
                 )
 
 
-_ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource]
+_ANY_SOURCE_TYPE = Union[
+    ttypes.Source, ttypes.EventSource, ttypes.EntitySource, ttypes.JoinSource
+]
 
 
 def _get_op_suffix(operation, argmap):
     op_str = op_to_str(operation)
-    if (operation in [ttypes.Operation.LAST_K, ttypes.Operation.TOP_K, ttypes.Operation.FIRST_K,
-                      ttypes.Operation.BOTTOM_K]):
+    if operation in [
+        ttypes.Operation.LAST_K,
+        ttypes.Operation.TOP_K,
+        ttypes.Operation.FIRST_K,
+        ttypes.Operation.BOTTOM_K,
+    ]:
         op_name_suffix = op_str[:-2]
         arg_suffix = argmap.get("k")
         return "{}{}".format(op_name_suffix, arg_suffix)
@@ -280,26 +350,29 @@ def get_output_col_names(aggregation):
     return bucketed_names
 
 
-def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
-            keys: List[str],
-            aggregations: Optional[List[ttypes.Aggregation]],
-            online: bool = DEFAULT_ONLINE,
-            production: bool = DEFAULT_PRODUCTION,
-            backfill_start_date: str = None,
-            dependencies: List[str] = None,
-            env: Dict[str, Dict[str, str]] = None,
-            table_properties: Dict[str, str] = None,
-            output_namespace: str = None,
-            accuracy: ttypes.Accuracy = None,
-            lag: int = 0,
-            offline_schedule: str = '@daily',
-            name: str = None,
-            tags: Dict[str, str] = None,
-            **kwargs) -> ttypes.GroupBy:
+def GroupBy(
+    sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
+    keys: List[str],
+    aggregations: Optional[List[ttypes.Aggregation]],
+    online: bool = DEFAULT_ONLINE,
+    production: bool = DEFAULT_PRODUCTION,
+    backfill_start_date: str = None,
+    dependencies: List[str] = None,
+    env: Dict[str, Dict[str, str]] = None,
+    table_properties: Dict[str, str] = None,
+    output_namespace: str = None,
+    accuracy: ttypes.Accuracy = None,
+    lag: int = 0,
+    offline_schedule: str = "@daily",
+    name: str = None,
+    tags: Dict[str, str] = None,
+    derivations: List[ttypes.Derivation] = None,
+    **kwargs,
+) -> ttypes.GroupBy:
     """
 
     :param sources:
-        can be constructed as entities or events::
+        can be constructed as entities or events or joinSource::
 
             import ai.chronon.api.ttypes as chronon
             events = chronon.Source(events=chronon.Events(
@@ -309,11 +382,16 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
                 isCumulative=False  # <- defaults to false.
             ))
             Or
-            entities = chronon.Source(events=chronon.Events(
+            entities = chronon.Source(entities=chronon.Entities(
                 snapshotTable=YOUR_TABLE,
                 mutationTopic=YOUR_TOPIC,
                 mutationTable=YOUR_MUTATION_TABLE
                 query=chronon.Query(...)
+            ))
+            or
+            joinSource =  chronon.Source(joinSource=chronon.JoinSource(
+                join = YOUR_CHRONON_PARENT_JOIN,
+                query = chronon.Query(...)
             ))
 
         Multiple sources can be supplied to backfill the historical values with their respective start and end
@@ -349,15 +427,22 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         Typically used by engines like airflow to create partition sensors.
     :type dependencies: List[str]
     :param env:
-        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value".
-        These vars are set in run.py and the underlying spark_submit.sh.
-        There override vars set in teams.json/production/<MODE NAME>
-        The priority order (descending) is::
+        This is a dictionary of "mode name" to dictionary of "env var name" to "env var value"::
 
-            var set while using run.py "VAR=VAL run.py --mode=backfill <name>"
-            var set here in Join's env param
-            var set in team.json/<team>/<production>/<MODE NAME>
-            var set in team.json/default/<production>/<MODE NAME>
+            {
+                'backfill' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' },
+                'upload' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' }
+                'streaming' : { 'VAR1' : 'VAL1', 'VAR2' : 'VAL2' }
+            }
+
+        These vars then flow into run.py and the underlying spark_submit.sh.
+        These vars can be set in other places as well. The priority order (descending) is as below
+
+        1. env vars set while using run.py "VAR=VAL run.py --mode=backfill <name>"
+        2. env vars set here in Join's env param
+        3. env vars set in `team.json['team.production.<MODE NAME>']`
+        4. env vars set in `team.json['default.production.<MODE NAME>']`
+
     :type env: Dict[str, Dict[str, str]]
     :param table_properties:
         Specifies the properties on output hive tables. Can be specified in teams.json.
@@ -376,20 +461,26 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         This is used by airflow integration to pick an older hive partition to wait on.
     :type lag: int
     :param offline_schedule:
-         the offline schedule interval for batch jobs. Below is the equivalent of the cron tab commands
-        '@hourly': '0 * * * *',
-        '@daily': '0 0 * * *',
-        '@weekly': '0 0 * * 0',
-        '@monthly': '0 0 1 * *',
-        '@yearly': '0 0 1 1 *',
+        the offline schedule interval for batch jobs. Below is the equivalent of the cron tab commands::
+
+            '@hourly': '0 * * * *',
+            '@daily': '0 0 * * *',
+            '@weekly': '0 0 * * 0',
+            '@monthly': '0 0 1 * *',
+            '@yearly': '0 0 1 1 *',
+
     :type offline_schedule: str
-    :param kwargs:
-        Additional properties that would be passed to run.py if specified under additional_args property.
-        And provides an option to pass custom values to the processing logic.
-    :type kwargs: Dict[str, str]
     :param tags:
         Additional metadata that does not directly affect feature computation, but is useful to
         track for management purposes.
+    :type tags: Dict[str, str]
+    :param derivations:
+        Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
+        output schema. It is supported for offline computations for now.
+    :type derivations: List[ai.chronon.api.ttypes.Drivation]
+    :param kwargs:
+        Additional properties that would be passed to run.py if specified under additional_args property.
+        And provides an option to pass custom values to the processing logic.
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
@@ -403,19 +494,30 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     required_columns = keys + agg_inputs
 
     def _sanitize_columns(source: ttypes.Source):
-        query = source.entities.query if source.entities is not None else source.events.query
+        query = (
+            source.entities.query
+            if source.entities is not None
+            else (
+                source.events.query
+                if source.events is not None
+                else source.joinSource.query
+            )
+        )
+
         if query.selects is None:
             query.selects = {}
         for col in required_columns:
             if col not in query.selects:
                 query.selects[col] = col
-        if 'ts' in query.selects:  # ts cannot be in selects.
-            ts = query.selects['ts']
-            del query.selects['ts']
+        if "ts" in query.selects:  # ts cannot be in selects.
+            ts = query.selects["ts"]
+            del query.selects["ts"]
             if query.timeColumn is None:
                 query.timeColumn = ts
-            assert query.timeColumn == ts, f"mismatched `ts`: {ts} and `timeColumn`: {query.timeColumn} " \
+            assert query.timeColumn == ts, (
+                f"mismatched `ts`: {ts} and `timeColumn`: {query.timeColumn} "
                 "in source {source}. Please specify only the `timeColumn`"
+            )
         return source
 
     def _normalize_source(source):
@@ -423,6 +525,10 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             return ttypes.Source(events=source)
         elif isinstance(source, ttypes.EntitySource):
             return ttypes.Source(entities=source)
+        elif isinstance(source, ttypes.JoinSource):
+            if not source.join.metadata.isSetOutputNamespace():
+                source.join.metadata.setOutputNamespace(output_namespace)
+            return ttypes.Source(joinSource=source)
         elif isinstance(source, ttypes.Source):
             return source
         else:
@@ -432,11 +538,13 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         sources = [sources]
     sources = [_sanitize_columns(_normalize_source(source)) for source in sources]
 
-    deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
+    deps = [
+        dep
+        for src in sources
+        for dep in utils.get_dependencies(src, dependencies, lag=lag)
+    ]
 
-    kwargs.update({
-        "lag": lag
-    })
+    kwargs.update({"lag": lag})
     # get caller's filename to assign team
     team = inspect.stack()[1].filename.split("/")[-2]
 
@@ -459,7 +567,8 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         modeToEnvMap=env,
         tableProperties=table_properties,
         team=team,
-        offlineSchedule=offline_schedule)
+        offlineSchedule=offline_schedule,
+    )
 
     group_by = ttypes.GroupBy(
         sources=sources,
@@ -467,7 +576,8 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
         aggregations=aggregations,
         metaData=metadata,
         backfillStartDate=backfill_start_date,
-        accuracy=accuracy
+        accuracy=accuracy,
+        derivations=derivations,
     )
     validate_group_by(group_by)
     return group_by

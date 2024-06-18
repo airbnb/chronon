@@ -1,5 +1,5 @@
 sphinx
 myst-parser
-pydata-sphinx-theme
+sphinx-book-theme
 build
-sphinx-design
+sphinx_design

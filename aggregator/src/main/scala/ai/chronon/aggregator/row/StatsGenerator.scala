@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.aggregator.row
 
 import ai.chronon.api
@@ -5,9 +21,9 @@ import ai.chronon.api.Extensions._
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
 
-import scala.collection.Seq
-import scala.util.ScalaVersionSpecificCollectionsConverter
 import java.util
+import scala.collection.Seq
+import scala.util.ScalaJavaConversions.JMapOps
 
 /**
   * Module managing FeatureStats Schema, Aggregations to be used by type and aggregator construction.
@@ -54,68 +70,16 @@ object StatsGenerator {
                              argMap: util.Map[String, String] = null)
 
   /**
-    * A valueSchema (for join) and Metric list define uniquely the IRSchema to be used for the statistics.
-    * In order to support custom storage for statistic percentiles this method would need to be modified.
-    * IR Schemas are used to decode streaming partial aggregations as well as KvStore partial stats.
-    */
-  def statsIrSchema(valueSchema: api.StructType): api.StructType = {
-    val metrics: Seq[MetricTransform] = buildMetrics(valueSchema.unpack)
-    val schemaMap = valueSchema.unpack.map { v =>
-      v._1 -> v._2
-    }.toMap
-    api.StructType.from(
-      "IrSchema",
-      metrics.map { m =>
-        m.expression match {
-          case InputTransform.IsNull =>
-            (s"${m.name}${m.suffix}_sum", api.LongType)
-          case InputTransform.One =>
-            (s"${m.name}${m.suffix}_count", api.LongType)
-          case InputTransform.Raw =>
-            val aggPart = buildAggPart(m)
-            val colAggregator = ColumnAggregator.construct(schemaMap(m.name), aggPart, ColumnIndices(1, 1), None)
-            (s"${m.name}_${aggPart.operation.name().toLowerCase()}", colAggregator.irType)
-        }
-
-      }.toArray
-    )
-  }
-
-  /**
-    * Post processing for IRs when generating a time series of stats.
+    * Post processing for finalized values or IRs when generating a time series of stats.
     * In the case of percentiles for examples we reduce to 5 values in order to generate candlesticks.
     */
   def SeriesFinalizer(key: String, value: AnyRef): AnyRef = {
-    if (key.endsWith("percentile") && value != null) {
-      val sketch = KllFloatsSketch.heapify(Memory.wrap(value.asInstanceOf[Array[Byte]]))
-      return sketch.getQuantiles(finalizedPercentilesSeries).asInstanceOf[AnyRef]
+    (key, value) match {
+      case (k, sketch: Array[Byte]) if k.endsWith("percentile") =>
+        val sketch = KllFloatsSketch.heapify(Memory.wrap(value.asInstanceOf[Array[Byte]]))
+        sketch.getQuantiles(finalizedPercentilesSeries).asInstanceOf[AnyRef]
+      case _ => value
     }
-    value
-  }
-
-  /**
-    * Input schema is the data required to update partial aggregations / stats.
-    *
-    * Given a valueSchema and a metric transform list, defines the schema expected by the Stats aggregator (online and offline)
-    */
-  def statsInputSchema(valueSchema: api.StructType): api.StructType = {
-    val metrics = buildMetrics(valueSchema.unpack)
-    val schemaMap = valueSchema.unpack.map { v =>
-      v._1 -> v._2
-    }.toMap
-    api.StructType.from(
-      "IrSchema",
-      metrics.map { m =>
-        m.expression match {
-          case InputTransform.IsNull =>
-            (s"${m.name}${m.suffix}", api.LongType)
-          case InputTransform.One =>
-            (s"${m.name}${m.suffix}", api.LongType)
-          case InputTransform.Raw =>
-            (m.name, schemaMap(m.name))
-        }
-      }.toArray
-    )
   }
 
   def buildAggPart(m: MetricTransform): api.AggregationPart = {
@@ -145,8 +109,7 @@ object StatsGenerator {
         column,
         InputTransform.Raw,
         operation = api.Operation.APPROX_PERCENTILE,
-        argMap = ScalaVersionSpecificCollectionsConverter.convertScalaMapToJava(
-          Map("percentiles" -> s"[${finalizedPercentilesMerged.mkString(", ")}]"))
+        argMap = Map("percentiles" -> s"[${finalizedPercentilesMerged.mkString(", ")}]").toJava
       ))
 
   /** For the schema of the data define metrics to be aggregated */
@@ -166,5 +129,59 @@ object StatsGenerator {
       }
       .sortBy(_.name)
     metrics :+ MetricTransform(totalColumn, InputTransform.One, api.Operation.COUNT)
+  }
+
+  def lInfKllSketch(sketch1: AnyRef, sketch2: AnyRef, bins: Int = 128): AnyRef = {
+    if (sketch1 == null || sketch2 == null) return None
+    val sketchIr1 = KllFloatsSketch.heapify(Memory.wrap(sketch1.asInstanceOf[Array[Byte]]))
+    val sketchIr2 = KllFloatsSketch.heapify(Memory.wrap(sketch2.asInstanceOf[Array[Byte]]))
+    val keySet = sketchIr1.getQuantiles(bins).union(sketchIr2.getQuantiles(bins))
+    var linfSimple = 0.0
+    keySet.foreach { key =>
+      val cdf1 = sketchIr1.getRank(key)
+      val cdf2 = sketchIr2.getRank(key)
+      val cdfDiff = Math.abs(cdf1 - cdf2)
+      linfSimple = Math.max(linfSimple, cdfDiff)
+    }
+    linfSimple.asInstanceOf[AnyRef]
+  }
+
+  /**
+    * PSI is a measure of the difference between two probability distributions.
+    * However, it's not defined for cases where a bin can have zero elements in either distribution
+    * (meant for continuous measures). In order to support PSI for discrete measures we add a small eps value to
+    * perturb the distribution in bins.
+    *
+    * Existing rules of thumb are: PSI < 0.10 means "little shift", .10<PSI<.25 means "moderate shift",
+    * and PSI>0.25 means "significant shift, action required"
+    * https://scholarworks.wmich.edu/dissertations/3208
+    */
+  def PSIKllSketch(reference: AnyRef, comparison: AnyRef, bins: Int = 128, eps: Double = 0.000001): AnyRef = {
+    if (reference == null || comparison == null) return None
+    val referenceSketch = KllFloatsSketch.heapify(Memory.wrap(reference.asInstanceOf[Array[Byte]]))
+    val comparisonSketch = KllFloatsSketch.heapify(Memory.wrap(comparison.asInstanceOf[Array[Byte]]))
+    val keySet = referenceSketch.getQuantiles(bins).union(comparisonSketch.getQuantiles(bins)).toSet.toArray.sorted
+    val referencePMF = regularize(referenceSketch.getPMF(keySet), eps)
+    val comparisonPMF = regularize(comparisonSketch.getPMF(keySet), eps)
+    var psi = 0.0
+    for (i <- 0 until referencePMF.length) {
+      psi += (referencePMF(i) - comparisonPMF(i)) * Math.log(referencePMF(i) / comparisonPMF(i))
+    }
+    psi.asInstanceOf[AnyRef]
+  }
+
+  /** Given a PMF add and substract small values to keep a valid probability distribution without zeros */
+  def regularize(doubles: Array[Double], eps: Double): Array[Double] = {
+    val countZeroes = doubles.count(_ == 0.0)
+    if (countZeroes == 0) {
+      doubles // If there are no zeros, return the original array
+    } else {
+      val nonZeroCount = doubles.length - countZeroes
+      val replacement = eps * nonZeroCount / countZeroes
+      doubles.map {
+        case 0.0 => replacement
+        case x   => x - eps
+      }
+    }
   }
 }

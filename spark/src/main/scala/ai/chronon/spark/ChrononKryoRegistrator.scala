@@ -1,13 +1,30 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
 package ai.chronon.spark
 
+import ai.chronon.aggregator.base.FrequentItemType.{DoubleItemType, LongItemType, StringItemType}
+import ai.chronon.aggregator.base.FrequentItemsFriendly._
+import ai.chronon.aggregator.base.{FrequentItemType, FrequentItemsFriendly, ItemsSketchIR}
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, Serializer}
 import com.yahoo.memory.Memory
-import com.yahoo.sketches.ArrayOfStringsSerDe
+import com.yahoo.sketches.ArrayOfItemsSerDe
 import com.yahoo.sketches.cpc.CpcSketch
 import com.yahoo.sketches.frequencies.ItemsSketch
 import org.apache.spark.serializer.KryoRegistrator
-import org.apache.spark.SPARK_VERSION
 
 class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
   override def write(kryo: Kryo, output: Output, sketch: CpcSketch): Unit = {
@@ -22,22 +39,31 @@ class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
     CpcSketch.heapify(bytes)
   }
 }
+class ItemsSketchKryoSerializer[T] extends Serializer[ItemsSketchIR[T]] {
+  def getSerializer(sketchType: FrequentItemType.Value): ArrayOfItemsSerDe[T] = {
+    val serializer = sketchType match {
+      case StringItemType => implicitly[FrequentItemsFriendly[String]].serializer
+      case LongItemType   => implicitly[FrequentItemsFriendly[java.lang.Long]].serializer
+      case DoubleItemType => implicitly[FrequentItemsFriendly[java.lang.Double]].serializer
+      case _              => throw new IllegalArgumentException(s"No serializer for sketch type $sketchType")
+    }
+    serializer.asInstanceOf[ArrayOfItemsSerDe[T]]
+  }
 
-class ItemsSketchKryoSerializer extends Serializer[ItemSketchSerializable] {
-  override def write(kryo: Kryo, output: Output, sketch: ItemSketchSerializable): Unit = {
-    val serDe = new ArrayOfStringsSerDe
-    val bytes = sketch.sketch.toByteArray(serDe)
+  override def write(kryo: Kryo, output: Output, sketch: ItemsSketchIR[T]): Unit = {
+    val serializer = getSerializer(sketch.sketchType)
+    val bytes = sketch.sketch.toByteArray(serializer)
+    output.writeInt(sketch.sketchType.id)
     output.writeInt(bytes.size)
     output.writeBytes(bytes)
   }
-
-  override def read(kryo: Kryo, input: Input, `type`: Class[ItemSketchSerializable]): ItemSketchSerializable = {
+  override def read(kryo: Kryo, input: Input, `type`: Class[ItemsSketchIR[T]]): ItemsSketchIR[T] = {
+    val sketchType = FrequentItemType(input.readInt())
     val size = input.readInt()
     val bytes = input.readBytes(size)
-    val serDe = new ArrayOfStringsSerDe
-    val result = new ItemSketchSerializable
-    result.sketch = ItemsSketch.getInstance[String](Memory.wrap(bytes), serDe)
-    result
+    val serializer = getSerializer(sketchType)
+    val sketch = ItemsSketch.getInstance[T](Memory.wrap(bytes), serializer)
+    ItemsSketchIR(sketch, sketchType)
   }
 }
 
@@ -59,7 +85,9 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.Metadata",
       "ai.chronon.api.Row",
       "ai.chronon.spark.KeyWithHash",
+      "ai.chronon.aggregator.base.MomentsIR",
       "ai.chronon.aggregator.windowing.BatchIr",
+      "ai.chronon.aggregator.base.ApproxHistogramIr",
       "ai.chronon.online.RowWrapper",
       "ai.chronon.online.Fetcher$Request",
       "ai.chronon.aggregator.windowing.FinalBatchIr",
@@ -128,10 +156,11 @@ class ChrononKryoRegistrator extends KryoRegistrator {
         case _: ClassNotFoundException => // do nothing
       }
     }
+
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
     kryo.register(classOf[Array[Array[AnyRef]]])
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
-    kryo.register(classOf[ItemSketchSerializable], new ItemsSketchKryoSerializer())
     kryo.register(classOf[Array[ItemSketchSerializable]])
+    kryo.register(classOf[ItemsSketchIR[AnyRef]], new ItemsSketchKryoSerializer[AnyRef])
   }
 }

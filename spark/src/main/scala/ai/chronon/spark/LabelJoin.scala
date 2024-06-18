@@ -1,5 +1,22 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
@@ -12,10 +29,11 @@ import org.apache.spark.util.sketch.BloomFilter
 
 import scala.collection.JavaConverters._
 import scala.collection.Seq
-import scala.collection.parallel.ParMap
 import scala.util.ScalaJavaConversions.IterableOps
+import java.util
 
 class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   assert(
@@ -77,7 +95,8 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       labelTable
     } else {
       // creating final join view with feature join output table
-      println(s"Joining label table : ${outputLabelTable} with joined output table : ${joinConf.metaData.outputTable}")
+      logger.info(
+        s"Joining label table : ${outputLabelTable} with joined output table : ${joinConf.metaData.outputTable}")
       JoinUtils.createOrReplaceView(
         joinConf.metaData.outputFinalView,
         leftTable = joinConf.metaData.outputTable,
@@ -87,11 +106,11 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         viewProperties = Map(Constants.LabelViewPropertyKeyLabelTable -> outputLabelTable,
                              Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable)
       )
-      println(s"Final labeled view created: ${joinConf.metaData.outputFinalView}")
+      logger.info(s"Final labeled view created: ${joinConf.metaData.outputFinalView}")
       JoinUtils.createLatestLabelView(joinConf.metaData.outputLatestLabelView,
                                       baseView = joinConf.metaData.outputFinalView,
                                       tableUtils)
-      println(s"Final view with latest label created: ${joinConf.metaData.outputLatestLabelView}")
+      logger.info(s"Final view with latest label created: ${joinConf.metaData.outputLatestLabelView}")
       labelTable
     }
   }
@@ -99,18 +118,18 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
   def compute(leftRange: PartitionRange, stepDays: Option[Int] = None, labelDS: Option[String] = None): DataFrame = {
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val sanitizedLabelDs = labelDS.getOrElse(today)
-    println(s"Label join range to fill $leftRange")
+    logger.info(s"Label join range to fill $leftRange")
     def finalResult = tableUtils.sql(leftRange.genScanQuery(null, outputLabelTable))
 
     val leftFeatureRange = leftRange
     stepDays.foreach(metrics.gauge("step_days", _))
     val stepRanges = stepDays.map(leftFeatureRange.steps).getOrElse(Seq(leftFeatureRange))
-    println(s"Label Join left ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+    logger.info(s"Label Join left ranges to compute: ${stepRanges.map { _.toString }.pretty}")
     stepRanges.zipWithIndex.foreach {
       case (range, index) =>
         val startMillis = System.currentTimeMillis()
         val progress = s"| [${index + 1}/${stepRanges.size}]"
-        println(s"Computing label join for range: $range  Label DS: ${labelDS.getOrElse(today)} $progress")
+        logger.info(s"Computing label join for range: $range  Label DS: ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           computeRange(leftDfInRange, range, sanitizedLabelDs)
             .save(outputLabelTable,
@@ -120,21 +139,21 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
-          println(s"Wrote to table $outputLabelTable, into partitions: $range $progress in $elapsedMins mins")
+          logger.info(s"Wrote to table $outputLabelTable, into partitions: $range $progress in $elapsedMins mins")
         }
     }
-    println(s"Wrote to table $outputLabelTable, into partitions: $leftFeatureRange")
+    logger.info(s"Wrote to table $outputLabelTable, into partitions: $leftFeatureRange")
     finalResult
   }
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, sanitizedLabelDs: String): DataFrame = {
     val leftDfCount = leftDf.count()
-    val leftBlooms = labelJoinConf.leftKeyCols.toSeq.parallel.map { key =>
+    val leftBlooms = labelJoinConf.leftKeyCols.iterator.map { key =>
       key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
-    }.toMap
+    }.toJMap
 
     // compute joinParts in parallel
-    val rightDfs = labelJoinConf.labels.asScala.parallel.map { labelJoinPart =>
+    val rightDfs = labelJoinConf.labels.asScala.map { labelJoinPart =>
       val labelJoinPartMetrics = Metrics.Context(metrics, labelJoinPart)
       if (labelJoinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
@@ -153,7 +172,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
               .foreach(leftRange => {
                 val labeledDf = computeLabelPart(labelJoinPart, leftRange, leftBlooms)
                 // Cache label part data into intermediate table
-                println(s"Writing to join part table: $partTable for partition range $leftRange")
+                logger.info(s"Writing to join part table: $partTable for partition range $leftRange")
                 labeledDf.save(tableName = partTable,
                                tableProperties = confTableProps,
                                partitionColumns = Seq(Constants.LabelPartitionColumn))
@@ -161,11 +180,11 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
             val elapsedMins = (System.currentTimeMillis() - start) / 60000
             labelJoinPartMetrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
             labelJoinPartMetrics.gauge(Metrics.Name.PartitionCount, partitionCount)
-            println(s"Wrote ${partitionCount} partitions to label part table: $partTable in $elapsedMins minutes")
+            logger.info(s"Wrote ${partitionCount} partitions to label part table: $partTable in $elapsedMins minutes")
           }
         } catch {
           case e: Exception =>
-            println(
+            logger.info(
               s"Error while processing groupBy: " +
                 s"${joinConf.metaData.name}/${labelJoinPart.groupBy.getMetaData.getName}")
             throw e
@@ -176,7 +195,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }
 
     val rowIdentifier = labelJoinConf.rowIdentifier(joinConf.rowIds, tableUtils.partitionColumn)
-    println("Label Join filtering left df with only row identifier:", rowIdentifier.mkString(", "))
+    logger.info("Label Join filtering left df with only row identifier:", rowIdentifier.mkString(", "))
     val leftFiltered = JoinUtils.filterColumns(leftDf, rowIdentifier)
 
     val joined = rightDfs.zip(labelJoinConf.labels.asScala).foldLeft(leftFiltered) {
@@ -193,11 +212,11 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
   private def computeLabelPart(joinPart: JoinPart,
                                leftRange: PartitionRange,
-                               leftBlooms: ParMap[String, BloomFilter]): DataFrame = {
+                               leftBlooms: util.Map[String, BloomFilter]): DataFrame = {
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
+    val rightBloomMap = joinPart.rightToLeft.iterator.map { case (right, left) => right -> leftBlooms.get(left) }.toSeq
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
-    println(s"""
+    logger.info(s"""
                |Label JoinPart Info:
                |  part name : ${joinPart.groupBy.metaData.name},
                |  left type : ${joinConf.left.dataModel},
@@ -211,7 +230,8 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     val groupBy = GroupBy.from(joinPart.groupBy,
                                PartitionRange(labelDS, labelDS)(tableUtils),
                                tableUtils,
-                               Option(rightBloomMap),
+                               computeDependency = true,
+                               Option(rightBloomMap.iterator.toJMap),
                                rightSkewFilter)
 
     val df = (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {
@@ -250,7 +270,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
     val partName = joinPart.groupBy.metaData.name
 
-    println(s"""Join keys for $partName: ${partLeftKeys.mkString(", ")}
+    logger.info(s"""Join keys for $partName: ${partLeftKeys.mkString(", ")}
                |Left Schema:
                |${updatedLeftDf.schema.pretty}
                |

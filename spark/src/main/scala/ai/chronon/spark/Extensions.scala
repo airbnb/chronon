@@ -1,10 +1,28 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api
-import ai.chronon.api.{BootstrapPart, Constants}
+import ai.chronon.api.Constants
 import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
 import org.apache.avro.Schema
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, LongType, StructType}
@@ -13,6 +31,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import java.util
 import scala.collection.Seq
 import scala.reflect.ClassTag
+import scala.util.ScalaJavaConversions.IteratorOps
 
 object Extensions {
 
@@ -37,8 +56,45 @@ object Extensions {
     def toAvroCodec(name: String = null): AvroCodec = new AvroCodec(toAvroSchema(name).toString())
   }
 
+  case class DfStats(count: Long, partitionRange: PartitionRange)
+  // helper class to maintain datafram stats that are necessary for downstream operations
+  case class DfWithStats(df: DataFrame, partitionCounts: Map[String, Long])(implicit val tableUtils: TableUtils) {
+    private val minPartition: String = partitionCounts.keys.min
+    private val maxPartition: String = partitionCounts.keys.max
+    val partitionRange: PartitionRange = PartitionRange(minPartition, maxPartition)
+    val count: Long = partitionCounts.values.sum
+
+    def prunePartitions(range: PartitionRange): Option[DfWithStats] = {
+      println(
+        s"Pruning down to new range $range, original range: $partitionRange." +
+          s"\nOriginal partition counts: $partitionCounts")
+      val intersected = partitionRange.intersect(range)
+      if (!intersected.wellDefined) return None
+      val intersectedCounts = partitionCounts.filter(intersected.partitions contains _._1)
+      if (intersectedCounts.isEmpty) return None
+      Some(DfWithStats(df.prunePartition(range), intersectedCounts))
+    }
+    def stats: DfStats = DfStats(count, partitionRange)
+  }
+
+  object DfWithStats {
+    def apply(dataFrame: DataFrame)(implicit tableUtils: TableUtils): DfWithStats = {
+      val partitionCounts = dataFrame
+        .groupBy(col(TableUtils(dataFrame.sparkSession).partitionColumn))
+        .count()
+        .collect()
+        .map(row => row.getString(0) -> row.getLong(1))
+        .toMap
+      DfWithStats(dataFrame, partitionCounts)
+    }
+  }
+
   implicit class DataframeOps(df: DataFrame) {
-    private implicit val tableUtils = TableUtils(df.sparkSession)
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    private implicit val tableUtils: TableUtils = TableUtils(df.sparkSession)
+
+    // This is safe to call on dataframes that are un-shuffled from their disk sources -
+    // like tables read without shuffling with row level projections or filters.
     def timeRange: TimeRange = {
       assert(
         df.schema(Constants.TimeColumn).dataType == LongType,
@@ -50,7 +106,7 @@ object Extensions {
 
     def prunePartition(partitionRange: PartitionRange): DataFrame = {
       val pruneFilter = partitionRange.whereClauses().mkString(" AND ")
-      println(s"Pruning using $pruneFilter")
+      logger.info(s"Pruning using $pruneFilter")
       df.filter(pruneFilter)
     }
 
@@ -59,18 +115,21 @@ object Extensions {
       PartitionRange(start, end)
     }
 
+    def withStats: DfWithStats = DfWithStats(df)
+
     def range[T](columnName: String): (T, T) = {
       val viewName = s"${columnName}_range_input_${(math.random * 100000).toInt}"
       df.createOrReplaceTempView(viewName)
       assert(df.schema.names.contains(columnName),
              s"$columnName is not a column of the dataframe. Pick one of [${df.schema.names.mkString(", ")}]")
-      val minMaxDf: DataFrame = df.sqlContext
+      val minMaxRows = df.sqlContext
         .sql(s"select min($columnName), max($columnName) from $viewName")
-      assert(minMaxDf.count() == 1, "Logic error! There needs to be exactly one row")
-      val minMaxRow = minMaxDf.collect()(0)
+        .collect()
+      assert(minMaxRows.size == 1, "Logic error! There needs to be exactly one row")
+      val minMaxRow = minMaxRows(0)
       df.sparkSession.catalog.dropTempView(viewName)
       val (min, max) = (minMaxRow.getAs[T](0), minMaxRow.getAs[T](1))
-      println(s"Computed Range for $columnName - min: $min, max: $max")
+      logger.info(s"Computed Range for $columnName - min: $min, max: $max")
       (min, max)
     }
 
@@ -79,12 +138,16 @@ object Extensions {
     def save(tableName: String,
              tableProperties: Map[String, String] = null,
              partitionColumns: Seq[String] = Seq(tableUtils.partitionColumn),
-             autoExpand: Boolean = false): Unit = {
+             autoExpand: Boolean = false,
+             stats: Option[DfStats] = None,
+             sortByCols: Seq[String] = Seq.empty): Unit = {
       TableUtils(df.sparkSession).insertPartitions(df,
                                                    tableName,
                                                    tableProperties,
                                                    partitionColumns,
-                                                   autoExpand = autoExpand)
+                                                   autoExpand = autoExpand,
+                                                   stats = stats,
+                                                   sortByCols = sortByCols)
     }
 
     def saveUnPartitioned(tableName: String, tableProperties: Map[String, String] = null): Unit = {
@@ -116,9 +179,12 @@ object Extensions {
     private def mightContain(f: BloomFilter): UserDefinedFunction =
       udf((x: Object) => if (x != null) f.mightContain(x) else true)
 
-    def filterBloom(bloomMap: Map[String, BloomFilter]): DataFrame =
-      bloomMap.foldLeft(df) {
-        case (dfIter, (col, bloom)) => dfIter.where(mightContain(bloom)(dfIter(col)))
+    def filterBloom(bloomMap: util.Map[String, BloomFilter]): DataFrame =
+      bloomMap.entrySet().iterator().toScala.foldLeft(df) {
+        case (dfIter, entry) =>
+          val col = entry.getKey
+          val bloom = entry.getValue
+          dfIter.where(mightContain(bloom)(dfIter(col)))
       }
 
     // math for computing bloom size
@@ -135,10 +201,10 @@ object Extensions {
       val approxCount =
         df.filter(df.col(col).isNotNull).select(approx_count_distinct(col)).collect()(0).getLong(0)
       if (approxCount == 0) {
-        println(
+        logger.info(
           s"Warning: approxCount for col ${col} from table ${tableName} is 0. Please double check your input data.")
       }
-      println(s""" [STARTED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
+      logger.info(s""" [STARTED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount
            | Total count of rows: $totalCount
            |""".stripMargin)
@@ -146,7 +212,8 @@ object Extensions {
         .filter(df.col(col).isNotNull)
         .stat
         .bloomFilter(col, approxCount + 1, fpp) // expectedNumItems must be positive
-      println(s"""
+
+      logger.info(s"""
            | [FINISHED] Generating bloom filter on key `$col` for range $partitionRange from $tableName
            | Approximate distinct count of `$col`: $approxCount
            | Total count of rows: $totalCount
@@ -156,7 +223,7 @@ object Extensions {
     }
 
     def removeNulls(cols: Seq[String]): DataFrame = {
-      println(s"filtering nulls from columns: [${cols.mkString(", ")}]")
+      logger.info(s"filtering nulls from columns: [${cols.mkString(", ")}]")
       // do not use != or <> operator with null, it doesn't return false ever!
       df.filter(cols.map(_ + " IS NOT NULL").mkString(" AND "))
     }
@@ -184,6 +251,13 @@ object Extensions {
                             format: String = tableUtils.partitionSpec.format): DataFrame =
       df.withColumn(columnName, from_unixtime(df.col(timeColumn) / 1000, format))
 
+    def addTimebasedColIfExists(): DataFrame =
+      if (df.schema.names.contains(Constants.TimeColumn)) {
+        df.withTimeBasedColumn(Constants.TimePartitionColumn)
+      } else {
+        df
+      }
+
     private def camelToSnake(name: String) = {
       val res = "([a-z]+)([A-Z]\\w+)?".r
         .replaceAllIn(name, { m => m.subgroups.flatMap(g => Option(g).map(_.toLowerCase())).mkString("_") })
@@ -197,8 +271,10 @@ object Extensions {
       df.withColumn(colName, unix_timestamp(df.col(inputColumn), tableUtils.partitionSpec.format) * 1000)
 
     def withShiftedPartition(colName: String, days: Int = 1): DataFrame =
-      df.withColumn(colName,
-                    date_format(date_add(to_date(df.col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), days), tableUtils.partitionSpec.format))
+      df.withColumn(
+        colName,
+        date_format(date_add(to_date(df.col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), days),
+                    tableUtils.partitionSpec.format))
 
     def replaceWithReadableTime(cols: Seq[String], dropOriginal: Boolean): DataFrame = {
       cols.foldLeft(df) { (dfNew, col) =>
@@ -212,6 +288,12 @@ object Extensions {
       val filterClause = keys.map(key => s"($key IS NOT NULL)").mkString(" AND ")
       val filtered = df.where(filterClause)
       filtered.orderBy(keys.map(desc).toSeq: _*)
+    }
+
+    def prettyPrint(timeColumns: Seq[String] = Seq(Constants.TimeColumn, Constants.MutationTimeColumn)): Unit = {
+      val availableColumns = timeColumns.filter(df.schema.names.contains)
+      logger.info(s"schema: ${df.schema.fieldNames.mkString("Array(", ", ", ")")}")
+      df.replaceWithReadableTime(availableColumns, dropOriginal = true).show(truncate = false)
     }
   }
 
@@ -229,6 +311,30 @@ object Extensions {
         idx += 1
       }
       result
+    }
+  }
+
+  implicit class InternalRowOps(internalRow: InternalRow) {
+    def toRow(schema: StructType): Row = {
+      new Row() {
+        override def length: Int = {
+          internalRow.numFields
+        }
+
+        override def get(i: Int): Any = {
+          internalRow.get(i, schema.fields(i).dataType)
+        }
+
+        override def copy(): Row = internalRow.copy().toRow(schema)
+      }
+    }
+  }
+
+  implicit class TupleToJMapOps[K, V](tuples: Iterator[(K, V)]) {
+    def toJMap: util.Map[K, V] = {
+      val map = new util.HashMap[K, V]()
+      tuples.foreach { case (k, v) => map.put(k, v) }
+      map
     }
   }
 }

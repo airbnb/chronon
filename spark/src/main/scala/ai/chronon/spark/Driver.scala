@@ -1,11 +1,27 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
-import ai.chronon.online.{Api, Fetcher, MetadataStore}
-import ai.chronon.spark.stats.{CompareJob, ConsistencyJob, SummaryJob}
-import ai.chronon.spark.streaming.TopicChecker
+import ai.chronon.online.{Api, Fetcher, MetadataDirWalker, MetadataEndPoint, MetadataStore}
+import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
+import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
@@ -19,12 +35,13 @@ import org.apache.spark.sql.streaming.StreamingQueryListener.{
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
+import org.slf4j.LoggerFactory
 
 import java.io.File
 import java.nio.file.{Files, Paths}
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.concurrent.Await
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
 import scala.io.Source
 import scala.reflect.ClassTag
@@ -39,25 +56,41 @@ class DummyExtensions extends (SparkSessionExtensions => Unit) {
 
 // The mega chronon cli
 object Driver {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T =
     ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
 
   trait OfflineSubcommand {
     this: ScallopConf =>
-    def subcommandName: String
-
     val confPath: ScallopOption[String] = opt[String](required = true, descr = "Path to conf")
-    val endDate: ScallopOption[String] =
+
+    val runFirstHole: ScallopOption[Boolean] =
+      opt[Boolean](required = false,
+                   default = Some(false),
+                   descr = "Skip the first unfilled partition range if some future partitions have been populated.")
+
+    val stepDays: ScallopOption[Int] =
+      opt[Int](required = false,
+               descr = "Runs offline backfill in steps, step-days at a time. Default is 30 days",
+               default = Option(30))
+
+    val startPartitionOverride: ScallopOption[String] =
       opt[String](required = false,
-        descr = "End date to compute as of, start date is taken from conf.",
-        default = Some(buildTableUtils().partitionSpec.now))
+                  descr =
+                    "Start date to compute offline backfill, " +
+                      "this start date will override start partition specified in conf.")
+
+    private val endDateInternal: ScallopOption[String] =
+      opt[String](name = "end-date",
+                  required = false,
+                  descr = "End date to compute as of, start date is taken from conf.")
+
     val localTableMapping: Map[String, String] = propsLong[String](
       name = "local-table-mapping",
       keyName = "namespace.table",
       valueName = "path_to_local_input_file",
-      descr =
-        """Use this option to specify a list of table <> local input file mappings for running local
+      descr = """Use this option to specify a list of table <> local input file mappings for running local
           |Chronon jobs. For example,
           |`--local-data-list ns_1.table_a=p1/p2/ta.csv ns_2.table_b=p3/tb.csv`
           |will load the two files into the specified tables `table_a` and `table_b` locally.
@@ -82,6 +115,47 @@ object Driver {
         default = Some(System.getProperty("user.dir") + "/local_warehouse"),
         descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
       )
+
+    lazy val sparkSession: SparkSession = buildSparkSession()
+
+    def endDate(): String = endDateInternal.toOption.getOrElse(buildTableUtils().partitionSpec.now)
+
+    def subcommandName(): String
+
+    def isLocal: Boolean = localTableMapping.nonEmpty || localDataPath.isDefined
+
+    protected def buildSparkSession(): SparkSession = {
+      if (localTableMapping.nonEmpty) {
+        val localSession = SparkSessionBuilder.build(subcommandName(), local = true, localWarehouseLocation.toOption)
+        localTableMapping.foreach {
+          case (table, filePath) =>
+            val file = new File(filePath)
+            LocalDataLoader.loadDataFileAsTable(file, localSession, table)
+        }
+        localSession
+      } else if (localDataPath.isDefined) {
+        val dir = new File(localDataPath())
+        assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
+        val localSession =
+          SparkSessionBuilder.build(subcommandName(),
+                                    local = true,
+                                    localWarehouseLocation = localWarehouseLocation.toOption)
+        LocalDataLoader.loadDataRecursively(dir, localSession)
+        localSession
+      } else {
+        // We use the KryoSerializer for group bys and joins since we serialize the IRs.
+        // But since staging query is fairly freeform, it's better to stick to the java serializer.
+        SparkSessionBuilder.build(subcommandName(), enforceKryoSerializer = !subcommandName().contains("staging_query"))
+      }
+    }
+
+    def buildTableUtils(): TableUtils = {
+      TableUtils(sparkSession)
+    }
+  }
+
+  trait LocalExportTableAbility {
+    this: ScallopConf with OfflineSubcommand =>
 
     val localTableExportPath: ScallopOption[String] =
       opt[String](
@@ -110,40 +184,15 @@ object Driver {
         descr = "The prefix to put in the exported file name."
       )
 
-    lazy val sparkSession: SparkSession = buildSparkSession()
-
-    protected def buildSparkSession(): SparkSession = {
-      if (localTableMapping.nonEmpty) {
-        val localSession = SparkSessionBuilder.build(
-          subcommandName,
-          local = true,
-          localWarehouseLocation.toOption)
-        localTableMapping.foreach { case (table, filePath) =>
-          val file = new File(filePath)
-          LocalDataLoader.loadDataFileAsTable(file, localSession, table)
-        }
-        localSession
-      } else if (localDataPath.isDefined) {
-        val dir = new File(localDataPath())
-        assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
-        val localSession =
-          SparkSessionBuilder.build(subcommandName, local = true, localWarehouseLocation = localWarehouseLocation.toOption)
-        LocalDataLoader.loadDataRecursively(dir, localSession)
-        localSession
-      } else {
-        SparkSessionBuilder.build(subcommandName)
-      }
-    }
-
-    def buildTableUtils(): TableUtils = {
-      TableUtils(sparkSession)
-    }
-
     protected def buildLocalTableExporter(tableUtils: TableUtils): LocalTableExporter =
-      new LocalTableExporter(
-        tableUtils, localTableExportPath(), localTableExportFormat(), localTableExportPrefix.toOption)
+      new LocalTableExporter(tableUtils,
+                             localTableExportPath(),
+                             localTableExportFormat(),
+                             localTableExportPrefix.toOption)
 
-    def exportTableToLocalIfNecessary(namespaceAndTable: String, tableUtils: TableUtils): Unit = {
+    def shouldExport(): Boolean = isLocal && localTableExportPath.isDefined
+
+    def exportTableToLocal(namespaceAndTable: String, tableUtils: TableUtils): Unit = {
       val isLocal = localTableMapping.nonEmpty || localDataPath.isDefined
       val shouldExport = localTableExportPath.isDefined
       if (!isLocal || !shouldExport) {
@@ -154,18 +203,98 @@ object Driver {
     }
   }
 
+  trait ResultValidationAbility {
+    this: ScallopConf with OfflineSubcommand =>
+
+    val expectedResultTable: ScallopOption[String] =
+      opt[String](
+        required = false,
+        default = None,
+        descr = """The name of the table containing expected result of a job.
+            |The table should have the exact schema of the output of the job""".stripMargin
+      )
+
+    def shouldPerformValidate(): Boolean = expectedResultTable.isDefined
+
+    def validateResult(df: DataFrame, keys: Seq[String], tableUtils: TableUtils): Boolean = {
+      val expectedDf = tableUtils.loadEntireTable(expectedResultTable())
+      val (_, _, metrics) = CompareBaseJob.compare(df, expectedDf, keys, tableUtils)
+      val result = CompareJob.getConsolidatedData(metrics, tableUtils.partitionSpec)
+
+      if (result.nonEmpty) {
+        logger.info("[Validation] Failed. Please try exporting the result and investigate.")
+        false
+      } else {
+        logger.info("[Validation] Success.")
+        true
+      }
+    }
+  }
+
   object JoinBackfill {
-    class Args extends Subcommand("join") with OfflineSubcommand {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
-      val runFirstHole: ScallopOption[Boolean] =
-        opt[Boolean](required = false,
-                     default = Some(false),
-                     descr = "Skip the first unfilled partition range if some future partitions have been populated.")
-      val joinConf = parseConf[api.Join](confPath())
-      override val subcommandName = s"join_${joinConf.metaData.name}"
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("join")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      val selectedJoinParts: ScallopOption[List[String]] =
+        opt[List[String]](required = false, descr = "A list of join parts that require backfilling.")
+      val useCachedLeft: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          default = Some(false),
+          descr = "Whether or not to use the cached bootstrap table as the source - used in parallelized join flow.")
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"join_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        !args.runFirstHole(),
+        selectedJoinParts = args.selectedJoinParts.toOption
+      )
+
+      if (args.selectedJoinParts.isDefined) {
+        join.computeJoinOpt(args.stepDays.toOption,
+                            args.startPartitionOverride.toOption,
+                            args.useCachedLeft.getOrElse(false))
+        logger.info(
+          s"Backfilling selected join parts: ${args.selectedJoinParts()} is complete. Skipping the final join. Exiting."
+        )
+        return
+      }
+
+      val df = join.computeJoin(args.stepDays.toOption, args.startPartitionOverride.toOption)
+
+      if (args.shouldExport()) {
+        args.exportTableToLocal(args.joinConf.metaData.outputTable, tableUtils)
+      }
+
+      if (args.shouldPerformValidate()) {
+        val keys = CompareJob.getJoinKeys(args.joinConf, tableUtils)
+        args.validateResult(df, keys, tableUtils)
+      }
+
+      df.show(numRows = 3, truncate = 0, vertical = true)
+      logger.info(
+        s"\nShowing three rows of output above.\nQuery table `${args.joinConf.metaData.outputTable}` for more.\n")
+    }
+  }
+
+  object JoinBackfillLeft {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("join-left")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"join_left_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
@@ -176,19 +305,42 @@ object Driver {
         args.buildTableUtils(),
         !args.runFirstHole()
       )
-      join.computeJoin(args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(args.joinConf.metaData.outputTable, tableUtils)
+      join.computeLeft(args.startPartitionOverride.toOption)
+    }
+  }
+
+  object JoinBackfillFinal {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("join-final")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"join_final_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      val join = new Join(
+        args.joinConf,
+        args.endDate(),
+        args.buildTableUtils(),
+        !args.runFirstHole()
+      )
+      join.computeFinal(args.startPartitionOverride.toOption)
     }
   }
 
   object GroupByBackfill {
-    class Args extends Subcommand("group-by-backfill") with OfflineSubcommand {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
-      val groupByConf: api.GroupBy = parseConf[api.GroupBy](confPath())
-      override val subcommandName = s"groupBy_${groupByConf.metaData.name}_backfill"
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args
+        extends Subcommand("group-by-backfill")
+        with OfflineSubcommand
+        with LocalExportTableAbility
+        with ResultValidationAbility {
+      lazy val groupByConf: api.GroupBy = parseConf[api.GroupBy](confPath())
+      override def subcommandName() = s"groupBy_${groupByConf.metaData.name}_backfill"
     }
 
     def run(args: Args): Unit = {
@@ -197,20 +349,26 @@ object Driver {
         args.groupByConf,
         args.endDate(),
         tableUtils,
-        args.stepDays.toOption
+        args.stepDays.toOption,
+        args.startPartitionOverride.toOption,
+        !args.runFirstHole()
       )
-      args.exportTableToLocalIfNecessary(args.groupByConf.metaData.outputTable, tableUtils)
+
+      if (args.shouldExport()) {
+        args.exportTableToLocal(args.groupByConf.metaData.outputTable, tableUtils)
+      }
+
+      if (args.shouldPerformValidate()) {
+        val df = tableUtils.loadEntireTable(args.groupByConf.metaData.outputTable)
+        args.validateResult(df, args.groupByConf.keys(tableUtils.partitionColumn).toSeq, tableUtils)
+      }
     }
   }
 
   object LabelJoin {
-    class Args extends Subcommand("label-join") with OfflineSubcommand {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs label join in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
-      val joinConf = parseConf[api.Join](confPath())
-      override val subcommandName = s"label_join_${joinConf.metaData.name}"
+    class Args extends Subcommand("label-join") with OfflineSubcommand with LocalExportTableAbility {
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"label_join_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
@@ -221,7 +379,10 @@ object Driver {
         args.endDate()
       )
       labelJoin.computeLabelJoin(args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(args.joinConf.metaData.outputLabelTable, tableUtils)
+
+      if (args.shouldExport()) {
+        args.exportTableToLocal(args.joinConf.metaData.outputLabelTable, tableUtils)
+      }
     }
   }
 
@@ -249,7 +410,8 @@ object Driver {
             "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
           default = Some(false)
         )
-      override val subcommandName = "analyzer_util"
+
+      override def subcommandName() = "analyzer_util"
     }
 
     def run(args: Args): Unit = {
@@ -270,7 +432,7 @@ object Driver {
         opt[String](required = true, descr = "Base path of config repo to export from")
       val outputRootPath: ScallopOption[String] =
         opt[String](required = true, descr = "Base path to write output metadata files to")
-      override val subcommandName = "metadata-export"
+      override def subcommandName() = "metadata-export"
     }
 
     def run(args: Args): Unit = {
@@ -279,13 +441,14 @@ object Driver {
   }
 
   object StagingQueryBackfill {
-    class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
-      val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
-      override val subcommandName = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
+    class Args extends Subcommand("staging-query-backfill") with OfflineSubcommand with LocalExportTableAbility {
+      val enableAutoExpand: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     descr = "Auto expand hive table if new columns added in staging query",
+                     default = Option(true))
+
+      lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](confPath())
+      override def subcommandName() = s"staging_query_${stagingQueryConf.metaData.name}_backfill"
     }
 
     def run(args: Args): Unit = {
@@ -295,36 +458,59 @@ object Driver {
         args.endDate(),
         tableUtils
       )
-      stagingQueryJob.computeStagingQuery(args.stepDays.toOption)
-      args.exportTableToLocalIfNecessary(args.stagingQueryConf.metaData.outputTable, tableUtils)
+      stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
+                                          args.enableAutoExpand.toOption,
+                                          args.startPartitionOverride.toOption,
+                                          !args.runFirstHole())
+
+      if (args.shouldExport()) {
+        args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)
+      }
     }
   }
 
   object DailyStats {
     class Args extends Subcommand("stats-summary") with OfflineSubcommand {
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs backfill in steps, step-days at a time. Default is 30 days",
-                 default = Option(30))
       val sample: ScallopOption[Double] =
         opt[Double](required = false,
                     descr = "Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate",
                     default = Option(0.1))
-      val joinConf: api.Join = parseConf[api.Join](confPath())
-      override val subcommandName = s"daily_stats_${joinConf.metaData.name}"
+      val forceBackfill: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     descr = "Force backfill even if the table is already populated",
+                     default = Option(false))
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"daily_stats_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
-      val joinConf = parseConf[api.Join](args.confPath())
-      new SummaryJob(args.sparkSession,
-                     joinConf = joinConf,
-                     endDate = args.endDate()).dailyRun(Some(args.stepDays()), args.sample())
+      new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
+        .dailyRun(Some(args.stepDays()), args.sample(), args.forceBackfill())
+    }
+  }
+
+  object LogStats {
+    class Args extends Subcommand("log-summary") with OfflineSubcommand {
+      val sample: ScallopOption[Double] =
+        opt[Double](required = false, descr = "Sampling ratio", default = Option(0.1))
+      val forceBackfill: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     descr = "Force backfill even if the table is already populated",
+                     default = Option(false))
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+
+      override def subcommandName() = s"log_stats_${joinConf.metaData.name}"
+    }
+
+    def run(args: Args): Unit = {
+      new SummaryJob(args.sparkSession, args.joinConf, endDate = args.endDate())
+        .loggingRun(Some(args.stepDays()), args.sample(), args.forceBackfill())
     }
   }
 
   object GroupByUploader {
     class Args extends Subcommand("group-by-upload") with OfflineSubcommand {
-      override val subcommandName = "group-by-upload"
+      override def subcommandName() = "group-by-upload"
     }
 
     def run(args: Args): Unit = {
@@ -334,7 +520,7 @@ object Driver {
 
   object ConsistencyMetricsCompute {
     class Args extends Subcommand("consistency-metrics-compute") with OfflineSubcommand {
-      override val subcommandName = "consistency-metrics-compute"
+      override def subcommandName() = "consistency-metrics-compute"
     }
 
     def run(args: Args): Unit = {
@@ -354,21 +540,22 @@ object Driver {
       val startDate: ScallopOption[String] =
         opt[String](required = false, descr = "Partition start date to compare the data from")
 
-      assert(confPath().contains("/joins/"), "Conf should refer to the join path")
-      assert(queryConf().contains("/staging_queries/"), "Compare path should refer to the staging query path")
-      val joinConf: api.Join = parseConf[api.Join](confPath())
-      val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](queryConf())
-      override val subcommandName = s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      lazy val stagingQueryConf: api.StagingQuery = parseConf[api.StagingQuery](queryConf())
+      override def subcommandName() = s"compare_join_query_${joinConf.metaData.name}_${stagingQueryConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
+      assert(args.confPath().contains("/joins/"), "Conf should refer to the join path")
+      assert(args.queryConf().contains("/staging_queries/"), "Compare path should refer to the staging query path")
+
       val tableUtils = args.buildTableUtils()
       new CompareJob(
         tableUtils,
         args.joinConf,
         args.stagingQueryConf,
         args.startDate.getOrElse(tableUtils.partitionSpec.at(System.currentTimeMillis())),
-        args.endDate.getOrElse(tableUtils.partitionSpec.at(System.currentTimeMillis()))
+        args.endDate()
       ).run()
     }
   }
@@ -404,16 +591,23 @@ object Driver {
   }
 
   object FetcherCli {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
     class Args extends Subcommand("fetch") with OnlineSubcommand {
+      val confPath: ScallopOption[String] = opt[String](required = false, descr = "Path to conf to fetch features")
       val keyJson: ScallopOption[String] = opt[String](required = false, descr = "json of the keys to fetch")
-      val name: ScallopOption[String] = opt[String](required = true, descr = "name of the join/group-by to fetch")
+      val name: ScallopOption[String] = opt[String](required = false, descr = "name of the join/group-by to fetch")
       val `type`: ScallopOption[String] =
         choice(Seq("join", "group-by", "join-stats"), descr = "the type of conf to fetch", default = Some("join"))
       val keyJsonFile: ScallopOption[String] = opt[String](
         required = false,
         descr = "file path to json of the keys to fetch",
         short = 'f'
+      )
+      val atMillis: ScallopOption[Long] = opt[Long](
+        required = false,
+        descr = "timestamp to fetch the data at",
+        default = None
       )
       val interval: ScallopOption[Int] = opt[Int](
         required = false,
@@ -438,18 +632,20 @@ object Driver {
       val series = stats.values.get
       val toPrint =
         if (
-          keyMap.get("statsKey").isDefined
-          && series.contains(keyMap.get("statsKey").map(_.asInstanceOf[String]).getOrElse(""))
+          keyMap.contains("statsKey")
+          && series.contains(keyMap("statsKey").asInstanceOf[String])
         )
           series.get(keyMap("statsKey").asInstanceOf[String])
         else series
-      println(s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(toPrint)}")
+      logger.info(
+        s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(toPrint)}")
     }
 
     def run(args: Args): Unit = {
       if (args.keyJson.isEmpty && args.keyJsonFile.isEmpty) {
         throw new Exception("At least one of keyJson and keyJsonFile should be specified!")
       }
+      require(!args.confPath.isEmpty || !args.name.isEmpty, "--conf-path or --name should be specified!")
       val objectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
       def readMap: String => Map[String, AnyRef] = { json =>
         objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
@@ -465,26 +661,33 @@ object Driver {
         if (args.keyJson.isDefined) {
           Try(readMapList(args.keyJson())).toOption.getOrElse(Seq(readMap(args.keyJson())))
         } else {
-          println(s"Reading requests from ${args.keyJsonFile()}")
+          logger.info(s"Reading requests from ${args.keyJsonFile()}")
           val file = Source.fromFile(args.keyJsonFile())
           val mapList = file.getLines().map(json => readMap(json)).toList
           file.close()
           mapList
         }
       if (keyMapList.length > 1) {
-        println(s"Plan to send ${keyMapList.length} fetches with ${args.interval()} seconds interval")
+        logger.info(s"Plan to send ${keyMapList.length} fetches with ${args.interval()} seconds interval")
       }
-      val fetcher = args.impl(args.serializableProps).buildFetcher(true)
+      val fetcher = args.impl(args.serializableProps).buildFetcher(true, "FetcherCLI")
       def iterate(): Unit = {
         keyMapList.foreach(keyMap => {
-          println(s"--- [START FETCHING for ${keyMap}] ---")
+          logger.info(s"--- [START FETCHING for ${keyMap}] ---")
           if (args.`type`() == "join-stats") {
             fetchStats(args, objectMapper, keyMap, fetcher)
           } else {
+            val featureName = if (args.name.isDefined) {
+              args.name()
+            } else {
+              args.confPath().confPathToKey
+            }
+            lazy val joinConfOption: Option[api.Join] =
+              args.confPath.toOption.map(confPath => parseConf[api.Join](confPath))
             val startNs = System.nanoTime
-            val requests = Seq(Fetcher.Request(args.name(), keyMap))
+            val requests = Seq(Fetcher.Request(featureName, keyMap, args.atMillis.toOption))
             val resultFuture = if (args.`type`() == "join") {
-              fetcher.fetchJoin(requests)
+              fetcher.fetchJoin(requests, joinConfOption)
             } else {
               fetcher.fetchGroupBys(requests)
             }
@@ -497,13 +700,13 @@ object Driver {
               r.values match {
                 case Success(valMap) => {
                   if (valMap == null) {
-                    println("No data present for the provided key.")
+                    logger.info("No data present for the provided key.")
                   } else {
                     valMap.foreach { case (k, v) => tMap.put(k, v) }
-                    println(
+                    logger.info(
                       s"--- [FETCHED RESULT] ---\n${objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(tMap)}")
                   }
-                  println(s"Fetched in: $awaitTimeMs ms")
+                  logger.info(s"Fetched in: $awaitTimeMs ms")
                 }
                 case Failure(exception) => {
                   exception.printStackTrace()
@@ -515,22 +718,29 @@ object Driver {
       }
       iterate()
       while (args.loop()) {
-        println("loop is set to true, start next iteration. will only exit if manually killed.")
+        logger.info("loop is set to true, start next iteration. will only exit if manually killed.")
         iterate()
       }
     }
   }
 
   object MetadataUploader {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Chronon config file or directory")
     }
 
     def run(args: Args): Unit = {
-      val putRequest = args.metaDataStore.putConf(args.confPath())
-      val res = Await.result(putRequest, 1.hour)
-      println(
+      val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
+      val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
+      val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
+      implicit val ec: ExecutionContext = ExecutionContext.global
+      val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
+        case (endPoint, kvMap) => args.metaDataStore.put(kvMap, endPoint)
+      }
+      val res = putRequestsSeq.flatMap(putRequests => Await.result(putRequests, 1.hour))
+      logger.info(
         s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
     }
   }
@@ -542,13 +752,8 @@ object Driver {
 
       val schemaTable: ScallopOption[String] =
         opt[String](required = true, descr = "Hive table with mapping from schema_hash to schema_value_last")
-
-      val stepDays: ScallopOption[Int] =
-        opt[Int](required = false,
-                 descr = "Runs consistency metrics job in steps, step-days at a time. Default is 15 days",
-                 default = Option(15))
-      val joinConf: api.Join = parseConf[api.Join](confPath())
-      override val subcommandName = s"log_flattener_join_${joinConf.metaData.name}"
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      override def subcommandName() = s"log_flattener_join_${joinConf.metaData.name}"
     }
 
     def run(args: Args): Unit = {
@@ -566,17 +771,18 @@ object Driver {
   }
 
   object GroupByStreaming {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
       session.streams.addListener(new StreamingQueryListener() {
         override def onQueryStarted(queryStarted: QueryStartedEvent): Unit = {
-          println("Query started: " + queryStarted.id)
+          logger.info("Query started: " + queryStarted.id)
         }
         override def onQueryTerminated(queryTerminated: QueryTerminatedEvent): Unit = {
-          println("Query terminated: " + queryTerminated.id)
+          logger.info("Query terminated: " + queryTerminated.id)
         }
         override def onQueryProgress(queryProgress: QueryProgressEvent): Unit = {
-          println("Query made progress: " + queryProgress.progress)
+          logger.info("Query made progress: " + queryProgress.progress)
         }
       })
       session.readStream
@@ -589,7 +795,9 @@ object Driver {
     }
 
     class Args extends Subcommand("group-by-streaming") with OnlineSubcommand {
+      @transient lazy val logger = LoggerFactory.getLogger(getClass)
       val confPath: ScallopOption[String] = opt[String](required = true, descr = "path to groupBy conf")
+      val DEFAULT_LAG_MILLIS = 2000 // 2seconds
       val kafkaBootstrap: ScallopOption[String] =
         opt[String](required = false, descr = "host:port of a kafka bootstrap server")
       val mockWrites: ScallopOption[Boolean] = opt[Boolean](required = false,
@@ -600,6 +808,11 @@ object Driver {
         required = false,
         default = Some(false),
         descr = "Prints details of data flowing through the streaming job, skip writing to kv store")
+      val lagMillis: ScallopOption[Int] = opt[Int](
+        required = false,
+        default = Some(DEFAULT_LAG_MILLIS),
+        descr = "Lag time for chaining, before fetching upstream join results, in milliseconds. Default 2 seconds"
+      )
       def parseConf[T <: TBase[_, _]: Manifest: ClassTag]: T =
         ThriftJsonCodec.fromJsonFile[T](confPath(), check = true)
     }
@@ -619,13 +832,13 @@ object Driver {
           }
           s"$file $suffix"
       }
-      println(s"File Statuses:\n  ${messages.mkString("\n  ")}")
+      logger.info(s"File Statuses:\n  ${messages.mkString("\n  ")}")
       statuses.find(_._2 == true).map(_._1)
     }
 
     def run(args: Args): Unit = {
       // session needs to be initialized before we can call find file.
-      val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
+      implicit val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
 
       val confFile = findFile(args.confPath())
       val groupByConf = confFile
@@ -635,19 +848,26 @@ object Driver {
       val onlineJar = findFile(args.onlineJar())
       if (args.debug())
         onlineJar.foreach(session.sparkContext.addJar)
-      val streamingSource = groupByConf.streamingSource
-      assert(streamingSource.isDefined, "There is no valid streaming source - with a valid topic, and endDate < today")
-      lazy val host = streamingSource.get.topicTokens.get("host")
-      lazy val port = streamingSource.get.topicTokens.get("port")
-      if (!args.kafkaBootstrap.isDefined)
-        assert(
-          host.isDefined && port.isDefined,
-          "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
-      val inputStream: DataFrame =
-        dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
-      val streamingRunner =
-        new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
-      val query = streamingRunner.run(args.debug())
+      implicit val apiImpl = args.impl(args.serializableProps)
+      val query = if (groupByConf.streamingSource.get.isSetJoinSource) {
+        new JoinSourceRunner(groupByConf,
+                             args.serializableProps,
+                             args.debug(),
+                             args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start()
+      } else {
+        val streamingSource = groupByConf.streamingSource
+        assert(streamingSource.isDefined,
+               "There is no valid streaming source - with a valid topic, and endDate < today")
+        lazy val host = streamingSource.get.topicTokens.get("host")
+        lazy val port = streamingSource.get.topicTokens.get("port")
+        if (!args.kafkaBootstrap.isDefined)
+          assert(
+            host.isDefined && port.isDefined,
+            "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
+        val inputStream: DataFrame =
+          dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
+        new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug()).run()
+      }
       query.awaitTermination()
     }
   }
@@ -675,10 +895,16 @@ object Driver {
     addSubcommand(AnalyzerArgs)
     object DailyStatsArgs extends DailyStats.Args
     addSubcommand(DailyStatsArgs)
+    object LogStatsArgs extends LogStats.Args
+    addSubcommand(LogStatsArgs)
     object CompareJoinQueryArgs extends CompareJoinQuery.Args
     addSubcommand(CompareJoinQueryArgs)
     object MetadataExportArgs extends MetadataExport.Args
     addSubcommand(MetadataExportArgs)
+    object JoinBackfillLeftArgs extends JoinBackfillLeft.Args
+    addSubcommand(JoinBackfillLeftArgs)
+    object JoinBackfillFinalArgs extends JoinBackfillFinal.Args
+    addSubcommand(JoinBackfillFinalArgs)
     object LabelJoinArgs extends LabelJoin.Args
     addSubcommand(LabelJoinArgs)
     requireSubcommand()
@@ -715,11 +941,14 @@ object Driver {
           case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
           case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
           case args.DailyStatsArgs         => DailyStats.run(args.DailyStatsArgs)
+          case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
           case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
           case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
-          case _                           => println(s"Unknown subcommand: $x")
+          case args.JoinBackfillLeftArgs   => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
+          case args.JoinBackfillFinalArgs  => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
+          case _                           => logger.info(s"Unknown subcommand: $x")
         }
-      case None => println(s"specify a subcommand please")
+      case None => logger.info(s"specify a subcommand please")
     }
     if (shouldExit) {
       System.exit(0)

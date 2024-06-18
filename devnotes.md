@@ -20,9 +20,8 @@ alias materialize="PYTHONPATH=$CHRONON_API:$PYTHONPATH $CHRONON_API/ai/chronon/r
 Thrift is a dependency for compile. The latest version 0.14 is very new - feb 2021, and incompatible with hive metastore. So we force 0.13.
 
 ```shell
-brew tap-new $USER/local-thrift
-brew extract --version=0.13.0 thrift $USER/local-thrift
-brew install thrift@0.13.0
+brew tap cartman-kai/thrift
+brew install thrift@0.13
 ```
 
 ### Install Python dependency packages for API
@@ -105,7 +104,7 @@ sbt python_api
 
 Note: This will create the artifacts with the version specific naming specified under `version.sbt`
 ```text
-Builds on master will result in:
+Builds on main branch will result in:
 <artifact-name>-<version>.jar 
 [JARs]   chronon_2.11-0.7.0-SNAPSHOT.jar
 [Python] chronon-ai-0.7.0-SNAPSHOT.tar.gz
@@ -179,7 +178,7 @@ password=<your password>
 2. Install `tox, build, twine`. There are three python requirements for the python build process.
 * tox: Module for testing. To run the tests run tox in the main project directory.
 * build: Module for building. To build run `python -m build` in the main project directory
-* twine: Module for publishing. To upload a distribution run `twine upload dist/<distribution>`
+* twine: Module for publishing. To upload a distribution run `twine upload dist/<distribution>.whl`
 ```
 python3 -m pip install -U tox build twine
 ```
@@ -212,7 +211,7 @@ python3 -m pip install -U tox build twine
 # Chronon Release Process
 
 ## Publishing all the artifacts of Chronon
-1. Run release command in the right HEAD of chronon repository.
+1. Run release command in the right HEAD of chronon repository. Before running this, you may want to activate your Python venv or install the required Python packages on the laptop. Otherwise, the Python release will fail due to missing deps.
 ```
 GPG_TTY=$(tty) sbt -mem 8192 release
 ```
@@ -228,15 +227,15 @@ This command will take into the account of `version.sbt` and handles a series of
      2. Select "refresh" and "release"
      3. Wait for 30 mins to sync to [maven](https://repo1.maven.org/maven2/) or [sonatype UI](https://search.maven.org/search?q=g:ai.chronon)
 4. Push the local release commits (DO NOT SQUASH), and the new tag created from step 1 to Github.
-     1. chronon repo disallow push to master directly, so instead push commits to a branch `git push origin master:your-name--release-xxx`
+     1. chronon repo disallow push to main branch directly, so instead push commits to a branch `git push origin main:your-name--release-xxx`
      2. your PR should contain exactly two commits, 1 setting the release version, 1 setting the new snapshot version. 
      3. make sure to use **Rebase pull request** instead of the regular Merge or Squash options when merging the PR.
-5. Push release tag to master branch
+5. Push release tag to main branch
      1. tag new version to release commit `Setting version to 0.0.xx`. If not already tagged, can be added by 
      ```
        git tag -fa v0.0.xx <commit-sha>
      ```
-     2. push tag to master 
+     2. push tag 
       ```
         git push origin <tag-name>
       ```
@@ -261,3 +260,26 @@ sbt sphinx
 bash build.sh
 bash gcloud_release.sh
 ```
+
+# Testing on REPL
+{One-time} First install the ammonite REPL with [support](https://ammonite.io/#OlderScalaVersions) for scala 2.12
+```shell
+sudo sh -c '(echo "#!/usr/bin/env sh" && curl -L https://github.com/com-lihaoyi/Ammonite/releases/download/3.0.0-M0/2.12-3.0.0-M0) > /usr/local/bin/amm && chmod +x /usr/local/bin/amm' && amm
+```
+
+Build the chronon jar for scala 2.12
+```shell
+sbt ++2.12.12 spark_uber/assembly
+```
+
+Start the REPL
+```shell
+/usr/local/bin/amm
+```
+
+In the repl prompt load the jar 
+```scala
+import $cp.spark.target.`scala-2.12`.`spark_uber-assembly-0.0.63-SNAPSHOT.jar`
+```
+
+Now you can import the chronon classes and use them directly from repl for testing.

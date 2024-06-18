@@ -1,13 +1,31 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test.bootstrap
 
+import org.slf4j.LoggerFactory
 import ai.chronon.api.Builders.Derivation
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.MetadataStore
+import ai.chronon.spark
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
 import ai.chronon.spark._
+import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
@@ -16,9 +34,9 @@ import org.junit.Test
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
 import scala.util.ScalaJavaConversions.JListOps
-import scala.util.ScalaVersionSpecificCollectionsConverter
 
 class DerivationTest {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("DerivationTest", local = true)
   private val tableUtils = TableUtils(spark)
@@ -27,16 +45,29 @@ class DerivationTest {
   @Test
   def testBootstrapToDerivations(): Unit = {
     val namespace = "test_derivations"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
-    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
 
+    val derivation1 = Builders.Derivation(name = "user_amount_30d_avg",
+      expression = "amount_dollars_sum_30d / 30")
+    val derivation2 = Builders.Derivation(
+      name = "*"
+    )
+
+    val groupByWithDerivation = groupBy
+      .setDerivations(
+        Seq(
+          derivation1,
+          derivation2
+        ).toJava
+      )
+    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
     val baseJoin = Builders.Join(
       left = Builders.Source.events(
         table = queryTable,
         query = Builders.Query()
       ),
-      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupByWithDerivation)),
       rowIds = Seq("request_id"),
       externalParts = Seq(
         Builders.ExternalPart(
@@ -66,10 +97,20 @@ class DerivationTest {
           name = "user_txn_count_15d",
           expression = "ext_payments_service_user_txn_count_15d"
         ),
+        // derivation based on one left field
+        Builders.Derivation(
+          name = "user_txn_count_15d_with_user_id",
+          expression = "CONCAT(ext_payments_service_user_txn_count_15d, ' ', user)"
+        ),
         // derivation based on one group by field (rename)
         Builders.Derivation(
           name = "user_amount_30d",
           expression = "unit_test_user_transactions_amount_dollars_sum_30d"
+        ),
+        // derivation based on one group by field (rename)
+        Builders.Derivation(
+          name = "user_amount_30d_avg",
+          expression = "unit_test_user_transactions_user_amount_30d_avg"
         ),
         // derivation based on one group by field (rename)
         Builders.Derivation(
@@ -101,13 +142,15 @@ class DerivationTest {
     val outputDf = runner.computeJoin()
 
     assertTrue(
-      outputDf.columns sameElements Array(
+      outputDf.columns.toSet == Set(
         "user",
         "request_id",
         "ts",
         "user_txn_count_30d",
         "user_txn_count_15d",
+        "user_txn_count_15d_with_user_id",
         "user_amount_30d",
+        "user_amount_30d_avg",
         "user_amount_15d",
         "user_amount_30d_minus_15d",
         "user_amount_avg_30d",
@@ -192,12 +235,11 @@ class DerivationTest {
     bootstrapJoin.getMetaData.setName("test.derivations_join_w_bootstrap")
     bootstrapJoin
       .setBootstrapParts(
-        ScalaVersionSpecificCollectionsConverter.convertScalaSeqToJava(
-          Seq(
-            diffBootstrapPart,
-            externalBootstrapPart,
-            contextualBootstrapPart
-          ))
+        Seq(
+          diffBootstrapPart,
+          externalBootstrapPart,
+          contextualBootstrapPart
+        ).toJava
       )
 
     val runner2 = new ai.chronon.spark.Join(bootstrapJoin, today, tableUtils)
@@ -222,6 +264,7 @@ class DerivationTest {
         outputDf("ts"),
         contextualBootstrapDf("user_txn_count_30d"),
         externalBootstrapDf("ext_payments_service_user_txn_count_15d").as("user_txn_count_15d"),
+        (concat(externalBootstrapDf("ext_payments_service_user_txn_count_15d"), lit(' '), outputDf("user"))).as("user_txn_count_15d_with_user_id"),
         outputDf("user_amount_30d"),
         outputDf("user_amount_15d"),
         coalesce(diffBootstrapDf("user_amount_30d_minus_15d"), outputDf("user_amount_30d_minus_15d"))
@@ -230,15 +273,16 @@ class DerivationTest {
           .as("user_amount_avg_30d"),
         (outputDf("user_amount_15d") * lit(1.0) / externalBootstrapDf("ext_payments_service_user_txn_count_15d"))
           .as("user_amount_avg_15d"),
+        (outputDf("user_amount_30d") * lit(1.0) / 30).as("user_amount_30d_avg"),
         outputDf("ds")
       )
 
     val diff = Comparison.sideBySide(computed, expected, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 
@@ -248,7 +292,7 @@ class DerivationTest {
   @Test
   def testBootstrapToDerivationsNoStar(): Unit = {
     val namespace = "test_derivations_no_star"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
@@ -309,10 +353,10 @@ class DerivationTest {
 
     val diff = Comparison.sideBySide(outputDf, bootstrapDf, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${outputDf.count()}")
-      println(s"Expected count: ${bootstrapDf.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${outputDf.count()}")
+      logger.info(s"Expected count: ${bootstrapDf.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 
@@ -330,7 +374,7 @@ class DerivationTest {
   }
 
   private def runLoggingTest(namespace: String, wildcardSelection: Boolean): Unit = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
@@ -443,10 +487,10 @@ class DerivationTest {
 
     val diff = Comparison.sideBySide(computedDf, expectedDf, List("request_id", "user", "ts", "ds"))
     if (diff.count() > 0) {
-      println(s"Actual count: ${computedDf.count()}")
-      println(s"Expected count: ${expectedDf.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.info(s"Actual count: ${computedDf.count()}")
+      logger.info(s"Expected count: ${expectedDf.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
       diff.show()
     }
 
@@ -456,7 +500,7 @@ class DerivationTest {
   @Test
   def testContextual(): Unit = {
     val namespace = "test_contextual"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
     val bootstrapDf = spark
       .table(queryTable)
@@ -580,5 +624,46 @@ class DerivationTest {
     assertTrue(schema4.contains("ext_contextual_context_1"))
     assertFalse(schema4.contains("context_2"))
     assertFalse(schema4.contains("ext_contextual_context_2"))
+  }
+
+  @Test
+  def testGroupByDerivations(): Unit = {
+    val namespace = "test_group_by_derivations"
+    tableUtils.createDatabase(namespace)
+    val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
+    groupBy.setBackfillStartDate(today)
+    groupBy.setDerivations(Seq(
+      Builders.Derivation(
+        name = "*"),
+      Builders.Derivation(
+        name = "amount_dollars_avg_15d",
+        expression = "amount_dollars_sum_15d / 15"
+      )).toJava)
+    ai.chronon.spark.GroupBy.computeBackfill(groupBy, today, tableUtils)
+    val actualDf = tableUtils.sql(
+      s"""
+         |select * from $namespace.${groupBy.metaData.cleanName}
+         |""".stripMargin)
+
+    val expectedDf = tableUtils.sql(
+      s"""
+         |select
+         |  user,
+         |  amount_dollars_sum_30d,
+         |  amount_dollars_sum_15d,
+         |  amount_dollars_sum_15d / 15 as amount_dollars_avg_15d,
+         |  ds
+         |from $namespace.${groupBy.metaData.cleanName}
+         |""".stripMargin)
+
+    val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", "ds"))
+    if (diff.count() > 0) {
+      logger.info(s"Actual count: ${actualDf.count()}")
+      logger.info(s"Expected count: ${expectedDf.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      logger.info(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
   }
 }

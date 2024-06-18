@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.online.test
 
 import ai.chronon.api._
@@ -91,6 +107,15 @@ trait CatalystUtilTestSparkSQLStructs {
     "float64s" -> makeArrayList(7.7, 8.7, 9.9),
     "strings" -> makeArrayList("hello", "world"),
     "bytess" -> makeArrayList("hello".getBytes(), "world".getBytes())
+  )
+
+  val ArrayContainersRow: Map[String, Any] = Map(
+    "bools" -> Array(false, true, false),
+    "int32s" -> Array(1, 2, 3),
+    "int64s" -> Array(4L, 5L, 6L),
+    "float64s" -> Array(7.7, 8.7, 9.9),
+    "strings" -> Array("hello", "world"),
+    "bytess" -> Array("hello".getBytes(), "world".getBytes())
   )
 
   val MapContainersStruct: StructType = StructType(
@@ -226,9 +251,9 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
     val res = cu.performSql(CommonScalarsRow)
     assertEquals(res.get.size, 5)
-    assertEquals(res.get("a"),"2038-01-19 03:14:07")
+    assertEquals(res.get("a"), "2038-01-19 03:14:07")
     assertTrue(res.get("b").isInstanceOf[java.lang.Long])
-    assertEquals(res.get("c"),1425546000000000L)
+    assertEquals(res.get("c"), 1425546000000000L)
     assertEquals(res.get("d"), 17)
     assertEquals(res.get("e"), 5)
   }
@@ -444,6 +469,34 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertArrayEquals(res_bytess.get(1).asInstanceOf[Array[Byte]], "world".getBytes())
   }
 
+  // Test that we're able to run CatalystUtil eval when we're working with
+  // Array inputs passed to the performSql method. This takes place when
+  // we're dealing with Derivations in GroupBys that contain aggregations such
+  // as ApproxPercentiles.
+  @Test
+  def testSelectStarWithListArrayContainersShouldReturnAsIs(): Unit = {
+    val selects = Seq(
+      "bools" -> "bools",
+      "int32s" -> "int32s",
+      "int64s" -> "int64s",
+      "float64s" -> "float64s",
+      "strings" -> "strings",
+      "bytess" -> "bytess"
+    )
+    val cu = new CatalystUtil(selects, ListContainersStruct)
+    val res = cu.performSql(ArrayContainersRow)
+    assertEquals(res.get.size, 6)
+    assertEquals(res.get("bools"), makeArrayList(false, true, false))
+    assertEquals(res.get("int32s"), makeArrayList(1, 2, 3))
+    assertEquals(res.get("int64s"), makeArrayList(4L, 5L, 6L))
+    assertEquals(res.get("float64s"), makeArrayList(7.7, 8.7, 9.9))
+    assertEquals(res.get("strings"), makeArrayList("hello", "world"))
+    val res_bytess = res.get("bytess").asInstanceOf[util.ArrayList[Any]]
+    assertEquals(res_bytess.size, 2)
+    assertArrayEquals(res_bytess.get(0).asInstanceOf[Array[Byte]], "hello".getBytes())
+    assertArrayEquals(res_bytess.get(1).asInstanceOf[Array[Byte]], "world".getBytes())
+  }
+
   @Test
   def testIndexingWithListContainersShouldWork(): Unit = {
     val selects = Seq(
@@ -531,4 +584,46 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertTrue(res.get("c").asInstanceOf[util.ArrayList[Any]].contains("world"))
   }
 
+  val inputEventStruct: StructType = StructType.from(
+    "InputEventStruct",
+    Array(
+      ("created_ts", LongType),
+      ("tag", StringType),
+      ("key", StringType),
+      ("json_prediction", StringType)
+    )
+  )
+  val inputEventRow: Map[String, Any] = Map(
+    "created_ts" -> 1000L,
+    "tag" -> "v1.0",
+    "key" -> "unique_key",
+    "json_prediction" -> "{ \"score\": 0.5}"
+  )
+
+  def testWhereClauseShouldFilterEventOut(): Unit = {
+    val selects = Map(
+      "id" -> "key",
+      "created" -> "created_ts",
+      "score" -> "CAST(get_json_object(json_prediction, '$.score') as Double)"
+    ).toSeq
+    val wheres = Seq("tag = 'inexistent'")
+    val cu = new CatalystUtil(selects, inputEventStruct, wheres)
+    val res = cu.performSql(inputEventRow)
+    assertTrue(res.isEmpty)
+  }
+
+  def testJsonInSelectAndValidWhereClause(): Unit = {
+    val selects = Map(
+      "id" -> "key",
+      "created" -> "created_ts",
+      "score" -> "CAST(get_json_object(json_prediction, '$.score') as Double)"
+    ).toSeq
+    val wheres = Seq("tag = 'v1.0'")
+    val cu = new CatalystUtil(selects, inputEventStruct, wheres)
+    val res = cu.performSql(inputEventRow)
+    assertTrue(res.get.size == 3)
+    assertTrue(res.get("id") == "unique_key")
+    assertTrue(res.get("created") == 1000L)
+    assertTrue(res.get("score") == 0.5)
+  }
 }

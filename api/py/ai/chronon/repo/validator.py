@@ -1,10 +1,27 @@
 """Object for checking whether a Chronon API thrift object is consistent with other
 """
+
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import json
 import logging
 import os
+import re
 from ai.chronon.api.ttypes import \
-    GroupBy, Join, Source
+    GroupBy, Join, Source, Derivation
+from ai.chronon.group_by import get_output_col_names
 from ai.chronon.logger import get_logger
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME
@@ -50,6 +67,70 @@ def is_batch_upload_needed(group_by: GroupBy) -> bool:
         return True
     else:
         return False
+
+
+def is_identifier(s: str) -> bool:
+    identifier_regex = re.compile(r"[a-zA-Z_][a-zA-Z0-9_]*")
+    return re.fullmatch(identifier_regex, s) is not None
+
+
+def get_pre_derived_group_by_columns(group_by: GroupBy) -> List[str]:
+    output_columns = []
+    if group_by.aggregations:
+        for agg in group_by.aggregations:
+            output_columns.extend(get_output_col_names(agg))
+    return output_columns
+
+
+def get_group_by_output_columns(group_by: GroupBy) -> List[str]:
+    """
+    From the group_by object, get the final output columns after derivations.
+    """
+    output_columns = set(get_pre_derived_group_by_columns(group_by))
+
+    if group_by.derivations:
+        # if derivations contain star, then all columns are included except the columns which are renamed
+        found = any(derivation.expression == "*" for derivation in group_by.derivations)
+        if not found:
+            output_columns.clear()
+        for derivation in group_by.derivations:
+            if found and is_identifier(derivation.expression):
+                output_columns.remove(derivation.expression)
+            if derivation.name != "*":
+                output_columns.add(derivation.name)
+
+    return list(output_columns)
+
+
+def get_pre_derived_join_columns(join: Join) -> List[str]:
+    output_columns = []
+    for jp in join.joinParts:
+        group_by_cols = get_group_by_output_columns(jp.groupBy)
+        for col in group_by_cols:
+            prefix = jp.prefix + "_" if jp.prefix else ""
+            gb_prefix = jp.groupBy.metaData.name.replace(".", "_")
+            output_columns.append(prefix + gb_prefix + "_" + col)
+    return output_columns
+
+
+def get_join_output_columns(join: Join) -> List[str]:
+    """
+    From the join object, get the final output columns after derivations.
+    """
+    output_columns = set(get_pre_derived_join_columns(join))
+
+    if join.derivations:
+        # if derivations contain star, then all columns are included except the columns which are renamed
+        found = any(derivation.expression == "*" for derivation in join.derivations)
+        if not found:
+            output_columns.clear()
+        for derivation in join.derivations:
+            if found and is_identifier(derivation.expression):
+                output_columns.remove(derivation.expression)
+            if derivation.name != "*":
+                output_columns.add(derivation.name)
+
+    return list(output_columns)
 
 
 class ChrononRepoValidator(object):
@@ -144,6 +225,33 @@ class ChrononRepoValidator(object):
         old_obj = self._get_old_obj(type(obj), obj.metaData.name)
         return not old_obj or not self._has_diff(obj, old_obj) or not old_obj.metaData.online
 
+    def _validate_derivations(self, columns: List[str], derivations: List[Derivation]) -> List[str]:
+        """
+        Validate join/groupBy's derivation is defined correctly.
+
+        Returns:
+          list of validation errors.
+        """
+        errors = []
+        derived_columns = set()
+        for derivation in derivations:
+            if derivation.name in derived_columns:
+                errors.append(
+                    "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
+            else:
+                derived_columns.add(derivation.name)
+        for derivation in derivations:
+            derived_name = derivation.name
+            derived_exp = derivation.expression
+            if derived_name in columns:
+                errors.append("Incorrect derivation name {} due to output column name conflict".format(derived_name))
+            if derived_exp != "*" and is_identifier(derived_exp):
+                if derived_exp not in columns:
+                    errors.append(
+                        "Incorrect derivation expression {}, please check the derivation expression".format(
+                            derived_exp))
+        return errors
+
     def _validate_join(self, join: Join) -> List[str]:
         """
         Validate join's status with materialized versions of group_bys
@@ -160,18 +268,24 @@ class ChrononRepoValidator(object):
                          if self._get_old_obj(GroupBy, group_by.metaData.name)]
         non_prod_old_group_bys = [group_by.metaData.name for group_by in old_group_bys
                                   if group_by.metaData.production is False]
+        # Check if the underlying groupBy is valid
+        group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
+        errors += [f"join {join.metaData.name}'s underlying {error}"
+                   for errors in group_by_errors for error in errors]
+        # Check if the production join is using non production groupBy
         if join.metaData.production and non_prod_old_group_bys:
             errors.append("join {} is production but includes the following non production group_bys: {}".format(
                 join.metaData.name, ', '.join(non_prod_old_group_bys)))
+        # Check if the online join is using the offline groupBy
         if join.metaData.online:
             if offline_included_group_bys:
                 errors.append("join {} is online but includes the following offline group_bys: {}".format(
                     join.metaData.name, ', '.join(offline_included_group_bys)))
-            # If join is online we materialize the underlying group bys
-            # So we need to check if they are valid.
-            group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
-            errors += [f"join {join.metaData.name}'s underlying {error}"
-                       for errors in group_by_errors for error in errors]
+        # Only validate the join derivation when the underlying groupBy is valid
+        group_by_correct = all(not errors for errors in group_by_errors)
+        if join.derivations and group_by_correct:
+            columns = set(get_pre_derived_join_columns(join))
+            errors.extend(self._validate_derivations(columns, join.derivations))
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
@@ -205,6 +319,11 @@ class ChrononRepoValidator(object):
             # set it to production in the materialized output.
             else:
                 group_by.metaData.production = True
+
+        # validate the derivations are defined correctly
+        if group_by.derivations:
+            columns = set(get_pre_derived_group_by_columns(group_by))
+            errors.extend(self._validate_derivations(columns, group_by.derivations))
 
         for source in group_by.sources:
             src: Source = source

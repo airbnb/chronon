@@ -1,5 +1,22 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark
 
+import org.slf4j.{Logger, LoggerFactory}
 import ai.chronon.spark.Extensions._
 import com.google.common.hash.{Hasher, Hashing}
 import org.apache.spark.sql.Row
@@ -25,11 +42,12 @@ case class KeyWithHash(data: Array[Any], hash: Array[Byte], hashInt: Int) extend
 }
 
 object FastHashing {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // function to generate a fast-ish hasher
   // the approach tries to accumulate several tiny closures to compute the final hash
   def generateKeyBuilder(keys: Array[String], schema: StructType): Row => KeyWithHash = {
     val keySchema = StructType(schema.filter { sf => keys.contains(sf.name) })
-    println(s"Generating key builder over keys:\n${keySchema.pretty}\n")
+    logger.info(s"Generating key builder over keys:\n${keySchema.pretty}\n")
     val keyIndices: Array[Int] = keys.map(schema.fieldIndex)
     // the hash function generation won't be in the hot path - so its okay to
     val hashFunctions: Array[(Hasher, Row) => Unit] = keys.zip(keyIndices).map {

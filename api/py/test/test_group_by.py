@@ -1,3 +1,18 @@
+
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import pytest, json
 
 from ai.chronon import group_by, query
@@ -40,6 +55,27 @@ def event_source(table):
                 "cnt": 1
             },
             timeColumn="CAST(ts AS DOUBLE)",
+        ),
+    )
+
+
+def entity_source(snapshotTable, mutationTable):
+    """
+    Sample source
+    """
+    return ttypes.EntitySource(
+        snapshotTable=snapshotTable,
+        mutationTable=mutationTable,
+        query=ttypes.Query(
+            startPartition="2020-04-09",
+            selects={
+                "subject": "subject_sql",
+                "event_id": "event_sql",
+                "cnt": 1
+            },
+            timeColumn="CAST(ts AS DOUBLE)",
+            mutationTimeColumn="__mutationTs",
+            reversalColumn="is_reverse",
         ),
     )
 
@@ -120,6 +156,23 @@ def test_validator_ok():
                 ),
             ),
         )
+    with pytest.raises(AssertionError):
+        fail_gb = group_by.GroupBy(
+            sources=event_source("table"),
+            keys=["subject"],
+            aggregations=None,
+        )
+    with pytest.raises(AssertionError):
+        fail_gb = group_by.GroupBy(
+            sources=entity_source("table", "mutationTable"),
+            keys=["subject"],
+            aggregations=None,
+        )
+    noagg_gb = group_by.GroupBy(
+        sources=entity_source("table", None),
+        keys=["subject"],
+        aggregations=None,
+    )
 
 
 def test_generic_collector():
@@ -203,52 +256,3 @@ def test_additional_metadata():
         tags={"to_deprecate": True}
     )
     assert json.loads(gb.metaData.customJson)['groupby_tags']['to_deprecate']
-
-
-ratings_features = GroupBy(
-    sources=[
-        EntitySource(
-            snapshotTable="item_info.ratings_snapshots_table",
-            mutationTable="item_info.ratings_mutations_table",
-            mutationTopic="ratings_mutations_topic",
-            query=query.Query(
-                selects={
-                    "rating": "CAST(rating as DOUBLE)",
-                },
-                time_column="ts",
-            ))
-    ],
-    keys=["item"],
-    aggregations=[
-        Aggregation(
-            input_column="rating",
-            operation=Operation.AVERAGE,
-            windows=[Window(length=90, timeUnit=TimeUnit.DAYS)],
-        ),
-    ],
-)
-
-
-view_features = GroupBy(
-    sources=[
-        EventSource(
-            table="user_activity.user_views_table",
-            topic="user_views_stream",
-            query=query.Query(
-                selects={
-                    "view": "if(context['activity_type'] = 'item_view', 1 , 0)",
-                },
-                wheres=["user != null"],
-                time_column="ts",
-            )
-        )
-    ],
-    keys=["user", "item"],
-    aggregations=[
-        Aggregation(
-            input_column="view",
-            operation=Operation.COUNT,
-            windows=[Window(length=5, timeUnit=TimeUnit.HOURS)],
-        ),
-    ],
-)

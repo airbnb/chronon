@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.aggregator.windowing
 
 import ai.chronon.aggregator.base.SimpleAggregator
@@ -8,7 +24,8 @@ case class BankersEntry[IR](var value: IR, ts: Long)
 
 // ported from: https://github.com/IBM/sliding-window-aggregators/blob/master/rust/src/two_stacks_lite/mod.rs with some
 // modification to work with simple aggregator
-class TwoStackLiteAggregationBuffer[Input, IR >: Null, Output >: Null](aggregator: SimpleAggregator[Input, IR, Output], maxSize: Int) {
+class TwoStackLiteAggregationBuffer[Input, IR >: Null, Output >: Null](aggregator: SimpleAggregator[Input, IR, Output],
+                                                                       maxSize: Int) {
 
   // last is where new events go, first is where old events get popped from
   val deque = new util.ArrayDeque[BankersEntry[IR]](maxSize)
@@ -56,7 +73,7 @@ class TwoStackLiteAggregationBuffer[Input, IR >: Null, Output >: Null](aggregato
     val ir = if (front == null && aggBack == null) {
       null
     } else if (front == null) {
-        aggregator.clone(aggBack)
+      aggregator.clone(aggBack)
     } else if (aggBack == null) {
       front
     } else {

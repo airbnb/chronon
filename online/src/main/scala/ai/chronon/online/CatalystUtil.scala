@@ -1,3 +1,19 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.online
 
 import ai.chronon.api.{DataType, StructType}
@@ -92,10 +108,9 @@ class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSch
 }
 
 // This class by itself it not thread safe because of the transformBuffer
-class CatalystUtil(
-    expressions: collection.Seq[(String, String)],
-    inputSchema: StructType,
-    filters: collection.Seq[String] = Seq.empty) {
+class CatalystUtil(expressions: collection.Seq[(String, String)],
+                   inputSchema: StructType,
+                   filters: collection.Seq[String] = Seq.empty) {
   private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }
   private val sessionTable =
     s"q${math.abs(selectClauses.mkString(", ").hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
@@ -122,10 +137,16 @@ class CatalystUtil(
 
   def performSql(values: Map[String, Any]): Option[Map[String, Any]] = {
     val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
-    val resultRowMaybe = transformFunc(internalRow)
+    performSql(internalRow)
+  }
+
+  def performSql(row: InternalRow): Option[Map[String, Any]] = {
+    val resultRowMaybe = transformFunc(row)
     val outputVal = resultRowMaybe.map(resultRow => outputDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Map[String, Any]])
   }
+
+  def getOutputSparkSchema: types.StructType = outputSparkSchema
 
   private def initialize(): (InternalRow => Option[InternalRow], types.StructType) = {
     val session = CatalystUtil.session
@@ -156,7 +177,7 @@ class CatalystUtil(
         }
         codegenFunc
       }
-      case ProjectExec(projectList, fp@FilterExec(condition, child)) => {
+      case ProjectExec(projectList, fp @ FilterExec(condition, child)) => {
         val unsafeProjection = UnsafeProjection.create(projectList, fp.output)
 
         def projectFunc(row: InternalRow): Option[InternalRow] = {
@@ -170,11 +191,31 @@ class CatalystUtil(
         projectFunc
       }
       case ProjectExec(projectList, childPlan) => {
-        val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
-        def projectFunc(row: InternalRow): Option[InternalRow] = {
-          Some(unsafeProjection.apply(row))
+        childPlan match {
+          // This WholeStageCodegenExec case is slightly different from the one above as we apply a projection.
+          case whc @ WholeStageCodegenExec(fp: FilterExec) =>
+            val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
+            val (ctx, cleanedSource) = whc.doCodeGen()
+            val (clazz, _) = CodeGenerator.compile(cleanedSource)
+            val references = ctx.references.toArray
+            val buffer = clazz.generate(references).asInstanceOf[BufferedRowIterator]
+            val iteratorWrapper: IteratorWrapper[InternalRow] = new IteratorWrapper[InternalRow]
+            buffer.init(0, Array(iteratorWrapper))
+            def codegenFunc(row: InternalRow): Option[InternalRow] = {
+              iteratorWrapper.put(row)
+              while (buffer.hasNext) {
+                return Some(unsafeProjection.apply(buffer.next()))
+              }
+              None
+            }
+            codegenFunc
+          case _ =>
+            val unsafeProjection = UnsafeProjection.create(projectList, childPlan.output)
+            def projectFunc(row: InternalRow): Option[InternalRow] = {
+              Some(unsafeProjection.apply(row))
+            }
+            projectFunc
         }
-        projectFunc
       }
       case ltse: LocalTableScanExec => {
         // Input `row` is unused because for LTSE, no input is needed to compute the output
