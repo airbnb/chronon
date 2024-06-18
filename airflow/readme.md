@@ -1,1 +1,1 @@
-Please see the [Orchestration](../docs/source/administration/Orchestration.md) documentation on how to deploy the code in this directory.
+Please see the [Orchestration](../docs/source/setup/Orchestration.md) documentation on how to deploy the code in this directory.

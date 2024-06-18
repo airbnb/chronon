@@ -27,7 +27,7 @@ This can be achieved by using the output of one `GroupBy` as the input to the ne
 
 ## Supported aggregations
 
-All supported aggregations are defined [here](https://github.com/airbnb/chronon/blob/master/api/thrift/api.thrift#L51).
+All supported aggregations are defined [here](https://github.com/airbnb/chronon/blob/main/api/thrift/api.thrift#L51).
 Chronon supports powerful aggregation patterns and the section below goes into detail of the properties and behaviors
 of aggregations.
 
@@ -46,8 +46,8 @@ Chronon will look for a `ts` column from the input source.
 ## Sketching Aggregations
 
 Sketching algorithms are used to approximate the values of an exact aggregation when the aggregation itself is not
-scalable. `unique_count` and `percentile` aggregations are examples where getting exact value requires storing all raw
-values, and hence not-scalable. `approx_unique_count` and `approx_percentile` aggregations utilize a bounded amount of
+scalable. `unique_count`, `percentile`, and `histogram` aggregations are examples where getting exact value requires storing all raw
+values, and hence not-scalable. `approx_unique_count`, `approx_percentile`, and `approx_histogram_k` aggregations utilize a bounded amount of
 memory to estimate the value of the exact aggregation. We allow users to tune this trade-off between memory and accuracy
 as a parameter to the `Aggregation`. Chronon as a policy doesn't encourage use of un-scalable aggregations.
 `unique_count` and `histogram` are supported but discouraged due to lack of `scalability`.
@@ -133,18 +133,20 @@ Limitations:
 
 ## Table of properties for aggregations
 
-|aggregation            | input type       | nesting allowed? | output type       | reversible | parameters         | bounded memory |
-|-----------------------|------------------|------------------|-------------------|------------|--------------------|----------------|
-| count                 | all types        | list, map        | long              | yes        |                    | yes            |
-| min, max              | primitive types  | list, map        | input             | no         |                    | yes            |
-| top_k, bottom_k       | primitive types  | list, map        | list<input,>      | no         | k                  | yes            |
-| first, last           | all types        | NO               | input             | no         |                    | yes            |
-| first_k, last_k       | all types        | NO               | list<input,>      | no         | k                  | yes            |
-| average, variance     | numeric types    | list, map        | double            | yes        |                    | yes            |
-| histogram             | string           | list, map        | map<string, long> | yes        | k=inf              | no             |
-| approx_unique_count   | primitive types  | list, map        | long              | no         | k=8                | yes            |
-| approx_percentile     | primitive types  | list, map        | list<input,>      | no         | k=128, percentiles | yes            |
-| unique_count          | primitive types  | list, map        | long              | no         |                    | no             |
+| aggregation              | input type      | nesting allowed? | output type       | reversible | parameters         | bounded memory |
+|--------------------------|-----------------|------------------|-------------------|------------|--------------------|----------------|
+| count                    | all types       | list, map        | long              | yes        |                    | yes            |
+| min, max                 | primitive types | list, map        | input             | no         |                    | yes            |
+| top_k, bottom_k          | primitive types | list, map        | list<input,>      | no         | k                  | yes            |
+| first, last              | all types       | NO               | input             | no         |                    | yes            |
+| first_k, last_k          | all types       | NO               | list<input,>      | no         | k                  | yes            |
+| average                  | numeric types   | list, map        | double            | yes        |                    | yes            |
+| variance, skew, kurtosis | numeric types   | list, map        | double            | no         |                    | yes            |
+| histogram                | string          | list, map        | map<string, long> | yes        | k=inf              | no             |
+| approx_histogram_k       | primitive types | list, map        | map<string, long> | yes        | k=inf              | yes            |
+| approx_unique_count      | primitive types | list, map        | long              | no         | k=8                | yes            |
+| approx_percentile        | primitive types | list, map        | list<input,>      | no         | k=128, percentiles | yes            |
+| unique_count             | primitive types | list, map        | long              | no         |                    | no             |
 
 
 ## Accuracy
@@ -181,7 +183,7 @@ If you look at the parameters column in the above table - you will see `k`.
 
 For approx_unique_count and approx_percentile - k stands for the size of the `sketch` - the larger this is, the more
 accurate and expensive to compute the results will be. Mapping between k and size for approx_unique_count is
-[here](https://github.com/apache/incubator-datasketches-java/blob/master/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180)
+[here](https://github.com/apache/incubator-datasketches-java/blob/main/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180)
 for approx_percentile is the first table in [here](https://datasketches.apache.org/docs/KLL/KLLAccuracyAndSize.html).
 `percentiles` for `approx_percentile` is an array of doubles between 0 and 1, where you want percentiles at. (Ex: "[0.25, 0.5, 0.75]")
 
@@ -193,7 +195,7 @@ The following examples are broken down by source type. We strongly suggest makin
 
 ## Realtime Event GroupBy examples
 
-This example is based on the [returns](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/returns.py) GroupBy from the quickstart guide that performs various aggregations over the `refund_amt` column over various windows.
+This example is based on the [returns](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/returns.py) GroupBy from the quickstart guide that performs various aggregations over the `refund_amt` column over various windows.
 
 ```python
 source = Source(
@@ -236,7 +238,7 @@ v1 = GroupBy(
 
 ## Bucketed GroupBy Example
 
-In this example we take the [Purchases GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/purchases.py) from the Quickstart tutorial and modify it to include buckets based on a hypothetical `"credit_card_type"` column.
+In this example we take the [Purchases GroupBy](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/purchases.py) from the Quickstart tutorial and modify it to include buckets based on a hypothetical `"credit_card_type"` column.
 
 ```python
 source = Source(
@@ -283,7 +285,7 @@ v1 = GroupBy(
 
 ## Simple Batch Event GroupBy examples
 
-Example GroupBy with windowed aggregations. Taken from [purchases.py](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/purchases.py).
+Example GroupBy with windowed aggregations. Taken from [purchases.py](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/purchases.py).
 
 Important things to note about this case relative to the streaming GroupBy:
 * The default accuracy here is `SNAPSHOT` meaning that updates to the online KV store only happen in batch, and also backfills will be midnight accurate rather than intra day accurate.
@@ -329,7 +331,7 @@ v1 = GroupBy(
 
 ### Batch Entity GroupBy examples
 
-This is taken from the [Users GroupBy](https://github.com/airbnb/chronon/blob/master/api/py/test/sample/group_bys/quickstart/users.py) from the quickstart tutorial.
+This is taken from the [Users GroupBy](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/users.py) from the quickstart tutorial.
 
 
 ```python

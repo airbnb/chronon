@@ -232,7 +232,7 @@ class SchemaEvolutionTest extends TestCase {
       tableUtils: TableUtils,
       inMemoryKvStore: InMemoryKvStore
   ): Unit = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     joinTestSuite.groupBys.foreach { gbTestSuite =>
       val tableName = s"${namespace}.${gbTestSuite.name}"
       gbTestSuite.groupByData.save(tableName)

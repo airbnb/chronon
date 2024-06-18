@@ -344,6 +344,17 @@ object Extensions {
       else { source.getJoinSource.getJoin.metaData.outputTable }
     }
 
+    def overwriteTable(table: String): Unit = {
+      if (source.isSetEntities) { source.getEntities.setSnapshotTable(table) }
+      else if (source.isSetEvents) { source.getEvents.setTable(table) }
+      else {
+        val metadata = source.getJoinSource.getJoin.getMetaData
+        val Array(namespace, tableName) = table.split(".")
+        metadata.setOutputNamespace(namespace)
+        metadata.setName(tableName)
+      }
+    }
+
     def table: String = rawTable.cleanSpec
 
     def subPartitionFilters: Map[String, String] = {
@@ -623,6 +634,12 @@ object Extensions {
     def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
 
     def cleanSpec: String = string.split("/").head
+
+    // derive a feature name key from path to file
+    def confPathToKey: String = {
+      // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
+      string.split("/").takeRight(3).mkString("/")
+    }
   }
 
   implicit class ExternalSourceOps(externalSource: ExternalSource) extends ExternalSource(externalSource) {
@@ -882,6 +899,13 @@ object Extensions {
       externalPartHashes ++ semanticHash
     }
 
+    def leftChanged(oldSemanticHash: Map[String, String]): Boolean = {
+      // Checks for semantic changes in left or bootstrap, because those are saved together
+      val bootstrapExistsAndChanged = oldSemanticHash.contains(join.metaData.bootstrapTable) && oldSemanticHash.get(
+        join.metaData.bootstrapTable) != semanticHash.get(join.metaData.bootstrapTable)
+      oldSemanticHash.get(leftSourceKey) != semanticHash.get(leftSourceKey) || bootstrapExistsAndChanged
+    }
+
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
       val newSemanticHash = semanticHash
       // only right join part hashes for convenience
@@ -890,7 +914,7 @@ object Extensions {
       }
 
       // drop everything if left source changes
-      val partsToDrop = if (oldSemanticHash(leftSourceKey) != newSemanticHash(leftSourceKey)) {
+      val partsToDrop = if (leftChanged(oldSemanticHash)) {
         partHashes(oldSemanticHash).keys.toSeq
       } else {
         val changed = partHashes(newSemanticHash).flatMap {
@@ -1043,6 +1067,8 @@ object Extensions {
     lazy val derivationExpressionSet: Set[String] = derivations.iterator.map(_.expression).toSet
     lazy val derivationExpressionFlippedMap: Map[String, String] =
       derivationsWithoutStar.map(d => d.expression -> d.name).toMap
+    lazy val renameOnlyDerivations: List[Derivation] =
+      derivationsWithoutStar.filter(d => JoinOps.isIdentifier(d.expression))
 
     // Used during offline spark job and this method preserves ordering of derivations
     def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {

@@ -16,6 +16,7 @@
 
 package ai.chronon.spark
 
+import java.util
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
@@ -27,8 +28,10 @@ import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 import org.apache.spark.util.sketch.BloomFilter
 
-import scala.collection.Seq
-import scala.util.ScalaJavaConversions.MapOps
+import scala.collection.compat._
+import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.{JIteratorOps, JMapOps, MapOps}
+import ai.chronon.api
 
 object JoinUtils {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -289,32 +292,30 @@ object JoinUtils {
     */
 
   def genBloomFilterIfNeeded(
-      leftDf: DataFrame,
       joinPart: ai.chronon.api.JoinPart,
       joinConf: ai.chronon.api.Join,
       leftRowCount: Long,
       unfilledRange: PartitionRange,
-      tableUtils: TableUtils,
-      joinLevelBloomMapOpt: Option[Map[String, BloomFilter]]): Option[Map[String, BloomFilter]] = {
-    logger.info(
-      s"\nRow count to be filled for ${joinPart.groupBy.metaData.name}. BloomFilter Threshold: ${tableUtils.bloomFilterThreshold}")
+      joinLevelBloomMapOpt: Option[util.Map[String, BloomFilter]]): Option[util.Map[String, BloomFilter]] = {
 
-    // apply bloom filter when left row count is below threshold
-    if (leftRowCount > tableUtils.bloomFilterThreshold) {
-      logger.info("Row count is above threshold. Skip gen bloom filter.")
-      Option.empty
-    } else {
+    val rightBlooms = joinLevelBloomMapOpt.map { joinBlooms =>
+      joinPart.rightToLeft.iterator.map {
+        case (rightCol, leftCol) =>
+          rightCol -> joinBlooms.get(leftCol)
+      }.toJMap
+    }
 
-      val requiredLeftColumns = joinPart.rightToLeft.values.toSeq
-      val leftBlooms = {
-        joinLevelBloomMapOpt.getOrElse(requiredLeftColumns.map { key =>
-          key -> leftDf.generateBloomFilter(key, leftRowCount, joinConf.left.table, unfilledRange)
-        }.toMap)
-      }
+    // print bloom sizes
+    val bloomSizes = rightBlooms.map { blooms =>
+      val sizes = blooms.asScala
+        .map {
+          case (rightCol, bloom) =>
+            s"$rightCol -> ${bloom.bitSize()}"
+        }
+      logger.info(s"Bloom sizes: ${sizes.mkString(", ")}")
+    }
 
-      val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
-      val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
-      logger.info(s"""
+    logger.info(s"""
            Generating bloom filter for joinPart:
            |  part name : ${joinPart.groupBy.metaData.name},
            |  left type : ${joinConf.left.dataModel},
@@ -325,7 +326,52 @@ object JoinUtils {
            |  bloom sizes: $bloomSizes
            |  groupBy: ${joinPart.groupBy.toString}
            |""".stripMargin)
-      Some(rightBloomMap)
+    rightBlooms
+  }
+
+  def injectKeyFilter(leftDf: DataFrame, joinPart: api.JoinPart): Unit = {
+    // Modifies the joinPart to inject the key filter into the where Clause of GroupBys by hardcoding the keyset
+    val groupByKeyNames = joinPart.groupBy.getKeyColumns.asScala
+
+    val collectedLeft = leftDf.collect()
+
+    joinPart.groupBy.sources.asScala.foreach { source =>
+      val selectMap = Option(source.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
+      val groupByKeyExpressions = groupByKeyNames.map { key =>
+        key -> selectMap.getOrElse(key, key)
+      }.toMap
+
+      groupByKeyExpressions
+        .map {
+          case (keyName, groupByKeyExpression) =>
+            val leftSideKeyName = joinPart.rightToLeft.get(keyName).get
+            logger.info(
+              s"KeyName: $keyName, leftSide KeyName: $leftSideKeyName , Join right to left: ${joinPart.rightToLeft
+                .mkString(", ")}")
+            val values = collectedLeft.map(row => row.getAs[Any](leftSideKeyName))
+            // Check for null keys, warn if found, err if all null
+            val (notNullValues, nullValues) = values.partition(_ != null)
+            if (notNullValues.isEmpty) {
+              throw new RuntimeException(
+                s"No not-null keys found for key: $keyName. Check source table or where clauses.")
+            } else if (!nullValues.isEmpty) {
+              logger.warn(s"Found ${nullValues.length} null keys for key: $keyName.")
+            }
+
+            // String manipulate to form valid SQL
+            val valueSet = notNullValues.map {
+              case s: String => s"'$s'" // Add single quotes for string values
+              case other     => other.toString // Keep other types (like Int) as they are
+            }.toSet
+
+            // Form the final WHERE clause for injection
+            s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
+        }
+        .foreach { whereClause =>
+          val currentWheres = Option(source.rootQuery.getWheres).getOrElse(new util.ArrayList[String]())
+          currentWheres.add(whereClause)
+          source.rootQuery.setWheres(currentWheres)
+        }
     }
   }
 
@@ -338,6 +384,7 @@ object JoinUtils {
   def tablesToRecompute(joinConf: ai.chronon.api.Join,
                         outputTable: String,
                         tableUtils: TableUtils): collection.Seq[String] = {
+    // Finds all join output tables (join parts and final table) that need recomputing (in monolithic spark job mode)
     val gson = new Gson()
     (for (
       props <- tableUtils.getTableProperties(outputTable);
@@ -347,5 +394,18 @@ object JoinUtils {
       logger.info(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
       joinConf.tablesToDrop(oldSemanticHash)
     }).getOrElse(collection.Seq.empty)
+  }
+
+  def shouldRecomputeLeft(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: TableUtils): Boolean = {
+    // Determines if the saved left table of the join (includes bootstrap) needs to be recomputed due to semantic changes since last run
+    if (tableUtils.tableExists(outputTable)) {
+      val gson = new Gson()
+      val props = tableUtils.getTableProperties(outputTable);
+      val oldSemanticJson = props.get(Constants.SemanticHashKey);
+      val oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
+      joinConf.leftChanged(oldSemanticHash)
+    } else {
+      false
+    }
   }
 }

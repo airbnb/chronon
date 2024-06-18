@@ -64,7 +64,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     session: SparkSession,
     apiImpl: Api)
     extends Serializable {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
+  @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   val context: Metrics.Context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
 
@@ -107,7 +107,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private val microBatchIntervalMillis: Int = getProp("batch_interval_millis", "1000").toInt
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
-    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
     private val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex)
     private val valueIndices: Array[Int] = valueColumns.map(inputSchema.fieldIndex)
     private val tsIndex: Int = inputSchema.fieldIndex(eventTimeColumn)

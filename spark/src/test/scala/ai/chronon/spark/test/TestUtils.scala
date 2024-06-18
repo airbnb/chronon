@@ -21,6 +21,7 @@ import ai.chronon.api
 import ai.chronon.api._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.TableUtils
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
@@ -386,7 +387,7 @@ object TestUtils {
   }
 
   def getParentJoin(spark: SparkSession, namespace: String, name: String, gbName: String): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    TableUtils(spark).createDatabase(namespace)
     val topic = "kafka://test_topic/schema=my_schema/host=X/port=Y"
     val listingCol = Column("listing", StringType, 50)
     // price for listing
@@ -411,7 +412,8 @@ object TestUtils {
     val viewsCols = Seq(listingCol, userCol)
     val viewsTable = s"$namespace.views_table"
     val viewsDf = DataFrameGen
-      .events(spark, viewsCols, 30, 7).filter(col("user").isNotNull && col("listing").isNotNull)
+      .events(spark, viewsCols, 30, 7)
+      .filter(col("user").isNotNull && col("listing").isNotNull)
     viewsDf.show()
     viewsDf.save(viewsTable)
 

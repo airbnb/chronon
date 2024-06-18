@@ -21,11 +21,11 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps, DerivationOps}
+import ai.chronon.api.Extensions.{DerivationOps, JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataDirWalker, MetadataEndPoint, MetadataStore, SparkConversions, StringArrayConverter}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
@@ -42,7 +42,7 @@ import java.util.concurrent.Executors
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.io.Source
 import scala.util.ScalaJavaConversions._
 
@@ -69,13 +69,18 @@ class FetcherTest extends TestCase {
       finally src.close()
     }.replaceAll("\\s+", "")
 
+    val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
     val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
     val singleFileDataSet = ChrononMetadataKey + "_single_file_test"
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFilePut = singleFileMetadataStore.putConf(confResource.getPath)
-    Await.result(singleFilePut, Duration.Inf)
+    val singleFileDirWalker = new MetadataDirWalker(confResource.getPath, acceptedEndPoints)
+    val singleFileKvMap = singleFileDirWalker.run
+    val singleFilePut: Seq[Future[scala.collection.Seq[Boolean]]] = singleFileKvMap.toSeq.map {
+      case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, singleFileDataSet)
+    }
+    singleFilePut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
     val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     assertTrue(res.latest.isSuccess)
@@ -86,8 +91,12 @@ class FetcherTest extends TestCase {
     val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryPut = directoryMetadataStore.putConf(confResource.getPath.replace(s"/$joinPath", ""))
-    Await.result(directoryPut, Duration.Inf)
+    val directoryDataDirWalker = new MetadataDirWalker(confResource.getPath.replace(s"/$joinPath", ""), acceptedEndPoints)
+    val directoryDataKvMap = directoryDataDirWalker.run
+    val directoryPut = directoryDataKvMap.toSeq.map {
+      case (endPoint, kvMap) => directoryMetadataStore.put(kvMap, directoryDataSetDataSet)
+    }
+    directoryPut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
     val dirResponse =
       inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
@@ -106,7 +115,7 @@ class FetcherTest extends TestCase {
     * Generate deterministic data for testing and checkpointing IRs and streaming data.
     */
   def generateMutationData(namespace: String): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
     val eventData = Seq(
       Row(595125622443733822L, toTs("2021-04-10 09:00:00"), "2021-04-10"),
@@ -223,6 +232,11 @@ class FetcherTest extends TestCase {
           operation = Operation.AVERAGE,
           inputColumn = "rating",
           windows = Seq(new Window(1, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.SKEW,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
         )
       ),
       accuracy = Accuracy.TEMPORAL,
@@ -238,7 +252,7 @@ class FetcherTest extends TestCase {
   }
 
   def generateRandomData(namespace: String, keyCount: Int = 10, cardinality: Int = 100): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val rowCount = cardinality * keyCount
     val userCol = Column("user", StringType, keyCount)
     val vendorCol = Column("vendor", StringType, keyCount)
@@ -288,7 +302,14 @@ class FetcherTest extends TestCase {
                              inputColumn = "rating",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)),
                              buckets = Seq("bucket")),
+        Builders.Aggregation(operation = Operation.SKEW,
+                             inputColumn = "rating",
+                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)),
+                             buckets = Seq("bucket")),
         Builders.Aggregation(operation = Operation.HISTOGRAM,
+                             inputColumn = "txn_types",
+                             windows = Seq(new Window(3, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.APPROX_HISTOGRAM_K,
                              inputColumn = "txn_types",
                              windows = Seq(new Window(3, TimeUnit.DAYS))),
         Builders.Aggregation(operation = Operation.LAST_K,
@@ -333,6 +354,19 @@ class FetcherTest extends TestCase {
                              inputColumn = "credit",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test/vendor_credit", namespace = namespace)
+    )
+    val creditDerivationGroupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.entities(query = Builders.Query(), snapshotTable = creditTable)),
+      keyColumns = Seq("vendor_id"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM,
+          inputColumn = "credit",
+          windows = Seq(new Window(3, TimeUnit.DAYS)))),
+      metaData = Builders.MetaData(name = "unit_test/vendor_credit_derivation", namespace = namespace),
+      derivations = Seq(
+        Builders.Derivation("credit_sum_3d_test_rename", "credit_sum_3d"),
+        Builders.Derivation("*", "*")
+      )
     )
 
     // temporal-entities
@@ -384,7 +418,8 @@ class FetcherTest extends TestCase {
         Builders.JoinPart(groupBy = userBalanceGroupBy, keyMapping = Map("user_id" -> "user")),
         Builders.JoinPart(groupBy = reviewGroupBy),
         Builders.JoinPart(groupBy = creditGroupBy, prefix = "b"),
-        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a")
+        Builders.JoinPart(groupBy = creditGroupBy, prefix = "a"),
+        Builders.JoinPart(groupBy = creditDerivationGroupBy, prefix = "c")
       ),
       metaData = Builders.MetaData(name = "test/payments_join",
                                    namespace = namespace,
@@ -402,7 +437,7 @@ class FetcherTest extends TestCase {
   }
 
   def generateEventOnlyData(namespace: String, groupByCustomJson: Option[String] = None): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
 
@@ -500,6 +535,11 @@ class FetcherTest extends TestCase {
           operation = Operation.AVERAGE,
           inputColumn = "rating",
           windows = Seq(new Window(2, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.APPROX_HISTOGRAM_K,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
         )
       ),
       accuracy = Accuracy.TEMPORAL,

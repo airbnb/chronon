@@ -38,7 +38,7 @@ import ai.chronon.spark._
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
-import org.apache.spark.sql.{Row, SparkSession}
+import org.apache.spark.sql.{Encoders, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 
@@ -338,9 +338,13 @@ class GroupByTest {
       new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
 
     print(aggregationsMetadata)
-    assertTrue(aggregationsMetadata.length == 1)
-    assertEquals(aggregationsMetadata(0).name, "time_spent_ms")
-    assertEquals(aggregationsMetadata(0).columnType, LongType)
+    assertTrue(aggregationsMetadata.length == 2)
+
+    val columns = aggregationsMetadata.map(a => a.name -> a.columnType).toMap
+    assertEquals(Map(
+      "time_spent_ms" -> LongType,
+      "price" -> DoubleType
+    ), columns)
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
@@ -401,16 +405,17 @@ class GroupByTest {
     val sourceSchema = List(
       Column("user", StringType, 10000),
       Column("item", StringType, 100),
-      Column("time_spent_ms", LongType, 5000)
+      Column("time_spent_ms", LongType, 5000),
+      Column("price", DoubleType, 100)
     )
     val namespace = "chronon_test"
     val sourceTable = s"$namespace.test_group_by_steps$suffix"
 
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
     val source = Builders.Source.events(
       query =
-        Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms"), startPartition = startPartition),
+        Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms", "price"), startPartition = startPartition),
       table = sourceTable
     )
     (source, endPartition)
@@ -423,7 +428,7 @@ class GroupByTest {
                tableUtils: TableUtils,
                stepDays: Option[Int] = None,
                additionalAgg: Seq[Aggregation] = Seq.empty): String = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val groupBy = getSampleGroupBy(name, source, namespace, additionalAgg)
 
     GroupBy.computeBackfill(
@@ -482,6 +487,60 @@ class GroupByTest {
              namespace = namespace,
              tableUtils = tableUtils,
              additionalAgg = aggs)
+  }
+
+  @Test
+  def testApproxHistograms(): Unit = {
+    val (source, endPartition) = createTestSource(suffix = "_approx_histogram")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_approx_histograms"
+    val aggs = Seq(
+      Builders.Aggregation(
+        operation = Operation.APPROX_HISTOGRAM_K,
+        inputColumn = "item",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "4")
+      ),
+      Builders.Aggregation(
+        operation = Operation.APPROX_HISTOGRAM_K,
+        inputColumn = "ts",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "4")
+      ),
+      Builders.Aggregation(
+        operation = Operation.APPROX_HISTOGRAM_K,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "4")
+      )
+    )
+    backfill(name = "unit_test_group_by_approx_histograms",
+             source = source,
+             endPartition = endPartition,
+             namespace = namespace,
+             tableUtils = tableUtils,
+             additionalAgg = aggs)
+
+    val histogramValues = spark
+      .sql("""
+          |select explode(map_values(item_approx_histogram_k_15d)) as item_values
+          |from test_approx_histograms.unit_test_group_by_approx_histograms
+          |""".stripMargin)
+      .map(row => row.getAs[Long]("item_values"))(Encoders.scalaLong)
+      .collect()
+      .toSet
+
+    assert(histogramValues.nonEmpty)
+    assert(!histogramValues.contains(0))
   }
 
   @Test
@@ -557,5 +616,44 @@ class GroupByTest {
       diff.show()
     }
     assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testDescriptiveStats(): Unit = {
+    val (source, endPartition) = createTestSource(suffix = "_descriptive_stats")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_descriptive_stats"
+    val aggs = Seq(
+      Builders.Aggregation(
+        operation = Operation.VARIANCE,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.SKEW,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+      Builders.Aggregation(
+        operation = Operation.KURTOSIS,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        )
+      ),
+    )
+    backfill(name = "unit_test_group_by_descriptive_stats",
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils,
+      additionalAgg = aggs)
   }
 }

@@ -16,31 +16,31 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
+import org.slf4j.LoggerFactory
 
 import java.util
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
+import scala.util.Try
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
               val inputDf: DataFrame,
-              val mutationDf: DataFrame = null,
+              val mutationDfFn: () => DataFrame = null,
               skewFilter: Option[String] = None,
               finalize: Boolean = true)
     extends Serializable {
@@ -226,6 +226,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       .mapValues(sawtoothAggregator.finalizeSnapshot)
 
     // Preprocess for mutations: Add a ds of mutation ts column, collect sorted mutations by keys and ds of mutation.
+    val mutationDf = mutationDfFn()
     val mutationsTsIndex = mutationDf.schema.fieldIndex(Constants.MutationTimeColumn)
     val mTsIndex = mutationDf.schema.fieldIndex(Constants.TimeColumn)
     val mutationsReversalIndex = mutationDf.schema.fieldIndex(Constants.ReversalColumn)
@@ -418,7 +419,7 @@ object GroupBy {
           groupByConf.dataModel == DataModel.Events && groupByConf.inferredAccuracy == Accuracy.TEMPORAL
         val endDate = if (isPreShifted) beforeDs else queryRange.end
 
-        val join = new Join(joinConf, endDate, tableUtils, mutationScan = false, showDf = showDf)
+        val join = new Join(joinConf, endDate, tableUtils, showDf = showDf)
         if (computeDependency) {
           val df = join.computeJoin()
           if (showDf) {
@@ -458,10 +459,9 @@ object GroupBy {
            queryRange: PartitionRange,
            tableUtils: TableUtils,
            computeDependency: Boolean,
-           bloomMapOpt: Option[Map[String, BloomFilter]] = None,
+           bloomMapOpt: Option[util.Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true,
-           mutationScan: Boolean = true,
            showDf: Boolean = false): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
@@ -514,24 +514,24 @@ object GroupBy {
     }
 
     // Generate mutation Df if required, align the columns with inputDf so no additional schema is needed by aggregator.
-    val mutationSources = groupByConf.sources.toScala.filter { _.isSetEntities }
+    val mutationSources = groupByConf.sources.toScala.filter { source =>
+      source.isSetEntities && source.getEntities.isSetMutationTable
+    }
     val mutationsColumnOrder = inputDf.columns ++ Constants.MutationFields.map(_.name)
-    val mutationDf =
-      if (mutationScan && groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
+
+    def mutationDfFn(): DataFrame = {
+      val df: DataFrame = if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
         val mutationDf = mutationSources
-          .map {
+          .map(ms =>
             renderDataSourceQuery(groupByConf,
-                                  _,
+                                  ms,
                                   groupByConf.getKeyColumns.toScala,
                                   queryRange.shift(1),
                                   tableUtils,
                                   groupByConf.maxWindow,
                                   groupByConf.inferredAccuracy,
-                                  mutations = true)
-          }
-          .map {
-            tableUtils.sql
-          }
+                                  mutations = true))
+          .map { tableUtils.sql }
           .reduce { (df1, df2) =>
             val columns1 = df1.schema.fields.map(_.name)
             df1.union(df2.selectExpr(columns1: _*))
@@ -540,15 +540,18 @@ object GroupBy {
         bloomMapOpt.map { mutationDf.filterBloom }.getOrElse { mutationDf }
       } else null
 
-    if (showDf && mutationDf != null) {
-      logger.info(s"printing mutation data for groupBy: ${groupByConf.metaData.name}")
-      mutationDf.prettyPrint()
+      if (showDf && df != null) {
+        logger.info(s"printing mutation data for groupBy: ${groupByConf.metaData.name}")
+        df.prettyPrint()
+      }
+
+      df
     }
 
     new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
                 keyColumns,
                 nullFiltered,
-                Option(mutationDf).orNull,
+                mutationDfFn,
                 finalize = finalize)
   }
 
@@ -672,7 +675,8 @@ object GroupBy {
                       endPartition: String,
                       tableUtils: TableUtils,
                       stepDays: Option[Int] = None,
-                      overrideStartPartition: Option[String] = None): Unit = {
+                      overrideStartPartition: Option[String] = None,
+                      skipFirstHole: Boolean = true): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
@@ -688,7 +692,8 @@ object GroupBy {
     val groupByUnfilledRangesOpt =
       tableUtils.unfilledRanges(outputTable,
                                 PartitionRange(overrideStart, endPartition)(tableUtils),
-                                if (isAnySourceCumulative) None else Some(inputTables))
+                                if (isAnySourceCumulative) None else Some(inputTables),
+                                skipFirstHole = skipFirstHole)
 
     if (groupByUnfilledRangesOpt.isEmpty) {
       logger.info(s"""Nothing to backfill for $outputTable - given
