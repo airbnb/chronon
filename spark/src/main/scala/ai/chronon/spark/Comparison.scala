@@ -18,7 +18,7 @@ package ai.chronon.spark
 
 import org.slf4j.LoggerFactory
 import ai.chronon.online.Extensions.StructTypeOps
-import com.google.gson.Gson
+import com.google.gson.{Gson, GsonBuilder}
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, MapType}
 
@@ -32,7 +32,9 @@ object Comparison {
     if (m == null) return null
     val tm = new util.TreeMap[String, Any]()
     m.iterator.foreach { case (key, value) => tm.put(key, value) }
-    val gson = new Gson()
+    val gson = new GsonBuilder()
+      .serializeSpecialFloatingPointValues()
+      .create()
     gson.toJson(tm)
   }
 

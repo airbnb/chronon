@@ -209,6 +209,10 @@ object ColumnAggregator {
   private def toFloat[A: Numeric](inp: Any): Float = implicitly[Numeric[A]].toFloat(inp.asInstanceOf[A])
   private def toLong[A: Numeric](inp: Any) = implicitly[Numeric[A]].toLong(inp.asInstanceOf[A])
   private def boolToLong(inp: Any): Long = if (inp.asInstanceOf[Boolean]) 1 else 0
+  private def toJavaLong[A: Numeric](inp: Any) =
+    implicitly[Numeric[A]].toLong(inp.asInstanceOf[A]).asInstanceOf[java.lang.Long]
+  private def toJavaDouble[A: Numeric](inp: Any) =
+    implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A]).asInstanceOf[java.lang.Double]
 
   def construct(baseInputType: DataType,
                 aggregationPart: AggregationPart,
@@ -256,6 +260,17 @@ object ColumnAggregator {
     aggregationPart.operation match {
       case Operation.COUNT     => simple(new Count)
       case Operation.HISTOGRAM => simple(new Histogram(aggregationPart.getInt("k", Some(0))))
+      case Operation.APPROX_HISTOGRAM_K =>
+        val k = aggregationPart.getInt("k", Some(8))
+        inputType match {
+          case IntType    => simple(new ApproxHistogram[java.lang.Long](k), toJavaLong[Int])
+          case LongType   => simple(new ApproxHistogram[java.lang.Long](k))
+          case ShortType  => simple(new ApproxHistogram[java.lang.Long](k), toJavaLong[Short])
+          case DoubleType => simple(new ApproxHistogram[java.lang.Double](k))
+          case FloatType  => simple(new ApproxHistogram[java.lang.Double](k), toJavaDouble[Float])
+          case StringType => simple(new ApproxHistogram[String](k))
+          case _          => mismatchException
+        }
       case Operation.SUM =>
         inputType match {
           case IntType     => simple(new Sum[Long](LongType), toLong[Int])
@@ -322,6 +337,26 @@ object ColumnAggregator {
           case ShortType  => simple(new Variance, toDouble[Short])
           case DoubleType => simple(new Variance)
           case FloatType  => simple(new Variance, toDouble[Float])
+          case _          => mismatchException
+        }
+
+      case Operation.SKEW =>
+        inputType match {
+          case IntType    => simple(new Skew, toDouble[Int])
+          case LongType   => simple(new Skew, toDouble[Long])
+          case ShortType  => simple(new Skew, toDouble[Short])
+          case DoubleType => simple(new Skew)
+          case FloatType  => simple(new Skew, toDouble[Float])
+          case _          => mismatchException
+        }
+
+      case Operation.KURTOSIS =>
+        inputType match {
+          case IntType    => simple(new Kurtosis, toDouble[Int])
+          case LongType   => simple(new Kurtosis, toDouble[Long])
+          case ShortType  => simple(new Kurtosis, toDouble[Short])
+          case DoubleType => simple(new Kurtosis)
+          case FloatType  => simple(new Kurtosis, toDouble[Float])
           case _          => mismatchException
         }
 
