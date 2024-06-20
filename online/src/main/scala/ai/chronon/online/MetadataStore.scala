@@ -21,6 +21,7 @@ import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps, WindowOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest, TimedValue}
+import ai.chronon.online.MetadataEndPoint.NameByTeamEndPointName
 import com.google.gson.{Gson, GsonBuilder}
 import org.apache.thrift.TBase
 
@@ -68,8 +69,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       }
   }
 
-  def getEntityList[T <: TBase[_, _]: Manifest](team: String, dataset: String): Try[Seq[String]] = {
+  def getEntityListByTeam[T <: TBase[_, _]: Manifest](team: String): Try[Seq[String]] = {
     val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
+    val dataset = NameByTeamEndPointName
     kvStore
       .getStringArray(team, dataset, timeoutMillis)
       .recoverWith {
