@@ -89,11 +89,11 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       { team =>
         getEntityListByTeam[GroupBy](team)
           .recover {
-          case e: java.util.NoSuchElementException =>
-            logger.error(
-              s"Failed to fetch conf for team $team at group_bys/$team, please check metadata upload to make sure the metadata has been uploaded")
-            throw e
-        }
+            case e: java.util.NoSuchElementException =>
+              logger.error(
+                s"Failed to fetch conf for team $team at group_bys/$team, please check metadata upload to make sure the metadata has been uploaded")
+              throw e
+          }
       },
       { team => Metrics.Context(environment = "group_by.list.fetch", groupBy = team) }
     )
@@ -104,11 +104,11 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       { team =>
         getEntityListByTeam[Join](team)
           .recover {
-          case e: java.util.NoSuchElementException =>
-            logger.error(
-              s"Failed to fetch conf for team $team at joins/$team, please check metadata upload to make sure the metadata has been uploaded")
-            throw e
-        }
+            case e: java.util.NoSuchElementException =>
+              logger.error(
+                s"Failed to fetch conf for team $team at joins/$team, please check metadata upload to make sure the metadata has been uploaded")
+              throw e
+          }
       },
       { team => Metrics.Context(environment = "join.list.fetch", groupBy = team) }
     )
