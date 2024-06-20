@@ -84,6 +84,36 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       }
   }
 
+  lazy val getGroupByListByTeam: TTLCache[String, Try[Seq[String]]] = {
+    new TTLCache[String, Try[Seq[String]]](
+      { team =>
+        getEntityListByTeam[GroupBy](team)
+          .recover {
+          case e: java.util.NoSuchElementException =>
+            logger.error(
+              s"Failed to fetch conf for team $team at group_bys/$team, please check metadata upload to make sure the metadata has been uploaded")
+            throw e
+        }
+      },
+      { team => Metrics.Context(environment = "group_by.list.fetch", groupBy = team) }
+    )
+  }
+
+  lazy val getJoinByListByTeam: TTLCache[String, Try[Seq[String]]] = {
+    new TTLCache[String, Try[Seq[String]]](
+      { team =>
+        getEntityListByTeam[Join](team)
+          .recover {
+          case e: java.util.NoSuchElementException =>
+            logger.error(
+              s"Failed to fetch conf for team $team at joins/$team, please check metadata upload to make sure the metadata has been uploaded")
+            throw e
+        }
+      },
+      { team => Metrics.Context(environment = "join.list.fetch", groupBy = team) }
+    )
+  }
+
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]](
     { name =>
       val startTimeMs = System.currentTimeMillis()
