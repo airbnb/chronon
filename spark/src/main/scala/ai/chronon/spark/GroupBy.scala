@@ -179,7 +179,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   def temporalEntities(queriesUnfilteredDf: DataFrame, resolution: Resolution = FiveMinuteResolution): DataFrame = {
 
     // Add extra column to the queries and generate the key hash.
-    val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns)
+    val queriesDf = queriesUnfilteredDf.removeNulls(keyColumns, includePartial = true)
     val timeBasedPartitionColumn = "ds_of_ts"
     val queriesWithTimeBasedPartition = queriesDf.withTimeBasedColumn(timeBasedPartitionColumn)
 
@@ -282,7 +282,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
     val queriesDf = skewFilter
       .map { queriesUnfilteredDf.filter }
-      .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
+      .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns, includePartial = true))
 
     val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
@@ -506,8 +506,7 @@ object GroupBy {
     val processedInputDf = bloomMapOpt.map { skewFilteredDf.filterBloom }.getOrElse { skewFilteredDf }
 
     // at-least one of the keys should be present in the row.
-    val nullFilterClause = groupByConf.keyColumns.toScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
-    val nullFiltered = processedInputDf.filter(nullFilterClause)
+    val nullFiltered = processedInputDf.removeNulls(groupByConf.keyColumns.toScala, includePartial = true)
     if (showDf) {
       logger.info(s"printing input date for groupBy: ${groupByConf.metaData.name}")
       nullFiltered.prettyPrint()
