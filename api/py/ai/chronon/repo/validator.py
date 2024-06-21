@@ -113,6 +113,17 @@ def get_pre_derived_join_columns(join: Join) -> List[str]:
     return output_columns
 
 
+def get_external_columns(join: Join) -> List[str]:
+    external_columns = []
+    for jp in join.joinParts:
+        group_by_cols = get_group_by_output_columns(jp.groupBy)
+        for col in group_by_cols:
+            prefix = jp.prefix + "_" if jp.prefix else ""
+            gb_prefix = jp.groupBy.metaData.name.replace(".", "_")
+            external_columns.append(prefix + gb_prefix + "_" + col)
+    return external_columns
+
+
 def get_join_output_columns(join: Join) -> List[str]:
     """
     From the join object, get the final output columns after derivations.
