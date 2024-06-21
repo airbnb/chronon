@@ -321,7 +321,7 @@ class FetcherBase(kvStore: KVStore,
     }.toSeq
 
     // If caching is enabled, we check if any of the GetRequests are already cached. If so, we store them in a Map
-    // and avoid the work of re-fetching them.
+    // and avoid the work of re-fetching them. It is mainly for batch data requests. 
     val cachedRequests: Map[GetRequest, CachedBatchResponse] = getCachedRequests(groupByRequestToKvRequest)
     // Collect cache metrics once per fetchGroupBys call; Caffeine metrics aren't tagged by groupBy
     maybeBatchIrCache.foreach(cache =>
@@ -329,7 +329,7 @@ class FetcherBase(kvStore: KVStore,
 
     val allRequestsToFetch: Seq[GetRequest] = groupByRequestToKvRequest.flatMap {
       case (_, Success(GroupByRequestMeta(_, batchRequest, streamingRequestOpt, _, _))) => {
-        // If a request is cached, don't include it in the list of requests to fetch.
+        // If a batch request is cached, don't include it in the list of requests to fetch because the batch IRs already cached
         if (cachedRequests.contains(batchRequest)) streamingRequestOpt else Some(batchRequest) ++ streamingRequestOpt
       }
       case _ => Seq.empty

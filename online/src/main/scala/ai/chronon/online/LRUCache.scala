@@ -26,13 +26,13 @@ object LRUCache {
   private def buildCaffeineCache[KEY <: Object, VALUE <: Object](
       cacheName: String,
       maximumSize: Int = 10000): CaffeineCache[KEY, VALUE] = {
-    println(s"Chronon Cache build started. cacheName=$cacheName")
+    logger.info(s"Chronon Cache build started. cacheName=$cacheName")
     val cache: CaffeineCache[KEY, VALUE] = Caffeine
       .newBuilder()
       .maximumSize(maximumSize)
       .recordStats()
       .build[KEY, VALUE]()
-    println(s"Chronon Cache build finished. cacheName=$cacheName")
+    logger.info(s"Chronon Cache build finished. cacheName=$cacheName")
     cache
   }
 
