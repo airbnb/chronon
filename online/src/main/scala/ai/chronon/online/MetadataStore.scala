@@ -99,7 +99,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     )
   }
 
-  lazy val getJoinByListByTeam: TTLCache[String, Try[Seq[String]]] = {
+  lazy val getJoinListByTeam: TTLCache[String, Try[Seq[String]]] = {
     new TTLCache[String, Try[Seq[String]]](
       { team =>
         getEntityListByTeam[Join]("joins/" + team)
