@@ -26,7 +26,6 @@ import org.apache.thrift.TBase
 
 import java.io.File
 import java.nio.file.{Files, Paths}
-import scala.collection.JavaConverters.{mapAsJavaMapConverter, mapAsScalaMapConverter}
 import scala.collection.immutable.SortedMap
 import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
@@ -39,7 +38,7 @@ case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
-  private val CONF_BATCH_SIZE = 50
+  private val CONF_BATCH_SIZE = 100
 
   // Note this should match with the format used in the warehouse
   def setPartitionMeta(format: String, spanMillis: Long): Unit = {
@@ -149,88 +148,29 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       },
       { gb => Metrics.Context(environment = "group_by.serving_info.fetch", groupBy = gb) })
 
-  // upload the materialized JSONs to KV store:
-  // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
-  def putConf(configPath: String): Future[Seq[Boolean]] = {
-    val configFile = new File(configPath)
-    assert(configFile.exists(), s"$configFile does not exist")
-    logger.info(s"Uploading Chronon configs from $configPath")
-    val fileList = listFiles(configFile)
-
-    val puts = fileList
-      .filter { file =>
-        val name = parseName(file.getPath)
-        if (name.isEmpty) logger.info(s"Skipping invalid file ${file.getPath}")
-        name.isDefined
+  def put(
+      kVPairs: Map[String, Seq[String]],
+      datasetName: String = ChrononMetadataKey,
+      batchSize: Int = CONF_BATCH_SIZE
+  ): Future[Seq[Boolean]] = {
+    val puts = kVPairs.map {
+      case (k, v) => {
+        logger.info(s"""Putting metadata for
+             |dataset: $datasetName
+             |key: $k
+             |conf: $v""".stripMargin)
+        val kBytes = k.getBytes()
+        // if value is a single string, use it as is, else join the strings into a json list
+        val vBytes = if (v.size == 1) v.head.getBytes() else StringArrayConverter.stringsToBytes(v)
+        PutRequest(keyBytes = kBytes,
+                   valueBytes = vBytes,
+                   dataset = datasetName,
+                   tsMillis = Some(System.currentTimeMillis()))
       }
-      .flatMap { file =>
-        val path = file.getPath
-        val confJsonOpt = path match {
-          case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
-          case value if value.contains("joins/")           => loadJson[Join](value)
-          case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
-          case _                                           => logger.info(s"unknown config type in file $path"); None
-        }
-        val key = path.confPathToKey
-        confJsonOpt.map { conf =>
-          logger.info(s"""Putting metadata for 
-               |key: $key 
-               |conf: $conf""".stripMargin)
-          PutRequest(keyBytes = key.getBytes(),
-                     valueBytes = conf.getBytes(),
-                     dataset = dataset,
-                     tsMillis = Some(System.currentTimeMillis()))
-        }
-      }
-    val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
-    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
+    }.toSeq
+    val putsBatches = puts.grouped(batchSize).toSeq
+    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$datasetName")
     val futures = putsBatches.map(batch => kvStore.multiPut(batch))
     Future.sequence(futures).map(_.flatten)
-  }
-
-  // list file recursively
-  private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
-    if (base.isFile) {
-      Seq(base)
-    } else {
-      val files = base.listFiles
-      val result = files.filter(_.isFile)
-      result ++
-        files
-          .filter(_.isDirectory)
-          .filter(_ => recursive)
-          .flatMap(listFiles(_, recursive))
-    }
-  }
-
-  // process chronon configs only. others will be ignored
-  // todo: add metrics
-  private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
-    try {
-      val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)
-      Some(ThriftJsonCodec.toJsonStr(configConf))
-    } catch {
-      case e: Throwable =>
-        logger.error(s"Failed to parse compiled Chronon config file: $file, \nerror=${e.getMessage}")
-        None
-    }
-  }
-
-  def parseName(path: String): Option[String] = {
-    val gson = new Gson()
-    val reader = Files.newBufferedReader(Paths.get(path))
-    try {
-      val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
-      Option(map.get("metaData"))
-        .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
-        .map(_.get("name"))
-        .flatMap(Option(_))
-        .map(_.asInstanceOf[String])
-    } catch {
-      case ex: Throwable =>
-        logger.error(s"Failed to parse Chronon config file at $path as JSON", ex)
-        ex.printStackTrace()
-        None
-    }
   }
 }

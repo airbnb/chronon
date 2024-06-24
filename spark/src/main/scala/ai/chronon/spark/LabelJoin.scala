@@ -30,6 +30,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.IterableOps
+import java.util
 
 class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -147,9 +148,9 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
   def computeRange(leftDf: DataFrame, leftRange: PartitionRange, sanitizedLabelDs: String): DataFrame = {
     val leftDfCount = leftDf.count()
-    val leftBlooms = labelJoinConf.leftKeyCols.toSeq.map { key =>
+    val leftBlooms = labelJoinConf.leftKeyCols.iterator.map { key =>
       key -> leftDf.generateBloomFilter(key, leftDfCount, joinConf.left.table, leftRange)
-    }.toMap
+    }.toJMap
 
     // compute joinParts in parallel
     val rightDfs = labelJoinConf.labels.asScala.map { labelJoinPart =>
@@ -211,9 +212,9 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
 
   private def computeLabelPart(joinPart: JoinPart,
                                leftRange: PartitionRange,
-                               leftBlooms: Map[String, BloomFilter]): DataFrame = {
+                               leftBlooms: util.Map[String, BloomFilter]): DataFrame = {
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
-    val rightBloomMap = joinPart.rightToLeft.mapValues(leftBlooms(_)).toMap
+    val rightBloomMap = joinPart.rightToLeft.iterator.map { case (right, left) => right -> leftBlooms.get(left) }.toSeq
     val bloomSizes = rightBloomMap.map { case (col, bloom) => s"$col -> ${bloom.bitSize()}" }.pretty
     logger.info(s"""
                |Label JoinPart Info:
@@ -230,7 +231,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
                                PartitionRange(labelDS, labelDS)(tableUtils),
                                tableUtils,
                                computeDependency = true,
-                               Option(rightBloomMap),
+                               Option(rightBloomMap.iterator.toJMap),
                                rightSkewFilter)
 
     val df = (joinConf.left.dataModel, joinPart.groupBy.dataModel, joinPart.groupBy.inferredAccuracy) match {

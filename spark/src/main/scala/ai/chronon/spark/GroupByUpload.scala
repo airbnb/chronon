@@ -116,11 +116,7 @@ object GroupByUpload {
     val nextDay = tableUtils.partitionSpec.after(endDs)
 
     val groupBy = ai.chronon.spark.GroupBy
-      .from(groupByConf,
-            PartitionRange(endDs, endDs),
-            TableUtils(session),
-            computeDependency = false,
-            mutationScan = false)
+      .from(groupByConf, PartitionRange(endDs, endDs), TableUtils(session), computeDependency = false)
     groupByServingInfo.setBatchEndDate(nextDay)
     groupByServingInfo.setGroupBy(groupByConf)
     groupByServingInfo.setKeyAvroSchema(groupBy.keySchema.toAvroSchema("Key").toString(true))
@@ -188,12 +184,8 @@ object GroupByUpload {
     // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val batchEndDate = tableUtils.partitionSpec.after(endDs)
     // for snapshot accuracy - we don't need to scan mutations
-    lazy val groupBy = GroupBy.from(groupByConf,
-                                    PartitionRange(endDs, endDs),
-                                    tableUtils,
-                                    computeDependency = true,
-                                    mutationScan = false,
-                                    showDf = showDf)
+    lazy val groupBy =
+      GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils, computeDependency = true, showDf = showDf)
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
     // for temporal accuracy - we don't need to scan mutations for upload
     // when endDs = xxxx-01-02 the timestamp from airflow is more than (xxxx-01-03 00:00:00)
@@ -203,7 +195,6 @@ object GroupByUpload {
                    PartitionRange(endDs, endDs).shift(1),
                    tableUtils,
                    computeDependency = true,
-                   mutationScan = false,
                    showDf = showDf)
     lazy val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
     // for mutations I need the snapshot from the previous day, but a batch end date of ds +1

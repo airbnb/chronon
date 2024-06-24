@@ -77,7 +77,7 @@ class TableBootstrapTest {
   def testBootstrap(): Unit = {
 
     val namespace = "test_table_bootstrap"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     // group by
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
@@ -161,7 +161,7 @@ class TableBootstrapTest {
   def testBootstrapSameJoinPartMultipleSources(): Unit = {
 
     val namespace = "test_bootstrap_multi_source"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
     val endDs = spark.table(queryTable).select(max(tableUtils.partitionColumn)).head().getString(0)

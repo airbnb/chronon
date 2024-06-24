@@ -78,6 +78,19 @@ jobs:
                   destination: spark_warehouse.tar.gz
                   when: on_fail
 
+    "Scala 11 -- Compile":
+      executor: docker_baseimg_executor
+      steps:
+        - checkout
+        - run:
+            name: Compile Scala 11
+            shell: /bin/bash -leuxo pipefail
+            command: |
+              conda activate chronon_py
+              # Increase if we see OOM.
+              export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+              sbt "++ 2.11.12 compile"
+
     "Chronon Python Lint":
         executor: docker_baseimg_executor
         steps:
@@ -125,6 +138,9 @@ workflows:
     build_test_deploy:
         jobs:
             - "Pull Docker Image"
+            - "Scala 11 -- Compile":
+                requires:
+                  - "Pull Docker Image"
             - "Scala 12 -- Spark 3 Tests":
                   requires:
                       - "Pull Docker Image"

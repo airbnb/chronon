@@ -29,6 +29,7 @@
    :hidden:
    :caption: Setup
 
+   setup/Overview
    setup/Components
    setup/Data_Integration
    setup/Developer_Setup

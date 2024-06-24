@@ -333,7 +333,7 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     logger.info(s"----- Validations for join/${joinConf.metaData.cleanName} -----")
-    if (!gbStartPartitions.isEmpty) {
+    if (gbStartPartitions.nonEmpty) {
       logger.info(
         "----- Following Group_Bys contains a startPartition. Please check if any startPartition will conflict with your backfill. -----")
       gbStartPartitions.foreach {
@@ -433,8 +433,15 @@ class Analyzer(tableUtils: TableUtils,
           groupBy.sources.toScala.flatMap { source =>
             val table = source.table
             logger.info(s"Checking table $table for data availability ... Expected start partition: $expectedStart")
+            val existingPartitions = tableUtils.partitions(table)
+            val minPartition = existingPartitions.reduceOption((a, b) => Ordering[String].min(a, b))
             //check if partition available or table is cumulative
             if (!tableUtils.ifPartitionExistsInTable(table, expectedStart) && !source.isCumulative) {
+              println(s"""
+                         |Join needs data older than what is available for GroupBy: ${groupBy.metaData.name}, table: $table,
+                         |left-$leftDataModel, right-${groupBy.dataModel}, accuracy-${groupBy.inferredAccuracy}
+                         |expectedStartPartition: $expectedStart, actualStartPartition: $minPartition
+                         |""".stripMargin)
               Some((table, groupBy.getMetaData.getName, expectedStart))
             } else {
               None

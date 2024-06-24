@@ -45,7 +45,7 @@ class DerivationTest {
   @Test
   def testBootstrapToDerivations(): Unit = {
     val namespace = "test_derivations"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
 
     val derivation1 = Builders.Derivation(name = "user_amount_30d_avg",
@@ -292,7 +292,7 @@ class DerivationTest {
   @Test
   def testBootstrapToDerivationsNoStar(): Unit = {
     val namespace = "test_derivations_no_star"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
@@ -374,7 +374,7 @@ class DerivationTest {
   }
 
   private def runLoggingTest(namespace: String, wildcardSelection: Boolean): Unit = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
@@ -500,7 +500,7 @@ class DerivationTest {
   @Test
   def testContextual(): Unit = {
     val namespace = "test_contextual"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
     val bootstrapDf = spark
       .table(queryTable)
@@ -629,7 +629,7 @@ class DerivationTest {
   @Test
   def testGroupByDerivations(): Unit = {
     val namespace = "test_group_by_derivations"
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     groupBy.setBackfillStartDate(today)
     groupBy.setDerivations(Seq(

@@ -24,6 +24,7 @@ import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
 import jnr.ffi.annotations.Synchronized
+import org.apache.hadoop.hive.metastore.api.AlreadyExistsException
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
@@ -44,7 +45,7 @@ case class TableUtils(sparkSession: SparkSession) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
-  private lazy val archiveTimestampFormatter = DateTimeFormatter
+  @transient private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.systemDefault())
   val partitionColumn: String =
@@ -116,6 +117,21 @@ case class TableUtils(sparkSession: SparkSession) {
     // TODO: use proper way to detect if a table is partitioned or not
     val schema = getSchemaFromTable(tableName)
     schema.fieldNames.contains(partitionColumn)
+  }
+
+  def createDatabase(database: String): Boolean = {
+    try {
+      val command = s"CREATE DATABASE IF NOT EXISTS $database"
+      logger.info(s"Creating database with command: $command")
+      sql(command)
+      true
+    } catch {
+      case _: AlreadyExistsException =>
+        false // 'already exists' is a swallowable exception
+      case e: Exception =>
+        logger.error(s"Failed to create database $database", e)
+        throw e
+    }
   }
 
   // return all specified partition columns in a table in format of Map[partitionName, PartitionValue]

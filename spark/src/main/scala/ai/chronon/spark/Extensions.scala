@@ -31,6 +31,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import java.util
 import scala.collection.Seq
 import scala.reflect.ClassTag
+import scala.util.ScalaJavaConversions.IteratorOps
 
 object Extensions {
 
@@ -178,9 +179,12 @@ object Extensions {
     private def mightContain(f: BloomFilter): UserDefinedFunction =
       udf((x: Object) => if (x != null) f.mightContain(x) else true)
 
-    def filterBloom(bloomMap: Map[String, BloomFilter]): DataFrame =
-      bloomMap.foldLeft(df) {
-        case (dfIter, (col, bloom)) => dfIter.where(mightContain(bloom)(dfIter(col)))
+    def filterBloom(bloomMap: util.Map[String, BloomFilter]): DataFrame =
+      bloomMap.entrySet().iterator().toScala.foldLeft(df) {
+        case (dfIter, entry) =>
+          val col = entry.getKey
+          val bloom = entry.getValue
+          dfIter.where(mightContain(bloom)(dfIter(col)))
       }
 
     // math for computing bloom size
@@ -323,6 +327,14 @@ object Extensions {
 
         override def copy(): Row = internalRow.copy().toRow(schema)
       }
+    }
+  }
+
+  implicit class TupleToJMapOps[K, V](tuples: Iterator[(K, V)]) {
+    def toJMap: util.Map[K, V] = {
+      val map = new util.HashMap[K, V]()
+      tuples.foreach { case (k, v) => map.put(k, v) }
+      map
     }
   }
 }

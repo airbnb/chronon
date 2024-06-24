@@ -58,7 +58,7 @@ class FetchStatsTest extends TestCase {
 
   def testFetchStats(): Unit = {
     // Part 1: Build the assets. Join definition, compute and serve stats.
-    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val nameSuffix = "_fetch_stats_test"
 
     // LeftDf ->  item, value, ts, ds
