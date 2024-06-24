@@ -102,7 +102,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetCachedRequestsReturnsCorrectCachedDataWhenCacheIsEnabled(): Unit = {
+  def testGetCachedRequestsReturnsCorrectCachedDataWhenCacheIsEnabled(): Unit = {
     val cacheName = "test"
     val testCache = Some(new BatchIrCache(cacheName, batchIrCacheMaximumSize))
     val fetcherCache = new TestableFetcherCache(testCache) {
@@ -138,7 +138,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetCachedRequestsDoesNotCacheWhenCacheIsDisabledForGroupBy(): Unit = {
+  def testGetCachedRequestsDoesNotCacheWhenCacheIsDisabledForGroupBy(): Unit = {
     val testCache = new BatchIrCache("test", batchIrCacheMaximumSize)
     val spiedTestCache = spy(testCache)
     val fetcherCache = new TestableFetcherCache(Some(testCache)) {
@@ -165,7 +165,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetBatchBytesReturnsLatestTimedValueBytesIfGreaterThanBatchEnd(): Unit = {
+  def testGetBatchBytesReturnsLatestTimedValueBytesIfGreaterThanBatchEnd(): Unit = {
     val kvStoreResponse = Success(
       Seq(TimedValue(Array(1.toByte), 1000L), TimedValue(Array(2.toByte), 2000L))
     )
@@ -175,7 +175,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetBatchBytesReturnsNullIfLatestTimedValueTimestampIsLessThanBatchEnd(): Unit = {
+  def testGetBatchBytesReturnsNullIfLatestTimedValueTimestampIsLessThanBatchEnd(): Unit = {
     val kvStoreResponse = Success(
       Seq(TimedValue(Array(1.toByte), 1000L), TimedValue(Array(2.toByte), 1500L))
     )
@@ -185,7 +185,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetBatchBytesReturnsNullWhenCachedBatchResponse(): Unit = {
+  def testGetBatchBytesReturnsNullWhenCachedBatchResponse(): Unit = {
     val finalBatchIr = mock[FinalBatchIr]
     val batchResponses = BatchResponses(finalBatchIr)
     val batchBytes = batchResponses.getBatchBytes(1000L)
@@ -193,7 +193,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetBatchBytesReturnsNullWhenKvStoreBatchResponseFails(): Unit = {
+  def testGetBatchBytesReturnsNullWhenKvStoreBatchResponseFails(): Unit = {
     val kvStoreResponse = Failure(new RuntimeException("KV Store error"))
     val batchResponses = BatchResponses(kvStoreResponse)
     val batchBytes = batchResponses.getBatchBytes(1000L)
@@ -201,7 +201,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetBatchIrFromBatchResponseReturnsCorrectIRsWithCacheEnabled(): Unit = {
+  def testGetBatchIrFromBatchResponseReturnsCorrectIRsWithCacheEnabled(): Unit = {
     // Use a real cache
     val batchIrCache = new BatchIrCache("test_cache", batchIrCacheMaximumSize)
 
@@ -243,7 +243,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetBatchIrFromBatchResponseDecodesBatchBytesIfCacheDisabled(): Unit = {
+  def testGetBatchIrFromBatchResponseDecodesBatchBytesIfCacheDisabled(): Unit = {
     // Set up mocks and dummy data
     val servingInfo = mock[GroupByServingInfoParsed]
     val batchBytes = Array[Byte](1, 2, 3)
@@ -263,7 +263,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetBatchIrFromBatchResponseReturnsCorrectMapResponseWithCacheEnabled(): Unit = {
+  def testGetBatchIrFromBatchResponseReturnsCorrectMapResponseWithCacheEnabled(): Unit = {
     // Use a real cache
     val batchIrCache = new BatchIrCache("test_cache", batchIrCacheMaximumSize)
     // Set up mocks and dummy data
@@ -309,7 +309,7 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testgetMapResponseFromBatchResponseDecodesBatchBytesIfCacheDisabled(): Unit = {
+  def testGetMapResponseFromBatchResponseDecodesBatchBytesIfCacheDisabled(): Unit = {
     // Set up mocks and dummy data
     val servingInfo = mock[GroupByServingInfoParsed]
     val batchBytes = Array[Byte](1, 2, 3)
