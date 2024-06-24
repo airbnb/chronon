@@ -75,10 +75,9 @@ class DatabricksGroupBy(DatabricksExecutable):
         self.group_by: GroupBy = group_by
         super().__init__(spark_session)
 
-    def _get_group_by_to_execute(self, start_date: str, end_date: str) -> GroupBy:
+    def _get_group_by_to_execute(self, start_date: str) -> GroupBy:
         group_by_to_execute: GroupBy = self.group_by
         group_by_to_execute.backfillStartDate = start_date
-        group_by_to_execute.sources = self._get_sources_with_updated_start_and_end_date(group_by_to_execute.sources, start_date, end_date)
         return group_by_to_execute
     
     def _get_java_group_by(self, group_by: GroupBy, end_date: str) -> JavaObject:
@@ -100,7 +99,7 @@ class DatabricksGroupBy(DatabricksExecutable):
 
         self._print_with_timestamp(f"Executing GroupBy {self.group_by.metaData.name} from {start_date} to {end_date} with step_days {step_days}")
 
-        group_by_to_execute: GroupBy = self._get_group_by_to_execute(start_date, end_date)
+        group_by_to_execute: GroupBy = self._get_group_by_to_execute(start_date)
         group_by_output_table: str = f"{self.group_by.metaData.outputNamespace}.{self.group_by.metaData.name}"
 
         self._drop_table_if_exists(group_by_output_table)
@@ -130,7 +129,7 @@ class DatabricksGroupBy(DatabricksExecutable):
         self._print_with_timestamp(f"Analyzing GroupBy {self.group_by.metaData.name} from {start_date} to {end_date}")
         self._print_with_timestamp(f"Enable Hitter Analysis: {enable_hitter_analysis}")
 
-        group_by_to_analyze: GroupBy = self._get_group_by_to_execute(start_date, end_date)
+        group_by_to_analyze: GroupBy = self._get_group_by_to_execute(start_date)
 
         java_group_by: JavaObject = self._get_java_group_by(group_by_to_analyze, end_date)
 
@@ -156,7 +155,7 @@ class DatabricksGroupBy(DatabricksExecutable):
 
         self._print_with_timestamp(f"Validating GroupBy {self.group_by.metaData.name} from {start_date} to {end_date}")
 
-        group_by_to_validate: GroupBy = self._get_group_by_to_execute(start_date, end_date)
+        group_by_to_validate: GroupBy = self._get_group_by_to_execute(start_date)
 
         java_group_by: JavaObject = self._get_java_group_by(group_by_to_validate, end_date)
 
