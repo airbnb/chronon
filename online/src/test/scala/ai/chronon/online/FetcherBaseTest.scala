@@ -58,7 +58,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   }
 
   @Test
-  def testFetchColumns_SingleQuery(): Unit = {
+  def testFetchColumnsSingleQuery(): Unit = {
     // Fetch a single query
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
@@ -87,7 +87,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   }
 
   @Test
-  def testFetchColumns_Batch(): Unit = {
+  def testFetchColumnsBatch(): Unit = {
     // Fetch a batch of queries
     val guestKeyMap = Map(GuestKey -> GuestId)
     val guestQuery = ColumnSpec(GroupBy, Column, Some(GuestKey), Some(guestKeyMap))
@@ -121,7 +121,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   }
 
   @Test
-  def testFetchColumns_MissingResponse(): Unit = {
+  def testFetchColumnsMissingResponse(): Unit = {
     // Fetch a single query
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
@@ -151,7 +151,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
 
   // updateServingInfo() is called when the batch response is from the KV store.
   @Test
-  def test_getServingInfo_ShouldCallUpdateServingInfoIfBatchResponseIsFromKvStore(): Unit = {
+  def testGetServingInfoShouldCallUpdateServingInfoIfBatchResponseIsFromKvStore(): Unit = {
     val oldServingInfo = mock[GroupByServingInfoParsed]
     val updatedServingInfo = mock[GroupByServingInfoParsed]
     doReturn(updatedServingInfo).when(fetcherBase).updateServingInfo(any(), any())
@@ -169,7 +169,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   // If a batch response is cached, the serving info should be refreshed. This is needed to prevent
   // the serving info from becoming stale if all the requests are cached.
   @Test
-  def test_getServingInfo_ShouldRefreshServingInfoIfBatchResponseIsCached(): Unit = {
+  def testGetServingInfoShouldRefreshServingInfoIfBatchResponseIsCached(): Unit = {
     val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
     doReturn(ttlCache).when(fetcherBase).getGroupByServingInfo
 
@@ -192,7 +192,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   }
 
   @Test
-  def test_isCachingEnabled_CorrectlyDetermineIfCacheIsEnabled(): Unit = {
+  def testIsCachingEnabledCorrectlyDetermineIfCacheIsEnabled(): Unit = {
     val flagStore: FlagStore = (flagName: String, attributes: java.util.Map[String, String]) => {
       flagName match {
         case "enable_fetcher_batch_ir_cache" =>
