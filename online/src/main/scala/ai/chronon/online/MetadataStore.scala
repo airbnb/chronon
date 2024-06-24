@@ -87,7 +87,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
   lazy val getGroupByListByTeam: TTLCache[String, Try[Seq[String]]] = {
     new TTLCache[String, Try[Seq[String]]](
       { team =>
-        getEntityListByTeam[GroupBy](team)
+        getEntityListByTeam[GroupBy]("group_bys/" + team)
           .recover {
             case e: java.util.NoSuchElementException =>
               logger.error(
@@ -102,7 +102,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
   lazy val getJoinByListByTeam: TTLCache[String, Try[Seq[String]]] = {
     new TTLCache[String, Try[Seq[String]]](
       { team =>
-        getEntityListByTeam[Join](team)
+        getEntityListByTeam[Join]("joins/" + team)
           .recover {
             case e: java.util.NoSuchElementException =>
               logger.error(
