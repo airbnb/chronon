@@ -252,11 +252,12 @@ class FetcherBase(kvStore: KVStore,
   override def isCachingEnabled(groupBy: GroupBy): Boolean = {
     if (!isCacheSizeConfigured || groupBy.getMetaData == null || groupBy.getMetaData.getName == null) return false
 
-    val isCachingFlagEnabled = flagStore.isSet("enable_fetcher_batch_ir_cache",
-                                               Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).asJava)
+    val isCachingFlagEnabled =
+      flagStore != null && flagStore.isSet("enable_fetcher_batch_ir_cache",
+                                           Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).asJava)
 
     if (debug)
-      println(
+      logger.info(
         s"Online IR caching is ${if (isCachingFlagEnabled) "enabled" else "disabled"} for ${groupBy.getMetaData.getName}")
 
     isCachingFlagEnabled
@@ -321,7 +322,7 @@ class FetcherBase(kvStore: KVStore,
     }.toSeq
 
     // If caching is enabled, we check if any of the GetRequests are already cached. If so, we store them in a Map
-    // and avoid the work of re-fetching them. It is mainly for batch data requests. 
+    // and avoid the work of re-fetching them. It is mainly for batch data requests.
     val cachedRequests: Map[GetRequest, CachedBatchResponse] = getCachedRequests(groupByRequestToKvRequest)
     // Collect cache metrics once per fetchGroupBys call; Caffeine metrics aren't tagged by groupBy
     maybeBatchIrCache.foreach(cache =>

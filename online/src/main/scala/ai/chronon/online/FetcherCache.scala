@@ -25,13 +25,20 @@ import org.slf4j.{Logger, LoggerFactory}
 /*
  * FetcherCache is an extension to FetcherBase that provides caching functionality. It caches KV store
  * requests to decrease feature serving latency.
+ *
+ * To use it,
+ *  1. Set the system property `ai.chronon.fetcher.batch_ir_cache_size_elements` to the desired cache size
+ * in therms of elements. This will create a cache shared across all GroupBys. To determine a size, start with a
+ * small number (e.g. 1,000) and measure how much memory it uses, then adjust accordingly.
+ *  2. Enable caching for a specific GroupBy by overriding `isCachingEnabled` and returning `true` for that GroupBy.
+ * FetcherBase already provides an implementation of `isCachingEnabled` that uses the FlagStore.
  * */
 trait FetcherCache {
   @transient private lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
   val batchIrCacheName = "batch_cache"
   val maybeBatchIrCache: Option[BatchIrCache] =
-    Option(System.getProperty("ai.chronon.fetcher.batch_ir_cache_size"))
+    Option(System.getProperty("ai.chronon.fetcher.batch_ir_cache_size_elements"))
       .map(size => new BatchIrCache(batchIrCacheName, size.toInt))
       .orElse(None)
 

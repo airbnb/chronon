@@ -1,6 +1,7 @@
 package ai.chronon.online
 
 import com.github.benmanes.caffeine.cache.{Caffeine, Cache => CaffeineCache}
+import org.slf4j.{Logger, LoggerFactory}
 
 /**
   * Utility to create a cache with LRU semantics.
@@ -9,6 +10,7 @@ import com.github.benmanes.caffeine.cache.{Caffeine, Cache => CaffeineCache}
   * in the Fetcher. This helps decrease to feature serving latency.
   */
 object LRUCache {
+  @transient private lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
   /**
     * Build a bounded, thread-safe Caffeine cache that stores KEY-VALUE pairs.
