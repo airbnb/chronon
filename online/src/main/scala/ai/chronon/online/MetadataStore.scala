@@ -21,7 +21,8 @@ import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps, WindowOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest, TimedValue}
-import ai.chronon.online.MetadataEndPoint.NameByTeamEndPointName
+import ai.chronon.online.MetadataEndPoint.{ConfByKeyEndPointName, NameByTeamEndPointName}
+import ai.chronon.online.Metrics.Name.Exception
 import com.google.gson.{Gson, GsonBuilder}
 import org.apache.thrift.TBase
 
@@ -206,8 +207,12 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
              |key: $k
              |conf: $v""".stripMargin)
         val kBytes = k.getBytes()
-        // if value is a single string, use it as is, else join the strings into a json list
-        val vBytes = if (v.size == 1) v.head.getBytes() else StringArrayConverter.stringsToBytes(v)
+        // The value is a single string by default, for NameByTeamEndPointName, it's a list of strings
+        val vBytes = if (datasetName == NameByTeamEndPointName) {
+          StringArrayConverter.stringsToBytes(v)
+        } else {
+          v.head.getBytes()
+        }
         PutRequest(keyBytes = kBytes,
                    valueBytes = vBytes,
                    dataset = datasetName,
