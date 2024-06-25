@@ -20,7 +20,7 @@ import logging
 import os
 import re
 from ai.chronon.api.ttypes import \
-    GroupBy, Join, Source, Derivation
+    GroupBy, Join, Source, Derivation, ExternalPart
 from ai.chronon.group_by import get_output_col_names
 from ai.chronon.logger import get_logger
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
@@ -87,7 +87,6 @@ def get_group_by_output_columns(group_by: GroupBy) -> List[str]:
     From the group_by object, get the final output columns after derivations.
     """
     output_columns = set(get_pre_derived_group_by_columns(group_by))
-
     if group_by.derivations:
         # if derivations contain star, then all columns are included except the columns which are renamed
         found = any(derivation.expression == "*" for derivation in group_by.derivations)
@@ -110,17 +109,25 @@ def get_pre_derived_join_columns(join: Join) -> List[str]:
             prefix = jp.prefix + "_" if jp.prefix else ""
             gb_prefix = jp.groupBy.metaData.name.replace(".", "_")
             output_columns.append(prefix + gb_prefix + "_" + col)
-    return output_columns ++ get_external_columns(join)
+    return output_columns + get_external_columns(join)
+
+
+def get_external_part_full_name(external_part: ExternalPart) -> str:
+    prefix = external_part.prefix + "_" if external_part.prefix else ""
+    name = external_part.source.metadata.name
+    sanitized_name = re.sub("[^a-zA-Z0-9_]", "_", name)
+    return "ext_" + prefix + sanitized_name
 
 
 def get_external_columns(join: Join) -> List[str]:
+    external_cols = []
     if join.onlineExternalParts:
-        original_external_columns = [param.name for param in join.onlineExternalParts.source.valueSchema.params]
-        prefix = join.onlineExternalParts.fullName + "_"
-        external_columns = [prefix + col for col in original_external_columns]
-        return external_columns
-    else:
-        return []
+        for external_part in join.onlineExternalParts:
+            original_external_columns = [param.name for param in external_part.source.valueSchema.params]
+            prefix = get_external_part_full_name(external_part) + "_"
+            for col in original_external_columns:
+                external_cols.append(prefix + col)
+    return external_cols
 
 
 def get_join_output_columns(join: Join) -> List[str]:
