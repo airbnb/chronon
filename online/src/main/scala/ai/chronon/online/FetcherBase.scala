@@ -49,8 +49,9 @@ class FetcherBase(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false,
-                  flagStore: FlagStore = null)
-    extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
+                  flagStore: FlagStore = null,
+                  disableErrorThrows: Boolean = false)
+    extends MetadataStore(kvStore, metaDataSet, timeoutMillis, disableErrorThrows) {
 
   private case class GroupByRequestMeta(
       groupByServingInfoParsed: GroupByServingInfoParsed,
