@@ -112,6 +112,8 @@ def get_pre_derived_join_columns(join: Join) -> List[str]:
     return output_columns + get_external_columns(join)
 
 
+# The logic should be consistent with the full name logic defined
+# in https://github.com/airbnb/chronon/blob/main/api/src/main/scala/ai/chronon/api/Extensions.scala#L677.
 def get_external_part_full_name(external_part: ExternalPart) -> str:
     prefix = external_part.prefix + "_" if external_part.prefix else ""
     name = external_part.source.metadata.name
@@ -119,6 +121,8 @@ def get_external_part_full_name(external_part: ExternalPart) -> str:
     return "ext_" + prefix + sanitized_name
 
 
+# The external columns name logic should be consistent with the logic defined in fetcher.scala
+# https://github.com/airbnb/chronon/blob/main/online/src/main/scala/ai/chronon/online/Fetcher.scala#L371
 def get_external_columns(join: Join) -> List[str]:
     external_cols = []
     if join.onlineExternalParts:
