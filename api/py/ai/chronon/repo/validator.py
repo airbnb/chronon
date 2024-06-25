@@ -79,6 +79,7 @@ def get_pre_derived_group_by_columns(group_by: GroupBy) -> List[str]:
     if group_by.aggregations:
         for agg in group_by.aggregations:
             output_columns.extend(get_output_col_names(agg))
+    output_columns.extend(group_by.keyColumns)
     return output_columns
 
 
@@ -88,17 +89,9 @@ def get_group_by_output_columns(group_by: GroupBy) -> List[str]:
     """
     output_columns = set(get_pre_derived_group_by_columns(group_by))
     if group_by.derivations:
-        # if derivations contain star, then all columns are included except the columns which are renamed
-        found = any(derivation.expression == "*" for derivation in group_by.derivations)
-        if not found:
-            output_columns.clear()
-        for derivation in group_by.derivations:
-            if found and is_identifier(derivation.expression):
-                output_columns.remove(derivation.expression)
-            if derivation.name != "*":
-                output_columns.add(derivation.name)
-
-    return list(output_columns)
+        return build_derived_columns(output_columns, group_by.derivations)
+    else:
+        return list(output_columns)
 
 
 def get_pre_derived_join_columns(join: Join) -> List[str]:
@@ -134,24 +127,32 @@ def get_external_columns(join: Join) -> List[str]:
     return external_cols
 
 
+def build_derived_columns(pre_derived_columns: set[str], derivations: List[Derivation]) -> List[str]:
+    """
+    Build the derived columns from pre-derived columns and derivations.
+    """
+    # if derivations contain star, then all columns are included except the columns which are renamed
+    output_columns = pre_derived_columns
+    found = any(derivation.expression == "*" for derivation in derivations)
+    if not found:
+        output_columns.clear()
+    for derivation in derivations:
+        if found and is_identifier(derivation.expression):
+            output_columns.remove(derivation.expression)
+        if derivation.name != "*":
+            output_columns.add(derivation.name)
+    return list(output_columns)
+
+
 def get_join_output_columns(join: Join) -> List[str]:
     """
     From the join object, get the final output columns after derivations.
     """
     output_columns = set(get_pre_derived_join_columns(join))
-
     if join.derivations:
-        # if derivations contain star, then all columns are included except the columns which are renamed
-        found = any(derivation.expression == "*" for derivation in join.derivations)
-        if not found:
-            output_columns.clear()
-        for derivation in join.derivations:
-            if found and is_identifier(derivation.expression):
-                output_columns.remove(derivation.expression)
-            if derivation.name != "*":
-                output_columns.add(derivation.name)
-
-    return list(output_columns)
+        return build_derived_columns(output_columns, join.derivations)
+    else:
+        return list(output_columns)
 
 
 class ChrononRepoValidator(object):
@@ -254,23 +255,24 @@ class ChrononRepoValidator(object):
           list of validation errors.
         """
         errors = []
-        derived_columns = set()
+        derived_columns = set(columns)
+
+        found = any(derivation.expression == "*" for derivation in derivations)
+        if not found:
+            derived_columns.clear()
         for derivation in derivations:
-            if derivation.name in derived_columns:
-                errors.append(
-                    "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
-            else:
-                derived_columns.add(derivation.name)
-        for derivation in derivations:
-            derived_name = derivation.name
-            derived_exp = derivation.expression
-            if derived_name in columns:
-                errors.append("Incorrect derivation name {} due to output column name conflict".format(derived_name))
-            if derived_exp != "*" and is_identifier(derived_exp):
-                if derived_exp not in columns:
+            if found and is_identifier(derivation.expression):
+                if derivation.expression in derived_columns:
+                    derived_columns.remove(derivation.expression)
+                elif derivation.expression != "ds":
                     errors.append(
-                        "Incorrect derivation expression {}, please check the derivation expression".format(
-                            derived_exp))
+                        "Incorrect derivation expression {}, expression not found in pre-derived columns {}".format(derivation.expression, columns))
+            if derivation.name != "*":
+                if derivation.name in derived_columns:
+                    errors.append(
+                        "Incorrect derivation name {} due to output column name conflict".format(derivation.name))
+                else:
+                    derived_columns.add(derivation.name)
         return errors
 
     def _validate_join(self, join: Join) -> List[str]:
