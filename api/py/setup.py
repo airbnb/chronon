@@ -56,7 +56,7 @@ setup(
     description="Chronon python API library",
     include_package_data=True,
     install_requires=basic_requirements,
-    name="chronon-ai-yuli-test",
+    name="chronon-ai",
     packages=find_packages(),
     extras_require={
         # Extra requirement to have access to cli commands in python2 environments.
