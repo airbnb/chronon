@@ -69,7 +69,7 @@ class FetcherTest extends TestCase {
       finally src.close()
     }.replaceAll("\\s+", "")
 
-    val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
+    val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
     val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
     val singleFileDataSet = ChrononMetadataKey + "_single_file_test"
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
@@ -81,12 +81,16 @@ class FetcherTest extends TestCase {
       case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, singleFileDataSet)
     }
     singleFilePut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
+
     val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     assertTrue(res.latest.isSuccess)
     val actual = new String(res.values.get.head.bytes)
-
     assertEquals(expected, actual.replaceAll("\\s+", ""))
+
+    val teamMetadataResponse = inMemoryKvStore.getString("joins/relevance", singleFileDataSet, 10000)
+    val teamMetadataRes = teamMetadataResponse.get
+    assert(teamMetadataRes.equals("joins/team/example_join.v1"))
 
     val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
@@ -102,8 +106,11 @@ class FetcherTest extends TestCase {
     val dirRes = Await.result(dirResponse, Duration.Inf)
     assertTrue(dirRes.latest.isSuccess)
     val dirActual = new String(dirRes.values.get.head.bytes)
-
     assertEquals(expected, dirActual.replaceAll("\\s+", ""))
+
+    val teamMetadataDirResponse = inMemoryKvStore.getString("group_bys/team", directoryDataSetDataSet, 10000)
+    val teamMetadataDirRes = teamMetadataDirResponse.get
+    assert(teamMetadataDirRes.equals("group_bys/team/example_group_by.v1"))
 
     val emptyResponse =
       inMemoryKvStore.get(GetRequest("NoneExistKey".getBytes(), "NonExistDataSetName"))
