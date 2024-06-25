@@ -110,18 +110,17 @@ def get_pre_derived_join_columns(join: Join) -> List[str]:
             prefix = jp.prefix + "_" if jp.prefix else ""
             gb_prefix = jp.groupBy.metaData.name.replace(".", "_")
             output_columns.append(prefix + gb_prefix + "_" + col)
-    return output_columns
+    return output_columns ++ get_external_columns(join)
 
 
 def get_external_columns(join: Join) -> List[str]:
-    external_columns = []
-    for jp in join.joinParts:
-        group_by_cols = get_group_by_output_columns(jp.groupBy)
-        for col in group_by_cols:
-            prefix = jp.prefix + "_" if jp.prefix else ""
-            gb_prefix = jp.groupBy.metaData.name.replace(".", "_")
-            external_columns.append(prefix + gb_prefix + "_" + col)
-    return external_columns
+    if join.onlineExternalParts:
+        original_external_columns = [param.name for param in join.onlineExternalParts.source.valueSchema.params]
+        prefix = join.onlineExternalParts.fullName + "_"
+        external_columns = [prefix + col for col in original_external_columns]
+        return external_columns
+    else:
+        return []
 
 
 def get_join_output_columns(join: Join) -> List[str]:
