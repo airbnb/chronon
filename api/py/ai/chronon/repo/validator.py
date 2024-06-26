@@ -295,7 +295,8 @@ class ChrononRepoValidator(object):
                     derived_columns.remove(derivation.expression)
                 elif derivation.expression != "ds":
                     errors.append(
-                        "Incorrect derivation expression {}, expression not found in pre-derived columns {}".format(derivation.expression, pre_derived_cols))
+                        "Incorrect derivation expression {}, expression not found in pre-derived columns {}".format(
+                            derivation.expression, pre_derived_cols))
             if derivation.name != "*":
                 if derivation.name in derived_columns:
                     errors.append(
