@@ -121,16 +121,13 @@ def get_pre_derived_join_internal_features(join: Join) -> List[str]:
     return internal_features
 
 
-def get_pre_derived_join_columns(join: Join) -> List[str]:
-    pre_derived_join_internal_features = []
+def get_pre_derived_join_keys(join: Join) -> List[str]:
     if join.left.events:
-        pre_derived_join_internal_features.extend(join.left.events.query.selects.keys())
+        return list(join.left.events.query.selects.keys())
     elif join.left.entities:
-        pre_derived_join_internal_features.extend(join.left.entities.query.selects.keys())
+        return list(join.left.entities.query.selects.keys())
     elif join.left.joinSource:
-        pre_derived_join_internal_features.extend(join.left.joinSource.query.selects.keys())
-    pre_derived_join_internal_features.extend(get_pre_derived_join_internal_features(join))
-    return pre_derived_join_internal_features + get_pre_derived_external_features(join)
+        return list(join.left.joinSource.query.selects.keys())
 
 
 # The logic should be consistent with the full name logic defined
@@ -155,6 +152,10 @@ def get_pre_derived_external_features(join: Join) -> List[str]:
     return external_cols
 
 
+def get_pre_derived_join_features(join: Join) -> List[str]:
+    return get_pre_derived_join_internal_features(join) + get_pre_derived_external_features(join)
+
+
 def build_derived_columns(pre_derived_columns: Set[str], derivations: List[Derivation]) -> List[str]:
     """
     Build the derived columns from pre-derived columns and derivations.
@@ -177,7 +178,7 @@ def get_join_output_columns(join: Join) -> List[str]:
     """
     From the join object, get the final output columns after derivations.
     """
-    output_columns = set(get_pre_derived_join_columns(join))
+    output_columns = set(get_pre_derived_join_features(join) + get_pre_derived_join_keys(join))
     if join.derivations:
         return build_derived_columns(output_columns, join.derivations)
     else:
@@ -341,13 +342,13 @@ class ChrononRepoValidator(object):
         # Only validate the join derivation when the underlying groupBy is valid
         group_by_correct = all(not errors for errors in group_by_errors)
         if join.derivations and group_by_correct:
+            features = get_pre_derived_join_features(join)
             # For online joins keys are not included in output schema
             if join.metaData.online:
-                internal_features = get_pre_derived_join_internal_features(join)
-                external_features = get_pre_derived_external_features(join)
-                columns = internal_features + external_features
+                columns = features
             else:
-                columns = get_pre_derived_join_columns(join)
+                keys = get_pre_derived_join_keys(join)
+                columns = features + keys
             errors.extend(self._validate_derivations(columns, join.derivations))
         return errors
 
