@@ -286,14 +286,18 @@ class ChrononRepoValidator(object):
         errors = []
         derived_columns = set(pre_derived_cols)
 
-        found = any(derivation.expression == "*" for derivation in derivations)
-        if not found:
+        wild_card_derivation_included = any(derivation.expression == "*" for derivation in derivations)
+        if not wild_card_derivation_included:
             derived_columns.clear()
         for derivation in derivations:
-            if found and is_identifier(derivation.expression):
-                if derivation.expression in derived_columns:
-                    derived_columns.remove(derivation.expression)
-                elif derivation.expression != "ds":
+            # if the derivation is a renaming derivation, check whether the expression is in pre-derived schema
+            if is_identifier(derivation.expression):
+                # for wildcard derivation we want to remove the original column if there is a renaming operation
+                # applied on it
+                if wild_card_derivation_included:
+                    if derivation.expression in derived_columns:
+                        derived_columns.remove(derivation.expression)
+                if derivation.expression not in pre_derived_cols and derivation.expression != "ds":
                     errors.append(
                         "Incorrect derivation expression {}, expression not found in pre-derived columns {}".format(
                             derivation.expression, pre_derived_cols))
