@@ -109,7 +109,7 @@ def get_group_by_output_columns(group_by: GroupBy) -> List[str]:
         return list(output_columns)
 
 
-def get_pre_derived_join_features(join: Join) -> List[str]:
+def get_pre_derived_join_internal_features(join: Join) -> List[str]:
     internal_features = []
     for jp in join.joinParts:
         pre_derived_group_by_features = set(get_pre_derived_group_by_features(jp.groupBy))
@@ -122,15 +122,15 @@ def get_pre_derived_join_features(join: Join) -> List[str]:
 
 
 def get_pre_derived_join_columns(join: Join) -> List[str]:
-    internal_columns = []
+    pre_derived_join_internal_features = []
     if join.left.events:
-        internal_columns.extend(join.left.events.query.selects.keys())
+        pre_derived_join_internal_features.extend(join.left.events.query.selects.keys())
     elif join.left.entities:
-        internal_columns.extend(join.left.entities.query.selects.keys())
+        pre_derived_join_internal_features.extend(join.left.entities.query.selects.keys())
     elif join.left.joinSource:
-        internal_columns.extend(join.left.joinSource.query.selects.keys())
-    internal_columns.extend(get_pre_derived_join_features(join))
-    return internal_columns + get_external_columns(join)
+        pre_derived_join_internal_features.extend(join.left.joinSource.query.selects.keys())
+    pre_derived_join_internal_features.extend(get_pre_derived_join_internal_features(join))
+    return pre_derived_join_internal_features + get_pre_derived_external_features(join)
 
 
 # The logic should be consistent with the full name logic defined
@@ -144,7 +144,7 @@ def get_external_part_full_name(external_part: ExternalPart) -> str:
 
 # The external columns name logic should be consistent with the logic defined in fetcher.scala
 # https://github.com/airbnb/chronon/blob/main/online/src/main/scala/ai/chronon/online/Fetcher.scala#L371
-def get_external_columns(join: Join) -> List[str]:
+def get_pre_derived_external_features(join: Join) -> List[str]:
     external_cols = []
     if join.onlineExternalParts:
         for external_part in join.onlineExternalParts:
@@ -341,12 +341,13 @@ class ChrononRepoValidator(object):
         # Only validate the join derivation when the underlying groupBy is valid
         group_by_correct = all(not errors for errors in group_by_errors)
         if join.derivations and group_by_correct:
-            columns = get_pre_derived_join_columns(join)
             # For online joins keys are not included in output schema
             if join.metaData.online:
-                internal_columns = get_pre_derived_join_features(join)
-                external_columns = get_external_columns(join)
-                columns = internal_columns + external_columns
+                internal_features = get_pre_derived_join_internal_features(join)
+                external_features = get_pre_derived_external_features(join)
+                columns = internal_features + external_features
+            else:
+                columns = get_pre_derived_join_columns(join)
             errors.extend(self._validate_derivations(columns, join.derivations))
         return errors
 
@@ -384,10 +385,11 @@ class ChrononRepoValidator(object):
 
         # validate the derivations are defined correctly
         if group_by.derivations:
-            columns = get_pre_derived_group_by_columns(group_by)
             # For online group_by keys are not included in output schema
             if group_by.metaData.online:
                 columns = get_pre_derived_group_by_features(group_by)
+            else:
+                columns = get_pre_derived_group_by_columns(group_by)
             errors.extend(self._validate_derivations(columns, group_by.derivations))
 
         for source in group_by.sources:
