@@ -74,11 +74,26 @@ def is_identifier(s: str) -> bool:
     return re.fullmatch(identifier_regex, s) is not None
 
 
-def get_pre_derived_group_by_columns(group_by: GroupBy) -> List[str]:
+def get_pre_derived_group_by_features(group_by: GroupBy) -> List[str]:
     output_columns = []
+    # For group_bys with aggregations, aggregated columns
     if group_by.aggregations:
         for agg in group_by.aggregations:
             output_columns.extend(get_output_col_names(agg))
+    # For group_bys without aggregations, selected fields from query
+    else:
+        for source in group_by.sources:
+            if source.events:
+                output_columns.extend(source.events.query.selects.keys())
+            elif source.entities:
+                output_columns.extend(source.entities.query.selects.keys())
+            elif source.joinSource:
+                output_columns.extend(source.joinSource.query.selects.keys())
+    return output_columns
+
+
+def get_pre_derived_group_by_columns(group_by: GroupBy) -> List[str]:
+    output_columns = get_pre_derived_group_by_features(group_by)
     output_columns.extend(group_by.keyColumns)
     return output_columns
 
@@ -94,15 +109,28 @@ def get_group_by_output_columns(group_by: GroupBy) -> List[str]:
         return list(output_columns)
 
 
-def get_pre_derived_join_columns(join: Join) -> List[str]:
-    output_columns = []
+def get_pre_derived_join_features(join: Join) -> List[str]:
+    internal_features = []
     for jp in join.joinParts:
-        group_by_cols = get_group_by_output_columns(jp.groupBy)
-        for col in group_by_cols:
+        pre_derived_group_by_features = set(get_pre_derived_group_by_features(jp.groupBy))
+        derived_group_by_features = build_derived_columns(pre_derived_group_by_features, jp.groupBy.derivations)
+        for col in derived_group_by_features:
             prefix = jp.prefix + "_" if jp.prefix else ""
             gb_prefix = jp.groupBy.metaData.name.replace(".", "_")
-            output_columns.append(prefix + gb_prefix + "_" + col)
-    return output_columns + get_external_columns(join)
+            internal_features.append(prefix + gb_prefix + "_" + col)
+    return internal_features
+
+
+def get_pre_derived_join_columns(join: Join) -> List[str]:
+    internal_columns = []
+    if join.left.events:
+        internal_columns.extend(join.left.events.query.selects.keys())
+    elif join.left.entities:
+        internal_columns.extend(join.left.entities.query.selects.keys())
+    elif join.left.joinSource:
+        internal_columns.extend(join.left.joinSource.query.selects.keys())
+    internal_columns.extend(get_pre_derived_join_features(join))
+    return internal_columns + get_external_columns(join)
 
 
 # The logic should be consistent with the full name logic defined
@@ -133,14 +161,15 @@ def build_derived_columns(pre_derived_columns: set[str], derivations: List[Deriv
     """
     # if derivations contain star, then all columns are included except the columns which are renamed
     output_columns = pre_derived_columns
-    found = any(derivation.expression == "*" for derivation in derivations)
-    if not found:
-        output_columns.clear()
-    for derivation in derivations:
-        if found and is_identifier(derivation.expression):
-            output_columns.remove(derivation.expression)
-        if derivation.name != "*":
-            output_columns.add(derivation.name)
+    if derivations:
+        found = any(derivation.expression == "*" for derivation in derivations)
+        if not found:
+            output_columns.clear()
+        for derivation in derivations:
+            if found and is_identifier(derivation.expression):
+                output_columns.remove(derivation.expression)
+            if derivation.name != "*":
+                output_columns.add(derivation.name)
     return list(output_columns)
 
 
@@ -247,7 +276,7 @@ class ChrononRepoValidator(object):
         old_obj = self._get_old_obj(type(obj), obj.metaData.name)
         return not old_obj or not self._has_diff(obj, old_obj) or not old_obj.metaData.online
 
-    def _validate_derivations(self, columns: List[str], derivations: List[Derivation]) -> List[str]:
+    def _validate_derivations(self, pre_derived_cols: List[str], derivations: List[Derivation]) -> List[str]:
         """
         Validate join/groupBy's derivation is defined correctly.
 
@@ -255,7 +284,7 @@ class ChrononRepoValidator(object):
           list of validation errors.
         """
         errors = []
-        derived_columns = set(columns)
+        derived_columns = set(pre_derived_cols)
 
         found = any(derivation.expression == "*" for derivation in derivations)
         if not found:
@@ -266,7 +295,7 @@ class ChrononRepoValidator(object):
                     derived_columns.remove(derivation.expression)
                 elif derivation.expression != "ds":
                     errors.append(
-                        "Incorrect derivation expression {}, expression not found in pre-derived columns {}".format(derivation.expression, columns))
+                        "Incorrect derivation expression {}, expression not found in pre-derived columns {}".format(derivation.expression, pre_derived_cols))
             if derivation.name != "*":
                 if derivation.name in derived_columns:
                     errors.append(
@@ -307,7 +336,12 @@ class ChrononRepoValidator(object):
         # Only validate the join derivation when the underlying groupBy is valid
         group_by_correct = all(not errors for errors in group_by_errors)
         if join.derivations and group_by_correct:
-            columns = set(get_pre_derived_join_columns(join))
+            columns = get_pre_derived_join_columns(join)
+            # For online joins keys are not included in output schema
+            if join.metaData.online:
+                internal_columns = get_pre_derived_join_features(join)
+                external_columns = get_external_columns(join)
+                columns = internal_columns + external_columns
             errors.extend(self._validate_derivations(columns, join.derivations))
         return errors
 
@@ -345,7 +379,10 @@ class ChrononRepoValidator(object):
 
         # validate the derivations are defined correctly
         if group_by.derivations:
-            columns = set(get_pre_derived_group_by_columns(group_by))
+            columns = get_pre_derived_group_by_columns(group_by)
+            # For online group_by keys are not included in output schema
+            if group_by.metaData.online:
+                columns = get_pre_derived_group_by_features(group_by)
             errors.extend(self._validate_derivations(columns, group_by.derivations))
 
         for source in group_by.sources:
