@@ -113,6 +113,9 @@ class FetcherBase(kvStore: KVStore,
                   logger.error(
                     s"Failed to decode tile ir for groupBy ${servingInfo.groupByOps.metaData.getName}" +
                       s"Streaming tiled IRs will be ignored")
+                  context.incrementException(
+                    new RuntimeException(
+                      s"Failed to decode tile ir for groupBy ${servingInfo.groupByOps.metaData.getName}"))
                   val groupByFlag: Option[Boolean] = Option(flagStore)
                     .map(
                       _.isSet(
@@ -155,6 +158,9 @@ class FetcherBase(kvStore: KVStore,
                   logger.error(
                     s"Failed to decode streaming rows for groupBy ${servingInfo.groupByOps.metaData.getName}" +
                       s"Streaming rows will be ignored")
+                  context.incrementException(
+                    new RuntimeException(
+                      s"Failed to decode streaming rows for groupBy ${servingInfo.groupByOps.metaData.getName}"))
                   val groupByFlag: Option[Boolean] = Option(flagStore)
                     .map(
                       _.isSet(
