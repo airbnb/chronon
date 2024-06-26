@@ -18,6 +18,7 @@ from ai.chronon.group_by import (
     GroupBy,
     Aggregation,
     Operation,
+    Derivation
 )
 
 
@@ -25,14 +26,19 @@ v1 = GroupBy(
     sources=test_sources.staging_entities,
     keys=["s2CellId", "place_id"],
     aggregations=[
-        Aggregation(operation=Operation.COUNT),
-        Aggregation(operation=Operation.COUNT),
+        Aggregation(input_column="impressed_unique_count_1d", operation=Operation.SUM),
+        Aggregation(input_column="viewed_unique_count_1d", operation=Operation.SUM),
     ],
     production=False,
     table_properties={
         "sample_config_json": """{"sample_key": "sample_value"}""",
         "description": "sample description"
     },
-    online=True,
+    derivations=[
+        Derivation(
+            name="impressed_unique_count_1d_new_name",
+            expression="wrong_name"
+        )
+    ],
     output_namespace="sample_namespace",
 )
