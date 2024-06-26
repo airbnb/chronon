@@ -28,7 +28,7 @@ from ai.chronon.repo import JOIN_FOLDER_NAME, \
 from ai.chronon.repo.serializer import \
     thrift_simple_json, file2thrift
 from collections import defaultdict
-from typing import List, Dict
+from typing import List, Dict, Set
 
 # Fields that indicate stutus of the entities.
 SKIPPED_FIELDS = frozenset(['metaData'])
@@ -155,7 +155,7 @@ def get_external_columns(join: Join) -> List[str]:
     return external_cols
 
 
-def build_derived_columns(pre_derived_columns: set[str], derivations: List[Derivation]) -> List[str]:
+def build_derived_columns(pre_derived_columns: Set[str], derivations: List[Derivation]) -> List[str]:
     """
     Build the derived columns from pre-derived columns and derivations.
     """
