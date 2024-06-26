@@ -297,7 +297,7 @@ class ChrononRepoValidator(object):
                 if wild_card_derivation_included:
                     if derivation.expression in derived_columns:
                         derived_columns.remove(derivation.expression)
-                if derivation.expression not in pre_derived_cols and derivation.expression != "ds":
+                if derivation.expression not in pre_derived_cols and derivation.expression not in ("ds", "ts"):
                     errors.append(
                         "Incorrect derivation expression {}, expression not found in pre-derived columns {}".format(
                             derivation.expression, pre_derived_cols))
