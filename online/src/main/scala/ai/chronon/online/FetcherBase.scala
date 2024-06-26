@@ -253,9 +253,10 @@ class FetcherBase(kvStore: KVStore,
     if (!isCacheSizeConfigured || groupBy.getMetaData == null || groupBy.getMetaData.getName == null) return false
 
     val isCachingFlagEnabled =
-  Option(flagStore)
-    .exists(_.isSet("enable_fetcher_batch_ir_cache", 
-                    Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).asJava))
+      Option(flagStore)
+        .exists(
+          _.isSet("enable_fetcher_batch_ir_cache",
+                  Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).asJava))
 
     if (debug)
       logger.info(
