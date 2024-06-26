@@ -28,7 +28,7 @@ import org.scalatestplus.mockito.MockitoSugar
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 class FetcherBaseTest extends MockitoSugar with Matchers {
   val GroupBy = "relevance.short_term_user_features"
@@ -140,5 +140,51 @@ class FetcherBaseTest extends MockitoSugar with Matchers {
     actualRequest shouldNot be(None)
     actualRequest.get.name shouldBe query.groupByName + "." + query.columnName
     actualRequest.get.keys shouldBe query.keyMapping.get
+  }
+
+  @Test
+  def testParsingGroupByResponse_HappyHase(): Unit = {
+    val baseFetcher = new FetcherBase(mock[KVStore])
+    val request = Request(name = "name", keys = Map("email" -> "email"), atMillis = None, context = None)
+    val response: Map[Request, Try[Map[String, AnyRef]]] = Map(
+      request -> Success(Map(
+        "key" -> "value"
+      ))
+    )
+
+    val result = baseFetcher.parseGroupByResponse("prefix", request, response)
+    result shouldBe Map("prefix_key" -> "value")
+  }
+
+  @Test
+  def testParsingGroupByResponse_NullKey(): Unit = {
+    val baseFetcher = new FetcherBase(mock[KVStore])
+    val request = Request(name = "name", keys = Map("email" -> null), atMillis = None, context = None)
+    val request2 = Request(name = "name2", keys = Map("email" -> null), atMillis = None, context = None)
+
+    val response: Map[Request, Try[Map[String, AnyRef]]] = Map(
+      request2 -> Success(Map(
+        "key" -> "value"
+      ))
+    )
+
+    val result = baseFetcher.parseGroupByResponse("prefix", request, response)
+    result shouldBe Map()
+  }
+
+  @Test
+  def testParsingGroupByResponse_MissingKey(): Unit = {
+    val baseFetcher = new FetcherBase(mock[KVStore])
+    val request = Request(name = "name", keys = Map("email" -> "email"), atMillis = None, context = None)
+    val request2 = Request(name = "name2", keys = Map("email" -> "email"), atMillis = None, context = None)
+
+    val response: Map[Request, Try[Map[String, AnyRef]]] = Map(
+      request2 -> Success(Map(
+        "key" -> "value"
+      ))
+    )
+
+    val result = baseFetcher.parseGroupByResponse("prefix", request, response)
+    result.keySet shouldBe Set("name_exception")
   }
 }

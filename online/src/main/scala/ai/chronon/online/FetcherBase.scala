@@ -202,57 +202,63 @@ class FetcherBase(kvStore: KVStore,
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
-    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
-      val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
-        .map { groupByServingInfo =>
-          val context =
-            request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
-          context.increment("group_by_request.count")
-          var batchKeyBytes: Array[Byte] = null
-          var streamingKeyBytes: Array[Byte] = null
-          try {
-            // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
-            // on the KVStore implementation, so we encode each distinctly.
-            batchKeyBytes =
-              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
-            streamingKeyBytes =
-              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
-          } catch {
-            // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
-            // TODO: Remove this code block
-            case ex: Exception =>
-              val castedKeys = groupByServingInfo.keyChrononSchema.fields.map {
-                case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
-              }.toMap
-              try {
-                batchKeyBytes =
-                  kvStore.createKeyBytes(castedKeys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
-                streamingKeyBytes =
-                  kvStore.createKeyBytes(castedKeys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
-              } catch {
-                case exInner: Exception =>
-                  exInner.addSuppressed(ex)
-                  throw new RuntimeException("Couldn't encode request keys or casted keys", exInner)
-              }
+    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator
+      .filter(r => r.keys == null || r.keys.values == null || r.keys.values.exists(_ != null))
+      .map { request =>
+        val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
+          .map { groupByServingInfo =>
+            val context =
+              request.context.getOrElse(
+                Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
+            context.increment("group_by_request.count")
+            var batchKeyBytes: Array[Byte] = null
+            var streamingKeyBytes: Array[Byte] = null
+            try {
+              // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
+              // on the KVStore implementation, so we encode each distinctly.
+              batchKeyBytes =
+                kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+              streamingKeyBytes =
+                kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
+            } catch {
+              // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
+              // TODO: Remove this code block
+              case ex: Exception =>
+                val castedKeys = groupByServingInfo.keyChrononSchema.fields.map {
+                  case StructField(name, typ) =>
+                    name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
+                }.toMap
+                try {
+                  batchKeyBytes =
+                    kvStore.createKeyBytes(castedKeys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+                  streamingKeyBytes = kvStore.createKeyBytes(castedKeys,
+                                                             groupByServingInfo,
+                                                             groupByServingInfo.groupByOps.streamingDataset)
+                } catch {
+                  case exInner: Exception =>
+                    exInner.addSuppressed(ex)
+                    throw new RuntimeException("Couldn't encode request keys or casted keys", exInner)
+                }
+            }
+            val batchRequest = GetRequest(batchKeyBytes, groupByServingInfo.groupByOps.batchDataset)
+            val streamingRequestOpt = groupByServingInfo.groupByOps.inferredAccuracy match {
+              // fetch batch(ir) and streaming(input) and aggregate
+              case Accuracy.TEMPORAL =>
+                Some(
+                  GetRequest(streamingKeyBytes,
+                             groupByServingInfo.groupByOps.streamingDataset,
+                             Some(groupByServingInfo.batchEndTsMillis)))
+              // no further aggregation is required - the value in KvStore is good as is
+              case Accuracy.SNAPSHOT => None
+            }
+            GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis, context)
           }
-          val batchRequest = GetRequest(batchKeyBytes, groupByServingInfo.groupByOps.batchDataset)
-          val streamingRequestOpt = groupByServingInfo.groupByOps.inferredAccuracy match {
-            // fetch batch(ir) and streaming(input) and aggregate
-            case Accuracy.TEMPORAL =>
-              Some(
-                GetRequest(streamingKeyBytes,
-                           groupByServingInfo.groupByOps.streamingDataset,
-                           Some(groupByServingInfo.batchEndTsMillis)))
-            // no further aggregation is required - the value in KvStore is good as is
-            case Accuracy.SNAPSHOT => None
-          }
-          GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis, context)
+        if (groupByRequestMetaTry.isFailure) {
+          request.context.foreach(_.increment("group_by_serving_info_failure.count"))
         }
-      if (groupByRequestMetaTry.isFailure) {
-        request.context.foreach(_.increment("group_by_serving_info_failure.count"))
+        request -> groupByRequestMetaTry
       }
-      request -> groupByRequestMetaTry
-    }.toSeq
+      .toSeq
     val allRequests: Seq[GetRequest] = groupByRequestToKvRequest.flatMap {
       case (_, Success(GroupByRequestMeta(_, batchRequest, streamingRequestOpt, _, _))) =>
         Some(batchRequest) ++ streamingRequestOpt
@@ -435,28 +441,8 @@ class FetcherBase(kvStore: KVStore,
                 case Right(keyMissingException) => {
                   Map(keyMissingException.requestName + "_exception" -> keyMissingException.getMessage)
                 }
-                case Left(PrefixedRequest(prefix, groupByRequest)) => {
-                  responseMap
-                    .getOrElse(groupByRequest,
-                               Failure(new IllegalStateException(
-                                 s"Couldn't find a groupBy response for $groupByRequest in response map")))
-                    .map { valueMap =>
-                      if (valueMap != null) {
-                        valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
-                      } else {
-                        Map.empty[String, AnyRef]
-                      }
-                    }
-                    // prefix feature names
-                    .recover { // capture exception as a key
-                      case ex: Throwable =>
-                        if (debug || Math.random() < 0.001) {
-                          logger.error(s"Failed to fetch $groupByRequest", ex)
-                        }
-                        Map(groupByRequest.name + "_exception" -> ex.traceString)
-                    }
-                    .get
-                }
+                case Left(PrefixedRequest(prefix, groupByRequest)) =>
+                  parseGroupByResponse(prefix, groupByRequest, responseMap)
               }.toMap
             }
             joinValuesTry match {
@@ -474,6 +460,39 @@ class FetcherBase(kvStore: KVStore,
         }.toSeq
         responses
       }
+  }
+
+  def parseGroupByResponse(prefix: String,
+                           groupByRequest: Request,
+                           responseMap: Map[Request, Try[Map[String, AnyRef]]]): Map[String, AnyRef] = {
+    // Group bys with all null keys won't be requested from the KV store and we don't expect a response.
+    val isRequiredRequest = groupByRequest.keys.values.exists(_ != null) || groupByRequest.keys.isEmpty
+
+    val response: Try[Map[String, AnyRef]] = responseMap.get(groupByRequest) match {
+      case Some(value) => value
+      case None =>
+        if (isRequiredRequest)
+          Failure(new IllegalStateException(s"Couldn't find a groupBy response for $groupByRequest in response map"))
+        else Success(null)
+    }
+
+    response
+      .map { valueMap =>
+        if (valueMap != null) {
+          valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
+        } else {
+          Map.empty[String, AnyRef]
+        }
+      }
+      // prefix feature names
+      .recover { // capture exception as a key
+        case ex: Throwable =>
+          if (debug || Math.random() < 0.001) {
+            println(s"Failed to fetch $groupByRequest with \n${ex.traceString}")
+          }
+          Map(groupByRequest.name + "_exception" -> ex.traceString)
+      }
+      .get
   }
 
   /**
