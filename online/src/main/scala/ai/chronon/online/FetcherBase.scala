@@ -16,30 +16,23 @@
 
 package ai.chronon.online
 
-import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.row.ColumnAggregator
-import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr, TsUtils}
+import ai.chronon.aggregator.windowing
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.{DerivationOps, GroupByOps, JoinOps, ThrowableOps}
+import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
 import com.google.gson.Gson
-import java.util
 
+import java.util
 import scala.collection.JavaConverters._
-import scala.collection.{Seq, mutable}
+import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
-
-import ai.chronon.online.OnlineDerivationUtil.{
-  DerivationFunc,
-  applyDeriveFunc,
-  buildDerivationFunction,
-  buildRenameOnlyDerivationFunction,
-  timeFields
-}
 
 // Does internal facing fetching
 //   1. takes join request or groupBy requests
@@ -51,7 +44,7 @@ class FetcherBase(kvStore: KVStore,
                   debug: Boolean = false,
                   flagStore: FlagStore = null,
                   disableErrorThrows: Boolean = false)
-    extends MetadataStore(kvStore, metaDataSet, timeoutMillis, disableErrorThrows) {
+    extends MetadataStore(kvStore, metaDataSet, timeoutMillis) {
 
   private case class GroupByRequestMeta(
       groupByServingInfoParsed: GroupByServingInfoParsed,
@@ -120,7 +113,17 @@ class FetcherBase(kvStore: KVStore,
                   logger.error(
                     s"Failed to decode tile ir for groupBy ${servingInfo.groupByOps.metaData.getName}" +
                       s"Streaming tiled IRs will be ignored")
-                  Array.empty[TiledIr]
+                  val groupByFlag: Option[Boolean] = Option(flagStore)
+                    .map(
+                      _.isSet(
+                        "disable_streaming_decoding_error_throws",
+                        Map("groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).asJava))
+                  if (groupByFlag.getOrElse(disableErrorThrows)) {
+                    Array.empty[TiledIr]
+                  } else {
+                    throw new RuntimeException(
+                      s"Failed to decode tile ir for groupBy ${servingInfo.groupByOps.metaData.getName}")
+                  }
               }
             }
             .toArray
@@ -152,7 +155,17 @@ class FetcherBase(kvStore: KVStore,
                   logger.error(
                     s"Failed to decode streaming rows for groupBy ${servingInfo.groupByOps.metaData.getName}" +
                       s"Streaming rows will be ignored")
-                  Seq.empty[Row]
+                  val groupByFlag: Option[Boolean] = Option(flagStore)
+                    .map(
+                      _.isSet(
+                        "disable_streaming_decoding_error_throws",
+                        Map("groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).asJava))
+                  if (groupByFlag.getOrElse(disableErrorThrows)) {
+                    Seq.empty[Row]
+                  } else {
+                    throw new RuntimeException(
+                      s"Failed to decode streaming rows for groupBy ${servingInfo.groupByOps.metaData.getName}")
+                  }
               })
             .toArray
 

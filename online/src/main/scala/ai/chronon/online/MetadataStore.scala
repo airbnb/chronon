@@ -35,10 +35,7 @@ import scala.util.{Failure, Success, Try}
 // [timestamp -> {metric name -> metric value}]
 case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
-class MetadataStore(kvStore: KVStore,
-                    val dataset: String = ChrononMetadataKey,
-                    timeoutMillis: Long,
-                    disableErrorThrows: Boolean = false) {
+class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
   private val CONF_BATCH_SIZE = 100

@@ -24,20 +24,19 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
+import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildDerivedFields}
 import com.google.gson.Gson
+import com.timgroup.statsd.Event
+import com.timgroup.statsd.Event.AlertType
 import org.apache.avro.generic.GenericRecord
+import org.json4s.BuildInfo
 
 import java.util.function.Consumer
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
-import scala.collection.immutable.Map
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
-import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildDerivedFields}
-import com.timgroup.statsd.Event
-import com.timgroup.statsd.Event.AlertType
-import buildinfo.BuildInfo
 
 object Fetcher {
   case class Request(name: String,
