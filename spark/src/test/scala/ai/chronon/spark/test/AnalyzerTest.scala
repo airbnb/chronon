@@ -23,6 +23,7 @@ import ai.chronon.api.{Accuracy, Builders, Operation, TimeUnit, Window}
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.functions.{col, max, min}
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -138,6 +139,73 @@ class AnalyzerTest {
 
     //run analyzer and validate data availability
     val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+  }
+
+  @Test
+  def testJoinAnalyzerValidationDataAvailabilityMultipleSources(): Unit = {
+    val leftSchema = List(Column("item", api.StringType, 100))
+    val leftTable = s"$namespace.multiple_sources_left_table"
+    val leftData = DataFrameGen.events(spark, leftSchema, 10, partitions = 1)
+    leftData.save(leftTable)
+    val leftPartitions = tableUtils.partitions(leftTable)
+    val leftMinDs = leftPartitions.min
+    val leftMaxDs = leftPartitions.max
+    logger.info(s"[Multiple sources test] left minDs: $leftMinDs, left maxDs: $leftMaxDs")
+
+    // Create two sources with consecutive partition ranges of 45 days each.
+    // For events-events-SNAPSHOT with 90 day window, we need data from ds-91 to ds-1 days
+    val firstSourceStartPartition = tableUtils.partitionSpec.shift(leftMinDs, -91)
+    val firstSourceEndPartition = tableUtils.partitionSpec.shift(leftMinDs, -46)
+    val secondSourceStartPartition = tableUtils.partitionSpec.shift(firstSourceEndPartition, 1)
+
+    val rightSchema = List(
+      Column("item", api.StringType, 1000),
+      Column("price", api.DoubleType, 5000)
+    )
+
+    val rightData = DataFrameGen.events(spark, rightSchema, count = 5000, partitions = 100).drop("ts")
+    val rightSourceTable1 = s"$namespace.multiple_sources_right_source1"
+    rightData.where(col("ds").between(firstSourceStartPartition, secondSourceStartPartition)).save(rightSourceTable1)
+    val rightSourceTable2 = s"$namespace.multiple_sources_right_source2"
+    rightData.where(col("ds").between(secondSourceStartPartition, leftMaxDs)).save(rightSourceTable2)
+
+    def buildSource(startPartition: Option[String], endPartition: Option[String], sourceTable: String): api.Source = {
+      val query = Builders.Query(selects = Builders.Selects("price"))
+      if (startPartition.isDefined) {
+        query.setStartPartition(startPartition.get)
+      }
+      if (endPartition.isDefined) {
+        query.setEndPartition(endPartition.get)
+      }
+      Builders.Source.events(
+        query = query,
+        table = sourceTable
+      )
+    }
+
+    val groupBy =  Builders.GroupBy(
+      sources = Seq(
+        buildSource(Some(firstSourceStartPartition), Some(firstSourceEndPartition), rightSourceTable1),
+        buildSource(Some(secondSourceStartPartition), None, rightSourceTable2)
+      ),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation( windows = Seq(new Window(90, TimeUnit.DAYS)), // greater than one year
+          operation = Operation.AVERAGE,
+          inputColumn = "price")
+      ),
+      metaData = Builders.MetaData(name = "multiple_sources.item_gb", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = leftMinDs), table = leftTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = Builders.MetaData(name = "multiple_sources.join", namespace = namespace)
+    )
+
+    val analyzer = new Analyzer(tableUtils, joinConf, leftMinDs, leftMaxDs)
     analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
 
