@@ -83,12 +83,7 @@ def get_pre_derived_group_by_features(group_by: GroupBy) -> List[str]:
     # For group_bys without aggregations, selected fields from query
     else:
         for source in group_by.sources:
-            if source.events:
-                output_columns.extend(source.events.query.selects.keys())
-            elif source.entities:
-                output_columns.extend(source.entities.query.selects.keys())
-            elif source.joinSource:
-                output_columns.extend(source.joinSource.query.selects.keys())
+            output_columns.extend(get_pre_derived_source_keys(source))
     return output_columns
 
 
@@ -121,22 +116,13 @@ def get_pre_derived_join_internal_features(join: Join) -> List[str]:
     return internal_features
 
 
-def get_pre_derived_join_keys(join: Join) -> List[str]:
-    if join.left.events:
-        return list(join.left.events.query.selects.keys())
-    elif join.left.entities:
-        return list(join.left.entities.query.selects.keys())
-    elif join.left.joinSource:
-        return list(join.left.joinSource.query.selects.keys())
-
-
-# The logic should be consistent with the full name logic defined
-# in https://github.com/airbnb/chronon/blob/main/api/src/main/scala/ai/chronon/api/Extensions.scala#L677.
-def get_external_part_full_name(external_part: ExternalPart) -> str:
-    prefix = external_part.prefix + "_" if external_part.prefix else ""
-    name = external_part.source.metadata.name
-    sanitized_name = re.sub("[^a-zA-Z0-9_]", "_", name)
-    return "ext_" + prefix + sanitized_name
+def get_pre_derived_source_keys(source: Source) -> List[str]:
+    if source.events:
+        return list(source.events.query.selects.keys())
+    elif source.entities:
+        return list(source.entities.query.selects.keys())
+    elif source.joinSource:
+        return list(source.joinSource.query.selects.keys())
 
 
 # The external columns name logic should be consistent with the logic defined in fetcher.scala
@@ -146,7 +132,7 @@ def get_pre_derived_external_features(join: Join) -> List[str]:
     if join.onlineExternalParts:
         for external_part in join.onlineExternalParts:
             original_external_columns = [param.name for param in external_part.source.valueSchema.params]
-            prefix = get_external_part_full_name(external_part) + "_"
+            prefix = external_part.get_external_part_full_name + "_"
             for col in original_external_columns:
                 external_cols.append(prefix + col)
     return external_cols
@@ -178,7 +164,7 @@ def get_join_output_columns(join: Join) -> List[str]:
     """
     From the join object, get the final output columns after derivations.
     """
-    output_columns = set(get_pre_derived_join_features(join) + get_pre_derived_join_keys(join))
+    output_columns = set(get_pre_derived_join_features(join) + get_pre_derived_source_keys(join.left))
     if join.derivations:
         return build_derived_columns(output_columns, join.derivations)
     else:
