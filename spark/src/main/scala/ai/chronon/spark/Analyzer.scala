@@ -356,10 +356,19 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     if (validationAssert) {
-      assert(
-        keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty,
-        "ERROR: Join validation failed. Please check error message for details."
-      )
+      if (joinConf.isSetBootstrapParts) {
+        // For joins with bootstrap_parts, do not assert on data availability errors, as bootstrap can cover them
+        // Only print out the errors as a warning
+        assert(
+          keysWithError.isEmpty && noAccessTables.isEmpty,
+          "ERROR: Join validation failed. Please check error message for details."
+        )
+      } else {
+        assert(
+          keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty,
+          "ERROR: Join validation failed. Please check error message for details."
+        )
+      }
     }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata)

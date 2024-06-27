@@ -16,16 +16,16 @@
 
 package ai.chronon.spark.test
 
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Builders, Operation, TimeUnit, Window}
-import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
+import ai.chronon.api._
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{col, max, min}
+import org.apache.spark.sql.functions.col
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.slf4j.LoggerFactory
 
 class AnalyzerTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -121,9 +121,9 @@ class AnalyzerTest {
       sources = Seq(viewsSource),
       keyColumns = Seq("item_id"),
       aggregations = Seq(
-        Builders.Aggregation( windows = Seq(new Window(365, TimeUnit.DAYS)), // greater than one year
-          operation = Operation.AVERAGE,
-          inputColumn = "time_spent_ms")
+        Builders.Aggregation(windows = Seq(new Window(365, TimeUnit.DAYS)), // greater than one year
+                             operation = Operation.AVERAGE,
+                             inputColumn = "time_spent_ms")
       ),
       metaData = Builders.MetaData(name = "join_analyzer_test.item_data_avail_gb", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
@@ -184,16 +184,16 @@ class AnalyzerTest {
       )
     }
 
-    val groupBy =  Builders.GroupBy(
+    val groupBy = Builders.GroupBy(
       sources = Seq(
         buildSource(Some(firstSourceStartPartition), Some(firstSourceEndPartition), rightSourceTable1),
         buildSource(Some(secondSourceStartPartition), None, rightSourceTable2)
       ),
       keyColumns = Seq("item"),
       aggregations = Seq(
-        Builders.Aggregation( windows = Seq(new Window(90, TimeUnit.DAYS)), // greater than one year
-          operation = Operation.AVERAGE,
-          inputColumn = "price")
+        Builders.Aggregation(windows = Seq(new Window(90, TimeUnit.DAYS)), // greater than one year
+                             operation = Operation.AVERAGE,
+                             inputColumn = "price")
       ),
       metaData = Builders.MetaData(name = "multiple_sources.item_gb", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
