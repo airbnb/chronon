@@ -16,10 +16,8 @@
 
 package ai.chronon.spark
 
-import java.util
-
-import org.slf4j.LoggerFactory
 import ai.chronon.api
+import ai.chronon.api.DataModel.Entities
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online.SparkConversions
@@ -28,24 +26,14 @@ import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
-import java.util.concurrent.Executors
 
+import java.util.concurrent.Executors
+import scala.collection.compat._
 import scala.collection.{Seq, mutable}
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
-import java.util.concurrent.{Callable, ExecutorCompletionService, ExecutorService, Executors}
-
-import scala.collection.Seq
-import scala.collection.mutable
-import scala.collection.parallel.ExecutionContextTaskSupport
-import scala.concurrent.duration.{Duration, DurationInt}
-import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
-import scala.collection.compat._
 import scala.jdk.CollectionConverters._
-
-import ai.chronon.api.DataModel.Entities
-import scala.util.ScalaJavaConversions.{IterableOps, ListOps, MapOps}
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
 
 /*
@@ -196,7 +184,7 @@ class Join(joinConf: api.Join,
       }
 
     logger.info(
-      s"\n======= CoveringSet for JoinPart ${joinConf.metaData.name} for PartitionRange(${leftRange.start}, ${leftRange.end}) =======\n")
+      s"\n======= CoveringSet for Join ${joinConf.metaData.name} for PartitionRange(${leftRange.start}, ${leftRange.end}) =======\n")
     coveringSetsPerJoinPart.foreach {
       case (joinPartMetadata, coveringSets) =>
         logger.info(s"Bootstrap sets for join part ${joinPartMetadata.joinPart.groupBy.metaData.name}")
