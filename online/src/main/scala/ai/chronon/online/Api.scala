@@ -224,7 +224,9 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   def logResponse(resp: LoggableResponse): Unit
 
   // helper functions
-  final def buildFetcher(debug: Boolean = false, callerName: String = null): Fetcher =
+  final def buildFetcher(debug: Boolean = false,
+                         callerName: String = null,
+                         disableErrorThrows: Boolean = false): Fetcher =
     new Fetcher(genKvStore,
                 Constants.ChrononMetadataKey,
                 logFunc = responseConsumer,
@@ -232,16 +234,19 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 externalSourceRegistry = externalRegistry,
                 timeoutMillis = timeoutMillis,
                 callerName = callerName,
-                flagStore = flagStore)
+                flagStore = flagStore,
+                disableErrorThrows = disableErrorThrows)
 
-  final def buildJavaFetcher(callerName: String = null): JavaFetcher =
+  final def buildJavaFetcher(callerName: String = null, disableErrorThrows: Boolean = false): JavaFetcher = {
     new JavaFetcher(genKvStore,
                     Constants.ChrononMetadataKey,
                     timeoutMillis,
                     responseConsumer,
                     externalRegistry,
                     callerName,
-                    flagStore)
+                    flagStore,
+                    disableErrorThrows)
+  }
 
   final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(null)
 
