@@ -16,31 +16,24 @@
 
 package ai.chronon.online
 
-import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.row.ColumnAggregator
-import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr, TsUtils}
+import ai.chronon.aggregator.windowing
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.api.Extensions.{DerivationOps, GroupByOps, JoinOps, ThrowableOps}
+import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
 import com.google.gson.Gson
-import java.util
 
+import java.util
 import scala.collection.JavaConverters._
-import scala.collection.{Seq, mutable}
+import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
-
-import ai.chronon.online.OnlineDerivationUtil.{
-  DerivationFunc,
-  applyDeriveFunc,
-  buildDerivationFunction,
-  buildRenameOnlyDerivationFunction,
-  timeFields
-}
 
 // Does internal facing fetching
 //   1. takes join request or groupBy requests
@@ -50,7 +43,8 @@ class FetcherBase(kvStore: KVStore,
                   metaDataSet: String = ChrononMetadataKey,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false,
-                  flagStore: FlagStore = null)
+                  flagStore: FlagStore = null,
+                  disableErrorThrows: Boolean = false)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis)
     with FetcherCache {
   import FetcherBase._
@@ -127,10 +121,28 @@ class FetcherBase(kvStore: KVStore,
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
         val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-          .map { tVal =>
-            val (tile, _) = servingInfo.tiledCodec.decodeTileIr(tVal.bytes)
-            TiledIr(tVal.millis, tile)
+          .flatMap { tVal =>
+            Try(servingInfo.tiledCodec.decodeTileIr(tVal.bytes)) match {
+              case Success((tile, _)) => Array(TiledIr(tVal.millis, tile))
+              case Failure(_) =>
+                logger.error(
+                  s"Failed to decode tile ir for groupBy ${servingInfo.groupByOps.metaData.getName}" +
+                    s"Streaming tiled IRs will be ignored")
+                val groupByFlag: Option[Boolean] = Option(flagStore)
+                  .map(_.isSet(
+                    "disable_streaming_decoding_error_throws",
+                    Map(
+                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).asJava))
+                if (groupByFlag.getOrElse(disableErrorThrows)) {
+                  Array.empty[TiledIr]
+                } else {
+                  throw new RuntimeException(
+                    s"Failed to decode tile ir for groupBy ${servingInfo.groupByOps.metaData.getName}")
+                }
+            }
           }
+          .toArray
+          .iterator
 
         if (debug) {
           val gson = new Gson()
@@ -151,7 +163,25 @@ class FetcherBase(kvStore: KVStore,
 
         val streamingRows: Array[Row] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
-          .map(tVal => selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations))
+          .flatMap(tVal =>
+            Try(selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations)) match {
+              case Success(row) => Seq(row)
+              case Failure(_) =>
+                logger.error(
+                  s"Failed to decode streaming rows for groupBy ${servingInfo.groupByOps.metaData.getName}" +
+                    s"Streaming rows will be ignored")
+                val groupByFlag: Option[Boolean] = Option(flagStore)
+                  .map(_.isSet(
+                    "disable_streaming_decoding_error_throws",
+                    Map(
+                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).asJava))
+                if (groupByFlag.getOrElse(disableErrorThrows)) {
+                  Seq.empty[Row]
+                } else {
+                  throw new RuntimeException(
+                    s"Failed to decode streaming rows for groupBy ${servingInfo.groupByOps.metaData.getName}")
+                }
+            })
           .toArray
 
         if (debug) {
