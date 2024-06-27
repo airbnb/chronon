@@ -342,7 +342,7 @@ class ChrononRepoValidator(object):
             if join.metaData.online:
                 columns = features
             else:
-                keys = get_pre_derived_join_keys(join)
+                keys = get_pre_derived_source_keys(join.left)
                 columns = features + keys
             errors.extend(self._validate_derivations(columns, join.derivations))
         return errors
