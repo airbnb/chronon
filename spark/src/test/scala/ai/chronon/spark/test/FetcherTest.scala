@@ -725,7 +725,7 @@ class FetcherTest extends TestCase {
     val namespace = "empty_request"
     val joinConf = generateRandomData(namespace, 5, 5)
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#empty_request")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
 
