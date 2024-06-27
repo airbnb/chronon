@@ -732,7 +732,7 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName)
+      val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
       val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
       val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
       implicit val ec: ExecutionContext = ExecutionContext.global

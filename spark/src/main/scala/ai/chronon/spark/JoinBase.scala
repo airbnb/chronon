@@ -520,7 +520,6 @@ abstract class JoinBase(joinConf: api.Join,
             assert(finalDf.isEmpty,
                    "The arg `selectedJoinParts` is defined, so no final join is required. `finalDf` should be empty")
             logger.info(s"Skipping writing to the output table for range: ${range.toString}  $progress")
-            return None
           } else {
             finalDf.get.save(outputTable, tableProps, autoExpand = true)
             val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
@@ -531,7 +530,12 @@ abstract class JoinBase(joinConf: api.Join,
           }
         }
     }
-    logger.info(s"Wrote to table $outputTable, into partitions: $unfilledRanges")
-    Some(finalResult)
+    if (selectedJoinParts.isDefined) {
+      logger.info("Skipping final join because selectedJoinParts is defined.")
+      None
+    } else {
+      logger.info(s"Wrote to table $outputTable, into partitions: $unfilledRanges")
+      Some(finalResult)
+    }
   }
 }
