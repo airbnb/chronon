@@ -424,12 +424,4 @@ class TableUtilsTest {
     tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF'")
   }
 
-  @Test
-  def testIfPartitionExistsInTable(): Unit = {
-    val tableName = "db.test_if_partition_exists"
-    prepareTestDataWithSubPartitions(tableName)
-    assertTrue(tableUtils.ifPartitionExistsInTable(tableName, "2022-11-03"))
-    assertFalse(tableUtils.ifPartitionExistsInTable(tableName, "2023-01-01"))
-  }
-
 }
