@@ -725,7 +725,7 @@ class FetcherTest extends TestCase {
     val namespace = "empty_request"
     val joinConf = generateRandomData(namespace, 5, 5)
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#empty_request")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
 
@@ -738,8 +738,11 @@ class FetcherTest extends TestCase {
     val responseMap = responses.head.values.get
 
     logger.info("====== Empty request response map ======")
-    assertEquals(joinConf.joinParts.size() + joinConf.derivations.toScala.derivationsWithoutStar.size, responseMap.size)
-    assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
+    logger.info(responseMap.toString)
+    // In this case because of empty keys, both attempts to compute derivation will fail
+    val derivationExceptionTypes = Seq("derivation_fetch_exception", "derivation_rename_exception")
+    assertEquals(joinConf.joinParts.size() + derivationExceptionTypes.size, responseMap.size)
+    assertTrue(responseMap.keys.forall(_.endsWith("_exception")))
   }
 }
 

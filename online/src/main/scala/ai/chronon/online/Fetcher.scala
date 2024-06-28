@@ -250,10 +250,13 @@ class Fetcher(val kvStore: KVStore,
                       Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
                     renameOnlyDerivedMap ++ derivedExceptionMap
                 }
+                // Preserve exceptions from baseMap
+                val baseMapExceptions = baseMap.filter(_._1.endsWith("_exception"))
+                val finalizedDerivedMap = derivedMap ++ baseMapExceptions
                 val requestEndTs = System.currentTimeMillis()
                 ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
                 ctx.distribution("overall.latency.millis", requestEndTs - ts)
-                ResponseWithContext(internalResponse.request, derivedMap, baseMap)
+                ResponseWithContext(internalResponse.request, finalizedDerivedMap, baseMap)
               case Failure(exception) =>
                 // more validation logic will be covered in compile.py to avoid this case
                 ctx.incrementException(exception)
