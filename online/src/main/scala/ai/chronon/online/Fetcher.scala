@@ -160,10 +160,8 @@ class Fetcher(val kvStore: KVStore,
 
     val joinName = joinConf.metaData.nameToFilePath
     val keySchema = StructType(s"${joinName.sanitize}_key", keyFields.toArray)
-    val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
     val baseValueSchema = StructType(s"${joinName.sanitize}_value", valueFields.toArray)
-    val baseValueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
-    val joinCodec = JoinCodec(joinConf, keySchema, baseValueSchema, keyCodec, baseValueCodec)
+    val joinCodec = JoinCodec(joinConf, keySchema, baseValueSchema)
     logControlEvent(joinCodec)
     joinCodec
   }
@@ -313,6 +311,12 @@ class Fetcher(val kvStore: KVStore,
     val loggingTry: Try[Unit] = joinCodecTry.map(codec => {
       val metaData = codec.conf.join.metaData
       val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
+
+      // Exit early if sample percent is 0
+      if (samplePercent == 0) {
+        return Response(resp.request, Success(resp.derivedValues))
+      }
+
       val keyBytes = encode(codec.keySchema, codec.keyCodec, resp.request.keys, cast = true)
 
       val hash = if (samplePercent > 0) {
