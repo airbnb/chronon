@@ -725,4 +725,46 @@ class GroupByTest {
       tableUtils = tableUtils,
       additionalAgg = aggs)
   }
+
+  @Test
+  def testBoundedUniqueCounts(): Unit = {
+    val (source, endPartition) = createTestSource(suffix = "_bounded_counts")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_bounded_counts"
+    val aggs = Seq(
+      Builders.Aggregation(
+        operation = Operation.BOUNDED_UNIQUE_COUNT,
+        inputColumn = "item",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "5")
+      ),
+      Builders.Aggregation(
+        operation = Operation.BOUNDED_UNIQUE_COUNT,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "5")
+      ),
+    )
+    backfill(name = "unit_test_group_by_bounded_counts",
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils,
+      additionalAgg = aggs)
+
+    val result = spark.sql(
+      """
+        |select *
+        |from test_bounded_counts.unit_test_group_by_bounded_counts
+        |where item_bounded_unique_count_60d > 5 or price_bounded_unique_count_60d > 5
+        |""".stripMargin)
+
+    assertTrue(result.isEmpty)
+  }
 }
