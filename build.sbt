@@ -82,12 +82,11 @@ lazy val api = project
     crossScalaVersions := supportedVersions,
     libraryDependencies ++= spark_sql_provided,
     libraryDependencies ++= Seq(
-      // TODO shade thrift and upgrade to 0.20
-      "org.apache.thrift" % "libthrift" % "0.13.0",
+      "org.apache.thrift" % "libthrift" % "0.20.0",
       "org.scala-lang" % "scala-reflect" % scalaVersion.value,
-      "org.scala-lang.modules" %% "scala-collection-compat" % "2.6.0",
+      "org.scala-lang.modules" %% "scala-collection-compat" % "2.11.0",
       "com.novocode" % "junit-interface" % "0.11" % "test",
-      "org.scalatest" %% "scalatest" % "3.2.15" % "test",
+      "org.scalatest" %% "scalatest" % "3.2.19" % "test",
       "org.scalatestplus" %% "mockito-3-4" % "3.2.10.0" % "test"
     )
   )
@@ -110,8 +109,8 @@ lazy val online = project
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2",
       "com.datadoghq" % "java-dogstatsd-client" % "4.4.1",
       "org.rogach" %% "scallop" % "5.1.0",
-      "net.jodah" % "typetools" % "0.6.3"
-      "com.github.ben-manes.caffeine" % "caffeine" % "2.9.3"
+      "net.jodah" % "typetools" % "0.6.3",
+      "com.github.ben-manes.caffeine" % "caffeine" % "3.1.8"
     ),
     libraryDependencies ++= spark_all,
   )
@@ -128,8 +127,8 @@ lazy val online_unshaded = (project in file("online"))
       "org.scala-lang.modules" %% "scala-java8-compat" % "1.0.2",
       "com.datadoghq" % "java-dogstatsd-client" % "4.4.1",
       "org.rogach" %% "scallop" % "5.1.0",
-      "net.jodah" % "typetools" % "0.6.3"
-      "com.github.ben-manes.caffeine" % "caffeine" % "2.9.3"
+      "net.jodah" % "typetools" % "0.6.3",
+      "com.github.ben-manes.caffeine" % "caffeine" % "3.1.8"
     ),
     libraryDependencies ++= jackson,
     libraryDependencies ++= spark_all.map(_ % "provided"),
