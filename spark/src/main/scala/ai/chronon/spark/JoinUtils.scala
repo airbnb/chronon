@@ -16,8 +16,7 @@
 
 package ai.chronon.spark
 
-import java.util
-import org.slf4j.LoggerFactory
+import ai.chronon.api
 import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions.{JoinOps, _}
@@ -27,11 +26,12 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
 import org.apache.spark.util.sketch.BloomFilter
+import org.slf4j.LoggerFactory
 
+import java.util
 import scala.collection.compat._
 import scala.jdk.CollectionConverters._
-import scala.util.ScalaJavaConversions.{JIteratorOps, JMapOps, MapOps}
-import ai.chronon.api
+import scala.util.ScalaJavaConversions.MapOps
 
 object JoinUtils {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)

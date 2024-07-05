@@ -418,21 +418,23 @@ abstract class JoinBase(joinConf: api.Join,
              s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
     }
 
-    // Run validations before starting the job
-    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val analyzer = new Analyzer(tableUtils, joinConf, today, today, silenceMode = true)
-    try {
-      analyzer.analyzeJoin(joinConf, validationAssert = true)
-      metrics.gauge(Metrics.Name.validationSuccess, 1)
-      logger.info("Join conf validation succeeded. No error found.")
-    } catch {
-      case ex: AssertionError =>
-        metrics.gauge(Metrics.Name.validationFailure, 1)
-        logger.error(s"Validation failed. Please check the validation error in log.")
-        if (tableUtils.backfillValidationEnforced) throw ex
-      case e: Throwable =>
-        metrics.gauge(Metrics.Name.validationFailure, 1)
-        logger.error(s"An unexpected error occurred during validation. ${e.getMessage}")
+    // Run validations before starting the job; Skip validation if selectedJoinParts is defined
+    if (selectedJoinParts.isEmpty) {
+      val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+      val analyzer = new Analyzer(tableUtils, joinConf, today, today, silenceMode = true)
+      try {
+        analyzer.analyzeJoin(joinConf, validationAssert = true)
+        metrics.gauge(Metrics.Name.validationSuccess, 1)
+        logger.info("Join conf validation succeeded. No error found.")
+      } catch {
+        case ex: AssertionError =>
+          metrics.gauge(Metrics.Name.validationFailure, 1)
+          logger.error(s"Validation failed. Please check the validation error in log.")
+          if (tableUtils.backfillValidationEnforced) throw ex
+        case e: Throwable =>
+          metrics.gauge(Metrics.Name.validationFailure, 1)
+          logger.error(s"An unexpected error occurred during validation. ${e.getMessage}")
+      }
     }
 
     // First run command to archive tables that have changed semantically since the last run
@@ -456,15 +458,7 @@ abstract class JoinBase(joinConf: api.Join,
     // OverrideStartPartition is used to replace the start partition of the join config. This is useful when
     //  1 - User would like to test run with different start partition
     //  2 - User has entity table which is cumulative and only want to run backfill for the latest partition
-    val rangeToFill = JoinUtils.getRangesToFill(joinConf.left,
-                                                tableUtils,
-                                                endPartition,
-                                                overrideStartPartition,
-                                                joinConf.historicalBackfill)
-    logger.info(s"Join range to fill $rangeToFill")
-    val unfilledRanges = tableUtils
-      .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
-      .getOrElse(Seq.empty)
+    val (rangeToFill, unfilledRanges) = getUnfilledRange(overrideStartPartition, outputTable)
 
     def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     if (unfilledRanges.isEmpty) {
