@@ -163,9 +163,7 @@ class BaseFetcher(kvStore: KVStore,
                  |""".stripMargin)
         }
 
-        val useTileLayering = flagStore.isSet(
-          "zoolander.shepherd.enable_tile_layering_reads",
-          Map("feature_group_dataset" -> servingInfo.groupByOps.streamingDataset).asJava)
+        val useTileLayering = true // Enable tile layering by default
         val aggregatorStartTime = System.currentTimeMillis()
         val result = aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs, useTileLayering)
         context.histogramTagged("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
