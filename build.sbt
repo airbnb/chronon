@@ -28,6 +28,7 @@ lazy val avro_1_11 = "1.11.2"
 // skip tests on assembly - uncomment if builds become slow
 // ThisBuild / assembly / test := {}
 
+ThisBuild / scalaVersion := scala_2_12
 
 lazy val supportedVersions = List(scala_2_12) // List(scala211, scala212, scala213)
 
@@ -83,6 +84,7 @@ lazy val api = project
     libraryDependencies ++= spark_sql_provided,
     libraryDependencies ++= Seq(
       "org.apache.thrift" % "libthrift" % "0.20.0",
+      "javax.annotation" % "javax.annotation-api" % "1.3.2",
       "org.scala-lang" % "scala-reflect" % scalaVersion.value,
       "org.scala-lang.modules" %% "scala-collection-compat" % "2.11.0",
       "com.novocode" % "junit-interface" % "0.11" % "test",
