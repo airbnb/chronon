@@ -73,7 +73,7 @@ class ThriftDecodingTest {
     //    gson.toJson(rows)
 
     // apply sql on this
-    val cu = new CatalystUtil(collection.Seq(der_name -> der_expr), schema.asInstanceOf[StructType])
+    val cu = new CatalystUtil(schema.asInstanceOf[StructType], collection.Seq(der_name -> der_expr))
     val result = cu.performSql(decoder.apply(dks).asInstanceOf[Array[Any]]).orNull
     val resultJson = gson.toJson(result)
     assertEquals(resultJson, "[24.0]")

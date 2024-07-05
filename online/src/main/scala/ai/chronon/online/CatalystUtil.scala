@@ -62,7 +62,7 @@ object CatalystUtil {
 
   case class PoolKey(expressions: collection.Seq[(String, String)], inputSchema: StructType)
   val poolMap: PoolMap[PoolKey, CatalystUtil] = new PoolMap[PoolKey, CatalystUtil](pi =>
-    new CatalystUtil(pi.expressions, pi.inputSchema))
+    new CatalystUtil(pi.inputSchema, pi.expressions))
 }
 
 class PoolMap[Key, Value](createFunc: Key => Value, maxSize: Int = 100, initialSize: Int = 2) {
@@ -108,13 +108,11 @@ class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSch
 }
 
 // This class by itself it not thread safe because of the transformBuffer
-class CatalystUtil(expressions: collection.Seq[(String, String)],
-                   inputSchema: StructType,
-                   filters: collection.Seq[String] = Seq.empty) {
-  private val selectClauses = expressions.map { case (name, expr) => s"$expr as $name" }
+class CatalystUtil(inputSchema: StructType, selects: Seq[(String, String)], wheres: Seq[String] = Seq.empty) {
+  private val selectClauses = selects.map { case (name, expr) => s"$expr as $name" }
   private val sessionTable =
     s"q${math.abs(selectClauses.mkString(", ").hashCode)}_f${math.abs(inputSparkSchema.pretty.hashCode)}"
-  private val whereClauseOpt = Option(filters)
+  private val whereClauseOpt = Option(wheres)
     .filter(_.nonEmpty)
     .map { w =>
       s"${w.mkString(" AND ")}"
