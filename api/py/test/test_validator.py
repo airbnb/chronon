@@ -111,3 +111,27 @@ def test_validate_cumulative_source_no_timequery(zvalidator, valid_events_group_
     valid_events_group_by.sources[0].events.isCumulative = True
     valid_events_group_by.sources[0].events.query.timeColumn = None
     assert len(zvalidator._validate_group_by(valid_events_group_by)) > 0
+
+
+def test_validate_group_by_with_incorrect_derivations(zvalidator):
+    from sample.group_bys.sample_team.sample_group_by_with_incorrect_derivations import v1
+    errors = zvalidator._validate_group_by(v1)
+    assert(len(errors) > 0)
+
+
+def test_validate_group_by_with_derivations(zvalidator):
+    from sample.group_bys.sample_team.sample_group_by_with_derivations import v1
+    errors = zvalidator._validate_group_by(v1)
+    assert(len(errors) == 0)
+
+
+def test_validate_join_with_derivations(zvalidator):
+    from sample.joins.sample_team.sample_join_derivation import v1
+    errors = zvalidator._validate_join(v1)
+    assert(len(errors) == 0)
+
+
+def test_validate_join_with_derivations_on_external_parts(zvalidator):
+    from sample.joins.sample_team.sample_join_with_derivations_on_external_parts import v1
+    errors = zvalidator._validate_join(v1)
+    assert(len(errors) == 0)

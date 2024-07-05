@@ -852,6 +852,8 @@ object Extensions {
      */
     def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
+      logger.info(s"Join Left Hash: $leftHash")
+      logger.info(s"Join Left Object: ${ThriftJsonCodec.toJsonStr(join.left)}")
       val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
       val derivedHashMap = Option(join.derivations)
         .map { derivations =>
@@ -903,6 +905,9 @@ object Extensions {
       // Checks for semantic changes in left or bootstrap, because those are saved together
       val bootstrapExistsAndChanged = oldSemanticHash.contains(join.metaData.bootstrapTable) && oldSemanticHash.get(
         join.metaData.bootstrapTable) != semanticHash.get(join.metaData.bootstrapTable)
+      logger.info(s"Bootstrap table changed: $bootstrapExistsAndChanged")
+      logger.info(s"Old Semantic Hash: $oldSemanticHash")
+      logger.info(s"New Semantic Hash: $semanticHash")
       oldSemanticHash.get(leftSourceKey) != semanticHash.get(leftSourceKey) || bootstrapExistsAndChanged
     }
 

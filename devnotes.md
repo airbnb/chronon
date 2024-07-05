@@ -155,9 +155,11 @@ password=<API Key>
 ```
 
 ## Setup for publishing artifacts to MavenCentral (via sonatype)
-1. Create a sonatype account if you don't have one. 
-   1. Sign up here https://issues.sonatype.org/ 
-   2. Create an issue to add your username created above to `ai.chronon`. Here is a sample [issue](https://issues.sonatype.org/browse/OSSRH-88230).
+1. Get maintainer access to Maven Central on Sonatype
+   1. Create a sonatype account if you don't have one. 
+      1. Sign up here https://issues.sonatype.org/ 
+   2. Ask a current Chronon maintainer to add you to Sonatype project. 
+      1. To add a new member, an existing Chronon maintainer will need to [email Sonatype central support](https://central.sonatype.org/faq/what-happened-to-issues-sonatype-org/#where-did-issuessonatypeorg-go) and request a new member to be added as a maintainer. Include the username for the newly created Sonatype account in the email.    
 2. `brew install gpg` on your mac
 3. In `~/.sbt/1.0/sonatype.sbt` add
 ```scala

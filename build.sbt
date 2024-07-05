@@ -111,6 +111,7 @@ lazy val online = project
       "com.datadoghq" % "java-dogstatsd-client" % "4.4.1",
       "org.rogach" %% "scallop" % "5.1.0",
       "net.jodah" % "typetools" % "0.6.3"
+      "com.github.ben-manes.caffeine" % "caffeine" % "2.9.3"
     ),
     libraryDependencies ++= spark_all,
   )
@@ -128,6 +129,7 @@ lazy val online_unshaded = (project in file("online"))
       "com.datadoghq" % "java-dogstatsd-client" % "4.4.1",
       "org.rogach" %% "scallop" % "5.1.0",
       "net.jodah" % "typetools" % "0.6.3"
+      "com.github.ben-manes.caffeine" % "caffeine" % "2.9.3"
     ),
     libraryDependencies ++= jackson,
     libraryDependencies ++= spark_all.map(_ % "provided"),

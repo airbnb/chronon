@@ -21,6 +21,8 @@ import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps, WindowOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest, TimedValue}
+import ai.chronon.online.MetadataEndPoint.{ConfByKeyEndPointName, NameByTeamEndPointName}
+import ai.chronon.online.Metrics.Name.Exception
 import com.google.gson.{Gson, GsonBuilder}
 import org.apache.thrift.TBase
 
@@ -38,7 +40,7 @@ case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
-  private val CONF_BATCH_SIZE = 100
+  private val CONF_BATCH_SIZE = 50
 
   // Note this should match with the format used in the warehouse
   def setPartitionMeta(format: String, spanMillis: Long): Unit = {
@@ -66,6 +68,51 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
               th
             ))
       }
+  }
+
+  def getEntityListByTeam[T <: TBase[_, _]: Manifest](team: String): Try[Seq[String]] = {
+    val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
+    val dataset = NameByTeamEndPointName
+    kvStore
+      .getStringArray(team, dataset, timeoutMillis)
+      .recoverWith {
+        case th: Throwable =>
+          Failure(
+            new RuntimeException(
+              s"Couldn't fetch ${clazz.getName} for key $team. Perhaps metadata upload wasn't successful.",
+              th
+            ))
+      }
+  }
+
+  lazy val getGroupByListByTeam: TTLCache[String, Try[Seq[String]]] = {
+    new TTLCache[String, Try[Seq[String]]](
+      { team =>
+        getEntityListByTeam[GroupBy]("group_bys/" + team)
+          .recover {
+            case e: java.util.NoSuchElementException =>
+              logger.error(
+                s"Failed to fetch conf for team $team at group_bys/$team, please check metadata upload to make sure the metadata has been uploaded")
+              throw e
+          }
+      },
+      { team => Metrics.Context(environment = "group_by.list.fetch", groupBy = team) }
+    )
+  }
+
+  lazy val getJoinListByTeam: TTLCache[String, Try[Seq[String]]] = {
+    new TTLCache[String, Try[Seq[String]]](
+      { team =>
+        getEntityListByTeam[Join]("joins/" + team)
+          .recover {
+            case e: java.util.NoSuchElementException =>
+              logger.error(
+                s"Failed to fetch conf for team $team at joins/$team, please check metadata upload to make sure the metadata has been uploaded")
+              throw e
+          }
+      },
+      { team => Metrics.Context(environment = "join.list.fetch", groupBy = team) }
+    )
   }
 
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]](
@@ -160,8 +207,12 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
              |key: $k
              |conf: $v""".stripMargin)
         val kBytes = k.getBytes()
-        // if value is a single string, use it as is, else join the strings into a json list
-        val vBytes = if (v.size == 1) v.head.getBytes() else StringArrayConverter.stringsToBytes(v)
+        // The value is a single string by default, for NameByTeamEndPointName, it's a list of strings
+        val vBytes = if (datasetName == NameByTeamEndPointName) {
+          StringArrayConverter.stringsToBytes(v)
+        } else {
+          v.head.getBytes()
+        }
         PutRequest(keyBytes = kBytes,
                    valueBytes = vBytes,
                    dataset = datasetName,
