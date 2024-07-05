@@ -256,7 +256,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         Seq(mutation.after, mutation.before)
           .filter(_ != null)
           .map(SparkConversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
-      }(RowEncoder(streamSchema))
+      }(RowEncoder.encoderFor(streamSchema))
     dataStream.copy(df = des)
   }
 
@@ -329,7 +329,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     val schemas = buildSchemas(leftSchema)
     val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
-    val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
+    val joinEncoder: Encoder[Row] = RowEncoder.encoderFor(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames
     val leftColumns = schemas.leftSourceSchema.fieldNames
     logger.info(s"""

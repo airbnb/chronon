@@ -82,7 +82,7 @@ sbt "test:testOnly *GroupByTest -- -t *testSnapshotEntities"
 
 ### Check module dependencies
 ```shell
-# Graph based view of all the dependencies
+# ai.zipline.overwatch.Graph based view of all the dependencies
 sbt dependencyBrowseGraph
 
 # Tree based view of all the dependencies
