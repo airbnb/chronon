@@ -46,28 +46,35 @@ class JoinBackfill:
         self.join = convert_json_to_obj(json.loads(config))
 
     def build_flow(self) -> Flow:
-        """
-        Build a flow from a Join object. Each join part is a node and will run in parallel.
-        The next step is final join, which is a node that depends on all join parts.
-        The final join will run after all join parts are done.
-
-        :param join: The Join object to build a flow from
-        :return: A Flow object that represents the flow of the Join
-        """
         flow = Flow(self.join.metaData.name)
+        self.add_join_to_flow(flow, self.join)
+        return flow
+
+    def add_join_to_flow(self, flow: Flow, join: dict) -> Node:
+        """
+        Parse a Join object and add it to the Flow.
+        Each join part is a node and will run in parallel. Besides, left table and final join are also nodes.
+        We will add Join recursively when we encounter a join source.
+        The final join node will be returned to be used as a dependency.
+        """
         final_node = Node(
-            f"{TASK_PREFIX}__{sanitize(get_join_output_table_name(self.join, full_name=True))}", self.run_final_join()
+            f"{TASK_PREFIX}__{sanitize(get_join_output_table_name(join, full_name=True))}", self.run_final_join()
         )
-        left_node = Node(f"{TASK_PREFIX}__left_table", self.run_left_table())
+        join_name = sanitize(join.metaData.name)
+        left_node = Node(f"{TASK_PREFIX}__{join_name}__left_table", self.run_left_table())
         flow.add_node(final_node)
         flow.add_node(left_node)
-        for join_part in self.join.joinParts:
+        for join_part in join.joinParts:
+            for src in join_part.groupBy.sources:
+                if "joinSource" in src:
+                    dep_node = self.add_join_to_flow(flow, src.joinSource.join)
+                    left_node.add_dependency(dep_node)
             jp_full_name = join_part_name(join_part)
-            jp_node = Node(f"{TASK_PREFIX}__{jp_full_name}", self.run_join_part(jp_full_name))
+            jp_node = Node(f"{TASK_PREFIX}__{join_name}__{jp_full_name}", self.run_join_part(jp_full_name))
             flow.add_node(jp_node)
             jp_node.add_dependency(left_node)
             final_node.add_dependency(jp_node)
-        return flow
+        return final_node
 
     def export_template(self, settings: dict):
         return f"{dict_to_exports(settings)}"
