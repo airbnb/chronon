@@ -8,6 +8,7 @@ from ai.chronon.utils import (
     convert_json_to_obj,
     dict_to_bash_commands,
     dict_to_exports,
+    get_config_path,
     get_join_output_table_name,
     join_part_name,
     sanitize,
@@ -57,11 +58,12 @@ class JoinBackfill:
         We will add Join recursively when we encounter a join source.
         The final join node will be returned to be used as a dependency.
         """
-        final_node = Node(
-            f"{TASK_PREFIX}__{sanitize(get_join_output_table_name(join, full_name=True))}", self.run_final_join()
-        )
         join_name = sanitize(join.metaData.name)
-        left_node = Node(f"{TASK_PREFIX}__{join_name}__left_table", self.run_left_table())
+        final_node = Node(
+            f"{TASK_PREFIX}__{sanitize(get_join_output_table_name(join, full_name=True))}",
+            self.run_final_join(join.metaData.name),
+        )
+        left_node = Node(f"{TASK_PREFIX}__{join_name}__left_table", self.run_left_table(join.metaData.name))
         flow.add_node(final_node)
         flow.add_node(left_node)
         for join_part in join.joinParts:
@@ -70,7 +72,9 @@ class JoinBackfill:
                     dep_node = self.add_join_to_flow(flow, src.joinSource.join)
                     left_node.add_dependency(dep_node)
             jp_full_name = join_part_name(join_part)
-            jp_node = Node(f"{TASK_PREFIX}__{join_name}__{jp_full_name}", self.run_join_part(jp_full_name))
+            jp_node = Node(
+                f"{TASK_PREFIX}__{join_name}__{jp_full_name}", self.run_join_part(join.metaData.name, jp_full_name)
+            )
             flow.add_node(jp_node)
             jp_node.add_dependency(left_node)
             final_node.add_dependency(jp_node)
@@ -79,28 +83,40 @@ class JoinBackfill:
     def export_template(self, settings: dict):
         return f"{dict_to_exports(settings)}"
 
-    def command_template(self, extra_args: dict):
+    def command_template(self, config_path: str, extra_args: dict):
         if self.start_date:
             extra_args.update({"start_ds": self.start_date})
-        return f"""python3 /tmp/run.py --conf=/tmp/{self.config_path} --ds={self.end_date} \
+        return f"""python3 /tmp/run.py --conf=/tmp/{config_path} --ds={self.end_date} \
 {dict_to_bash_commands(extra_args)}"""
 
-    def run_join_part(self, join_part: str):
+    def run_join_part(self, join_name: dict, join_part: str):
         args = {
             "mode": "backfill",
             "selected_join_parts": join_part,
             "use_cached_left": None,
         }
         settings = self.settings.get(join_part, self.settings["default"])
-        return self.export_template(settings) + " && " + self.command_template(extra_args=args)
+        return (
+            self.export_template(settings)
+            + " && "
+            + self.command_template(config_path=get_config_path(join_name), extra_args=args)
+        )
 
-    def run_left_table(self):
+    def run_left_table(self, join_name: str):
         settings = self.settings.get("left_table", self.settings["default"])
-        return self.export_template(settings) + " && " + self.command_template(extra_args={"mode": "backfill-left"})
+        return (
+            self.export_template(settings)
+            + " && "
+            + self.command_template(config_path=get_config_path(join_name), extra_args={"mode": "backfill-left"})
+        )
 
-    def run_final_join(self):
+    def run_final_join(self, join_name: str):
         settings = self.settings.get("final_join", self.settings["default"])
-        return self.export_template(settings) + " && " + self.command_template(extra_args={"mode": "backfill-final"})
+        return (
+            self.export_template(settings)
+            + " && "
+            + self.command_template(config_path=get_config_path(join_name), extra_args={"mode": "backfill-final"})
+        )
 
     def run(self, orchestrator: str, overrides: Optional[dict] = None):
         from ai.chronon.constants import ADAPTERS
