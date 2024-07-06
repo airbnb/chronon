@@ -464,3 +464,9 @@ def convert_json_to_obj(d):
         return [convert_json_to_obj(item) for item in d]
     else:
         return d
+
+
+def get_config_path(join_name: str) -> str:
+    assert "." in join_name, f"Invalid join name: {join_name}"
+    team_name, config_name = join_name.split(".", 1)
+    return f"production/joins/{team_name}/{config_name}"
