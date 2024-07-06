@@ -8,10 +8,10 @@ It can be visualized as a tree structure.
 class Flow:
     def __init__(self, name):
         self.name = name
-        self.nodes = []
+        self.nodes = set()
 
     def add_node(self, node):
-        self.nodes.append(node)
+        self.nodes.add(node)
 
     def find_node(self, name):
         for node in self.nodes:

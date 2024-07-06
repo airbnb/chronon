@@ -4,7 +4,15 @@ class Node:
         self.command = command
         self.args = args
         self.kwargs = kwargs
-        self.dependencies = []
+        self.dependencies = set()
 
     def add_dependency(self, node):
-        self.dependencies.append(node)
+        self.dependencies.add(node)
+
+    def __eq__(self, other):
+        if isinstance(other, Node):
+            return self.name == other.name
+        return False
+
+    def __hash__(self):
+        return hash(self.name)
