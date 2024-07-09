@@ -479,9 +479,9 @@ abstract class JoinBase(joinConf: api.Join,
 
     val runSmallMode = {
       if (tableUtils.smallModelEnabled) {
-        val thresholdCount =
+        val thresholdCount: Int =
           leftDf(joinConf, wholeRange, tableUtils, limit = Some(tableUtils.smallModeNumRowsCutoff + 1))
-            .map(_.count)
+            .map(_.count.toInt)
             .getOrElse(0)
         val result = thresholdCount <= tableUtils.smallModeNumRowsCutoff
         if (result) {
