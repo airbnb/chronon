@@ -424,6 +424,7 @@ object Extensions {
   }
 
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     def maxWindow: Option[Window] = {
       val allWindowsOpt = Option(groupBy.aggregations)
         .flatMap(_.toScala.toSeq.allWindowsOpt)
@@ -443,6 +444,7 @@ object Extensions {
     def semanticHash: String = {
       val newGroupBy = groupBy.deepCopy()
       newGroupBy.unsetMetaData()
+      logger.info(s"GroupBy object: ${ThriftJsonCodec.toJsonStr(newGroupBy)}")
       ThriftJsonCodec.md5Digest(newGroupBy)
     }
 
@@ -852,7 +854,6 @@ object Extensions {
      */
     def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
-      logger.info(s"Join Left Hash: $leftHash")
       logger.info(s"Join Left Object: ${ThriftJsonCodec.toJsonStr(join.left)}")
       val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
       val derivedHashMap = Option(join.derivations)

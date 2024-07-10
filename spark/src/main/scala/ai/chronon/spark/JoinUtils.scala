@@ -368,9 +368,12 @@ object JoinUtils {
             s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
         }
         .foreach { whereClause =>
-          val currentWheres = Option(source.rootQuery.getWheres).getOrElse(new util.ArrayList[String]())
-          currentWheres.add(whereClause)
-          source.rootQuery.setWheres(currentWheres)
+          // Skip adding the filter if it is a join source
+          if (!source.isSetJoinSource) {
+            val currentWheres = Option(source.rootQuery.getWheres).getOrElse(new util.ArrayList[String]())
+            currentWheres.add(whereClause)
+            source.rootQuery.setWheres(currentWheres)
+          }
         }
     }
   }
