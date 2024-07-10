@@ -1,5 +1,6 @@
 import ai.chronon.api.ttypes as ttypes
 import ai.chronon.utils as utils
+import ai.chronon.repo as repo
 import logging
 import json
 import sys
@@ -330,7 +331,6 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
             name: str = None,
             tags: Dict[str, str] = None,
             batchPartitionCadence = ttypes.BatchPartitionCadence.DAILY,
-            databricks_mode: bool = False,
             team_slug: str = None,
             **kwargs) -> ttypes.GroupBy:
     """
@@ -430,21 +430,16 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     :param batchPartitionCadence:
         WARNING: BatchPartitionCadence.HOURLY is currently unsupported in the online setting.
         This is only used to validate GroupBy window lengths (hourly batch cadence => hourly windows supported)
-    :param databricks_mode:
-        If set to True, the GroupBy is running in a Databricks notebook.
     :param team_slug:
-        Team slug is currently only used and required when running in a Databricks notebook.
+        Specifiying the team slug is required when defining a GroupBy in a notebook cell since we cannot infer it from the file name.
+    :param name:
+        Name of the GroupBy. If not provided, the name is inferred from the module name. 
+        Name should only be used for GroupBys defined in a notebook cell.
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
     """
     assert sources, "Sources are not specified"
-
-    # Simple checks to make sure that notebooks users are setting their features up properly
-    if databricks_mode:
-        utils.run_databricks_assertions_for_group_by(name, team_slug, output_namespace)
-    else:
-        utils.confirm_databricks_mode_is_set_correctly()
 
     agg_inputs = []
     if aggregations is not None:
@@ -487,13 +482,19 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     kwargs.update({
         "lag": lag
     })
-    
-    # If running this in a databricks notebook, we should set the team to the provided team_slug. We can change this to use the notebook env variables once they are implemented.
-    if databricks_mode:
+
+
+    # If this group by is being created from a notebook then we won't be able to extract the team name from the file path.
+    # In this case, we will require the user to provide the team name explicitly.
+    file_name = sys._getframe().f_back.f_code.co_filename
+    is_feature_being_created_in_a_databricks_notebook_cell = utils.is_feature_being_created_in_a_databricks_notebook_cell(file_name, repo.GROUP_BY_FOLDER_NAME)
+    team = None
+    if is_feature_being_created_in_a_databricks_notebook_cell:
+        assert team_slug is not None, "Please provide the team_slug when defining a GroupBy in a notebook cell."
+        assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
         team = team_slug
-    # Get callers filename to assign team name
     else:
-        team = sys._getframe().f_back.f_code.co_filename.split("/")[-2]
+        team = file_name.split("/")[-2]        
 
     column_tags = {}
     if aggregations:
@@ -503,6 +504,10 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
                     column_tags[output_col] = agg.tags
     metadata = {"groupby_tags": tags, "column_tags": column_tags}
     kwargs.update(metadata)
+
+
+    # Name must be provided if the GroupBy is being created in a notebook cell
+    assert name or not is_feature_being_created_in_a_databricks_notebook_cell, "Please provide a name for the GroupBy when defining it in a notebook cell."
 
     metadata = ttypes.MetaData(
         name=name,
@@ -522,7 +527,7 @@ def GroupBy(sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     # The module name of the GroupBy is found by finding the module that corresponds to the frame
     # before the frame that has the module name importlib._bootstrap. We only need to do this
     # if a name was not specified.
-    if not name:
+    if not name and not is_feature_being_created_in_a_databricks_notebook_cell: 
         module_name = ''
         i = 1
         while True:

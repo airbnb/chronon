@@ -1,16 +1,22 @@
 from ai.chronon.api.ttypes import GroupBy, Join, Source, Query, StagingQuery
 from ai.chronon.repo.serializer import thrift_simple_json
-from ai.chronon.utils import output_table_name
+from ai.chronon.utils import output_table_name, set_name
 from pyspark.sql.session import SparkSession
 from pyspark.sql.dataframe import DataFrame
 from py4j.java_gateway import JavaObject, JVMView
 from datetime import datetime, timedelta
+from pyspark.dbutils import DBUtils
+from ai.chronon.repo import NOTEBOOKS_OUTPUT_NAMESPACE
+
 
 
 class DatabricksExecutable:
     def __init__(self, spark_session: SparkSession) -> None:
         self._spark: SparkSession = spark_session
         self._jvm: JVMView = self._spark._jvm
+
+        # Databricks Utils 
+        self._dbutils = DBUtils(self._spark)
 
         # Constants Provider
         self._constants_provider: JavaObject = self._jvm.ai.chronon.spark.databricks.DatabricksConstantsNameProvider()
@@ -23,6 +29,44 @@ class DatabricksExecutable:
         self._default_start_date = (datetime.now() - timedelta(days=8)).strftime('%Y%m%d')
         self._default_end_date = (datetime.now() - timedelta(days=1)).strftime('%Y%m%d')
 
+    def _get_databricks_user(self):
+        user_email = self._dbutils.notebook.entry_point.getDbutils().notebook().getContext().userName().get()
+        return user_email.split('@')[0].lower()
+
+    def _get_databricks_notebook_name(self):
+        notebook_path = self._dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
+        return notebook_path.split("/")[-1].replace(" ", "_").lower()
+
+    def _set_metadata(self, obj):
+        obj_type = type(obj)
+        name_prefix = f"{self._get_databricks_user()}.{self._get_databricks_notebook_name()}"
+        
+        # Note: name is what is used to determine the output table names
+        # If the user is executing an object that is from zoolander, we will derive the name from the file path
+        # If they defined the feature in cell we will require them to provide a name
+        # In addition to this, we should always aim to prefix the name with the user and notebook name
+        # This will prevent two users from overwriting each other's prototyping work
+        if not obj.metaData.name:
+            try:
+                # Make an attempt to see if we can set the name attribute of the object
+                # src here refers to the src folder in zoolander
+                set_name(obj, obj_type, "src")
+            except AttributeError:
+                # If we can't determine the name using the garbage collector, that indicates that this feature was defined in cell where name should already have been provided.
+                raise AttributeError("Please provide a name when defining group_bys/joins/staging_queries in a notebook cell. This can be done via the metaData.name attribute.")
+        else:
+            # Avoid adding the prefix multiple times
+            obj.metaData.name = obj.metaData.name.replace(f"{name_prefix}_", "")
+
+        obj.metaData.outputNamespace = NOTEBOOKS_OUTPUT_NAMESPACE
+        
+        if obj_type == Join:
+            for jp in obj.joinParts:
+                jp.groupBy.metaData.outputNamespace = NOTEBOOKS_OUTPUT_NAMESPACE
+        
+        obj.metaData.name = f"{name_prefix}_{obj.metaData.name}"
+
+        return obj
 
     def _get_query_with_updated_start_and_end_date(self, query: Query, start_date: str, end_date: str):
         """
@@ -72,8 +116,9 @@ class DatabricksExecutable:
 
 class DatabricksGroupBy(DatabricksExecutable):
     def __init__(self, group_by: GroupBy, spark_session: SparkSession) -> None:
-        self.group_by: GroupBy = group_by
         super().__init__(spark_session)
+        self.group_by: GroupBy = self._set_metadata(group_by)
+
 
     def _get_group_by_to_execute(self, start_date: str) -> GroupBy:
         group_by_to_execute: GroupBy = self.group_by
@@ -100,7 +145,7 @@ class DatabricksGroupBy(DatabricksExecutable):
         self._print_with_timestamp(f"Executing GroupBy {self.group_by.metaData.name} from {start_date} to {end_date} with step_days {step_days}")
 
         group_by_to_execute: GroupBy = self._get_group_by_to_execute(start_date)
-        group_by_output_table: str = f"{self.group_by.metaData.outputNamespace}.{self.group_by.metaData.name}"
+        group_by_output_table: str = output_table_name(group_by_to_execute, full_name=True)
 
         self._drop_table_if_exists(group_by_output_table)
 
@@ -179,8 +224,8 @@ class DatabricksGroupBy(DatabricksExecutable):
 
 class DatabricksJoin(DatabricksExecutable):
     def __init__(self, join: Join, spark_session: SparkSession) -> None:
-        self.join: Join = join
         super().__init__(spark_session)
+        self.join: Join = self._set_metadata(join)
     
     def _get_join_to_execute(self, start_date: str, end_date: str) -> Join:
         join_to_execute: Join = self.join
@@ -208,6 +253,7 @@ class DatabricksJoin(DatabricksExecutable):
         self._print_with_timestamp(f"Sample Number of Rows: {sample_num_of_rows}")
 
         join_to_execute: Join = self._get_join_to_execute(start_date, end_date)
+        join_output_table: str = output_table_name(join_to_execute, full_name=True)
 
         java_join: JavaObject = self._get_java_join(join_to_execute, end_date)
 
@@ -221,10 +267,7 @@ class DatabricksJoin(DatabricksExecutable):
             self._constants_provider
         )
 
-        self._print_with_timestamp("The following intermediate tables were created or written to as part of this join:")
-        for jp in self.join.joinParts:
-            self._print_with_timestamp(f"Intermediate table: iceberg.{jp.groupBy.metaData.outputNamespace}.{self.join.metaData.name}_{jp.groupBy.metaData.name}")
-        self._print_with_timestamp(f"Join {self.join.metaData.name} executed successfully and was written to iceberg.{self.join.metaData.outputNamespace}.{self.join.metaData.name}.")
+        self._print_with_timestamp(f"Join {self.join.metaData.name} executed successfully and was written to iceberg.{join_output_table}")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
         return DataFrame(result_df_scala, self._spark)
 
@@ -290,12 +333,8 @@ class DatabricksJoin(DatabricksExecutable):
 
 class DatabricksStagingQuery(DatabricksExecutable):
     def __init__(self, staging_query: StagingQuery, spark_session: SparkSession) -> None:
-        assert staging_query.metaData.name, "Staging Query name is required."
-        assert staging_query.metaData.outputNamespace, "Staging Query outputNamespace is required and must be set to `chronon_poc_usertables`."
-
-
-        self.staging_query: StagingQuery = staging_query
         super().__init__(spark_session)
+        self.staging_query: StagingQuery = self._set_metadata(staging_query)
 
     def _get_staging_query_to_execute(self, start_date: str) -> StagingQuery:
         staging_query_to_execute: StagingQuery = self.staging_query
@@ -331,6 +370,6 @@ class DatabricksStagingQuery(DatabricksExecutable):
 
         result_df = self._spark.sql(f"SELECT * FROM {staging_query_output_table_name}")
 
-        self._print_with_timestamp(f"Staging Query {self.staging_query.metaData.name} executed successfully and was written to {staging_query_output_table_name} .")
+        self._print_with_timestamp(f"Staging Query {self.staging_query.metaData.name} executed successfully and was written to iceberg.{staging_query_output_table_name}")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
         return result_df

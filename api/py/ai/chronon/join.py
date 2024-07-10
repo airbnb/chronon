@@ -1,11 +1,13 @@
 from collections import Counter
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
+import ai.chronon.repo as repo
 import ai.chronon.utils as utils
 import copy
 import importlib
 import json
 import logging
+import sys
 from typing import List, Dict, Tuple
 
 logging.basicConfig(level=logging.INFO)
@@ -377,9 +379,8 @@ def Join(left: api.Source,
          derivations: List[api.Derivation] = None,
          tags: Dict[str, str] = None,
          batchPartitionCadence = api.BatchPartitionCadence.DAILY,
-         databricks_mode: bool = False,
-         name: str = None,
          team_slug: str = None,
+         name: str = None,
          **kwargs
          ) -> api.Join:
     """
@@ -467,22 +468,13 @@ def Join(left: api.Source,
     :type tags: Dict[str, str]
     :param batchPartitionCadence:
         Cadence & partitioning scheme for Join offline jobs (daily vs. hourly).
-    :param databricks_mode:
-        If set to True, the Join is running in a Databricks notebook.
+    :param team_slug:
+        Team slug is required when defining a Join in a notebook cell since we cannot infer the team name from the file path.
     :param name:
         The desired name of the output table when running in a Databricks notebook. 
-    :param team_slug:
-        Team slug is currently only used and required when running in a Databricks notebook.
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
-
-    # Simple checks to make sure that notebooks users are setting their features up properly
-    if databricks_mode:
-        utils.run_databricks_assertions_for_join(name, team_slug, output_namespace, right_parts)
-    else:
-        utils.confirm_databricks_mode_is_set_correctly()
-
 
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
@@ -590,10 +582,15 @@ def Join(left: api.Source,
         batchPartitionCadence=batchPartitionCadence,
     )
 
-    # Add these on after to prevent non-databricks users from accidentally overriding these.
-    if databricks_mode:
-        metadata.name = name
+    # Enforce constraints when defining a join in a Databricks notebook cell
+    # For production joins, name and team should/will be set externally, therefore they should be tacked onto the metadata only if running in a notebook cell
+    if utils.is_feature_being_created_in_a_databricks_notebook_cell(sys._getframe().f_back.f_code.co_filename, repo.JOIN_FOLDER_NAME):
+        assert team_slug is not None, "Please provide the team_slug when defining a Join in a notebook cell."
+        assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
         metadata.team = team_slug
+
+        assert name is not None, "Please provide a name for the Join when defining it in a notebook cell."
+        metadata.name = name
 
     return api.Join(
         left=updated_left,

@@ -12,8 +12,6 @@ from collections.abc import Iterable
 from typing import List, Union, cast, Optional
 
 
-DATABRICKS_NAMESPACE = "shepherd_databricks"
-CHRONON_POC_USERTABLES_NAMESPACE="chronon_poc_usertables"
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
@@ -134,7 +132,7 @@ def get_mod_name_from_gc(obj, mod_prefix):
     return mod_name
 
 
-def __set_name(obj, cls, mod_prefix):
+def set_name(obj, cls, mod_prefix):
     module = importlib.import_module(get_mod_name_from_gc(obj, mod_prefix))
     eo.import_module_set_name(module, cls)
 
@@ -155,13 +153,13 @@ def log_table_name(obj, full_name: bool = False):
 
 def get_staging_query_output_table_name(staging_query: api.StagingQuery, full_name: bool = False):
     """generate output table name for staging query job"""
-    __set_name(staging_query, api.StagingQuery, "src.python.shepherd.chronon_poc.staging_queries")
+    set_name(staging_query, api.StagingQuery, "src.python.shepherd.chronon_poc.staging_queries")
     return output_table_name(staging_query, full_name=full_name)
 
 
 def get_join_output_table_name(join: api.Join, full_name: bool):
     """generate output table name for staging query job"""
-    __set_name(join, api.Join, "joins")
+    set_name(join, api.Join, "joins")
     return output_table_name(join, full_name=full_name)
 
 
@@ -343,21 +341,8 @@ def get_related_table_names(conf: ChrononJobTypes) -> List[str]:
 
     return related_tables
 
+def is_execution_environment_databricks():
+    return "databricks/driver" in os.getcwd()
 
-def run_databricks_assertions_for_join(name: str, team_slug: str, output_namespace: str, right_parts: List[api.JoinPart]):
-    assert team_slug, "team_slug is required for databricks_mode"
-    assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
-    assert name, "a name for the join is required for databricks_mode"
-    assert output_namespace==CHRONON_POC_USERTABLES_NAMESPACE, f"output_namespace should be '{CHRONON_POC_USERTABLES_NAMESPACE}' for databricks_mode"
-    for join_part in right_parts:
-        run_databricks_assertions_for_group_by(join_part.groupBy.metaData.name, join_part.groupBy.metaData.team, output_namespace) 
-
-def run_databricks_assertions_for_group_by(name: str, team_slug: str, output_namespace: str):
-    assert name, "When using a GroupBy in a databricks notebook you must specify a `name` in the GroupBy definition."
-    assert team_slug, "When using a GroupBy in a databricks notebook you must specify a `team_slug` in the GroupBy definition."
-    assert "-" not in team_slug and " " not in team_slug, "team_slug should not contain hyphens or spaces. Please use `_` instead."
-    assert output_namespace==CHRONON_POC_USERTABLES_NAMESPACE, f"output_namespace should be '{CHRONON_POC_USERTABLES_NAMESPACE}' for databricks_mode"
-
-def confirm_databricks_mode_is_set_correctly():
-    cwd = os.getcwd()
-    assert "/databricks/driver" not in cwd, "You are running this in a databricks notebook. Please add databricks_mode=True to your GroupBy/Join definitions."
+def is_feature_being_created_in_a_databricks_notebook_cell(caller_filename: str, obj_type_folder: str):
+    return is_execution_environment_databricks() and obj_type_folder not in caller_filename
