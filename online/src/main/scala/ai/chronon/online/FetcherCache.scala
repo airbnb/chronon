@@ -32,9 +32,10 @@ trait FetcherCache {
       .map(size => new BatchIrCache(batchIrCacheName, size.toInt))
       .orElse(None)
 
-  def isCacheSizeConfigured: Boolean = maybeBatchIrCache.isDefined
+  lazy val isCacheSizeConfigured: Boolean = maybeBatchIrCache.isDefined
 
-  def isCachingEnabled(groupBy: GroupBy): Boolean = false
+  // Cache size is always configured at Stripe, and we enable caching for all GroupBys.
+  def isCachingEnabled(groupBy: GroupBy): Boolean = isCacheSizeConfigured
 
   protected val caffeineMetricsContext: Metrics.Context = Metrics.Context(Metrics.Environment.JoinFetching)
 

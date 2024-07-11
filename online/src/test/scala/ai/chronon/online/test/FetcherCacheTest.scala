@@ -252,9 +252,13 @@ class FetcherCacheTest extends MockitoHelper {
     val finalBatchIr = mock[FinalBatchIr]
     val toBatchIr = mock[(Array[Byte], GroupByServingInfoParsed) => FinalBatchIr]
     val kvStoreBatchResponses = BatchResponses(Success(Seq(TimedValue(batchBytes, 1000L))))
-
-    val spiedFetcherCache = Mockito.spy(new TestableFetcherCache(None))
     when(toBatchIr(any(), any())).thenReturn(finalBatchIr)
+
+    // Override and disable caching
+    val testCache = new BatchIrCache("test", batchIrCacheMaximumSize)
+    val spiedFetcherCache = new TestableFetcherCache(Some(testCache)) {
+      override def isCachingEnabled(groupBy: GroupBy) = false
+    }
 
     // When getBatchIrFromBatchResponse is called, it decodes the bytes and doesn't hit the cache
     val ir =
@@ -321,7 +325,11 @@ class FetcherCacheTest extends MockitoHelper {
     when(servingInfo.outputCodec).thenReturn(outputCodec)
     when(outputCodec.decodeMap(any())).thenReturn(mapResponse)
 
-    val spiedFetcherCache = Mockito.spy(new TestableFetcherCache(None))
+    // Override and disable caching
+    val testCache = new BatchIrCache("test", batchIrCacheMaximumSize)
+    val spiedFetcherCache = new TestableFetcherCache(Some(testCache)) {
+      override def isCachingEnabled(groupBy: GroupBy) = false
+    }
 
     // When getMapResponseFromBatchResponse is called, it decodes the bytes and doesn't hit the cache
     val decodedMapResponse = spiedFetcherCache.getMapResponseFromBatchResponse(kvStoreBatchResponses,
