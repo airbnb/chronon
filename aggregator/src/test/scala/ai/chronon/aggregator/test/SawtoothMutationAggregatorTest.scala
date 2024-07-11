@@ -668,4 +668,99 @@ class SawtoothMutationAggregatorTest extends TestCase {
     assertEquals(26.0, ir.collapsed(0).asInstanceOf[Array[Any]](0))
     assertEquals(5, ir.collapsed(0).asInstanceOf[Array[Any]](1))
   }
+
+  def testManyWindowSizesManyTileSizes(): Unit = {
+    val aggregations = Seq(
+      Builders.Aggregation(
+        operation = Operation.SUM,
+        inputColumn = "rating",
+        windows = Seq(
+          new Window(30, TimeUnit.DAYS),
+          new Window(7, TimeUnit.DAYS),
+          new Window(1, TimeUnit.DAYS),
+          new Window(1, TimeUnit.HOURS),
+          new Window(10, TimeUnit.MINUTES)
+        )
+      )
+    )
+    val inputSchema: Seq[(String, DataType)] = Seq(
+      ("ts_millis", LongType),
+      ("listing_id", StringType),
+      ("rating", IntType)
+    )
+
+    val queryTs = 1707095520000L // Monday, February 5, 2024 1:12:00 UTC
+    val batchEndTs = 1707004800000L // Sunday, February 4, 2024 0:00:00 UTC (25h12m before queryTs)
+
+    // Create some new custom tile sizes
+    val TwentyMinuteTileSize = 20 * 60 * 1000L
+    val SixHourTileSize = 6 * 60 * 60 * 1000L
+
+    def getTile(ts: Long, rows: Seq[TestRow], size: Long): TiledIr = {
+      TiledIr(
+        ts,
+        constructTileIr(
+          aggregations,
+          inputSchema,
+          rows
+        ),
+        size
+      )
+    }
+
+    // Prepare some tiles. The actual values in them (1, 10, 100, 1000) aren't realistic but that's fine, we're just
+    // making sure the correct tiles are being aggregated.
+    val tiles = Seq(
+      // first day
+      getTile(1707004800000L, Seq(TestRow(1707004800000L, "listing_1", 1000)), SixHourTileSize), // [00:00, 6:00)
+      getTile(1707008400000L, Seq(TestRow(1707008400000L, "listing_1", 100)), OneHourTileSize), // [1:00, 2:00)
+      getTile(1707012000000L, Seq(TestRow(1707012000000L, "listing_1", 100)), OneHourTileSize), // [2:00, 3:00)
+      getTile(1707015600000L, Seq(TestRow(1707015600000L, "listing_1", 100)), OneHourTileSize), // [3:00, 4:00)
+      getTile(1707019200000L, Seq(TestRow(1707019200000L, "listing_1", 100)), OneHourTileSize), // [4:00, 5:00)
+      getTile(1707022800000L, Seq(TestRow(1707022800000L, "listing_1", 100)), OneHourTileSize), // [5:00, 6:00)
+      getTile(1707026400000L, Seq(TestRow(1707026400000L, "listing_1", 1000)), SixHourTileSize), // [6:00, 12:00)
+      getTile(1707048000000L, Seq(TestRow(1707048000000L, "listing_1", 1000)), SixHourTileSize), // [12:00, 18:00)
+      getTile(1707069600000L, Seq(TestRow(1707069600000L, "listing_1", 1000)), SixHourTileSize), // [18:00, 24:00)
+      // next day
+      getTile(1707091200000L, Seq(TestRow(1707091200000L, "listing_1", 1000)), SixHourTileSize), // [00:00, 6:00)
+      getTile(1707091800000L, Seq(TestRow(1707091800000L, "listing_1", 1)), FiveMinuteTileSize), // [0:10, 0:15)
+      getTile(1707092100000L, Seq(TestRow(1707092100000L, "listing_1", 1)), FiveMinuteTileSize), // [0:15, 0:20)
+      getTile(1707092400000L, Seq(TestRow(1707092400000L, "listing_1", 10)), TwentyMinuteTileSize), // [0:20, 0:40)
+      getTile(1707093600000L, Seq(TestRow(1707093600000L, "listing_1", 10)), TwentyMinuteTileSize), // [0:40, 1:00)
+      getTile(1707094800000L, Seq(TestRow(1707094800000L, "listing_1", 100)), OneHourTileSize) // [1:00, 2:00)
+    )
+
+    val sawtoothMutationAggregator = new SawtoothMutationAggregator(aggregations, inputSchema)
+    val ir = sawtoothMutationAggregator.init
+
+    sawtoothMutationAggregator.updateIrTiledWithTileLayering(
+      ir.collapsed,
+      tiles,
+      queryTs,
+      batchEndTs
+    )
+
+    // Assert IR now contains the right values
+    assertEquals(5, ir.collapsed.length)
+
+    // 30-day window: sum of all 6hr tiles
+    assertEquals(5000L, ir.collapsed(0))
+
+    // 7day window: sum of all 6hr tiles
+    assertEquals(5000L, ir.collapsed(1))
+
+    // 1-day window:
+    //  four 6-hour tiles [6:00, 12:00), [12:00, 18:00), [18:00, 24:00), [00:00, 6:00),
+    //  five 1-hour tiles [1:00, 2:00), [2:00, 3:00), [3:00, 4:00), [4:00, 5:00), [5:00, 6:00)
+    assertEquals(4500L, ir.collapsed(2))
+
+    // 1-hour window:
+    //  one 1-hour tile [1:00, 2:00),
+    //  two 20-min tiles [0:20, 0:40), [0:40, 1:00),
+    //  two 5-min tiles [0:10, 0:15), [0:15, 0:20)
+    assertEquals(122L, ir.collapsed(3))
+
+    // 10-min window: one 1-hour tile [1:00, 2:00)
+    assertEquals(100L, ir.collapsed(4))
+  }
 }
