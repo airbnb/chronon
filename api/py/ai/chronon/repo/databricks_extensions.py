@@ -1,13 +1,12 @@
 from ai.chronon.api.ttypes import GroupBy, Join, Source, Query, StagingQuery
 from ai.chronon.repo.serializer import thrift_simple_json
-from ai.chronon.utils import output_table_name, set_name
+from ai.chronon.utils import output_table_name, set_name, print_logs_in_cell
 from pyspark.sql.session import SparkSession
 from pyspark.sql.dataframe import DataFrame
 from py4j.java_gateway import JavaObject, JVMView
 from datetime import datetime, timedelta
 from pyspark.dbutils import DBUtils
 from ai.chronon.repo import NOTEBOOKS_OUTPUT_NAMESPACE
-
 
 
 class DatabricksExecutable:
@@ -112,7 +111,6 @@ class DatabricksExecutable:
         """
         self._print_with_timestamp(f"Dropping table {table_name} if it exists.")
         self._spark.sql(f"DROP TABLE IF EXISTS {table_name}")
-        
 
 class DatabricksGroupBy(DatabricksExecutable):
     def __init__(self, group_by: GroupBy, spark_session: SparkSession) -> None:
@@ -137,6 +135,7 @@ class DatabricksGroupBy(DatabricksExecutable):
         
         return java_group_by_with_updated_s3_prefixes
 
+    @print_logs_in_cell
     def run(self, start_date:str, end_date: str, step_days: int = 30) -> DataFrame:
         """
         Performs a GroupBy Backfill operation.
@@ -161,8 +160,10 @@ class DatabricksGroupBy(DatabricksExecutable):
 
         self._print_with_timestamp(f"GroupBy {self.group_by.metaData.name} executed successfully and was written to iceberg.{group_by_output_table}")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
+        self._print_with_timestamp("Job Logs: \n\n")
         return DataFrame(result_df_scala, self._spark)
     
+    @print_logs_in_cell
     def analyze(self, start_date:str = None, end_date: str = None, enable_hitter_analysis: bool = False):
         """
         Runs the analyzer on a Groupby.
@@ -189,7 +190,9 @@ class DatabricksGroupBy(DatabricksExecutable):
 
         self._print_with_timestamp(f"GroupBy {self.group_by.metaData.name} analyzed successfully.")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
+        self._print_with_timestamp("Job Logs: \n\n")
     
+    @print_logs_in_cell
     def validate(self, start_date:str = None, end_date: str = None):
         """
         Runs the validator on a Groupby.
@@ -220,6 +223,7 @@ class DatabricksGroupBy(DatabricksExecutable):
 
         self._print_with_timestamp(f"Validation for GroupBy {self.group_by.metaData.name} has completed.")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
+        self._print_with_timestamp("Job Logs: \n\n")
         
 
 class DatabricksJoin(DatabricksExecutable):
@@ -244,6 +248,7 @@ class DatabricksJoin(DatabricksExecutable):
         
         return java_join_with_updated_s3_prefixes
     
+    @print_logs_in_cell
     def run(self, start_date:str, end_date: str, step_days: int = 30, skip_first_hole: bool = False, sample_num_of_rows: int = None) -> DataFrame:
         """
         Performs a Join Backfill operation.
@@ -269,8 +274,10 @@ class DatabricksJoin(DatabricksExecutable):
 
         self._print_with_timestamp(f"Join {self.join.metaData.name} executed successfully and was written to iceberg.{join_output_table}")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
+        self._print_with_timestamp("Job Logs: \n\n")
         return DataFrame(result_df_scala, self._spark)
 
+    @print_logs_in_cell 
     def analyze(self, start_date:str = None, end_date: str = None, enable_hitter_analysis: bool = False):
         """
         Runs the analyzer on a Join.
@@ -298,7 +305,9 @@ class DatabricksJoin(DatabricksExecutable):
 
         self._print_with_timestamp(f"Join {self.join.metaData.name} analyzed successfully.")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
+        self._print_with_timestamp("Job Logs: \n\n")
     
+    @print_logs_in_cell
     def validate(self, start_date:str = None, end_date: str = None):
         """
         Runs the validator on a Join.
@@ -330,6 +339,7 @@ class DatabricksJoin(DatabricksExecutable):
         
         self._print_with_timestamp(f"Validation for Join {self.join.metaData.name} has completed.")
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
+        self._print_with_timestamp("Job Logs: \n\n")
 
 class DatabricksStagingQuery(DatabricksExecutable):
     def __init__(self, staging_query: StagingQuery, spark_session: SparkSession) -> None:
@@ -341,6 +351,7 @@ class DatabricksStagingQuery(DatabricksExecutable):
         staging_query_to_execute.startPartition = start_date
         return staging_query_to_execute
     
+    @print_logs_in_cell
     def run(self, start_date:str, end_date: str, step_days: int = 30, skip_first_hole: bool = False) -> DataFrame:
         """
         Executes a Staging Query.
@@ -371,5 +382,7 @@ class DatabricksStagingQuery(DatabricksExecutable):
         result_df = self._spark.sql(f"SELECT * FROM {staging_query_output_table_name}")
 
         self._print_with_timestamp(f"Staging Query {self.staging_query.metaData.name} executed successfully and was written to iceberg.{staging_query_output_table_name}")
+        
+        #TODO: Remove the statement below once we migrate staging query from print to log stmts
         self._print_with_timestamp("See Cluster Details > Driver Logs > Standard Output for additional details.")
         return result_df

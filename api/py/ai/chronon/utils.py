@@ -10,7 +10,8 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from typing import List, Union, cast, Optional
-
+from ai.chronon.repo import NOTEBOOKS_LOG_FILE
+import functools
 
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
@@ -346,3 +347,29 @@ def is_execution_environment_databricks():
 
 def is_feature_being_created_in_a_databricks_notebook_cell(caller_filename: str, obj_type_folder: str):
     return is_execution_environment_databricks() and obj_type_folder not in caller_filename
+
+def watch_logs():
+        log_size = os.path.getsize(NOTEBOOKS_LOG_FILE)
+
+        def print_logs():
+            with open(NOTEBOOKS_LOG_FILE, "r") as file_handler:
+                file_handler.seek(log_size)
+                print(file_handler.read())
+
+        return print_logs
+    
+def print_logs_in_cell(func):
+
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        logs = watch_logs()
+        try:
+            result = func(*args, **kwargs)
+            logs()
+            return result
+        except Exception as e:
+            logs()
+            raise e
+    
+    return wrapper
+        
