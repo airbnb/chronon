@@ -235,13 +235,17 @@ abstract class JoinBase(joinConf: api.Join,
     }
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     def genGroupBy(partitionRange: PartitionRange) =
-      GroupBy.from(joinPart.groupBy,
-                   partitionRange,
-                   tableUtils,
-                   computeDependency = true,
-                   rightBloomMap,
-                   rightSkewFilter,
-                   showDf = showDf)
+      GroupBy.from(
+        joinPart.groupBy,
+        partitionRange,
+        tableUtils,
+        // if no join parts are selected, we are running the mega join, so we need to compute dependencies
+        // mega join means we are computing all join parts in one Spark job
+        computeDependency = selectedJoinParts.isEmpty,
+        rightBloomMap,
+        rightSkewFilter,
+        showDf = showDf
+      )
 
     // all lazy vals - so evaluated only when needed by each case.
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)
@@ -473,7 +477,13 @@ abstract class JoinBase(joinConf: api.Join,
 
     val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
     // build bootstrap info once for the entire job
-    val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
+    val bootstrapInfo = BootstrapInfo.from(
+      joinConf,
+      rangeToFill,
+      tableUtils,
+      leftSchema,
+      computeDependency = selectedJoinParts.isEmpty
+    )
 
     val wholeRange = PartitionRange(unfilledRanges.minBy(_.start).start, unfilledRanges.maxBy(_.end).end)(tableUtils)
 

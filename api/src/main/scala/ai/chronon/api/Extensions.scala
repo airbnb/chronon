@@ -444,7 +444,7 @@ object Extensions {
     def semanticHash: String = {
       val newGroupBy = groupBy.deepCopy()
       newGroupBy.unsetMetaData()
-      logger.info(s"GroupBy object: ${ThriftJsonCodec.toJsonStr(newGroupBy)}")
+      logger.info(s"Computing semantic hash for GroupBy object: ${ThriftJsonCodec.toJsonStr(newGroupBy)}")
       ThriftJsonCodec.md5Digest(newGroupBy)
     }
 
