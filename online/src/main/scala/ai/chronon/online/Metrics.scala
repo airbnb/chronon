@@ -50,6 +50,7 @@ object Metrics {
     val Production = "production"
     val Accuracy = "accuracy"
     val Team = "team"
+    val Owner = "owner"
   }
 
   object Name {
@@ -223,6 +224,7 @@ object Metrics {
       addTag(Tag.StagingQuery, stagingQuery)
       addTag(Tag.Production, production.toString)
       addTag(Tag.Team, team)
+      addTag(Tag.Owner, team)
       addTag(Tag.Environment, environment)
       addTag(Tag.JoinPartPrefix, joinPartPrefix)
       addTag(Tag.Accuracy, if (accuracy != null) accuracy.name() else null)
