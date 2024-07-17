@@ -10,7 +10,6 @@
 # **********************************************
 
 
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -26,34 +25,28 @@
 #     limitations under the License.
 
 import json
-import os
 import subprocess
 from shlex import split
-import sys
 
-
-ACTIVE_APP_STATUS = ['SUBMITTED', 'ACCEPTED', 'RUNNING']
+ACTIVE_APP_STATUS = ["SUBMITTED", "ACCEPTED", "RUNNING"]
 
 # TODO: REPLACE WITH path to your YARN
-YARN_EXECUTABLE = '/usr/bin/yarn'
+YARN_EXECUTABLE = "/usr/bin/yarn"
 
 # TODO: REPLACE WITH path to your cluster confs
-EMR_HADOOP_CONF_PATH_TEMPLATE = '/etc/emr/{emr_cluster}/hadoop/conf'
+EMR_HADOOP_CONF_PATH_TEMPLATE = "/etc/emr/{emr_cluster}/hadoop/conf"
 
 YARN_TIMEOUT_SECONDS = 120
 
 
 # returns list of active yarn apps on a cluster
 def get_active_applications(
-        emr_cluster,
-        yarn_executable=YARN_EXECUTABLE,
-        timeout=YARN_TIMEOUT_SECONDS,
-        ssh_command=None):
+    emr_cluster, yarn_executable=YARN_EXECUTABLE, timeout=YARN_TIMEOUT_SECONDS, ssh_command=None
+):
     hadoop_conf = EMR_HADOOP_CONF_PATH_TEMPLATE.format(emr_cluster=emr_cluster)
-    emr_application_list_cmd = '{yarn_executable} --config {hadoop_conf} application -list'.format(
-            hadoop_conf=hadoop_conf,
-            yarn_executable=yarn_executable
-        )
+    emr_application_list_cmd = "{yarn_executable} --config {hadoop_conf} application -list".format(
+        hadoop_conf=hadoop_conf, yarn_executable=yarn_executable
+    )
     if ssh_command:
         emr_application_list_cmd = "{} {}".format(ssh_command, emr_application_list_cmd)
     print("Running yarn list command: {}".format(emr_application_list_cmd))
@@ -61,8 +54,8 @@ def get_active_applications(
     if isinstance(output, bytes):
         output = output.decode()
     yarn_apps = []
-    for app_listing in output.strip().split('\n')[2:]:
-        tokens = [app_listing.strip() for app_listing in app_listing.split('\t')]
+    for app_listing in output.strip().split("\n")[2:]:
+        tokens = [app_listing.strip() for app_listing in app_listing.split("\t")]
         app_id = tokens[0]
         job = {
             "app_id": app_id,
@@ -72,7 +65,7 @@ def get_active_applications(
             "queue": tokens[4],
             "status": tokens[5],
             "tracking_url": "{}/proxy/{}/".format(tokens[8], tokens[0]),
-            "kill_cmd": '{yarn_executable} --config {hadoop_conf} application -kill {app_id}'.format(**locals())
+            "kill_cmd": "{yarn_executable} --config {hadoop_conf} application -kill {app_id}".format(**locals()),
         }
         yarn_apps.append(job)
     result = []

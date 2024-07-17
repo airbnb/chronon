@@ -16,18 +16,18 @@ Run the flow for materialize.
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from ai.chronon.repo.explore import (
-    load_team_data,
-    build_index,
-    enrich_with_joins,
-    display_entries,
-    find_in_index,
-    GB_INDEX_SPEC,
-    JOIN_INDEX_SPEC,
-)
+import os
 
 import pytest
-import os
+from ai.chronon.repo.explore import (
+    GB_INDEX_SPEC,
+    JOIN_INDEX_SPEC,
+    build_index,
+    display_entries,
+    enrich_with_joins,
+    find_in_index,
+    load_team_data,
+)
 
 
 @pytest.mark.parametrize("keyword", ["event", "entity"])

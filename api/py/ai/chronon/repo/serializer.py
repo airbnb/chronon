@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,16 +13,19 @@
 #     limitations under the License.
 
 import json
-from ai.chronon.utils import JsonDiffer
-from thrift.Thrift import TType
-from thrift.protocol.TJSONProtocol import TSimpleJSONProtocolFactory, TJSONProtocolFactory
 
+from ai.chronon.utils import JsonDiffer
 from thrift import TSerialization
+from thrift.protocol.TJSONProtocol import (
+    TJSONProtocolFactory,
+    TSimpleJSONProtocolFactory,
+)
+from thrift.Thrift import TType
 
 
 class ThriftJSONDecoder(json.JSONDecoder):
     def __init__(self, *args, **kwargs):
-        self._thrift_class = kwargs.pop('thrift_class')
+        self._thrift_class = kwargs.pop("thrift_class")
         super(ThriftJSONDecoder, self).__init__(*args, **kwargs)
 
     def decode(self, json_str):
@@ -31,8 +33,7 @@ class ThriftJSONDecoder(json.JSONDecoder):
             dct = json_str
         else:
             dct = super(ThriftJSONDecoder, self).decode(json_str)
-        return self._convert(dct, TType.STRUCT,
-                             (self._thrift_class, self._thrift_class.thrift_spec))
+        return self._convert(dct, TType.STRUCT, (self._thrift_class, self._thrift_class.thrift_spec))
 
     def _convert(self, val, ttype, ttype_info):
         if ttype == TType.STRUCT:
@@ -54,8 +55,12 @@ class ThriftJSONDecoder(json.JSONDecoder):
             ret = set([self._convert(x, element_ttype, element_ttype_info) for x in val])
         elif ttype == TType.MAP:
             (key_ttype, key_ttype_info, val_ttype, val_ttype_info, _) = ttype_info
-            ret = dict([(self._convert(k, key_ttype, key_ttype_info),
-                         self._convert(v, val_ttype, val_ttype_info)) for (k, v) in val.items()])
+            ret = dict(
+                [
+                    (self._convert(k, key_ttype, key_ttype_info), self._convert(v, val_ttype, val_ttype_info))
+                    for (k, v) in val.items()
+                ]
+            )
         elif ttype == TType.STRING:
             ret = str(val)
         elif ttype == TType.DOUBLE:
@@ -67,7 +72,7 @@ class ThriftJSONDecoder(json.JSONDecoder):
         elif ttype == TType.BOOL:
             ret = bool(val)
         else:
-            raise TypeError('Unrecognized thrift field type: %d' % ttype)
+            raise TypeError("Unrecognized thrift field type: %d" % ttype)
         return ret
 
 
@@ -77,11 +82,13 @@ def json2thrift(json_str, thrift_class):
 
 def file2thrift(path, thrift_class):
     try:
-        with open(path, 'r') as file:
+        with open(path, "r") as file:
             return json2thrift(file.read(), thrift_class)
     except json.decoder.JSONDecodeError as e:
-        raise Exception(f"Error decoding file into a {thrift_class.__name__}:  {path}. " +
-                        f"Please double check that {path} represents a valid {thrift_class.__name__}.") from e
+        raise Exception(
+            f"Error decoding file into a {thrift_class.__name__}:  {path}. "
+            + f"Please double check that {path} represents a valid {thrift_class.__name__}."
+        ) from e
 
 
 def thrift_json(obj):
@@ -101,7 +108,9 @@ def thrift_simple_json_protected(obj, obj_type) -> str:
     actual = thrift_simple_json(thrift_obj)
     differ = JsonDiffer()
     diff = differ.diff(serialized, actual)
-    assert len(diff) == 0, f"""Serialization can't be reversed
+    assert (
+        len(diff) == 0
+    ), f"""Serialization can't be reversed
 diff: \n{diff}
 original: \n{serialized}
 """

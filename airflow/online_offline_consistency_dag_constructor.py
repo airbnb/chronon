@@ -1,9 +1,9 @@
-from constants import ZIPLINE_PATH
+from datetime import timedelta
+
 import helpers
+from constants import ZIPLINE_PATH
 
 from airflow.models import DAG
-
-from datetime import datetime, timedelta
 
 
 def dag_constructor(conf, mode, conf_type, team_conf):
@@ -20,6 +20,7 @@ def dag_constructor(conf, mode, conf_type, team_conf):
 
 
 all_dags = os_helpers.walk_and_define_tasks(
-    "consistency-metrics-compute", "joins", ZIPLINE_PATH, dag_constructor, dags={})
+    "consistency-metrics-compute", "joins", ZIPLINE_PATH, dag_constructor, dags={}
+)
 g = globals()
 g.update(all_dags)

@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,14 +12,8 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+from ai.chronon.group_by import Aggregation, Derivation, GroupBy, Operation
 from sources import test_sources
-from ai.chronon.group_by import (
-    GroupBy,
-    Aggregation,
-    Operation,
-    Derivation
-)
-
 
 v1 = GroupBy(
     sources=test_sources.staging_entities,
@@ -30,10 +23,7 @@ v1 = GroupBy(
         Aggregation(input_column="viewed_unique_count_1d", operation=Operation.SUM),
     ],
     production=False,
-    table_properties={
-        "sample_config_json": """{"sample_key": "sample_value"}""",
-        "description": "sample description"
-    },
+    table_properties={"sample_config_json": """{"sample_key": "sample_value"}""", "description": "sample description"},
     output_namespace="sample_namespace",
 )
 
@@ -47,14 +37,5 @@ require_backfill = GroupBy(
     production=False,
     output_namespace="sample_namespace",
     backfill_start_date="2023-01-01",
-    derivations=[
-        Derivation(
-            name="derived_field",
-            expression=""
-        ),
-        Derivation(
-            name="*",
-            expression="*"
-        )
-    ]
+    derivations=[Derivation(name="derived_field", expression=""), Derivation(name="*", expression="*")],
 )

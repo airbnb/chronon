@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 
 # TODO: Implement how to fetch your jar for online implementation of ai.chronon.online.Api interface/trait
-# For example some companies host their jars on artifactory and you can pull from there 
+# For example some companies host their jars on artifactory and you can pull from there
 # We expect the output of this script to be a string path to where the file is downloaded
-
 
 
 #     Copyright (C) 2023 The Chronon Authors.
@@ -20,9 +19,9 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from urllib.request import urlretrieve
-import os
 import logging
+import os
+from urllib.request import urlretrieve
 
 
 def download():

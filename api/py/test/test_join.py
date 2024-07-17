@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,12 +12,11 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from ai.chronon.join import Join
-from ai.chronon.group_by import GroupBy
-from ai.chronon.api import ttypes as api
-
-import pytest
 import json
+
+from ai.chronon.api import ttypes as api
+from ai.chronon.group_by import GroupBy
+from ai.chronon.join import Join
 
 
 def event_source(table):
@@ -61,12 +59,14 @@ def test_deduped_dependencies():
     """
     join = Join(
         left=event_source("sample_namespace.sample_table"),
-        right_parts=[right_part(event_source("sample_namespace.another_table"))])
+        right_parts=[right_part(event_source("sample_namespace.another_table"))],
+    )
     assert len(join.metaData.dependencies) == 2
 
     join = Join(
         left=event_source("sample_namespace.sample_table"),
-        right_parts=[right_part(event_source("sample_namespace.sample_table"))])
+        right_parts=[right_part(event_source("sample_namespace.sample_table"))],
+    )
     assert len(join.metaData.dependencies) == 1
 
 
@@ -74,9 +74,9 @@ def test_additional_args_to_custom_json():
     join = Join(
         left=event_source("sample_namespace.sample_table"),
         right_parts=[right_part(event_source("sample_namespace.sample_table"))],
-        team_override="some_other_team_value"
+        team_override="some_other_team_value",
     )
-    assert json.loads(join.metaData.customJson)['team_override'] == "some_other_team_value"
+    assert json.loads(join.metaData.customJson)["team_override"] == "some_other_team_value"
 
 
 def test_dependencies_propagation():
@@ -89,20 +89,14 @@ def test_dependencies_propagation():
         sources=[event_source("table_2")],
         keys=["subject"],
         aggregations=[],
-        dependencies=["table_2/ds={{ ds }}/key=value"]
+        dependencies=["table_2/ds={{ ds }}/key=value"],
     )
-    join = Join(
-        left=event_source("left_1"),
-        right_parts=[api.JoinPart(gb1), api.JoinPart(gb2)]
-    )
+    join = Join(left=event_source("left_1"), right_parts=[api.JoinPart(gb1), api.JoinPart(gb2)])
 
-    actual = [
-        (json.loads(dep)["name"], json.loads(dep)["spec"])
-        for dep in join.metaData.dependencies
-    ]
+    actual = [(json.loads(dep)["name"], json.loads(dep)["spec"]) for dep in join.metaData.dependencies]
     expected = [
         ("wait_for_left_1_ds", "left_1/ds={{ ds }}"),
         ("wait_for_table_1_ds", "table_1/ds={{ ds }}"),
-        ("wait_for_table_2_ds_ds_key_value", "table_2/ds={{ ds }}/key=value")
+        ("wait_for_table_2_ds_ds_key_value", "table_2/ds={{ ds }}/key=value"),
     ]
     assert expected == actual

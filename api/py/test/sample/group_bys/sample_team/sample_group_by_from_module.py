@@ -16,15 +16,8 @@ Sample group by
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+from ai.chronon.group_by import Aggregation, GroupBy, Operation, TimeUnit, Window
 from sources import test_sources
-from ai.chronon.group_by import (
-    GroupBy,
-    Aggregation,
-    Operation,
-    Window,
-    TimeUnit,
-)
-
 
 v1 = GroupBy(
     sources=[

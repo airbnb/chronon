@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,13 +12,8 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+from ai.chronon.group_by import Aggregation, GroupBy, Operation
 from sources import test_sources
-from ai.chronon.group_by import (
-    GroupBy,
-    Aggregation,
-    Operation,
-)
-
 
 v1 = GroupBy(
     sources=test_sources.staging_entities,
@@ -29,10 +23,7 @@ v1 = GroupBy(
         Aggregation(operation=Operation.COUNT),
     ],
     production=False,
-    table_properties={
-        "sample_config_json": """{"sample_key": "sample_value"}""",
-        "description": "sample description"
-    },
+    table_properties={"sample_config_json": """{"sample_key": "sample_value"}""", "description": "sample description"},
     online=True,
     output_namespace="sample_namespace",
 )

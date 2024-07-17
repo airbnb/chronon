@@ -16,14 +16,8 @@ Temporal entity sample group by
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+from ai.chronon.group_by import Accuracy, Aggregation, GroupBy, Operation
 from sources import test_sources
-from ai.chronon.group_by import (
-    GroupBy,
-    Aggregation,
-    Operation,
-    Accuracy,
-)
-
 
 v0 = GroupBy(
     sources=test_sources.entity_source,

@@ -18,7 +18,7 @@
 import json
 
 # `default` team in teams.json contains default values.
-DEFAULT_CONF_TEAM = 'default'
+DEFAULT_CONF_TEAM = "default"
 
 loaded_jsons = {}
 

@@ -16,17 +16,16 @@ Sample Join
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from group_bys.sample_team import sample_group_by
-from sources import test_sources
-
 from ai.chronon.join import (
-    Join,
-    JoinPart,
+    ContextualSource,
+    DataType,
     ExternalPart,
     ExternalSource,
-    DataType,
-    ContextualSource
+    Join,
+    JoinPart,
 )
+from group_bys.sample_team import sample_group_by
+from sources import test_sources
 
 v1 = Join(
     left=test_sources.staging_entities,
@@ -36,14 +35,12 @@ v1 = Join(
             ExternalSource(
                 name="test_external_source",
                 team="chronon",
-                key_fields=[
-                    ("key", DataType.LONG)
-                ],
+                key_fields=[("key", DataType.LONG)],
                 value_fields=[
                     ("value_str", DataType.STRING),
                     ("value_long", DataType.LONG),
-                    ("value_bool", DataType.BOOLEAN)
-                ]
+                    ("value_bool", DataType.BOOLEAN),
+                ],
             )
         ),
         ExternalPart(
@@ -52,12 +49,10 @@ v1 = Join(
                     ("context_str", DataType.STRING),
                     ("context_long", DataType.LONG),
                 ],
-                team="chronon"
+                team="chronon",
             )
-        )
+        ),
     ],
-    table_properties={
-        "config_json": """{"sample_key": "sample_value"}"""
-    },
-    output_namespace="sample_namespace"
+    table_properties={"config_json": """{"sample_key": "sample_value"}"""},
+    output_namespace="sample_namespace",
 )

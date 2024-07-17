@@ -15,14 +15,12 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from contextlib import contextmanager
-from pathlib import Path
-
 import argparse
 import json
 import os
 import subprocess
-
+from contextlib import contextmanager
+from pathlib import Path
 
 CWD = os.getcwd()
 GB_INDEX_SPEC = {
@@ -35,21 +33,11 @@ GB_INDEX_SPEC = {
     ],
     "_event_tables": ["sources[].events.table"],
     "_event_topics": ["sources[].events.topic"],
-    "aggregation": [
-        "aggregations[].inputColumn"
-    ],
-    "keys": [
-        "keyColumns"
-    ],
-    "name": [
-        "metaData.name"
-    ],
-    "online": [
-        "metaData.online"
-    ],
-    "output_namespace": [
-        "metaData.outputNamespace"
-    ],
+    "aggregation": ["aggregations[].inputColumn"],
+    "keys": ["keyColumns"],
+    "name": ["metaData.name"],
+    "online": ["metaData.online"],
+    "output_namespace": ["metaData.outputNamespace"],
 }
 
 JOIN_INDEX_SPEC = {
@@ -62,16 +50,9 @@ JOIN_INDEX_SPEC = {
         "joinParts[].groupBy.metaData.name",
         "rightParts[].groupBy.name",
     ],
-    "name": [
-        "metaData.name"
-    ],
-    "output_namespace": [
-        "metaData.outputNamespace"
-    ],
-    "_group_bys": [
-        "joinParts[].groupBy",
-        "rightParts[].groupBy"
-    ]
+    "name": ["metaData.name"],
+    "output_namespace": ["metaData.outputNamespace"],
+    "_group_bys": ["joinParts[].groupBy", "rightParts[].groupBy"],
 }
 
 DEFAULTS_SPEC = {
@@ -81,19 +62,19 @@ DEFAULTS_SPEC = {
 GB_REL_PATH = "production/group_bys"
 JOIN_REL_PATH = "production/joins"
 FILTER_COLUMNS = ["aggregation", "keys", "name", "sources", "joins"]
-PATH_FIELDS = ['file', 'json_file']
+PATH_FIELDS = ["file", "json_file"]
 # colors chosen to be visible clearly on BOTH black and white terminals
 # change with caution
-NORMAL = '\033[0m'
-BOLD = '\033[1m'
-ITALIC = '\033[3m'
-UNDERLINE = '\033[4m'
-RED = '\033[38;5;160m'
-GREEN = '\033[38;5;28m'
-ORANGE = '\033[38;5;130m'
-BLUE = '\033[38;5;27m'
-GREY = '\033[38;5;246m'
-HIGHLIGHT = BOLD+ITALIC+RED
+NORMAL = "\033[0m"
+BOLD = "\033[1m"
+ITALIC = "\033[3m"
+UNDERLINE = "\033[4m"
+RED = "\033[38;5;160m"
+GREEN = "\033[38;5;28m"
+ORANGE = "\033[38;5;130m"
+BLUE = "\033[38;5;27m"
+GREY = "\033[38;5;246m"
+HIGHLIGHT = BOLD + ITALIC + RED
 
 
 # walks the json nodes recursively collecting all values that match the path
@@ -138,15 +119,12 @@ def build_entry(conf, index_spec, conf_type, root=CWD, teams=None):
             result.extend(extract_json(path, conf_dict))
         entry[column] = result
 
-    if len(entry["name"]) == 0:
+    # when the name is empty or does not follow the <team>.<module> convention we use None for team
+    if len(entry["name"]) == 0 or len(entry["name"][0].split(".")) < 2:
         return None
 
     # derive python file path from the name & conf_type
-    # when the name does not follow the <team>.<module> convention we use None for team
-    if len(entry["name"][0].split(".")) >= 2:
-        (team, conf_module) = entry["name"][0].split(".", 1)
-    else:
-        (team , conf_module) = ( None, entry["name"][0])
+    (team, conf_module) = entry["name"][0].split(".", 1)
 
     # Update missing values with teams defaults.
     for field, mapped_field in DEFAULTS_SPEC.items():
@@ -156,9 +134,8 @@ def build_entry(conf, index_spec, conf_type, root=CWD, teams=None):
     file_base = "/".join(conf_module.split(".")[:-1])
     py_file = file_base + ".py"
     init_file = file_base + "/__init__.py"
-    # create the path strings accounting for if `team` is missing in the name
-    py_path = os.path.join(*[x for x in [root, conf_type, team, py_file] if x])
-    init_path = os.path.join(*[x for x in [root, conf_type, team, init_file] if x])
+    py_path = os.path.join(root, conf_type, team, py_file)
+    init_path = os.path.join(root, conf_type, team, init_file)
     conf_path = py_path if os.path.exists(py_path) else init_path
     entry["json_file"] = os.path.join(root, "production", conf_type, team, conf_module)
     entry["file"] = conf_path
@@ -183,7 +160,7 @@ git_info_cache = {}
 
 # git_info is the most expensive part of the entire script - so we will have to parallelize
 def git_info(file_paths, exclude=None, root=CWD):
-    exclude_args = f"--invert-grep --grep={exclude}" if exclude else ''
+    exclude_args = f"--invert-grep --grep={exclude}" if exclude else ""
     procs = []
     with chdir(root):
         for file_path in file_paths:
@@ -192,7 +169,8 @@ def git_info(file_paths, exclude=None, root=CWD):
             else:
                 args = (
                     f"echo $(git log -n 2 --pretty='format:{BLUE} %as/%an/%ae' {exclude_args} -- "
-                    f"{file_path.replace(root, '')})")
+                    f"{file_path.replace(root, '')})"
+                )
                 procs.append((file_path, subprocess.Popen(args, stdout=subprocess.PIPE, shell=True)))
 
         result = {}
@@ -236,7 +214,7 @@ def highlight(text, word):
     for idx in find_string(text, word):
         result = result + text[prev_idx:idx] + HIGHLIGHT + word + NORMAL
         prev_idx = idx + len(word)
-    result += text[prev_idx:len(text)]
+    result += text[prev_idx : len(text)]
     return result
 
 
@@ -244,13 +222,13 @@ def prettify_entry(entry, target, modification, show=10, root=CWD, trim_paths=Fa
     lines = []
     if trim_paths:
         for field in filter(lambda x: x in entry, PATH_FIELDS):
-            entry[field] = entry[field].replace(root, '')
+            entry[field] = entry[field].replace(root, "")
     for column, values in entry.items():
-        name = " "*(15 - len(column)) + column
+        name = " " * (15 - len(column)) + column
         if column in FILTER_COLUMNS and len(values) > show:
             values = [value for value in set(values) if target in value]
-            if (len(values) > show):
-                truncated = ', '.join(values[:show])
+            if len(values) > show:
+                truncated = ", ".join(values[:show])
                 remaining = len(values) - show
                 values = f"[{truncated} ... {GREY}{UNDERLINE}{remaining} more{NORMAL}]"
         if column == "file":
@@ -264,12 +242,10 @@ def prettify_entry(entry, target, modification, show=10, root=CWD, trim_paths=Fa
 
 def find_in_index(index_table, target):
     def valid_entry(entry):
-        return any([
-            target in value
-            for column, values in entry.items()
-            if column in FILTER_COLUMNS
-            for value in values
-        ])
+        return any(
+            [target in value for column, values in entry.items() if column in FILTER_COLUMNS for value in values]
+        )
+
     return find_in_index_pred(index_table, valid_entry)
 
 
@@ -285,7 +261,7 @@ def display_entries(entries, target, root=CWD, trim_paths=False):
         pretty = prettify_entry(entry, target, info, root=root, trim_paths=trim_paths)
         display.append((info, pretty))
 
-    for (_, pretty_entry) in sorted(display):
+    for _, pretty_entry in sorted(display):
         print(pretty_entry)
 
 
@@ -350,34 +326,29 @@ def events_without_topics(output_file=None, exclude_commit_message=None):
                 consumer_name, consumer_email = author_name_email(conf_file_path, exclude_commit_message)
                 consumers.add(consumer_name)
                 emails.add(consumer_email)
-            row = [
-                entry["name"][0],
-                producer_name,
-                is_online,
-                entry["_event_tables"][0],
-                joins,
-                ", ".join(consumers)
-            ]
+            row = [entry["name"][0], producer_name, is_online, entry["_event_tables"][0], joins, ", ".join(consumers)]
             result.append(row)
         return found
 
     find_in_index_pred(gb_index, is_events_without_topics)
     if output_file:
-        with open(os.path.expanduser(output_file), 'w') as tsv_file:
+        with open(os.path.expanduser(output_file), "w") as tsv_file:
             for row in result:
-                tsv_file.write('\t'.join(map(str, row))+'\n')
-        print("wrote information about cases where events us used " +
-              f"without topics set into file {os.path.expanduser(output_file)}")
+                tsv_file.write("\t".join(map(str, row)) + "\n")
+        print(
+            "wrote information about cases where events us used "
+            + f"without topics set into file {os.path.expanduser(output_file)}"
+        )
     else:
         for row in result:
-            print('\t'.join(map(str, row))+'\n')
+            print("\t".join(map(str, row)) + "\n")
     print(",".join(list(emails)))
 
 
 def load_team_data(path):
-    with open(path, 'r') as infile:
+    with open(path, "r") as infile:
         teams = json.load(infile)
-    base_defaults = teams.get('default', {})
+    base_defaults = teams.get("default", {})
     full_info = teams.copy()
     for team, values in teams.items():
         full_info[team] = dict(base_defaults, **values)
@@ -385,22 +356,23 @@ def load_team_data(path):
 
 
 # register all handlers here
-handlers = {
-    "_events_without_topics": events_without_topics
-}
+handlers = {"_events_without_topics": events_without_topics}
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Explore tool for chronon")
     parser.add_argument("keyword", help="Keyword to look up keys")
     parser.add_argument("--conf-root", help="Conf root for the configs", default=CWD)
     parser.add_argument(
-        "--handler-args", nargs="*", help="Special arguments for handler keywords of the form param=value")
+        "--handler-args", nargs="*", help="Special arguments for handler keywords of the form param=value"
+    )
     args = parser.parse_args()
     root = args.conf_root
     if not (root.endswith("chronon") or root.endswith("zipline")):
-        print("This script needs to be run from chronon conf root - with folder named 'chronon' or 'zipline', found: "
-              + root)
-    teams = load_team_data(os.path.join(root, 'teams.json'))
+        print(
+            "This script needs to be run from chronon conf root - with folder named 'chronon' or 'zipline', found: "
+            + root
+        )
+    teams = load_team_data(os.path.join(root, "teams.json"))
     gb_index = build_index("group_bys", GB_INDEX_SPEC, root=root, teams=teams)
     join_index = build_index("joins", JOIN_INDEX_SPEC, root=root, teams=teams)
     enrich_with_joins(gb_index, join_index, root=root, teams=teams)

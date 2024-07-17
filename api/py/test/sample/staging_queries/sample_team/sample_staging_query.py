@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +12,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from ai.chronon.api.ttypes import StagingQuery, MetaData
+from ai.chronon.api.ttypes import MetaData, StagingQuery
 
 query = """
 SELECT
@@ -34,11 +33,11 @@ v1 = StagingQuery(
         "CREATE TEMPORARY FUNCTION S2_CELL AS 'com.sample.hive.udf.S2CellId'",
     ],
     metaData=MetaData(
-        name='sample_staging_query',
+        name="sample_staging_query",
         outputNamespace="sample_namespace",
         dependencies=["sample_namespace.sample_table/ds={{ ds }}"],
         tableProperties={
             "sample_config_json": """{"sample_key": "sample value}""",
-        }
-    )
+        },
+    ),
 )

@@ -1,21 +1,20 @@
-from airflow.operators.bash_operator import BashOperator
-from airflow.exceptions import AirflowSkipException
-from airflow.models import TaskInstance, DagRun
-from airflow.utils.db import provide_session
-from airflow.utils.state import State
-from airflow.sensors.base_sensor_operator import BaseSensorOperator
-from airflow.sensors.named_hive_partition_sensor import NamedHivePartitionSensor
-from airflow.utils.decorators import apply_defaults
+import getpass
+import logging
+import os
+import tarfile
+from datetime import datetime, timedelta
+from urllib.request import urlretrieve
 
 import decorators
 
-from datetime import datetime, timedelta
-from urllib.request import urlretrieve
-import getpass
-import logging
-import tarfile
-import json
-import os
+from airflow.exceptions import AirflowSkipException
+from airflow.models import DagRun, TaskInstance
+from airflow.operators.bash_operator import BashOperator
+from airflow.sensors.base_sensor_operator import BaseSensorOperator
+from airflow.sensors.named_hive_partition_sensor import NamedHivePartitionSensor
+from airflow.utils.db import provide_session
+from airflow.utils.decorators import apply_defaults
+from airflow.utils.state import State
 
 
 class ChrononOperator(BashOperator):
@@ -23,6 +22,7 @@ class ChrononOperator(BashOperator):
     Main Operator for running Chronon Jobs.
     Takes care of alerting handling, downloading the package and building the run.py command to execute.
     """
+
     REQUIRED_PARAMS = ["production", "team", "name"]
     API_VERSION = "0.0.20"
     CHRONON_VERSION = "0.0.20"
@@ -49,8 +49,9 @@ class ChrononOperator(BashOperator):
             return
         # Assertions on requirements for operator.
         for param in self.REQUIRED_PARAMS:
-            assert param in self.params, (
-                f"[Chronon] Missing required parameter in operator {param}: {self.param['conf_path']}")
+            assert (
+                param in self.params
+            ), f"[Chronon] Missing required parameter in operator {param}: {self.param['conf_path']}"
         self.internal_specifics()
 
     @staticmethod
@@ -64,9 +65,9 @@ class ChrononOperator(BashOperator):
         logger = logging.getLogger()
         whoami = getpass.getuser()
         download_file = f"chronon_{version}_{whoami}"
-        output = os.path.join('/tmp/', download_file)
-        run_file = os.path.join(f'chronon-ai-{version}', 'ai/chronon/repo/run.py')
-        user_tmp_dir = f'/tmp/{whoami}'
+        output = os.path.join("/tmp/", download_file)
+        run_file = os.path.join(f"chronon-ai-{version}", "ai/chronon/repo/run.py")
+        user_tmp_dir = f"/tmp/{whoami}"
         run_file_path = os.path.join(user_tmp_dir, run_file)
         logger.info(f"Checking for existing package at {output}")
         if not os.path.exists(run_file_path):
@@ -87,7 +88,6 @@ class ChrononOperator(BashOperator):
         - custom json manipulation
         - etc
         """
-        pass
 
     def pre_execute(self, context):
         if self.pre_execute_callback:
@@ -108,10 +108,13 @@ class SensorWithEndDate(NamedHivePartitionSensor):
     We still prefer named hive partition sensors because of smart sensing capabilities and concurrency.
     However whenever a dependency has an end date we need to avoid sensing for it past the end date.
     """
+
     def execute(self, context):
-        if self.params and self.params['end_partition']:
-            if self.params['end_partition'] <= context['ds']:
-                logging.info(f"Detected end partition {self.params['end_partition']}, dag run date is {context['ds']}. Exiting early.")
+        if self.params and self.params["end_partition"]:
+            if self.params["end_partition"] <= context["ds"]:
+                logging.info(
+                    f"Detected end partition {self.params['end_partition']}, dag run date is {context['ds']}. Exiting early."
+                )
                 return True
         super(SensorWithEndDate, self).execute(*args, **kwargs)
 
@@ -140,14 +143,7 @@ class PythonSensor(BaseSensorOperator):
     """
 
     @apply_defaults
-    def __init__(
-            self,
-            python_callable,
-            python_args=None,
-            python_kwargs=None,
-            provide_context=True,
-            *args, **kwargs
-    ):
+    def __init__(self, python_callable, python_args=None, python_kwargs=None, provide_context=True, *args, **kwargs):
         super(PythonSensor, self).__init__(*args, **kwargs)
         self.python_callable = python_callable
         self.python_args = python_args or []
@@ -181,8 +177,11 @@ def __custom_skip(session=None, task=None, execution_date=None, backward_days=1,
 
     for _ in range(forward_days):
         tomorrow_check = __check_tomorrow(session, next_execution_date, dag_id, task.task_id, upstream_task_ids)
-        logging.info("Yesterday check was {} and tomorrow check for {} was {}"
-                     .format(yester_check, next_execution_date, tomorrow_check))
+        logging.info(
+            "Yesterday check was {} and tomorrow check for {} was {}".format(
+                yester_check, next_execution_date, tomorrow_check
+            )
+        )
         if yester_check and tomorrow_check:
             logging.info("Skipping")
             raise AirflowSkipException("Tomorrow check failed, day is already ready to run")
@@ -205,12 +204,15 @@ def __check_yesterday(session, prev_execution_date, dag_id, downstream_task_ids)
             TaskInstance.task_id.in_(downstream_task_ids),
         )
     )
-    logging.info("Found {} task instances for {} on {}".format(
-        len(all_tasks), downstream_task_ids, prev_execution_date))
-    dag_runs = list(session.query(DagRun).filter(
-        DagRun.dag_id == dag_id,
-        DagRun.execution_date == prev_execution_date,
-    ))
+    logging.info(
+        "Found {} task instances for {} on {}".format(len(all_tasks), downstream_task_ids, prev_execution_date)
+    )
+    dag_runs = list(
+        session.query(DagRun).filter(
+            DagRun.dag_id == dag_id,
+            DagRun.execution_date == prev_execution_date,
+        )
+    )
     logging.info("Found {} dag runs for {}".format(len(dag_runs), prev_execution_date))
     found_dag_finished = False
     found_dag_unfinished = False
@@ -251,17 +253,12 @@ def __check_tomorrow_non_empty_upstream(session, next_execution_date, dag_id, up
             TaskInstance.dag_id == dag_id,
             TaskInstance.execution_date == next_execution_date,
             TaskInstance.task_id.in_(upstream_task_ids),
-            TaskInstance.state == State.SUCCESS
+            TaskInstance.state == State.SUCCESS,
         )
     }
-    logging.info("Found {} task instances for {} on {}".format(
-        len(tasks), upstream_task_ids, next_execution_date))
-    success_tasks = {
-        ti.task_id for ti in tasks if ti.state == State.SUCCESS
-    }
-    logging.info("Found {} out of {} unique successful tasks".format(
-        len(success_tasks), len(set(upstream_task_ids))
-    ))
+    logging.info("Found {} task instances for {} on {}".format(len(tasks), upstream_task_ids, next_execution_date))
+    success_tasks = {ti.task_id for ti in tasks if ti.state == State.SUCCESS}
+    logging.info("Found {} out of {} unique successful tasks".format(len(success_tasks), len(set(upstream_task_ids))))
     return len(success_tasks) == len(set(upstream_task_ids))
 
 
@@ -269,22 +266,24 @@ def __check_tomorrow_empty_upstream(session, next_execution_date, dag_id, task_i
     """
     If any instance of tomorrow exists, then tomorrow is ready.
     """
-    return bool({
-        ti
-        for ti in session.query(TaskInstance).filter(
-            TaskInstance.dag_id == dag_id,
-            TaskInstance.execution_date == next_execution_date,
-            TaskInstance.task_id == task_id
-        )
-    })
+    return bool(
+        {
+            ti
+            for ti in session.query(TaskInstance).filter(
+                TaskInstance.dag_id == dag_id,
+                TaskInstance.execution_date == next_execution_date,
+                TaskInstance.task_id == task_id,
+            )
+        }
+    )
 
 
 def create_skip_operator(dag, name, poke_interval=None, backward_days=1, forward_days=1):
     return PythonSensor(
         dag=dag,
-        task_id='custom_skip__{}'.format(name),
+        task_id="custom_skip__{}".format(name),
         python_callable=__custom_skip,
-        python_kwargs={'forward_days': forward_days, 'backward_days': backward_days},
+        python_kwargs={"forward_days": forward_days, "backward_days": backward_days},
         poke_interval=poke_interval or 15 * 60,  # 15 minutes. This should be high because it is querying the sql db
-        task_concurrency=10  # Setting to 10 to avoid deadlock
+        task_concurrency=10,  # Setting to 10 to avoid deadlock
     )

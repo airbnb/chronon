@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,7 +12,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from ai.chronon.api.ttypes import StagingQuery, MetaData
+from ai.chronon.api.ttypes import MetaData, StagingQuery
 
 base_table = StagingQuery(
     query="""
@@ -36,7 +35,7 @@ base_table = StagingQuery(
         AND ABS(HASH(events.display_id)) % 100  < 5
     """,
     metaData=MetaData(
-        name='outbrain_left',
+        name="outbrain_left",
         outputNamespace="default",
-    )
+    ),
 )

@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,16 +12,10 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
-from ai.chronon.group_by import (
-    GroupBy,
-    Aggregation,
-    Operation,
-    Derivation
-)
 from ai.chronon import utils
+from ai.chronon.group_by import Aggregation, GroupBy, Operation
 from group_bys.sample_team.sample_group_by import require_backfill
-
+from sources import test_sources
 
 v1 = GroupBy(
     sources=test_sources.basic_event_source(utils.group_by_output_table_name(require_backfill, True)),
@@ -32,9 +25,6 @@ v1 = GroupBy(
     ],
     production=False,
     backfill_start_date="2022-01-01",
-    table_properties={
-        "sample_config_json": """{"sample_key": "sample_value"}""",
-        "description": "sample description"
-    },
+    table_properties={"sample_config_json": """{"sample_key": "sample_value"}""", "description": "sample description"},
     output_namespace="sample_namespace",
 )

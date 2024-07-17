@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -15,7 +14,7 @@
 
 import logging
 
-LOG_FORMAT = '[%(asctime)-11s] %(levelname)s [%(filename)s:%(lineno)d] %(message)s'
+LOG_FORMAT = "[%(asctime)-11s] %(levelname)s [%(filename)s:%(lineno)d] %(message)s"
 
 
 def get_logger(log_level=logging.INFO):

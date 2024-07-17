@@ -20,17 +20,24 @@
 import logging
 import os
 
-import click
-
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
+import click
 from ai.chronon.api.ttypes import GroupBy, Join, StagingQuery
-from ai.chronon.repo import JOIN_FOLDER_NAME, \
-    GROUP_BY_FOLDER_NAME, STAGING_QUERY_FOLDER_NAME, TEAMS_FILE_PATH
-from ai.chronon.repo import teams
+from ai.chronon.repo import (
+    GROUP_BY_FOLDER_NAME,
+    JOIN_FOLDER_NAME,
+    STAGING_QUERY_FOLDER_NAME,
+    TEAMS_FILE_PATH,
+    teams,
+)
 from ai.chronon.repo.serializer import thrift_simple_json_protected
-from ai.chronon.repo.validator import ChrononRepoValidator, get_join_output_columns, get_group_by_output_columns
+from ai.chronon.repo.validator import (
+    ChrononRepoValidator,
+    get_group_by_output_columns,
+    get_join_output_columns,
+)
 
 # This is set in the main function -
 # from command line or from env variable during invocation
@@ -48,31 +55,22 @@ def get_folder_name_from_class_name(class_name):
 
 
 @click.command()
+@click.option("--chronon_root", envvar="CHRONON_ROOT", help="Path to the root chronon folder", default=os.getcwd())
 @click.option(
-    '--chronon_root',
-    envvar='CHRONON_ROOT',
-    help='Path to the root chronon folder',
-    default=os.getcwd())
+    "--input_path",
+    "--conf",
+    "input_path",
+    help="Relative Path to the root chronon folder, which contains the objects to be serialized",
+    required=True,
+)
 @click.option(
-    '--input_path', '--conf', 'input_path',
-    help='Relative Path to the root chronon folder, which contains the objects to be serialized',
-    required=True)
-@click.option(
-    '--output_root',
-    help='Relative Path to the root chronon folder, to where the serialized output should be written',
-    default="production")
-@click.option(
-    '--debug',
-    help='debug mode',
-    is_flag=True)
-@click.option(
-    '--force-overwrite',
-    help='Force overwriting existing materialized conf.',
-    is_flag=True)
-@click.option(
-    '--feature-display',
-    help='Print out the features list created by the conf.',
-    is_flag=True)
+    "--output_root",
+    help="Relative Path to the root chronon folder, to where the serialized output should be written",
+    default="production",
+)
+@click.option("--debug", help="debug mode", is_flag=True)
+@click.option("--force-overwrite", help="Force overwriting existing materialized conf.", is_flag=True)
+@click.option("--feature-display", help="Print out the features list created by the conf.", is_flag=True)
 def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite, feature_display):
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
@@ -85,7 +83,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
     _print_highlighted("Using chronon root path", chronon_root)
     chronon_root_path = os.path.expanduser(chronon_root)
     utils.chronon_root_path = chronon_root_path
-    path_split = input_path.split('/')
+    path_split = input_path.split("/")
     obj_folder_name = path_split[0]
     obj_class = FOLDER_NAME_TO_CLASS[obj_folder_name]
     full_input_path = os.path.join(chronon_root_path, input_path)
@@ -126,10 +124,11 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                     else:
                         offline_gbs.append(jp.groupBy.metaData.name)
                 extra_online_group_bys.update(online_group_bys)
-                assert not offline_gbs, \
-                    "You must make all dependent GroupBys `online` if you want to make your join `online`." \
-                    " You can do this by passing the `online=True` argument to the GroupBy constructor." \
+                assert not offline_gbs, (
+                    "You must make all dependent GroupBys `online` if you want to make your join `online`."
+                    " You can do this by passing the `online=True` argument to the GroupBy constructor."
                     " Fix the following: {}".format(offline_gbs)
+                )
     if extra_online_group_bys:
         num_written_group_bys = 0
         # load materialized joins to validate the additional group_bys against.
@@ -137,8 +136,9 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         for name, obj in extra_online_group_bys.items():
             team_name = name.split(".")[0]
             _set_team_level_metadata(obj, teams_path, team_name)
-            if _write_obj(full_output_root, validator, name, obj, log_level,
-                          force_compile=True, force_overwrite=force_overwrite):
+            if _write_obj(
+                full_output_root, validator, name, obj, log_level, force_compile=True, force_overwrite=force_overwrite
+            ):
                 num_written_group_bys += 1
         print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
     if num_written_objs > 0:
@@ -161,8 +161,8 @@ def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
 
 def __fill_template(table, obj, namespace):
     if table:
-        table = table.replace('{{ logged_table }}', utils.log_table_name(obj, full_name=True))
-        table = table.replace('{{ db }}', namespace)
+        table = table.replace("{{ logged_table }}", utils.log_table_name(obj, full_name=True))
+        table = table.replace("{{ db }}", namespace)
     return table
 
 
@@ -174,25 +174,28 @@ def _set_templated_values(obj, cls, teams_path, team_name):
         if obj.metaData.dependencies:
             obj.metaData.dependencies = [__fill_template(dep, obj, namespace) for dep in obj.metaData.dependencies]
     if cls == api.Join and obj.labelPart:
-        obj.labelPart.metaData.dependencies = [label_dep.replace('{{ join_backfill_table }}',
-                                                                 utils.output_table_name(obj, full_name=True))
-                                               for label_dep in obj.labelPart.metaData.dependencies]
+        obj.labelPart.metaData.dependencies = [
+            label_dep.replace("{{ join_backfill_table }}", utils.output_table_name(obj, full_name=True))
+            for label_dep in obj.labelPart.metaData.dependencies
+        ]
 
 
-def _write_obj(full_output_root: str,
-               validator: ChrononRepoValidator,
-               name: str,
-               obj: object,
-               log_level: int,
-               force_compile: bool = False,
-               force_overwrite: bool = False) -> bool:
+def _write_obj(
+    full_output_root: str,
+    validator: ChrononRepoValidator,
+    name: str,
+    obj: object,
+    log_level: int,
+    force_compile: bool = False,
+    force_overwrite: bool = False,
+) -> bool:
     """
     Returns True if the object is successfully written.
     """
     team_name = name.split(".")[0]
     obj_class = type(obj)
     class_name = obj_class.__name__
-    name = name.split('.', 1)[1]
+    name = name.split(".", 1)[1]
     _print_highlighted(f"{class_name} Team", team_name)
     _print_highlighted(f"{class_name} Name", name)
     obj_folder_name = get_folder_name_from_class_name(class_name)
@@ -200,15 +203,14 @@ def _write_obj(full_output_root: str,
     output_file = os.path.join(output_path, name)
     skip_reasons = validator.can_skip_materialize(obj)
     if not force_compile and skip_reasons:
-        reasons = ', '.join(skip_reasons)
+        reasons = ", ".join(skip_reasons)
         _print_warning(f"Skipping {class_name} {name}: {reasons}")
         if os.path.exists(output_file):
             _print_warning(f"old file exists for skipped config: {output_file}")
         return False
     validation_errors = validator.validate_obj(obj)
     if validation_errors:
-        _print_error(f"Could not write {class_name} {name}",
-                     ', '.join(validation_errors))
+        _print_error(f"Could not write {class_name} {name}", ", ".join(validation_errors))
         return False
     if force_overwrite:
         _print_warning(f"Force overwrite {class_name} {name}")
@@ -225,8 +227,9 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
     if not os.path.exists(output_folder):
         os.makedirs(output_folder)
     assert os.path.isdir(output_folder), f"{output_folder} isn't a folder."
-    assert (hasattr(obj, "name") or hasattr(obj, "metaData")), \
-        f"Can't serialize objects without the name attribute for object {name}"
+    assert hasattr(obj, "name") or hasattr(
+        obj, "metaData"
+    ), f"Can't serialize objects without the name attribute for object {name}"
     with open(output_file, "w") as f:
         _print_highlighted(f"Writing {class_name} to", output_file)
         f.write(thrift_simple_json_protected(obj, obj_class))
@@ -252,5 +255,5 @@ def _print_warning(string):
     print(f"\u001b[33m{string}\u001b[0m")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     extract_and_convert()

@@ -90,9 +90,7 @@ html_theme_options = {
     # "navbar_end": ["navbar-icon-links.html", "search-field.html"]
 }
 
-html_sidebars = {
-    "**": ["navbar-logo.html", "search-field.html", "sbt-sidebar-nav.html"]
-}
+html_sidebars = {"**": ["navbar-logo.html", "search-field.html", "sbt-sidebar-nav.html"]}
 html_title = "Chronon"
 html_static_path = ["_static"]
 html_css_files = ["chronon.css"]

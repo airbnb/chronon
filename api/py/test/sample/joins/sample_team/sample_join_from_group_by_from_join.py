@@ -12,13 +12,9 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
+from ai.chronon.join import Join, JoinPart
 from group_bys.sample_team import sample_group_by_from_join_part
-from ai.chronon.join import (
-    Join,
-    JoinPart,
-)
-
+from sources import test_sources
 
 v1 = Join(
     left=test_sources.staging_entities,
