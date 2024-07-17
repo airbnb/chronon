@@ -142,7 +142,12 @@ def build_entry(conf, index_spec, conf_type, root=CWD, teams=None):
         return None
 
     # derive python file path from the name & conf_type
-    (team, conf_module) = entry["name"][0].split(".", 1)
+    # when the name does not follow the <team>.<module> convention we use None for team
+    if len(entry["name"][0].split(".")) >= 2:
+        (team, conf_module) = entry["name"][0].split(".", 1)
+    else:
+        (team , conf_module) = ( None, entry["name"][0])
+
     # Update missing values with teams defaults.
     for field, mapped_field in DEFAULTS_SPEC.items():
         if field in entry and not entry[field]:
@@ -151,8 +156,9 @@ def build_entry(conf, index_spec, conf_type, root=CWD, teams=None):
     file_base = "/".join(conf_module.split(".")[:-1])
     py_file = file_base + ".py"
     init_file = file_base + "/__init__.py"
-    py_path = os.path.join(root, conf_type, team, py_file)
-    init_path = os.path.join(root, conf_type, team, init_file)
+    # create the path strings accounting for if `team` is missing in the name
+    py_path = os.path.join(*[x for x in [root, conf_type, team, py_file] if x])
+    init_path = os.path.join(*[x for x in [root, conf_type, team, init_file] if x])
     conf_path = py_path if os.path.exists(py_path) else init_path
     entry["json_file"] = os.path.join(root, "production", conf_type, team, conf_module)
     entry["file"] = conf_path
