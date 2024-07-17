@@ -310,7 +310,7 @@ class Analyzer(tableUtils: TableUtils,
       if (gbStartPartition.nonEmpty)
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
-    if (!joinConf.onlineExternalParts.isEmpty) {
+    if (joinConf.onlineExternalParts != null) {
       joinConf.onlineExternalParts.toScala.foreach { part =>
         aggregationsMetadata ++= part.source.valueSchema.params.toScala.map { param =>
           AggregationMetadata(part.fullName + "_" + param.name,
