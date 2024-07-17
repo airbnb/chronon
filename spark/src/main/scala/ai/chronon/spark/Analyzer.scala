@@ -312,13 +312,13 @@ class Analyzer(tableUtils: TableUtils,
     }
     if (!joinConf.onlineExternalParts.isEmpty) {
       joinConf.onlineExternalParts.toScala.foreach { part =>
-        aggregationsMetadata ++= part.source.valueSchema.params.toScala.map {
-          param => AggregationMetadata(part.fullName + "_" + param.name,
-            DataType.fromTDataType(param.dataType),
-            "",
-            "",
-            param.name,
-            part.source.valueSchema.name)
+        aggregationsMetadata ++= part.source.valueSchema.params.toScala.map { param =>
+          AggregationMetadata(part.fullName + "_" + param.name,
+                              DataType.fromTDataType(param.dataType),
+                              "",
+                              "",
+                              param.name,
+                              part.source.valueSchema.name)
         }
       }
     }
