@@ -102,7 +102,7 @@ jobs:
                       conda activate chronon_py
                       cd /chronon/api/py/ai/chronon
                       pip install importlib-metadata==4.11.4 #Install importlib-metadata < 5
-                      flake8 --extend-ignore=W605,Q000,F631
+                      flake8 --extend-ignore=W605,Q000,F631,E203
 
     "Chronon Python Tests":
         executor: docker_baseimg_executor
