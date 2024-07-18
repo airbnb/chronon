@@ -8,10 +8,6 @@ from pyspark.sql.dataframe import DataFrame
 from py4j.java_gateway import JavaObject, JVMView
 from datetime import datetime, timedelta
 from pyspark.dbutils import DBUtils
-import re
-import tempfile
-import os
-import re
 
 
 class DatabricksExecutable:
@@ -37,23 +33,9 @@ class DatabricksExecutable:
         user_email = self._dbutils.notebook.entry_point.getDbutils().notebook().getContext().userName().get()
         return user_email.split('@')[0].lower()
     
-    def _remove_non_table_name_friendly_characters_from_notebook_name(self, notebook_name):
-        notebook_name_with_spaces_replaced = notebook_name.replace(" ", "_")
-
-        # Friendly characters: a-z, A-Z, 0-9, _
-        friendly_pattern = re.compile(r'[^a-zA-Z0-9_]')
-        cleansed_notebook_name = friendly_pattern.sub('', notebook_name_with_spaces_replaced)
-        
-        return cleansed_notebook_name
-
-    def _get_databricks_notebook_name(self):
-        full_notebook_path = self._dbutils.notebook.entry_point.getDbutils().notebook().getContext().notebookPath().get()
-        uncleansed_notebook_name = full_notebook_path.split("/")[-1]
-        return self._remove_non_table_name_friendly_characters_from_notebook_name(uncleansed_notebook_name)
-
     def _set_metadata(self, obj):
         obj_type = type(obj)
-        name_prefix = f"{self._get_databricks_user()}.{self._get_databricks_notebook_name()}"
+        name_prefix = f"{self._get_databricks_user()}"
         
         # Note: name is what is used to determine the output table names
         # If the user is executing an object that is from zoolander, we will derive the name from the file path
