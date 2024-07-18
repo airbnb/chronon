@@ -18,6 +18,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
+import ai.chronon.api.Builders.ContextualSource
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
@@ -55,12 +56,23 @@ class AnalyzerTest {
 
     val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
 
+    // externalParts
+    val externalPart = Builders.ExternalPart(
+      externalSource = Builders.ContextualSource(
+        fields = Array(
+          StructField("reservation", StringType),
+          StructField("rule_name", StringType),
+        ),
+      )
+    )
+
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(
         Builders.JoinPart(groupBy = viewsGroupBy, prefix = "prefix_one", keyMapping = Map("item" -> "item_id")),
         Builders.JoinPart(groupBy = anotherViewsGroupBy, prefix = "prefix_two", keyMapping = Map("item" -> "item_id"))
       ),
+      externalParts = Seq(externalPart),
       metaData =
         Builders.MetaData(name = "test_join_analyzer.item_snapshot_features", namespace = namespace, team = "chronon")
     )
