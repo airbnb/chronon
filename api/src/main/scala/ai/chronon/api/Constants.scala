@@ -33,6 +33,7 @@ object Constants {
   val TopicInvalidSuffix = "_invalid"
   val lineTab = "\n    "
   val SemanticHashKey = "semantic_hash"
+  val SemanticHashExcludeTopicKey = "semantic_hash_exclude_topic"
   val SchemaHash = "schema_hash"
   val BootstrapHash = "bootstrap_hash"
   val MatchedHashes = "matched_hashes"

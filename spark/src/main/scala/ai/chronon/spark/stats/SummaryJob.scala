@@ -22,7 +22,7 @@ import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{JoinUtils, PartitionRange, TableUtils}
+import ai.chronon.spark.{PartitionRange, SemanticHashUtils, TableUtils}
 import org.apache.spark.sql.SparkSession
 
 /**
@@ -45,7 +45,8 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
                     sample: Double = 0.1,
                     forceBackfill: Boolean = false): Unit = {
     val uploadTable = joinConf.metaData.toUploadTable(outputTable)
-    val backfillRequired = (!JoinUtils.tablesToRecompute(joinConf, outputTable, tableUtils).isEmpty) || forceBackfill
+    val backfillRequired =
+      SemanticHashUtils.tablesToRecompute(joinConf, outputTable, tableUtils).nonEmpty || forceBackfill
     if (backfillRequired)
       Seq(outputTable, uploadTable).foreach(tableUtils.dropTableIfExists(_))
     val unfilledRanges = tableUtils

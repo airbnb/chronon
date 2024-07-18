@@ -845,8 +845,8 @@ object Extensions {
     def partOutputTable(jp: JoinPart): String =
       (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+ jp.groupBy.metaData.cleanName).mkString("_")
 
-    private val leftSourceKey: String = "left_source"
-    private val derivedKey: String = "derived"
+    val leftSourceKey: String = "left_source"
+    val derivedKey: String = "derived"
 
     /*
      * semanticHash contains hashes of left side and each join part, and is used to detect join definition
@@ -885,62 +885,6 @@ object Extensions {
           }
           .flatMap(_.toSet))
         .getOrElse(Seq.empty)
-    }
-
-    /*
-     * onlineSemanticHash includes everything in semanticHash as well as hashes of each onlineExternalParts (which only
-     * affect online serving but not offline table generation).
-     * It is used to detect join definition change in online serving and to update ttl-cached conf files.
-     */
-    def onlineSemanticHash: Map[String, String] = {
-      if (join.onlineExternalParts == null) {
-        return Map.empty[String, String]
-      }
-
-      val externalPartHashes = join.onlineExternalParts.toScala.map { part => part.fullName -> part.semanticHash }.toMap
-
-      externalPartHashes ++ semanticHash
-    }
-
-    def leftChanged(oldSemanticHash: Map[String, String]): Boolean = {
-      // Checks for semantic changes in left or bootstrap, because those are saved together
-      val bootstrapExistsAndChanged = oldSemanticHash.contains(join.metaData.bootstrapTable) && oldSemanticHash.get(
-        join.metaData.bootstrapTable) != semanticHash.get(join.metaData.bootstrapTable)
-      logger.info(s"Bootstrap table changed: $bootstrapExistsAndChanged")
-      logger.info(s"Old Semantic Hash: $oldSemanticHash")
-      logger.info(s"New Semantic Hash: $semanticHash")
-      oldSemanticHash.get(leftSourceKey) != semanticHash.get(leftSourceKey) || bootstrapExistsAndChanged
-    }
-
-    def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
-      val newSemanticHash = semanticHash
-      // only right join part hashes for convenience
-      def partHashes(semanticHashMap: Map[String, String]): Map[String, String] = {
-        semanticHashMap.filter { case (name, _) => name != leftSourceKey && name != derivedKey }
-      }
-
-      // drop everything if left source changes
-      val partsToDrop = if (leftChanged(oldSemanticHash)) {
-        partHashes(oldSemanticHash).keys.toSeq
-      } else {
-        val changed = partHashes(newSemanticHash).flatMap {
-          case (key, newVal) =>
-            oldSemanticHash.get(key).filter(_ != newVal).map(_ => key)
-        }
-        val deleted = partHashes(oldSemanticHash).keys.filterNot(newSemanticHash.contains)
-        (changed ++ deleted).toSeq
-      }
-      val added = newSemanticHash.keys.filter(!oldSemanticHash.contains(_)).filter {
-        // introduce boostrapTable as a semantic_hash but skip dropping to avoid recompute if it is empty
-        case key if key == join.metaData.bootstrapTable => join.isSetBootstrapParts && !join.bootstrapParts.isEmpty
-        case _                                          => true
-      }
-      val derivedChanges = oldSemanticHash.get(derivedKey) != newSemanticHash.get(derivedKey)
-      // TODO: make this incremental, retain the main table and continue joining, dropping etc
-      val mainTable = if (partsToDrop.nonEmpty || added.nonEmpty || derivedChanges) {
-        Some(join.metaData.outputTable)
-      } else None
-      partsToDrop ++ mainTable
     }
 
     def isProduction: Boolean = join.getMetaData.isProduction

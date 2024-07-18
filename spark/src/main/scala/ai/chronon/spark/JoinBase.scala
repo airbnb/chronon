@@ -22,17 +22,18 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute, shouldRecomputeLeft}
+import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf}
+import ai.chronon.spark.SemanticHashUtils.{shouldRecomputeLeft, tablesToRecompute}
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.LoggerFactory
-import java.time.Instant
 
+import java.time.Instant
+import java.util
 import scala.collection.JavaConverters._
 import scala.collection.Seq
-import java.util
 import scala.util.ScalaJavaConversions.ListOps
 
 abstract class JoinBase(joinConf: api.Join,

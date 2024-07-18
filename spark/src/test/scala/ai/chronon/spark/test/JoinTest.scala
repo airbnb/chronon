@@ -22,6 +22,7 @@ import ai.chronon.api.{Accuracy, Builders, Constants, LongType, Operation, Strin
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.renderDataSourceQuery
+import ai.chronon.spark.SemanticHashUtils.{tableHashesChanged, tablesToRecompute}
 import ai.chronon.spark._
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.rdd.RDD
@@ -31,7 +32,6 @@ import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 import org.scalatest.Assertions.intercept
-
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.Row
 
@@ -799,15 +799,14 @@ class JoinTest {
     oldJoin.computeJoin(Some(100))
 
     // Make sure that there is no versioning-detected changes at this phase
-    val joinPartsToRecomputeNoChange = JoinUtils.tablesToRecompute(joinConf, joinConf.metaData.outputTable, tableUtils)
+    val joinPartsToRecomputeNoChange = tablesToRecompute(joinConf, joinConf.metaData.outputTable, tableUtils)
     assertEquals(joinPartsToRecomputeNoChange.size, 0)
 
     // First test changing the left side table - this should trigger a full recompute
     val leftChangeJoinConf = joinConf.deepCopy()
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val leftChangeRecompute =
-      JoinUtils.tablesToRecompute(leftChangeJoinConf, leftChangeJoinConf.metaData.outputTable, tableUtils)
+    val leftChangeRecompute = tablesToRecompute(leftChangeJoinConf, leftChangeJoinConf.metaData.outputTable, tableUtils)
     println(leftChangeRecompute)
     assertEquals(leftChangeRecompute.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
@@ -820,8 +819,7 @@ class JoinTest {
     val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(suffix = "versioning"), prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val addPartRecompute =
-      JoinUtils.tablesToRecompute(addPartJoinConf, addPartJoinConf.metaData.outputTable, tableUtils)
+    val addPartRecompute = tablesToRecompute(addPartJoinConf, addPartJoinConf.metaData.outputTable, tableUtils)
     assertEquals(addPartRecompute.size, 1)
     assertEquals(addPartRecompute, Seq(addPartJoinConf.metaData.outputTable))
     // Compute to ensure that it works and to set the stage for the next assertion
@@ -831,8 +829,7 @@ class JoinTest {
     val rightModJoinConf = addPartJoinConf.deepCopy()
     rightModJoinConf.getJoinParts.get(1).setPrefix("user_3")
     val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val rightModRecompute =
-      JoinUtils.tablesToRecompute(rightModJoinConf, rightModJoinConf.metaData.outputTable, tableUtils)
+    val rightModRecompute = tablesToRecompute(rightModJoinConf, rightModJoinConf.metaData.outputTable, tableUtils)
     assertEquals(rightModRecompute.size, 2)
     val rightModPartTable = s"${addPartJoinConf.metaData.outputTable}_user_2_unit_test_item_views"
     assertEquals(rightModRecompute, Seq(rightModPartTable, addPartJoinConf.metaData.outputTable))
@@ -1106,6 +1103,7 @@ class JoinTest {
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, prefix = "user")),
       metaData = Builders.MetaData(name = s"test.join_migration", namespace = namespace, team = "chronon")
     )
+    val newSemanticHash = join.semanticHash
 
     // test older versions before migration
     // older versions do not have the bootstrap hash, but should not trigger recompute if no bootstrap_parts
@@ -1113,13 +1111,13 @@ class JoinTest {
       "left_source" -> "vbQc07vaqm",
       "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "OLFBDTqwMX"
     )
-    assertEquals(0, join.tablesToDrop(productionHashV1).length)
+    assertEquals(0, tableHashesChanged(productionHashV1, newSemanticHash, join).length)
 
     // test newer versions
     val productionHashV2 = productionHashV1 ++ Map(
       "test_namespace_jointest.test_join_migration_bootstrap" -> "1B2M2Y8Asg"
     )
-    assertEquals(0, join.tablesToDrop(productionHashV2).length)
+    assertEquals(0, tableHashesChanged(productionHashV2, newSemanticHash, join).length)
   }
 
   @Test
