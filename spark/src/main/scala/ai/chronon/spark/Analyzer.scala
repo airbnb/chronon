@@ -312,12 +312,12 @@ class Analyzer(tableUtils: TableUtils,
     }
     if (joinConf.onlineExternalParts != null) {
       joinConf.onlineExternalParts.toScala.foreach { part =>
-        aggregationsMetadata ++= part.source.valueSchema.params.toScala.map { param =>
-          AggregationMetadata(part.fullName + "_" + param.name,
-                              DataType.fromTDataType(param.dataType),
-                              "",
-                              "",
-                              param.name,
+        aggregationsMetadata ++= part.source.valueFields.map { field =>
+          AggregationMetadata(part.fullName + "_" + field.name,
+                              field.fieldType,
+                              null,
+                              null,
+                              field.name,
                               part.source.valueSchema.name)
         }
       }
