@@ -13,7 +13,7 @@ load("config/kubernetes/helpers/bluegreen.sky", "add_blue_green_metrics_tagging"
 # Choose your instance type. See go/shared-msp/skycfg-changes.
 load("config/kubernetes/helpers/healthcheck.sky", "healthchecked_service")
 load("config/kubernetes/helpers/images.sky", "image_defaults")
-load("config/kubernetes/helpers/msp_shard.sky", "msp_shard", "autoset_shard")
+load("config/kubernetes/helpers/msp_shard.sky", "autoset_shard")
 load("config/kubernetes/helpers/security.sky", "add_security_groups")
 load("config/kubernetes/networking/public/config.sky", "networking_config")
 load("config/kubernetes/networking/public/consul.sky", "consul_meta_envoy_priority_routing")
@@ -120,10 +120,11 @@ def bapi_service(ctx,
   instance_type,
   replicas,
   workers,
+  meta,
   image_artifact = None,
-  override_msp_shard = "kubeapicc", # only kubeapicc has m6i instances so use that shard
   override_name = None,
-  strict_priority_tiering = False,
+  name_suffix = None,
+  env_vars_override = None,
 ):
   if image_artifact:
     image = image_defaults(
@@ -134,24 +135,20 @@ def bapi_service(ctx,
     image = default_pay_server_image
   env_vars = {
       "STRIPE_BAPI_MSP_PRIORITY_TIER": priority.name,
+      # Used for the standard tiers system in some code, setting it lets us reuse some of the GRPC metrics/Canonical line code
+      # without having to sprinkle our overrides everywhere.
+      "SERVER_PRIORITY_TIER": priority.name
   }
   env_vars.update(bapi_gc_config())
 
-  if strict_priority_tiering:
-    receive_non_priority_traffic = False
-  else:
-    # Always keep test-mode traffic isolated
-    receive_non_priority_traffic = priority != P5
+  if env_vars_override:
+    env_vars.update(env_vars_override)
 
   name = get_name(ctx) + "-" + priority.name
   if override_name:
     name = override_name
-
-  # only northwest has multiple MSP shards
-  if get_cluster(ctx) == "northwest":
-    shard = override_msp_shard
-  else:
-    shard = "kubemaster"
+  elif name_suffix and name_suffix != "default":
+    name = name + "-" + name_suffix
 
   # envoy_concurrency should be scaled in proportion to the number of CPUs on the chosen instance size.
   # On Intel hosts, this is 1/6 of the CPUs. For instance with 48 vCPUs this is 8, or with 16 vCPUs this is 3
@@ -188,11 +185,7 @@ def bapi_service(ctx,
       max_upgrade_additional = 1,
       gc_before_fork = True,
       signal_timeout = get_puma_worker_shutdown_timeout_seconds(ctx),
-      meta = consul_meta_envoy_priority_routing(
-          "X-Stripe-Api-Path-Priority",
-          priority.name,
-          receive_non_priority_traffic = receive_non_priority_traffic,
-      ),
+      meta = meta,
       # slow startup generally means a bad host or bad code change,
       # either way prefer crashing at deploy time instead of allowing the
       # bad change to rollout so reduce startup time from 600s => 450s
@@ -208,7 +201,7 @@ def bapi_service(ctx,
         envoy_concurrency = envoy_concurrency
     ),
 
-    msp_shard(shard),
+    autoset_shard(),
     use_geoip_databases(ctx),
     config_srv_sidecar(ctx),
     add_security_groups(

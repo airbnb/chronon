@@ -4,7 +4,7 @@ load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "webhook_configuration_plugin")
 load("config/kubernetes/meta/metadata.sky", "metadata", "render_metadata")
 
-def validating_webhook_configuration(ctx, *plugins, webhook_name = None, **kwargs):
+def validating_webhook_configuration(ctx, *plugins, webhook_name = None, webhook_name_suffix = "-validation-webhook", **kwargs):
     """
     Define a Validating Webhook Configuration, with a set of defined webhooks.
     Admission webhooks are HTTP callbacks that receive admission requests and do something with them.
@@ -34,7 +34,7 @@ def validating_webhook_configuration(ctx, *plugins, webhook_name = None, **kwarg
     all_plugins = [
         metadata(
             namespace = "webhooks-admin",
-            service_name = ("%s-validation-webhook" % webhook_name),
+            service_name = ("%s%s" % (webhook_name, webhook_name_suffix)),
         ),
     ]
     all_plugins.extend(plugins)

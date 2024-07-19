@@ -41,6 +41,7 @@ def monster_deployment_config(
     graviton_migration_enabled = False,
     graviton_migration_size = 0,
     graviton_migration_target_6g = False,
+    autoscaling_plugin = None,
 ):
     return struct(
         monster_service = monster_service,
@@ -63,4 +64,5 @@ def monster_deployment_config(
         graviton_migration_enabled = graviton_migration_enabled,
         graviton_migration_size = graviton_migration_size,
         graviton_migration_target_6g = graviton_migration_target_6g,
+        autoscaling_plugin = autoscaling_plugin,
     )

@@ -42,6 +42,29 @@ def is_dedicated_msp(ctx, resource):
     """
     return not is_shared_msp(ctx, resource)
 
+
+def get_shared_msp_label(ctx, resource):
+    """
+    Checks whether the resource has the shared-msp label and returns it.
+
+    `is_shared_msp` has a misleading name since it's used to enable some default plugins for shared msp
+    which horizon doesn't use, so they set it to False.
+
+    We should instead rely on the label since that's correctly set for all services.
+
+    Args:
+      ctx: a skycfg context
+      resource: a resource definition
+    Returns:
+      True iff the resource has been marked to run on shared MSP
+    """
+    md = resource.get('metadata')
+    if md == None:
+        return False
+    labels = md.get("labels", {}) if type(md) == 'dict' else md.labels
+    return bool(labels.get("stripe.io/shared-msp", "false"))
+
+
 def is_security_group_policy_enabled(ctx, resource):
     """
     Get whether security group policy is enabled. We will only allow this in shared msp
@@ -52,4 +75,4 @@ def is_security_group_policy_enabled(ctx, resource):
     Returns:
         security group policy enabled or not
     """
-    return (is_shared_msp(ctx, resource) and ctx.vars.get("msp.use_sgp", False)) or is_bin_packing_enabled(ctx)
+    return (get_shared_msp_label(ctx, resource) and ctx.vars.get("msp.use_sgp", False)) or is_bin_packing_enabled(ctx)

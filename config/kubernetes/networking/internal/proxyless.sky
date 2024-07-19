@@ -2,6 +2,22 @@
 ENVOY_CONFIG_SRV_PB = proto.package("stripe_internal.envoy_config_srv")
 
 
+def proxyless_mesh_service_name(ctx, consul_agent_services, k8s_workload_name):
+    mesh_service_configs = _get_mesh_service_configs(ctx)
+    if mesh_service_configs == None:
+        return "unknown"
+
+    # heuristically determine the mesh service name based on the first service that has a proxyless registration
+    # this might not work for eventbus that has multiple services with proxyless registrations, i.e. eventbus-grpc and eventbus-cell-2
+    # so we need to figure out a strategy to handle this case
+    for consul_service in consul_agent_services:
+        registration_type = _get_registration_type(ctx, consul_service, mesh_service_configs, k8s_workload_name)
+        if registration_type == ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC_SEPARATE:
+            return _proxyless_name(consul_service)
+        elif registration_type == ENVOY_CONFIG_SRV_PB.ProxylessRegistration.Type.GRPC_INPLACE:
+            return consul_service["name"]
+    return "unknown"
+
 def augment_with_proxyless_registrations(ctx, consul_agent_services, k8s_workload_name):
     """
     This function converts the proxyful service registrations to proxyless service registrations
@@ -33,7 +49,6 @@ def augment_with_proxyless_registrations(ctx, consul_agent_services, k8s_workloa
             proxyless_registration = _configure_proxyless_registration_inplace(ctx, consul_service, mesh_service_configs)
             registrations.append(proxyless_registration)
             proxyless_registrations.append(proxyless_registration)
-    _sanity_check_proxyless_registrations(proxyless_registrations)
     return registrations
 
 def _get_mesh_service_configs(ctx):
@@ -135,10 +150,15 @@ def _convert_to_grpc_proxyless_registration_inplace(consul_service, proxyless_re
     proxyless_registration = dict(consul_service)
     port = _proxyless_port(proxyless_reg_config)
     checks = _proxyless_checks(consul_service, port)
+    
+    # copy the entire dictionary instead of mutating inplace
+    # to avoid errors when inserting into a frozen hashtable.
+    meta = dict(proxyless_registration["meta"])
+    meta["proxyless"] = "true"
 
     proxyless_registration["port"] = port
     proxyless_registration["checks"] = checks
-    proxyless_registration["meta"]["proxyless"] = "true"
+    proxyless_registration["meta"] = meta
     return proxyless_registration
 
 def _convert_to_grpc_proxyless_registration_separate(consul_service, proxyless_reg_config):
@@ -155,12 +175,3 @@ def _convert_to_grpc_proxyless_registration_separate(consul_service, proxyless_r
     ## meta remains the same
 
     return proxyless_registration
-
-def _sanity_check_proxyless_registrations(proxyless_registrations):
-    ## make sure no duplicate ports
-    ports = list()
-    for proxyless_reg in proxyless_registrations:
-        port = proxyless_reg["port"]
-        if port in ports:
-            fail("Invalid service config: found duplicate proxyless registration for port: " + str(port))
-        ports.append(port)

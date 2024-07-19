@@ -47,8 +47,6 @@ def monster_sweeper_deployment(ctx, unformatted_host_set, config):
         # See src/scala/com/stripe/monster/sweeper/BUILD for how we generate a container image
         # that ultimately contains this Scala binary
         "./src/scala/com/stripe/monster/sweeper/sweeper_binary",
-        "--config-service",
-        get_worker_envoy_address_from_consul(generate_consul_name(host_set, "config-workers")),
         "--consul-service-name",
         consul_service_name,
         "--mongo-address",

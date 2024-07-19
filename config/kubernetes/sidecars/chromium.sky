@@ -11,8 +11,14 @@ def chromium_sidecar(ctx):
                 "chromium",
                 "--headless",
                 "--disable-gpu",
+                "--disable-software-rasterizer",
+                "--disable-dev-shm-usage",
+                # setup CDP websocket listener
                 "--remote-debugging-address=0.0.0.0",
                 "--remote-debugging-port=9222",
+                # disable IP leak via webRTC
+                "--webrtc-ip-handling-policy=disable_non_proxied_udp",
+                "--force-webrtc-ip-handling-policy",
             ],
             image = image(ctx, artifact = "connections-talon-chromium-container-image"),
         ),

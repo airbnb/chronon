@@ -1,10 +1,16 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/helpers/constants.sky", "ENVOY_CONFIG_SRV_SIDECAR_NAME")
-load("config/kubernetes/helpers/quantities.sky", "millicores", "gibibytes")
+load("config/kubernetes/helpers/quantities.sky", "millicores", "gibibytes", "mebibytes", "mebibytes_to_int")
 load("config/kubernetes/helpers/warning.sky", "warn")
 load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled")
 load("config/kubernetes/helpers/math.sky", "round_float_up")
+
+def adjust_resources_for_sidecar():
+    """
+    Adjusts memory/CPU between the main application container and a sidecar.
+    """
+    return pod_plugin(_adjust_resources_for_sidecar)
 
 def share_resources_with_envoy():
     """
@@ -31,6 +37,41 @@ def maybe_add_overhead_for_kata():
     It will also add a 450MiB overhead to the main_container limit, to account for the Kata MicroVM overhead.
     """
     return pod_plugin(_maybe_add_overhead_for_kata)
+
+def _adjust_resources_for_sidecar(ctx, _, pod_def):
+    # Currently only support memory overrides.
+    return _adjust_memory_for_sidecar(ctx, pod_def)
+
+def _adjust_memory_for_sidecar(ctx, pod_def):
+    if pod_def.get("shared_msp") != True:
+        return
+
+    main_container = pod_def.get("main_container")
+    if main_container == None:
+        warn(ctx, "Unable to find the main container, skipping memory sharing")
+        return
+    main_memory = main_container.get("memory")
+    if main_memory == None:
+        return
+    sidecar_memory_overhead = 0
+    for container in pod_def.get("containers"):
+        if container.get("name") == main_container["name"]:
+            # Skip the main container
+            continue
+        if container.get("memory"):
+            ctr_mem = mebibytes_to_int(ctx, container["memory"])
+            sidecar_memory_overhead += ctr_mem
+    if sidecar_memory_overhead == 0:
+        # No changes observed, skip memory sharing
+        return
+    main_memory_int = mebibytes_to_int(ctx, main_memory)
+    if sidecar_memory_overhead > main_memory_int:
+        warn(ctx, "Sidecar memory overhead exceeds main container memory, skipping memory sharing")
+        return
+    main_memory_int -= sidecar_memory_overhead
+    main_memory = mebibytes(ctx, main_memory_int)
+    main_container["memory"] = main_memory
+    return
 
 def _share_resources_with_envoy(ctx, _, pod_def):
     if pod_def.get("shared_msp") != True:

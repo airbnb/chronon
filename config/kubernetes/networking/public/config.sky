@@ -105,6 +105,7 @@ def networking_config(
         max_headers_count = NOT_PROVIDED,
         enable_local_reachability = NOT_PROVIDED,
         envoy_rlimit_nofile = NOT_PROVIDED,
+        use_outbound_source_v2 = NOT_PROVIDED,
         _sn_breakglass = breakglass_settings()):
     """
     Deployment plugin that injects custom networking features for your pod.
@@ -150,6 +151,8 @@ def networking_config(
             By default this is true for all Shared MSP services.
         envoy_rlimit_nofile: Integer; sets the rlimit nofile for the envoy sidecar container.
             By default, if not set, envoy will set rlimit nofile to 262144.
+        use_outbound_source_v2: Boolean value indicating whether to use the new outbound source.
+            By default this is true for all Shared MSP services.
         _sn_breakglass: these are internal networking customizations for use by the
             Service Networking Team. While service owners are generally not expected
             to need to set these arguments, we expose them via the `breakglass_settings` API
@@ -213,6 +216,10 @@ def networking_config(
         enable_local_reachability = network_config_updater(
             _update_envoy_config_srv_config = _envoy_config_srv_set_enable_local_reachability,
             enable_local_reachability = enable_local_reachability,
+        ),
+        use_outbound_source_v2 = network_config_updater(
+            _update_envoy_config_srv_config = _envoy_config_srv_set_use_outbound_source_v2,
+            use_outbound_source_v2 = use_outbound_source_v2,
         ),
         **_sn_breakglass
     )
@@ -412,6 +419,9 @@ def _envoy_config_srv_set_max_headers_count(args):
 
 def _envoy_config_srv_set_enable_local_reachability(args):
     return {"enable_local_reachability": args.enable_local_reachability}
+
+def _envoy_config_srv_set_use_outbound_source_v2(args):
+    return {"use_outbound_source_v2": args.use_outbound_source_v2}
 
 # A helper function to resolve whether the global rate-limiter should be turned-on
 # based on the old / deprecated value (`enable_global_ratelimit`) and the new struct (`global_ratelimit.enable`)

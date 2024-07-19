@@ -19,7 +19,7 @@ load("config/kubernetes/helpers/resource_requirements.sky", "attempt_to_get_pod_
 load("config/kubernetes/helpers/security.sky", "add_security_groups")
 load("config/kubernetes/meta/metadata.sky", "labels")
 load("config/kubernetes/public/workflow_engine/workflow_worker.sky", "ruby_workflow_worker_shared_msp")
-load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config", "get_dynamic_replicas")
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config", "get_num_replicas", "get_dynamic_replicas")
 load("config/kubernetes/service-config/ruby_common.sky", "get_networking_config")
 load("config/kubernetes/sidecars/confidant.sky", "raw_secret", "yaml_secret")
 load("config/kubernetes/sidecars/pandora.sky", pandora_raw_secret="raw_secret", pandora_yaml_secret="yaml_secret")
@@ -146,10 +146,10 @@ def requires_consul_in_computev2_config(compute_config):
     ):
         if not bool(compute_config["platform_options"]["disable_consul"]):
             fail("Consul is no longer supported on Shared MSP services.")
-    
+
     return False # As of April 17th, 2024 Consul is Deprecated by default.
 
-def _build_args(ctx, compute_config):
+def _build_args(ctx, compute_config, is_canary=False):
     args = {}
     plugins = []
 
@@ -192,10 +192,11 @@ def _build_args(ctx, compute_config):
     if "sidecars" in compute_config and len(compute_config["sidecars"].items()) > 0:
         plugins = sidecars(ctx, compute_config["sidecars"]) + plugins
 
-    # If dynamic replicas are configured, add them to plugins
-    dynamic_replicas = get_dynamic_replicas(compute_config, use_canary = True)
-    if dynamic_replicas != None:
-        plugins.extend([dynamic_replicas])
+    if not is_canary:
+        # If dynamic replicas are configured, add them to plugins
+        dynamic_replicas = get_dynamic_replicas(compute_config, use_canary = True)
+        if dynamic_replicas != None:
+            plugins.extend([dynamic_replicas])
 
     if len(plugins) > 0:
         args["plugins"] = plugins
@@ -210,17 +211,23 @@ def plugins(ctx):
     Returns:
         A list of plugins for the service.
     """
-    compute_config = get_merged_compute_v2_config(ctx)
+    def _plugins(ctx, is_canary=False):
+        compute_config = get_merged_compute_v2_config(ctx)
+        result = _build_args(ctx, compute_config, is_canary = is_canary)
 
-    result = _build_args(ctx, compute_config)
+        if "plugins" in result:
+            return result["plugins"]
+        else:
+            return []
 
-    if "plugins" in result:
-        return result["plugins"]
-    else:
-        return []
+    return struct(
+        main = _plugins(ctx),
+        canary = _plugins(ctx, is_canary = True),
+    )
 
 def replicas(ctx):
-    return get_merged_compute_v2_config(ctx)["resources"]["num_replicas"]
+    compute_config = get_merged_compute_v2_config(ctx)
+    return get_num_replicas(compute_config)
 
 def deployments(ctx):
     """ Return a list of deployments for the service.
@@ -311,4 +318,3 @@ def get_separate_canary_by_name(compute_config):
                 return True
 
     return False
-

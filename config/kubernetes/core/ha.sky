@@ -76,6 +76,20 @@ def prefer_node_balance(max_skew=1):
         fail("max_skew must be positive")
     return pod_plugin(_add_topology_spreading_to_pod, max_skew=max_skew, topology_key="kubernetes.io/hostname", strict_constraint=False, by_service=False)
 
+def prefer_node_balance_by_henson_service(max_skew=1):
+    """Prefer that a workload's pods be balanced across nodes by Henson service name (rather than deployment name).
+
+    The scheduler will safely fallback to assigning pods to nodes if sufficient balance cannot be acheived.
+
+    Args:
+        max_skew: The maximum amount of skew to allow, as defined by topology
+            spread constraints: https://kubernetes.io/docs/concepts/workloads/pods/pod-topology-spread-constraints/#spread-constraints-for-pods.
+            Must be > 0.
+    """
+    if max_skew <= 0:
+        fail("max_skew must be positive")
+    return pod_plugin(_add_topology_spreading_to_pod, max_skew=max_skew, topology_key="kubernetes.io/hostname", strict_constraint=False, by_service=True)
+
 def require_zone_balance(max_skew=1):
     """Require that a workload's pods be balanced across availability zones.
 

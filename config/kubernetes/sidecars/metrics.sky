@@ -102,6 +102,7 @@ PROBER_WORKSPACE_URL = {
 
 def metrics(
     ctx,
+    config=None,
     image_env_override=None,
     image_version_override=None,
     tags=None,
@@ -112,8 +113,9 @@ def metrics(
     percentiles=["0.5", "0.9", "0.95", "0.99"],
     attach_routing_rules=False,
     config_timeout=DEFAULT_CONFIG_TIMEOUT,
-    config=None,
     enable_prober=False,
+    cortex_batch_write_size=None,
+    cortex_num_workers=None,
 ):
     """
     Adds a Veneur instance as a sidecar to receive and forward metrics.
@@ -123,6 +125,10 @@ def metrics(
     - UDP (ssf): `127.0.0.1:8128`
     - Unix datagram (statsd): `/veneur-sockets/statsd.sock`
     - Unix socket (ssf): `/veneur-sockets/ssf-trace.sock`
+
+
+    This function gets called in `config/kubernetes/apps/deployment.sky` with ctx as a positional variable,
+    and `config` set to the output of `metrics_config.` Every other parameter is set to None, so uses the default.
 
     Args:
         ctx: The pod context
@@ -152,6 +158,8 @@ def metrics(
         enable_prober: `bool` whether to enable the prober (should be used only by veneur-prober-srv); Default: False
         config: struct of configuration options passed to the deployment, defined in `metrics_config`, these
             will override args passed to the function
+        cortex_batch_write_size: `int` The number of metrics to batch write to Cortex. Defaults to 1000
+        cortex_num_workers: `int` The number of workers to use when writing to Cortex. Defaults to 10
 
     Returns:
         A plugin that installs a Veneur sidecar to receive metrics
@@ -163,6 +171,8 @@ def metrics(
         attach_routing_rules = config.attach_routing_rules
         config_timeout = config.config_timeout
         enable_prober = config.enable_prober
+        cortex_batch_write_size = config.cortex_batch_write_size
+        cortex_num_workers = config.cortex_num_workers
 
     # In order to keep the ordering of the auto-generated documentation clean,
     # `implicit_tags` is declared below. However, that means we can't reference
@@ -198,10 +208,15 @@ def metrics(
         "-flush-interval", flush_interval,
         "-aggregates",  ",".join(aggregates),
         "-percentiles", ",".join(percentiles),
-
         # used to tag "pod_id" on all Prometheus Shared MSP metrics to satisfy Single Writer principle
         "-pod-id", "$(STRIPE_POD_NAME)",
     ]
+
+    if cortex_batch_write_size != None:
+        command = command + ["-cortex-batch-write-size", str(cortex_batch_write_size)]
+
+    if cortex_num_workers != None:
+        command = command + ["-cortex-num-workers", str(cortex_num_workers)]
 
     if is_isolated_deploy(ctx):
         command = command + ["-isolated-deploy"]
@@ -328,19 +343,10 @@ def metrics_config(**kwargs):
     modifies the deployment's definition to initialize metrics(...) with a non-None `config` struct. Note that
     passing in any `config` value is all
 or nothing. There is no way to override only one value in the config struct, so make sure the defaults in
-    metrics_config(...) match those of metrics(...).
+    metrics_config(...) match those of metrics(...). See `metrics` function for more details on the config options.
 
     Args:
-        image_env_override: `string` Veneur container image name prefix; only non-noop value is "qa". Only to be
-            used when testing Veneur, not to deploy Veneur generally
-        image_version_override: `string` SHA corresponding to a test version of Veneur container image. Only to
-            be used when testing Veneur, not to deploy Veneur generally
-        attach_routing_rules: `bool` enable & attach veneur routing rules. Defaults to False
-        config_timeout: `string` duration (parsable by Go's time.Duration) to wait for a config before timing out
-            Defaults to `1m`
-        enable_vnext_metrics: `bool` whether to enable vnext metrics
-        enable_prober: `bool` whether to enable the prober (should be used only by veneur-prober-srv); Default: False
-
+        **kwargs: keyword arguments to pass to metrics(...)
     Returns:
         deployment plugin containing struct with passed config options
     """
@@ -360,6 +366,8 @@ def _metrics_config(
     enable_prober=False,
     image_env_override=None,
     image_version_override=None,
+    cortex_batch_write_size=None,
+    cortex_num_workers=None,
 ):
     if enable_vnext_metrics:
       attach_routing_rules = True
@@ -372,11 +380,13 @@ def _metrics_config(
             enable_prober=enable_prober,
             image_env_override=image_env_override,
             image_version_override=image_version_override,
+            cortex_batch_write_size=cortex_batch_write_size,
+            cortex_num_workers=cortex_num_workers,
         )
     )
 
 
-def _update_deployment_metrics_config(ctx, plugin, deployment_def):
+def _update_deployment_metrics_config(_, plugin, deployment_def):
     deployment_def["metrics_config"] = plugin.config
 
 def unix_socket_metric_listeners(container_name=None):

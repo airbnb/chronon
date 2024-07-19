@@ -29,7 +29,7 @@ load("config/kubernetes/networking/internal/envoy-config-srv.sky", "henson_liste
 load("config/kubernetes/networking/public/networking.sky", "mount_pod_networking", "proxyless_mount_admin_server_dir", "proxyless_container_env_vars")
 load("config/kubernetes/helpers/graviton.sky", "is_graviton_instance")
 load("config/kubernetes/helpers/warning.sky", "warn")
-load("config/kubernetes/helpers/isolated_deploys.sky", "isolated_deploy_aware_resource_name")
+load("config/kubernetes/helpers/isolated_deploys.sky", "isolated_deploy_aware_resource_name", "isolated_environment_env_var")
 
 TUPLE_TYPE = "tuple"
 
@@ -195,7 +195,6 @@ def stripe_pod(
                 ## We will remove them once we don't support proxyless in dedicated MSP.
                 mount_pod_networking(),
                 proxyless_mount_admin_server_dir(),
-                proxyless_container_env_vars(),
             ),
         ),
     ]
@@ -247,7 +246,7 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         # if not binpacked, do not allow services to set custom resources
         container_resource_spec = None
 
-    return compose_plugins(
+    plugins = [
         pod_plugin(_set_shared_msp),
 
         metadata(
@@ -307,7 +306,12 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         image_architecture_annotation(ctx, instance_type),
 
         add_costs_attribution_override_label(ctx),
-    )
+    ]
+
+    if is_isolated_deploy(ctx):
+        plugins += [container_env_vars(vars = isolated_environment_env_var(ctx))]
+
+    return compose_plugins(*plugins)
 
 # TODO we may no longer need this as shared_msp is already set
 def _set_shared_msp(ctx, arguments, pod_def):
@@ -371,7 +375,7 @@ CONSUL_AGENT_ENABLED_LABEL_DISABLED = "disabled"
 def _with_consul_agent_enablement(ctx, requires_consul = False):
     """Returns plugins to make possible the enablement mechanism to turn Consul agent On/Off
 
-    Consul is no longer support on Shared MSP Services. 
+    Consul is no longer support on Shared MSP Services.
 
     If you have a use case that Consul could fit, there is likely an alternative ready for you to
     use instead: http://go/consul-replacement
@@ -391,9 +395,9 @@ def consul_enablement_label(ctx, requires_consul = False):
 
 def _determine_consul_enablement_label_value(requires_consul = False):
     # By default, unless requested, all Shared MSP services are now started
-    # WITHOUT Consul running. If you are a service owner reading this comment, 
-    # and have a consul dependency, please set 'requires_consul = True' in your 
-    # pod definition. Then work with the Service Networking team to remove your 
+    # WITHOUT Consul running. If you are a service owner reading this comment,
+    # and have a consul dependency, please set 'requires_consul = True' in your
+    # pod definition. Then work with the Service Networking team to remove your
     # usage of Consul, as it is not a supported infrastructure component anymore.
     consul_agent_label_value = CONSUL_AGENT_ENABLED_LABEL_DISABLED
     if requires_consul == True:

@@ -1,9 +1,19 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/plugins/types.sky", "deployment_plugin")
-load("config/kubernetes/meta/metadata.sky", "render_metadata")
-load("config/kubernetes/helpers/context.sky", "get_env")
-load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_cluster", "is_faas_managed")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "HorizontalPodAutoscalerBehavior", "HPAScalingPolicy", "HPAScalingRules")
+load("config/kubernetes/meta/metadata.sky", "render_metadata")
+load("config/kubernetes/plugins/types.sky", "deployment_plugin")
+load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
+
+SCHEDULED_SCALE_UP_STRATEGY_WEEKDAY = "WEEKDAY"
+SCHEDULED_SCALE_UP_STRATEGY_WEEKDAY_START = "0 0 * * 1"
+SCHEDULED_SCALE_UP_STRATEGY_WEEKDAY_END = "0 0 * * 6"
+
+PROMETHEUS_METRIC_TYPE_AVERAGE_VALUE = "AverageValue"
+PROMETHEUS_METRIC_TYPE_VALUE = "Value"
+
+SCALE_POLICY_PODS = "Pods"
+SCALE_POLICY_PERCENT = "Percent"
 
 _scaledobject_scheme = {
     "apiVersion": "keda.sh/v1alpha1",
@@ -26,6 +36,10 @@ _scale_target_ref_scheme = {
 }
 
 _qa_prom_proxy_address = "http://promproxybox.northwest.qa.stripe.io/workspaces/ws-a4646237-800c-4429-a9a4-7f48a57821ee"
+_qa_cmh_prom_proxy_address = "http://promproxybox.cmh.qa.stripe.io/workspaces/ws-326c2f40-4d26-4523-b6fc-eaa97f7dfc99"
+_preprod_prom_proxy_address = "http://promproxybox.cmh.preprod.stripe.io/workspaces/ws-5b191ec7-bcca-40e6-9f0e-22b82d42146b"
+_prod_prom_proxy_address = "http://promproxybox.northwest.prod.stripe.io/workspaces/ws-94038c9f-4db6-468c-b51e-236c000204a8"
+_prod_cmh_prom_proxy_address = "http://promproxybox.cmh.prod.stripe.io/workspaces/ws-55d99ad8-fad6-4264-8d0f-a449a9be9fee"
 
 _prom_trigger_scheme = {
     "type": "prometheus",
@@ -35,7 +49,7 @@ _prom_trigger_scheme = {
 _prom_trigger_metadata_scheme = {
     "query": None,
     "threshold": None,
-    "serverAddress": _qa_prom_proxy_address,
+    "serverAddress": None,
 }
 
 _cron_trigger_scheme = {
@@ -83,6 +97,7 @@ _hpa_policy_scheme = {
 
 _cpu_trigger_scheme = {
     "type": "cpu",
+    "metricType": "Utilization",
     "metadata": {}
 }
 
@@ -92,6 +107,7 @@ _cpu_trigger_metadata_scheme = {
 
 _memory_trigger_scheme = {
     "type": "memory",
+    "metricType": "Utilization",
     "metadata": {}
 }
 
@@ -99,7 +115,7 @@ _memory_trigger_metadata_scheme = {
     "value": None,
 }
 
-def schedule_trigger(start, end, timezone = None, desired_replicas = None):
+def schedule_trigger(start = None, end = None, timezone = None, desired_replicas = None, strategy = None):
     """
     Returns a Schedule (Cron) Trigger. See https://keda.sh/docs/2.13/scalers/cron/
 
@@ -112,6 +128,9 @@ def schedule_trigger(start, end, timezone = None, desired_replicas = None):
 
         desired_replicas: Number of replicas to which the resource has to be scaled between the start and end of the cron schedule. (Can
             be different but less than max_replicas of the deployment)
+
+        strategy: a string represented one of a pre-defined set of scheduled scaling strategies
+            Supported Values: WEEKDAY
     Returns:
         A Schedule Trigger to be passed into scaledObject
     """
@@ -120,9 +139,10 @@ def schedule_trigger(start, end, timezone = None, desired_replicas = None):
         "end": end,
         "start": start,
         "desired_replicas": desired_replicas,
+        "strategy": strategy,
     }
 
-def prometheus_trigger(query, threshold):
+def prometheus_trigger(query, threshold, activation_threshold = None, query_parameters = None, metric_type = None):
     """
     Returns a Prometheus Trigger. See https://keda.sh/docs/2.13/scalers/prometheus/
 
@@ -130,12 +150,35 @@ def prometheus_trigger(query, threshold):
         query: PromQL query to run
 
         threshold: Value to start scaling for.
+
+        activation_threshold: Threshold to activate the trigger. Used for scaling from or to 0.
+
+        query_parameters: Parameters to inject to the query, used to make it easy to override a
+            query without change the query in the format of a comma seperated list of key=value pairs,
+            i.e "key1=value1,key2=~value2.*". See:
+            https://keda.sh/docs/2.14/scalers/prometheus/#trigger-specification
+
+        metric_type: The type of the metric retrieved from Prometheus which respect to how its
+            value will be used to compute scaling. There are two supported types:
+
+            AverageValue or PROMETHEUS_METRIC_TYPE_AVERAGE_VALUE (Default): The value averaged across all replicas
+                and the threshold given a per pod threshold. i.e If our metric is the queue size, the threshold is
+                5 messages, and the current message count in the queue is 20, HPA will scale the deployment to 20 / 5 = 4 replicas,
+                regardless of the current replica count.
+
+            Value or PROMETHEUS_METRIC_TYPE_VALUE: The value is not averaged across all replicas. If our metric is
+                average time in the queue, the threshold is 5 milliseconds, the current average time is 20 milliseconds,
+                and we currently have 3 pods, HPA will scale the deployment to 3 * (20 / 5) = 12.
+
     Returns:
         A Prometheus Trigger to be passed into scaledObject
     """
     return {
         "query": query,
+        "queryParameters": query_parameters,
         "threshold": threshold,
+        "activationThreshold": activation_threshold,
+        "metricType": metric_type,
     }
 
 def scale_policy(policy_type, value, period_seconds):
@@ -173,8 +216,9 @@ def _scaling_policy(ctx, policy):
 def _scaling_rules(ctx, scaling_rules):
     policies = []
 
-    for policy in scaling_rules["policies"]:
-        policies.append(_scaling_policy(ctx, policy))
+    if scaling_rules["select_policy"] != "Disabled":
+        for policy in scaling_rules["policies"]:
+            policies.append(_scaling_policy(ctx, policy))
 
     return HPAScalingRules(
         ctx,
@@ -197,8 +241,8 @@ def _default_scale_up_behavior(ctx):
         "select_policy": "Max",
         "stabilization_window_seconds": 60,
         "policies": [
-            scale_policy(policy_type = "Pods", value = 3, period_seconds = 60),
-            scale_policy(policy_type = "Percent", value = 10, period_seconds = 60),
+            scale_policy(policy_type = "Pods", value = 5, period_seconds = 60),
+            scale_policy(policy_type = "Percent", value = 25, period_seconds = 60),
         ],
     }
 
@@ -216,12 +260,17 @@ def _default_scale_down_behavior(ctx):
         "select_policy": "Min",
         "stabilization_window_seconds": 300,
         "policies": [
-            scale_policy(policy_type = "Pods", value = 3, period_seconds = 60),
+            scale_policy(policy_type = "Pods", value = 2, period_seconds = 60),
             scale_policy(policy_type = "Percent", value = 10, period_seconds = 60),
         ],
     }
 
-def _default_min_replicas(ctx, replicas):
+def _default_min_replicas(ctx, replicas, max_replicas):
+    if max_replicas != None and max_replicas > replicas:
+        # if max_replicas is passed, return replicas as the default as user
+        # intends to set up scaling up from current configured replica count
+        return replicas
+
     if get_env(ctx) == "qa":
         if replicas <= 2:
             return 1
@@ -229,7 +278,10 @@ def _default_min_replicas(ctx, replicas):
             return 2
     else:
         # preprod and prod min replica count is currently max - 1 or 90% of max replica count, which ever is larger.
-        if replicas >= 3 and replicas <= 10:
+        if replicas <= 3:
+            # ensure there are at least three replicas for AZ balancing
+            return replicas
+        if replicas > 3 and replicas <= 10:
             return replicas - 1
         else:
             return _ceildiv(replicas * 9, 10)
@@ -317,7 +369,7 @@ def scaled_object(
 
         scale_up_scaling_policies: Defines how fast to scale up and many pods to scale up. Generated by scale_policy helper below
             Default policy in QA is 1 pod or 10% of replicas, whichever is greater over a 60 second period based on the default of "Max"
-            for scale_up_select_policy. Default in Preprod/Prod is 3 Pods or 10% of Replicas.
+            for scale_up_select_policy. Default in Preprod/Prod is 5 Pods or 25% of Current Replicas.
 
         scale_up_select_policy: Defines which scaling policy to select. Global default is Max, meaning the policy that scales fastest is used.
 
@@ -357,37 +409,155 @@ def scaled_object(
     Returns:
         A plugin to add a ScaledObject to a resource
     """
-    return conditional_plugin(
-        condition=is_qa,
-        plugin=deployment_plugin(
-            _update_resource,
-            polling_interval = polling_interval,
+    return deployment_plugin(
+        _update_resource,
+        polling_interval = polling_interval,
+        cool_down_period = cool_down_period,
+        min_replicas=min_replicas,
+        max_replicas=max_replicas,
+        scale_up_scaling_policies = scale_up_scaling_policies,
+        scale_up_select_policy = scale_up_select_policy,
+        scale_up_stabilization_window_seconds = scale_up_stabilization_window_seconds,
+        scale_down_scaling_policies = scale_down_scaling_policies,
+        scale_down_select_policy = scale_down_select_policy,
+        scale_down_stabilization_window_seconds = scale_down_stabilization_window_seconds,
+        name = name,
+        fallback_threshold = fallback_threshold,
+        fallback_replicas = fallback_replicas,
+        restore_to_original_replica_count = restore_to_original_replica_count,
+        schedule_triggers = schedule_triggers,
+        prometheus_triggers = prometheus_triggers,
+        cpu_trigger = cpu_trigger,
+        memory_trigger = memory_trigger,
+        enable_immediate_scaling = enable_immediate_scaling,
+    )
+
+def scaled_object_plugin_from_compute_config(compute_config):
+    """
+    Returns a plugin that creates an KEDA ScaledObject CRD based on configuration in ComputeConfig
+
+    Args:
+        compute_config: Merged Compute V2 Config which may or may not contain autsocaling configuration
+
+    Returns:
+        A scaled object plugin if the compute config has autoscaling configuration
+    """
+    plugin = None
+
+    if (
+        compute_config and
+        compute_config["resources"] and
+        compute_config["resources"]["autoscaling"]
+    ):
+        autoscaling_cfg = compute_config["resources"]["autoscaling"]
+        min_replicas = autoscaling_cfg["min_replicas"]
+        max_replicas = autoscaling_cfg["max_replicas"]
+        enable_immediate_scaling = autoscaling_cfg.get("enable_immediate_scaling", False)
+        cool_down_period = autoscaling_cfg.get("cooldown_period_seconds", None)
+
+        prometheus_triggers = []
+        schedule_triggers = []
+        cpu_utilization_trigger = None
+        memory_utilization_trigger = None
+        scale_up_scaling_policies = []
+        scale_up_stabilization_window_seconds = None
+        scale_down_scaling_policies = []
+        scale_down_stabilization_window_seconds = None
+        scale_down_select_policy = None
+
+        if autoscaling_cfg.get("scaling_triggers", []) != []:
+            fail("scaling_triggers is deprecated, please use custom_scaling_trigger, cpu_scaling_trigger, or memory_scaling_trigger. See https://go/autoscaling/compute-config")
+        else:
+            # new scaling triggers configuration
+            if autoscaling_cfg.get("cpu_scaling_trigger"):
+                cpu_utilization_trigger = cpu_trigger(value = autoscaling_cfg["cpu_scaling_trigger"].get("utilization"))
+
+            if autoscaling_cfg.get("memory_scaling_trigger"):
+                memory_utilization_trigger = memory_trigger(value = autoscaling_cfg["memory_scaling_trigger"].get("utilization"))
+
+            for custom_scaling_triggers in autoscaling_cfg.get("custom_scaling_triggers", []):
+                if custom_scaling_triggers.get("prometheus"):
+                    prometheus_dict = custom_scaling_triggers["prometheus"]
+                    query = prometheus_dict.get("query")
+                    query_parameters = prometheus_dict.get("query_parameters")
+                    threshold = prometheus_dict.get("threshold")
+                    activation_threshold = prometheus_dict.get("activation_threshold", None)
+                    metric_type = prometheus_dict.get("metric_type")
+                    prometheus_triggers.append(prometheus_trigger(query = query, query_parameters = query_parameters, threshold = threshold, activation_threshold = activation_threshold, metric_type = metric_type))
+
+                if custom_scaling_triggers.get("schedule"):
+                    schedule_dict = custom_scaling_triggers["schedule"]
+                    strategy = schedule_dict.get("scale_up_strategy") if schedule_dict.get("scale_up_strategy", "") != "" else None
+                    start = schedule_dict.get("start")
+                    end = schedule_dict.get("end")
+                    desired_replicas = schedule_dict.get("desired_replicas")
+                    schedule_triggers.append(schedule_trigger(start = start, end = end, desired_replicas = desired_replicas, strategy = strategy ))
+
+        # Scaling policy proto
+        if autoscaling_cfg.get("scaling_policy"):
+            scaling_policy = autoscaling_cfg["scaling_policy"]
+            if scaling_policy.get("scale_up"):
+                scale_up = scaling_policy.get("scale_up")
+                scale_up_stabilization_window_seconds = scale_up.get("stabilization_window")
+                for policy in scale_up.get("policies", []):
+                    policy_type = ""
+                    if policy.get("type").lower() == SCALE_POLICY_PODS.lower():
+                        policy_type = "Pods"
+                    elif policy.get("type").lower() == SCALE_POLICY_PERCENT.lower():
+                        policy_type = "Percent"
+                    scale_up_scaling_policies.append(scale_policy(
+                        policy_type = policy_type,
+                        value = policy.get("value"),
+                        period_seconds = policy.get("period_seconds"),
+                    ))
+
+            if scaling_policy.get("scale_down"):
+                scale_down = scaling_policy.get("scale_down")
+                scale_down_stabilization_window_seconds = scale_down.get("stabilization_window")
+                if scale_down.get("disabled") == True:
+                    scale_down_select_policy = "Disabled"
+                else:
+                    for policy in scale_down.get("policies", []):
+                        policy_type = ""
+                        if policy.get("type").lower() == SCALE_POLICY_PODS.lower():
+                            policy_type = "Pods"
+                        elif policy.get("type").lower() == SCALE_POLICY_PERCENT.lower():
+                            policy_type = "Percent"
+                        scale_down_scaling_policies.append(scale_policy(
+                            policy_type = policy_type,
+                            value = policy.get("value"),
+                            period_seconds = policy.get("period_seconds"),
+                        ))
+
+
+        plugin = scaled_object(
+            min_replicas = min_replicas,
+            max_replicas = max_replicas,
+            enable_immediate_scaling = enable_immediate_scaling,
             cool_down_period = cool_down_period,
-            min_replicas=min_replicas,
-            max_replicas=max_replicas,
+            prometheus_triggers = prometheus_triggers,
+            schedule_triggers = schedule_triggers,
+            cpu_trigger = cpu_utilization_trigger,
+            memory_trigger = memory_utilization_trigger,
             scale_up_scaling_policies = scale_up_scaling_policies,
-            scale_up_select_policy = scale_up_select_policy,
             scale_up_stabilization_window_seconds = scale_up_stabilization_window_seconds,
             scale_down_scaling_policies = scale_down_scaling_policies,
             scale_down_select_policy = scale_down_select_policy,
             scale_down_stabilization_window_seconds = scale_down_stabilization_window_seconds,
-            name = name,
-            fallback_threshold = fallback_threshold,
-            fallback_replicas = fallback_replicas,
-            restore_to_original_replica_count = restore_to_original_replica_count,
-            schedule_triggers = schedule_triggers,
-            prometheus_triggers = prometheus_triggers,
-            cpu_trigger = cpu_trigger,
-            memory_trigger = memory_trigger,
-            enable_immediate_scaling = enable_immediate_scaling,
-        ),
-    )
+        )
+
+    return plugin
 
 def _update_resource(ctx, args, resource_def):
+    if "scaledobject" in resource_def:
+        # do not override ScaledObjects values if they're already been set
+        # this allows services to override default ScaledObject behavior as
+        # their plugin will be evalated before the default plugin
+        return
 
     scale_up_behavior = _default_scale_up_behavior(ctx)
 
-    if args.scale_up_scaling_policies != None:
+    if args.scale_up_scaling_policies != None and args.scale_up_scaling_policies != []:
         scale_up_behavior["policies"] = args.scale_up_scaling_policies
 
     if args.scale_up_select_policy != None:
@@ -398,7 +568,7 @@ def _update_resource(ctx, args, resource_def):
 
     scale_down_behavior = _default_scale_down_behavior(ctx)
 
-    if args.scale_down_scaling_policies != None:
+    if args.scale_down_scaling_policies != None and args.scale_down_scaling_policies != []:
         scale_down_behavior["policies"] = args.scale_down_scaling_policies
 
     if args.scale_down_select_policy != None:
@@ -406,6 +576,20 @@ def _update_resource(ctx, args, resource_def):
 
     if args.scale_down_stabilization_window_seconds != None:
         scale_down_behavior["stabilization_window_seconds"] = args.scale_down_stabilization_window_seconds
+
+    if args.enable_immediate_scaling == True:
+        # Apply the external-scaling-control annotation to the parent deployment to preserve replica counts between
+        # deployments until the HPA retakes control of replica count management. What this annotation does is tell Henson-Agent to use the replica count of the
+        # old deployment in the new deployment object. This prevents the PUT of the updated deployment from temporarily overriding the replica
+        # count set by the HPA on the previous deployment, thus averting situations where new deployments scale down deployments despite
+        # the HPA desiring otherwise (i.e wants a higher replica count). Additonally, this annotation will preserve replica counts between old and new deployments
+        # in presence of an autoscaling lock.
+
+        # The preferred method in Kubernetes is to remove the replica count from the deployment all together and PATCH the live deployment, but we use
+        # PUTS in henson-agent so we need to do this instead.
+        resource_def['metadata']['annotations'].update({
+            "stripe.io/external-scaling-control": "yes",
+        })
 
     resource_def["scaledobject"] = {
         "render": _render_scaledobject,
@@ -432,16 +616,13 @@ def _render_scaledobject(ctx, so_mapping, default_replicas, shared_msp):
         # We don't support HPAs in dedicated MSP
         return None
 
-    if get_env(ctx) != "qa":
-        fail("Custom Metrics Scaling is only support in QA")
-
     so_mapping = struct(**so_mapping)
     metadata = struct(**so_mapping.metadata)
 
     so_obj = dict(_scaledobject_scheme)
     spec = dict(_spec_scheme)
 
-    spec["minReplicaCount"] = _default_min_replicas(ctx, default_replicas)
+    spec["minReplicaCount"] = _default_min_replicas(ctx, default_replicas, so_mapping.max_replicas)
     if so_mapping.min_replicas != None:
         spec["minReplicaCount"] = so_mapping.min_replicas
 
@@ -449,12 +630,6 @@ def _render_scaledobject(ctx, so_mapping, default_replicas, shared_msp):
         spec["maxReplicaCount"] = so_mapping.max_replicas
     else:
         spec["maxReplicaCount"] = default_replicas
-
-    # Replica configuration checks
-    if default_replicas < 1:
-        # This is an unsupported state. We don't support scaling on 0 replica deployments yet.
-        # We require deployments to have at least 1 replica at deployment time so that healthchecks can pass.
-        return None
 
     if spec["minReplicaCount"] > default_replicas:
         # The defaults do not allow for a min replica count higher than the default replica count, so we assume
@@ -471,12 +646,29 @@ def _render_scaledobject(ctx, so_mapping, default_replicas, shared_msp):
         # where all values are equal and scaling is technically disabled. Therefore, we just render nothing
         return None
 
-    # disable scaling initially and set the replicas at deployment to the value set for the deployment if enable_immediate_scaling
-    # is set to false or min_replica count is 0.
-    if so_mapping.enable_immediate_scaling == False or spec["minReplicaCount"] == 0:
+    if spec["minReplicaCount"] == 0 and not (is_faas_managed(ctx) or get_env(ctx) == "qa"):
+        # only allow min_replicas = 0 if in QA or the service is a workflow.
+        fail("Setting min replicas to 0 is only supported for FAAS-managed workflows and QA service. If you have a valid case for scaling to 0 in Production, please reach out to #msp")
+
+    # disable scaling initially and set the replicas at deployment to the value set for the deployment if enable_immediate_scaling is
+    # false
+    if so_mapping.enable_immediate_scaling == False:
         metadata.annotations.update({
             "autoscaling.keda.sh/paused-replicas": "%d" % default_replicas,
         })
+
+    # Add annotations used for tracking cost savings
+    metadata.annotations.update({
+        "stripe.io/hpa-min-replicas": "%d" % spec["minReplicaCount"],
+    })
+
+    metadata.annotations.update({
+        "stripe.io/hpa-original-replicas": "%d" % default_replicas,
+    })
+
+    metadata.annotations.update({
+        "stripe.io/hpa-max-replicas": "%d" % spec["maxReplicaCount"],
+    })
 
     metadata_obj = render_metadata(
         ctx,
@@ -493,19 +685,12 @@ def _render_scaledobject(ctx, so_mapping, default_replicas, shared_msp):
     if so_mapping.cool_down_period != None:
         spec["cooldownPeriod"] = so_mapping.cool_down_period
 
-    fallback_configuration = dict(_fallback_scheme)
-
-    # Default fallback for AverageValue type scalers (Prometheus and Schedule) will be 3 failures and scale to DefaultReplicas
-    fallback_configuration["failureThreshold"] = 3
-    fallback_configuration["replicas"] = default_replicas
-
-    if so_mapping.fallback_threshold != None:
+    if so_mapping.fallback_threshold != None and so_mapping.fallback_replicas != None:
+        # Both fields are required for fallback configuration
+        fallback_configuration = dict(_fallback_scheme)
         fallback_configuration["failureThreshold"] = so_mapping.fallback_threshold
-
-    if so_mapping.fallback_replicas != None:
         fallback_configuration["replicas"] = so_mapping.fallback_replicas
-
-    spec["fallback"] = fallback_configuration
+        spec["fallback"] = fallback_configuration
 
     behavior = HorizontalPodAutoscalerBehavior(
         ctx,
@@ -514,6 +699,11 @@ def _render_scaledobject(ctx, so_mapping, default_replicas, shared_msp):
     )
 
     hpa_configuration = dict(_hpa_scheme)
+
+    # Give the generated HPA the same name as the deployment and Scaled Object
+    # so amp workflows continue to work rather than the default keda-hpa prefixed
+    # name
+    hpa_configuration["name"] = metadata_obj["name"]
     if so_mapping.name != None:
         hpa_configuration["name"] = so_mapping.name
 
@@ -527,14 +717,25 @@ def _render_scaledobject(ctx, so_mapping, default_replicas, shared_msp):
 
     spec["advanced"] = advanced
 
+
     triggers = []
     if so_mapping.schedule_triggers != None:
         for schedule_trigger in so_mapping.schedule_triggers:
             trigger = dict(_cron_trigger_scheme)
             trigger["metadata"] = dict(_cron_trigger_metadata_scheme)
 
-            trigger["metadata"]["start"] = schedule_trigger["start"]
-            trigger["metadata"]["end"] = schedule_trigger["end"]
+            if schedule_trigger["strategy"] != None:
+                if schedule_trigger["strategy"].lower() == SCHEDULED_SCALE_UP_STRATEGY_WEEKDAY.lower():
+                    trigger["metadata"]["start"] = SCHEDULED_SCALE_UP_STRATEGY_WEEKDAY_START
+                    trigger["metadata"]["end"] = SCHEDULED_SCALE_UP_STRATEGY_WEEKDAY_END
+                else:
+                    fail("An unsuuported scheduled scaling strategy was provided")
+            elif schedule_trigger["start"] != None and schedule_trigger["end"] != None :
+                trigger["metadata"]["start"] = schedule_trigger["start"]
+                trigger["metadata"]["end"] = schedule_trigger["end"]
+            else:
+                fail("A strategy or an explicit start/end must be specified if using a schedule trigger")
+
             if schedule_trigger["timezone"] != None:
                 trigger["metadata"]["timezone"] = schedule_trigger["timezone"]
 
@@ -551,26 +752,62 @@ def _render_scaledobject(ctx, so_mapping, default_replicas, shared_msp):
             trigger = dict(_prom_trigger_scheme)
             trigger["metadata"] = dict(_prom_trigger_metadata_scheme)
 
+            if prometheus_trigger["query"] == None:
+                fail("A PromQL query is required when using prometheus scaling trigggers")
+
             trigger["metadata"]["query"] = prometheus_trigger["query"]
+
+            if prometheus_trigger["threshold"] == None:
+                fail("A threshold is required when using prometheus scaling trigggers")
+
             trigger["metadata"]["threshold"] = prometheus_trigger["threshold"]
+
+            if prometheus_trigger["activationThreshold"] != None and prometheus_trigger["activationThreshold"] != "":
+                trigger["metadata"]["activationThreshold"] = prometheus_trigger["activationThreshold"]
+
+            if prometheus_trigger["queryParameters"] != None:
+                trigger["metadata"]["queryParameters"] = prometheus_trigger["queryParameters"]
+
+            if prometheus_trigger["metricType"] != None or prometheus_trigger["metricType"] != "":
+                trigger["metricType"] = prometheus_trigger["metricType"]
+
+            server_address = ""
+            if get_env(ctx) == "qa":
+                if get_cluster(ctx) == "cmh":
+                    server_address = _qa_cmh_prom_proxy_address
+                else:
+                    server_address = _qa_prom_proxy_address
+            elif get_env(ctx) == "preprod":
+                server_address = _preprod_prom_proxy_address
+            else:
+                if get_cluster(ctx) == "cmh":
+                    server_address = _prod_cmh_prom_proxy_address
+                else:
+                    server_address = _prod_prom_proxy_address
+
+            trigger["metadata"]["serverAddress"] = server_address
+
             triggers.append(trigger)
 
     if so_mapping.cpu_trigger != None:
         trigger = dict(_cpu_trigger_scheme)
 
         trigger["metadata"] = dict(_cpu_trigger_metadata_scheme)
+        # Value field is a string for scaling triggers
+        if so_mapping.cpu_trigger["value"] == None:
+            trigger["metadata"]["value"] = "%d" % _default_cpu_utilization_threshold_percent(ctx)
+        else:
+            trigger["metadata"]["value"] = "%d" % so_mapping.cpu_trigger["value"]
 
-        trigger["metadata"]["value"] = so_mapping.cpu_trigger["value"]
-        if trigger["metadata"]["value"] == None:
-            trigger["metadata"]["value"] = _default_cpu_utilization_threshold_percent(ctx)
         triggers.append(trigger)
 
-    if so_mapping.memory_trigger != None:
+    if so_mapping.memory_trigger != None and so_mapping.memory_trigger.get("value") != None :
         trigger = dict(_memory_trigger_scheme)
 
+        # Value field is a string for scaling triggers
         trigger["metadata"] = dict(_memory_trigger_metadata_scheme)
+        trigger["metadata"]["value"] = "%d" % so_mapping.memory_trigger["value"]
 
-        trigger["metadata"]["value"] = so_mapping.memory_trigger["value"]
         triggers.append(trigger)
 
     spec["triggers"] = triggers

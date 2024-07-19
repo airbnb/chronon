@@ -1,4 +1,3 @@
-apiori/gopiori
 stripe-internal/cerebro-shell
 stripe-internal/corpeng
 stripe-internal/corpnet
@@ -19,7 +18,6 @@ stripe-internal/third-party-containers
 stripe-internal/zoolander
 stripe-private-oss-forks/SudachiDict
 stripe-private-oss-forks/airflow
-stripe-private-oss-forks/amazon-vpc-cni-k8s
 stripe-private-oss-forks/amazon-vpc-cni-k8s
 stripe-private-oss-forks/bazel
 stripe-private-oss-forks/boto

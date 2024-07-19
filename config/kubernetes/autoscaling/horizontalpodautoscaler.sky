@@ -1,8 +1,5 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/helpers/proto_or_yaml.sky", "HorizontalPodAutoscaler", "CrossVersionObjectReference", "HorizontalPodAutoscalerBehavior", "HorizontalPodAutoscalerSpec", "HPAScalingPolicy", "HPAScalingRules", "MetricSpec", "MetricTarget", "ResourceMetricSource")
-load("config/kubernetes/plugins/types.sky", "deployment_plugin")
-load("config/kubernetes/meta/metadata.sky", "render_metadata")
-load("config/kubernetes/helpers/context.sky", "get_env")
+load("config/kubernetes/crds/keda/scaledobject.sky", "cpu_trigger", "memory_trigger", "scaled_object", scaled_object_scale_policy = "scale_policy")
 
 def horizontal_pod_autoscaler(
         min_replicas = None,
@@ -16,7 +13,9 @@ def horizontal_pod_autoscaler(
         memory_utilization_percent = None,
 ):
     """
-    Returns a plugin that creates an HPA to be deployed with a deployment.
+    Returns a plugin that creates an ScaledObject to be deployed with a deployment.
+
+    This plugin wraps around ScaledObject for legacy reasons. All HPAs are now created through KEDA.
 
     All parameters are optional and any parameter not is given an environment appropriate default in the following methods:
         _default_min_replicas
@@ -62,31 +61,26 @@ def horizontal_pod_autoscaler(
     Returns:
         A plugin to add a HPA to a resource
     """
-    return deployment_plugin(
-        _update_resource,
+    return scaled_object(
         min_replicas = min_replicas,
-        cpu_utilization_percent = cpu_utilization_percent,
+        cpu_trigger = cpu_trigger(value = cpu_utilization_percent),
+        memory_trigger = memory_trigger(value = memory_utilization_percent),
         scale_up_scaling_policies = scale_up_scaling_policies,
         scale_up_select_policy = scale_up_select_policy,
         scale_up_stabilization_window_seconds = scale_up_stabilization_window_seconds,
         scale_down_scaling_policies = scale_down_scaling_policies,
         scale_down_select_policy = scale_down_select_policy,
         scale_down_stabilization_window_seconds = scale_down_stabilization_window_seconds,
-        memory_utilization_percent = memory_utilization_percent,
     )
 
 def scale_policy(policy_type, value, period_seconds):
     """
     Returns a scale policy.
-
     Args:
         policy_type: Whether this is a policy for scaling by absolute Pod count or by Percentage. Accepted values are "Pods" or "Percent"
-
         value: Amount of change permitted by the policy. If policy is "Pods", this is number of pods. If Policy is "Percentage", it is percentage of
             replica count to scale up.
-
         period_seconds: the window of time for which the policy should hold true.
-
     Returns:
         A scale policy to use in the HPA plugin
     """
@@ -98,256 +92,3 @@ def scale_policy(policy_type, value, period_seconds):
     }
 
     return policy
-
-def _update_resource(ctx, plugin, resource_def):
-    if "horizontalpodautoscaler" in resource_def:
-        # do not override HPA values if they're already been set
-        # this allows services to override default HPA behavior as
-        # their plugin will be evalated before the default plugin
-        return
-
-    cpu_utilization_percent = _default_cpu_utilization_threshold_percent(ctx)
-    if plugin.cpu_utilization_percent != None:
-        cpu_utilization_percent = plugin.cpu_utilization_percent
-
-    memory_utilization_percent = None
-    if plugin.memory_utilization_percent != None:
-        memory_utilization_percent = plugin.memory_utilization_percent
-
-    metrics = [
-        {
-            "type": "Resource",
-            "resource": {"name": "cpu"},
-            "target": {
-                "type": "Utilization",
-                "averageUtilization": cpu_utilization_percent,
-            },
-        }
-    ]
-
-    if memory_utilization_percent != None:
-        metrics.append(
-            {
-                "type": "Resource",
-                "resource": {"name": "memory"},
-                "target": {
-                    "type": "Utilization",
-                    "averageUtilization": memory_utilization_percent,
-                },
-            }
-        )
-
-    scale_up_behavior = _default_scale_up_behavior(ctx)
-
-    if plugin.scale_up_scaling_policies != None:
-        scale_up_behavior["policies"] = plugin.scale_up_scaling_policies
-
-    if plugin.scale_up_select_policy != None:
-         scale_up_behavior["select_policy"] = plugin.scale_up_select_policy
-
-    if plugin.scale_up_stabilization_window_seconds != None:
-        scale_up_behavior["stabilization_window_seconds"] = plugin.scale_up_stabilization_window_seconds
-
-    scale_down_behavior = _default_scale_down_behavior(ctx)
-
-    if plugin.scale_down_scaling_policies != None:
-        scale_down_behavior["policies"] = plugin.scale_down_scaling_policies
-
-    if plugin.scale_down_select_policy != None:
-        scale_down_behavior["select_policy"] = plugin.scale_down_select_policy
-
-    if plugin.scale_down_stabilization_window_seconds != None:
-        scale_down_behavior["stabilization_window_seconds"] = plugin.scale_down_stabilization_window_seconds
-
-
-    resource_def["horizontalpodautoscaler"] = {
-        "render": _render_horizontalpodautoscaler,
-        "metadata": resource_def["metadata"],
-        "metrics": metrics,
-        "min_replicas": plugin.min_replicas,
-        "scale_up_behavior": scale_up_behavior,
-        "scale_down_behavior": scale_down_behavior,
-    }
-
-def _default_min_replicas(ctx, replicas):
-    if get_env(ctx) == "qa":
-        # qa scaling policy is to scale down replicas by 30%, i.e minRelicas = 70% of max (7/10) of replica count passed to the deployment
-        if replicas == 2:
-            return 1
-        else:
-            return 2
-    else:
-        # preprod and prod min replica count is currently max - 1 or 90% of max replica count, which ever is larger.
-        if replicas >= 3 and replicas <= 10:
-            return replicas - 1
-        else:
-            return _ceildiv(replicas * 9, 10)
-
-def _default_cpu_utilization_threshold_percent(ctx):
-    if get_env(ctx) == "qa":
-        # In QA, set target CPU utilization to 30%
-        # TODO: Increase to 50%
-        return 30
-    else:
-        # In Preprod and Prod, set target CPU utilization to 30%
-        # TODO: Increase to 50%
-        return 30
-
-def _default_scale_up_behavior(ctx):
-    if get_env(ctx) == "qa":
-        return {
-            "select_policy": "Max",
-            "stabilization_window_seconds": 60,
-            "policies": [
-                scale_policy(policy_type = "Pods", value = 1, period_seconds = 60),
-                scale_policy(policy_type = "Percent", value = 10, period_seconds = 60),
-            ],
-        }
-    else:
-        return {
-            "select_policy": "Max",
-            "stabilization_window_seconds": 60,
-            "policies": [
-                scale_policy(policy_type = "Pods", value = 3, period_seconds = 60),
-                scale_policy(policy_type = "Percent", value = 10, period_seconds = 60),
-            ],
-        }
-
-def _default_scale_down_behavior(ctx):
-    if get_env(ctx) == "qa":
-        return {
-            "select_policy": "Min",
-            "stabilization_window_seconds": 300,
-            "policies": [
-                scale_policy(policy_type = "Pods", value = 1, period_seconds = 60),
-                scale_policy(policy_type = "Percent", value = 10, period_seconds = 60),
-            ],
-        }
-    else:
-        return {
-            "select_policy": "Min",
-            "stabilization_window_seconds": 300,
-            "policies": [
-                scale_policy(policy_type = "Pods", value = 3, period_seconds = 60),
-                scale_policy(policy_type = "Percent", value = 10, period_seconds = 60),
-            ],
-        }
-
-def _render_horizontalpodautoscaler(ctx, hpa_def, replicas, shared_msp):
-    if not shared_msp:
-        # We don't support HPAs in dedicated MSP
-        return None
-
-    # we need to do replica manipulation here on render as it is after (unlike other parameters)
-    # all plugins are applied that the replica count of the deployment is available
-    if replicas < 2:
-        # if replica count is less than 2, do not add an HPA
-        return None
-
-    metadata = struct(**hpa_def["metadata"])
-
-    min_replicas = _default_min_replicas(ctx, replicas)
-    if hpa_def["min_replicas"] != None:
-        min_replicas = int(hpa_def["min_replicas"] or 0)
-
-    if min_replicas == 0:
-        # This is a fail case as it means someone added the HPA plugin to their deployment
-        # to try and set min replicas to 0 (or something broke in our math)
-        fail("0 minReplicas is not supported")
-
-    # min_replicas is set as an annotation so it can be read by henson to enable
-    # autoscaling in the final stage of a deployment
-    metadata.annotations.update({
-        "stripe.io/hpa-min-replicas": "%d" % min_replicas,
-    })
-
-    metrics_spec_list = []
-    for metric in hpa_def["metrics"]:
-        metrics_spec = _metricspec(ctx, metric)
-        metrics_spec_list.append(metrics_spec)
-
-    behavior = HorizontalPodAutoscalerBehavior(
-        ctx,
-        scaleUp = _scaling_rules(ctx, hpa_def["scale_up_behavior"]),
-        scaleDown = _scaling_rules(ctx, hpa_def["scale_down_behavior"])
-    )
-
-    # render the metadata here so we can get the right name for the scale target
-    # i.e blue/green is suffixed to the name of an object when metadata is rendered
-    metadata_obj = render_metadata(ctx, metadata)
-    target_name = ""
-    target_name = metadata_obj["name"]
-
-    spec = HorizontalPodAutoscalerSpec(
-        ctx,
-        metrics = metrics_spec_list,
-        minReplicas = replicas,
-        maxReplicas = replicas,
-        scaleTargetRef = _object_reference(ctx, target_name),
-        behavior = behavior
-    )
-
-    return HorizontalPodAutoscaler(ctx,
-        metadata = metadata_obj,
-        spec = spec
-    )
-
-def _object_reference(ctx, name, kind = "Deployment", apiVersion = "apps/v1"):
-    object_reference = CrossVersionObjectReference(ctx)
-
-    # Skycfg drops apiVersion and kind when passed through the object constructuro in Proto mode
-    # so we need to set them on the object here.
-    object_reference["kind"] = kind
-    object_reference["name"] = name
-    object_reference["apiVersion"] = apiVersion
-
-
-    return object_reference
-
-def _scaling_policy(ctx, policy):
-    return HPAScalingPolicy(
-        ctx,
-        type = policy["type"],
-        value = policy["value"],
-        periodSeconds = policy["period_seconds"]
-    )
-
-def _scaling_rules(ctx, scaling_rules):
-    policies = []
-
-    for policy in scaling_rules["policies"]:
-        policies.append(_scaling_policy(ctx, policy))
-
-    return HPAScalingRules(
-        ctx,
-        stabilizationWindowSeconds = scaling_rules["stabilization_window_seconds"],
-        selectPolicy = scaling_rules["select_policy"],
-        policies = policies
-    )
-
-def _metricspec(ctx, metric_def):
-    metric = struct(**metric_def)
-
-    return MetricSpec(
-        ctx,
-        type = metric.type,
-        resource = _resource_metric_source(ctx, resource = metric.resource, target = metric.target)
-    )
-
-def _metric_target(ctx, metric):
-    return MetricTarget(
-        ctx,
-        type = "Utilization",
-        averageUtilization = metric["averageUtilization"]
-    )
-
-def _resource_metric_source(ctx, resource, target):
-    return ResourceMetricSource(
-        ctx,
-        name = resource["name"],
-        target = _metric_target(ctx, target)
-    )
-
-def _ceildiv(a, b):
-    # use upside-down floor division as a work around for not having the math library available
-    return -(a // -b)

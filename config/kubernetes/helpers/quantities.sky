@@ -155,3 +155,19 @@ def gigabytes(ctx, val):
         fail("Called gigabytes with a non-integer")
 
     return Quantity(ctx, string = "%dG" % val)
+
+def mebibytes_to_int(ctx, quantity):
+    """
+    Convert a Mebibytes to an integer.
+
+    Args:
+        quantity: A Mebibyte quantity object.
+
+    Returns:
+        An integer representing the quantity.
+    """
+    if not quantity.endswith("Mi"):
+        fail("mebibytes_to_int only supports mebibytes")
+    if len(quantity) < 3:
+        fail("invalid format")
+    return int(quantity[:-2])

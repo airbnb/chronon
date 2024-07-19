@@ -62,11 +62,11 @@ review_requirements:
   reviewers:
   - codeowners-orchestration
   reviewers_in_training:
-  - felixliu
-
+  - qzsun
 - files:
   - sidecars/memcontainer.sky
   assignees:
   - codeowners-distributed-caching-platform
   reviewers:
   - codeowners-distributed-caching-platform
+  - codeowners-orchestration

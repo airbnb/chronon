@@ -39,7 +39,10 @@ DEFAULT_PAY_SERVER_IMAGE = image_defaults(
     name = None,
     artifact = "pay-server-image",
 )
-KUBECRON_FAILOVER_SHARD = "kubeapidd"
+CLUSTER_SHARD_FAILOVER_MAP = {
+    "northwest" : "kubeapidd",
+    "cmh" : "kubeapiaa"
+}
 DEFAULT_SHARD = "kubemaster"
 LABEL_USER_DISABLED = "stripe.io/disabled-by-user"
 LABEL_BACKUP = "stripe.io/backup"
@@ -217,20 +220,22 @@ def pay_server_cronjob(
             "bom": [DEFAULT_SHARD],
         }
     deploy_shards = shards_by_cluster.get(get_cluster(ctx), [])
-    should_disable_backup = True
-    # Additionally deploy to the kubecron-failover shard for northwest crons.
-    if get_cluster(ctx) == "northwest":
-        if KUBECRON_FAILOVER_SHARD not in deploy_shards:
-            deploy_shards.append(KUBECRON_FAILOVER_SHARD)
+    deploy_backup_as_disabled = True
+    # Additionally deploy to the northwest-kubeapidd or cmh-kubeapiaa shard for non-preprod environments.
+    if (get_cluster(ctx) in ["northwest", "cmh"]) and get_env(ctx) != "preprod":
+        failoverShard = CLUSTER_SHARD_FAILOVER_MAP[get_cluster(ctx)]
+        if failoverShard not in deploy_shards:
+            deploy_shards.append(failoverShard)
         else:
             # We dont want to suspend crons in backup for this particular cron as this
             # cron is specifically being created in backup shard.
-            should_disable_backup = False
+            deploy_backup_as_disabled = False
     out_crons = []
     extra_labels = {}
     extra_labels[LABEL_USER_DISABLED] = str(disabled).lower()
+    cluster = get_cluster(ctx)
     for s in deploy_shards:
-        if s == KUBECRON_FAILOVER_SHARD and should_disable_backup:
+        if cluster in CLUSTER_SHARD_FAILOVER_MAP and s == CLUSTER_SHARD_FAILOVER_MAP[cluster] and deploy_backup_as_disabled:
             extra_labels[LABEL_BACKUP] = "true"
             # We deploy a disabled copy of the cron in backup shard.
             disabled = True

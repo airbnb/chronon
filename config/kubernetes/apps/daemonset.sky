@@ -137,7 +137,8 @@ def mspworker_daemonset(ctx, name, shard, *plugins, max_unavailable = None, node
         msp_shard(shard),
         add_toleration(key = "stripe.io/pod-evictor", operator = "Exists", effect = "NoExecute"),
         add_toleration(key = "msp.stripe.io/host-set-template", operator = "Exists", effect = "NoSchedule"),
-        add_toleration(key = "stripe.io/henson-service", operator = "Exists", effect = "NoSchedule")
+        add_toleration(key = "stripe.io/henson-service", operator = "Exists", effect = "NoSchedule"),
+        add_toleration(key = "stripe.io/msp-fleet-manager", operator = "Exists", effect = "NoSchedule")
     ]
 
     if node_selectors_map == None:

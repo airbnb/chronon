@@ -78,15 +78,6 @@ def generate_destination(config):
     ]
 
 
-def generate_monster_config_service(config):
-    return [
-        "--monster-config-service",
-        get_worker_envoy_address_from_consul(
-            generate_consul_name(config.monster_isolation_group, "config-workers")
-        ),
-    ]
-
-
 def generate_parallel(config):
     parallel = 64 if is_fanout_retry(config) else 256
 
@@ -245,7 +236,6 @@ def monster_fanout_deployment(ctx, config):
         generate_output(config),
         ["--submission-dead-letter-topic", "monster.insert.deadletter.{}".format(config.monster_isolation_group)],
         generate_destination(config),
-        generate_monster_config_service(config),
         ["--name", name],
         generate_parallel(config),
         generate_request_timeout(config),

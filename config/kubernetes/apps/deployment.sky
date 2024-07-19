@@ -19,14 +19,14 @@ load("config/kubernetes/plugins/types.sky", "deployment_plugin")
 load("config/kubernetes/sidecars/metrics.sky", "metrics")
 load("config/kubernetes/sidecars/sansshell.sky", "sansshell_sidecar")
 load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
-load("config/kubernetes/helpers/context.sky", "get_blue_green_color", "get_env", "is_bin_packing_enabled", "is_horizontal_pod_autoscaling_enabled", "is_isolated_deploy", "is_vertical_pod_autoscaling_enabled", "get_name", "get_repo")
+load("config/kubernetes/helpers/context.sky", "get_blue_green_color", "get_env", "is_bin_packing_enabled", "is_horizontal_pod_autoscaling_enabled", "is_isolated_deploy", "is_vertical_pod_autoscaling_enabled", "get_name", "get_repo", "is_isolated_account_identity_enabled")
 load("config/kubernetes/core/volume.sky", "volume_mount_all_containers")
 load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes", "LDAP_MOUNT_NAME")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Deployment", "DeploymentSpec")
 load("config/kubernetes/core/generic.sky", "is_security_group_policy_enabled")
 load("config/kubernetes/autoscaling/horizontalpodautoscaler.sky", "horizontal_pod_autoscaler")
 load("config/kubernetes/autoscaling/verticalpodautoscaler.sky", "vertical_pod_autoscaler")
-load("config/kubernetes/helpers/resource_sharing.sky", "share_resources_with_envoy", "maybe_clear_sidecar_resources", "maybe_add_overhead_for_kata")
+load("config/kubernetes/helpers/resource_sharing.sky", "share_resources_with_envoy", "maybe_clear_sidecar_resources", "maybe_add_overhead_for_kata", "adjust_resources_for_sidecar")
 load("config/kubernetes/helpers/constants.sky", "ENVOY_CONFIG_SRV_SIDECAR_NAME", "HOST_HEALTH_AGENT_SIDECAR_NAME")
 load("config/kubernetes/stripe.sky", "CONSUL_AGENT_ENABLED_LABEL", "CONSUL_AGENT_ENABLED_LABEL_DISABLED")
 load("config/kubernetes/core/container.sky", "container", "container_resources")
@@ -36,6 +36,7 @@ load("config/kubernetes/helpers/aws_instance_sizes.sky","get_graviton_eq_instanc
 load("config/kubernetes/core/env_var.sky", "container_env_vars", "all_containers_env_vars")
 load("config/kubernetes/helpers/binpacking.sky", "bin_packing")
 load("config/kubernetes/priority-tiers/host_isolation_allowlist.sky", "HOST_ISOLATION_ALLOWLIST")
+load("config/kubernetes/pay-server.sky", "pay_server_per_priority_tier_env_vars")
 
 def deployment(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False, graviton_migration_enabled=False, graviton_migration_size=0, graviton_migration_target_6g=False, set_require_zone_balance_with_skew=1, set_require_node_balance_with_skew=-1,**kwargs):
     """
@@ -199,6 +200,8 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
                 if host_isolation_enabled_without_allowlist_config:
                     fail(service_name + " must be added to host_isolation_allowlist.sky")
 
+                _apply_plugin(ctx, pay_server_per_priority_tier_env_vars(ctx, priority_tier), deployment)
+
             # These will either both be set OR both be unset.
             if priority_tier and priority_tier_header:
                 _apply_plugin(ctx, compose_plugins(container_env_vars({"SERVER_PRIORITY_TIER": priority_tier, "PRIORITY_TIER_HEADER": priority_tier_header.lower()})), deployment)
@@ -258,6 +261,9 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
         if _should_add_vpa_plugin(ctx):
             _apply_plugin(ctx, compose_plugins(vertical_pod_autoscaler()), deployment)
 
+        if is_isolated_account_identity_enabled(ctx):
+            deployment["pod"]["resource"]["metadata"]["annotations"]["stripe.io/iam-role-account-affinity"] = "FROM_ENVIRONMENT"
+
     # Mount ldap volumes to a container if a host mount named etc-lmscache does not exist.
     # Repeatedly mounting the same directory causes a failed deploy.
     # Currently, some services explicitly mount etc-lmscache by calling this plugin.
@@ -273,13 +279,16 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
     if deployment.get("plugin_overrides") != None:
         _apply_plugin(ctx, compose_plugins(*deployment.get("plugin_overrides")), deployment)
 
-    # add the resource sharing plugin (this plugin will apply itself if the pod is Shared MSP)
-    # this plugin should come fairly late in the `deployment` sequence as it needs to examine and modify multiple
+    # add the resource sharing plugins (these plugins will apply itself if the pod is Shared MSP)
+    # these plugins should come fairly late in the `deployment` sequence as it needs to examine and modify multiple
     # pod containers
     _apply_plugin(
         ctx,
         compose_plugins(
+            # NOTE: Once we support setting resource req/limits across sidecars, refactor
+            # envoy CPU sharing with adjust_resources_for_sidecar().
             share_resources_with_envoy(),
+            adjust_resources_for_sidecar(),
 
             # These two plugins are noops unless this pod is BinPacked.
             maybe_clear_sidecar_resources(),
@@ -367,7 +376,7 @@ def _render_deployment(ctx, deployment_def):
     if "verticalpodautoscaler" in deployment_def and "pod" in deployment_def:
         vpa_obj = deployment.verticalpodautoscaler["render"](ctx, deployment.verticalpodautoscaler, shared_msp, main_container(deployment.pod))
 
-    if "scaledobject" in deployment_def and get_env(ctx) == "qa":
+    if "scaledobject" in deployment_def:
         # Custom Scaling is currently in POC in QA only
         so_obj = deployment.scaledobject["render"](ctx, deployment.scaledobject, deployment.kwargs["replicas"], shared_msp)
 

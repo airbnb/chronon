@@ -18,7 +18,8 @@ def artifactory_publish_job(
     package_type,
     package_image,
     packages,
-    *extra_plugins
+    *extra_plugins,
+    **kwargs
 ):
     """
     Constructs a job which will publish a collection of packages of the specified type to
@@ -28,13 +29,15 @@ def artifactory_publish_job(
         ctx: The Skycfg context from the `main` function.
         service_name: The henson service name for this publish job.
         package_type: The kind of package to publish. Currently the following types are
-            supported: ["npm"]
+            supported: ["npm", "pypi"]
         package_image: The name of the container image artifact that contains the packages
             to publish and the publish script.
         packages: A list of package filenames, relative to the working directory of the
             container image.
         *extra_plugins: Any additional plugins beyond the minimal set needed to publish to
             artifactory.
+        **kwargs: Options to apply to the batch job. These map directly to fields on the Kubernetes
+            [JobSpec](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.23/#jobspec-v1-batch).
 
     Returns:
         A `job` which will publish the given packages.
@@ -43,6 +46,11 @@ def artifactory_publish_job(
     if len(job_name) > 63:
       # Kubernetes rejects Job resources with names longer than 63 characters.
       job_name = job_name[:63]
+
+    if kwargs.get("ttlSecondsAfterFinished") == None:
+      # Delete completed job after 12 hours.
+      kwargs["ttlSecondsAfterFinished"] = 60 * 60 * 12
+
     return job(
         ctx,
         stripe_pod(
@@ -67,10 +75,8 @@ def artifactory_publish_job(
         mount_host_volume("/etc/ssl/private", volume_args = {"type": "Directory"}),
         run_as_unprivileged(),
 
-        # Delete completed job after 12 hours.
-        ttlSecondsAfterFinished = 60 * 60 * 12,
-
-        *extra_plugins
+        *extra_plugins,
+        **kwargs
     )
 
 def artifactory_npm_publish_job(

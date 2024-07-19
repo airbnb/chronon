@@ -167,6 +167,15 @@ def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
             # sourcetype=monster "GC-STAT-LINE" | timechart avg(before_heap_live_slots) by monster_isolation_group
             # Host sets have an average of 15MM or 25MM live slots. Going with the smaller number here.
             "RUBY_GC_HEAP_INIT_SLOTS": "15000000",
+            # In Ruby 3.3 there are now 5 heaps, each of which can be tuned with an initial number of slots.
+            # These values are initial projections based on other ruby workloads and should be scaled once
+            # we have production results.
+            "RUBY_GC_HEAP_0_INIT_SLOTS": "19000000",
+            "RUBY_GC_HEAP_1_INIT_SLOTS": "4000000",
+            "RUBY_GC_HEAP_2_INIT_SLOTS": "4000000",
+            "RUBY_GC_HEAP_3_INIT_SLOTS": "1000000",
+            "RUBY_GC_HEAP_4_INIT_SLOTS": "100000",
+
         })
 
     env_vars.update(config.extra_env or [])
@@ -262,6 +271,9 @@ def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
         # https://confluence.corp.stripe.com/display/DEPLOY/Config-srv+sidecar
         config_srv_sidecar(ctx),
         metrics_config(enable_vnext_metrics=enable_vnext_metrics(ctx, config)),
+
+        # add autoscaling if configured
+        config.autoscaling_plugin,
 
         # Wait 5 seconds after service starts before we begin health checks
         # This configuration catches failures when the service appears healthy briefly but begins crashlooping

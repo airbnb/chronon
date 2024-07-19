@@ -27,16 +27,6 @@ load(
 
 DEFAULT_JDK = 11
 
-def generate_fqe_lock_preemption(config):
-    ig = format_isolation_group(config.monster_isolation_group)
-
-    # Webhook consumers time out at 45s:
-    # https://git.corp.stripe.com/stripe-internal/pay-server/blob/e757cb944082408acd91578223a021b65d57cba5/lib/event/consumer/webhooks/abstract_webhook_consumer.rb#L15
-    if ig == "high_priority_webhooks":
-        return ["--fqe-lock-preemption-s", "90"]
-    else:
-        return []
-
 def generate_fqe_mongo_connection_pool_max_size(ctx):
     if get_cluster(ctx) == "northwest":
         fqe_mongo_connection_pool_max_size = 10
@@ -75,12 +65,10 @@ def monster_express_deployment(ctx, unformatted_host_set, config):
         ["--consume-addr", get_worker_envoy_address_from_consul(generate_consul_name(host_set, "consume-workers"))],
         ["--consul-service-name", consul_service_name],
         ["--port", str(port)],
-        ["--config-addr", get_worker_envoy_address_from_consul(generate_consul_name(host_set, "config-workers"))],
         ["--queue-addr", get_worker_envoy_address_from_consul(generate_consul_name(host_set, "fanout-workers")) + "/v4/monster/queue/{}".format(unformatted_host_set)],
         ["--consume-addr", get_worker_envoy_address_from_consul(generate_consul_name(host_set, "consume-workers")) + "/v4/monster/consume"],
         ["--mongo-addr", mongo_address],
         generate_fqe_mongo_connection_pool_max_size(ctx),
-        generate_fqe_lock_preemption(config),
         get_monster_env_cmd_arguments(ctx, unformatted_host_set, host_type),
     ]
 

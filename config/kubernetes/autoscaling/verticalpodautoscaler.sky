@@ -2,11 +2,12 @@
 load("config/kubernetes/helpers/proto_or_yaml.sky", "VerticalPodAutoscaler", "VerticalPodAutoscalerSpec")
 load("config/kubernetes/plugins/types.sky", "deployment_plugin")
 load("config/kubernetes/meta/metadata.sky", "render_metadata", "annotations", "labels")
-load("config/kubernetes/helpers/context.sky", "get_env", "get_blue_green_color", "is_isolated_deploy", "is_bin_packing_enabled")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_blue_green_color", "is_isolated_deploy", "is_bin_packing_enabled", "get_availability_tier")
 load("config/kubernetes/helpers/warning.sky", "warn")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 
 NUM_RECOMMENDATION_BUCKETS = 3
+NUM_A100_RECOMMENDATION_BUCKETS = 2
 
 def vertical_pod_autoscaler():
     """
@@ -63,6 +64,10 @@ def _render_verticalpodautoscaler(ctx, vpa_def, shared_msp, main_container):
         recommenders = [{
             "name": "workflow-services"
         }]
+    elif get_availability_tier(ctx).startswith("A1"):
+        # A100 Services have their own recommenders to provide a higher
+        # granularity of data points in their recommendations.
+        recommenders = get_a100_recommender_bucket(deployment_name)
     else:
         # Since Stripe has a large number of Kubernetes services, we need to 
         # use consistent hashing to split the services into separate determinisitic
@@ -105,6 +110,14 @@ def get_recommender_bucket(deployment_name):
         }]
 
     return [] # default recommender
+
+def get_a100_recommender_bucket(deployment_name):
+    bucket = ord(hash.md5(deployment_name)[0]) % NUM_A100_RECOMMENDATION_BUCKETS
+
+    # a100 buckets start at 'a100-1'
+    return [{
+        "name": "a100-" + str(bucket + 1)
+    }]
 
 def right_size(ctx, old_instance_type = None):
     if old_instance_type == None:

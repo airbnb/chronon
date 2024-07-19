@@ -8,6 +8,7 @@ load("config/kubernetes/helpers/context.sky", "get_target_shard", "get_env", "ge
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
 load("config/kubernetes/plugins/types.sky", "any_resource_plugin")
+load("config/kubernetes/helpers/shards_list.sky", "ENV_CLUSTER_SHARDS", "BINPACKING_STATE", "SHARD_TYPE", "SHARD_STATE")
 
 # TODO(dfradette): remove this annotation once Amp has been changed to use `stripe.io/msp-shard`
 MSP_CLUSTER_ANNOTATION = "stripe.io/msp-cluster"
@@ -20,100 +21,9 @@ ACCOUNT_NAME_TO_ID = {
     "msp-shared-all-pink": "213343938293",
 }
 
-SHARD_TYPE = struct(
-    TEST="test",
-    SHARED_MSP="shared_msp",
-    DEDICATED_MSP="dedicated_msp",
-    CANARY="canary",
-)
-
-SHARD_STATE = struct(
-    PROVISIONING="PROVISIONING",
-    RELEASE_CANDIDATE="RELEASE_CANDIDATE",
-    GA="GA",
-    DECOMMISSIONING="DECOMMISSIONING",
-)
-
-BINPACKING_STATE = struct(
-    ENABLED="ENABLED",
-    DISABLED="DISABLED",
-)
-
-def _shard(name, *, shared_msp=True, cron=False, account="mainland", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.ENABLED):
-    return struct(name=name, shared_msp=shared_msp, cron=cron, account=account, shard_type=shard_type, shard_state=shard_state, binpacking_state=binpacking_state)
-
-ENV_CLUSTER_SHARDS = {
-    "qa": {
-        "bom": [
-            _shard("kubemaster", cron=True),
-        ],
-        "cmh": [
-            _shard("kubemaster", cron=True),
-            _shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-        ],
-        "east": [
-            _shard("kubemaster", cron=True),
-        ],
-        "northwest": [
-            _shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP, binpacking_state=BINPACKING_STATE.DISABLED),
-            _shard("kubeapiaa"),
-            _shard("kubeapibb"),
-            _shard("kubeapicc"),
-            _shard("kubeapidd", cron=True),
-            _shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
-            _shard("msppink", account="msp-shared-all-pink", shard_type=SHARD_TYPE.TEST, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
-            _shard("mspyellow", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
-            _shard("mspaa", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.PROVISIONING),
-        ],
-    },
-    "preprod": {
-        "cmh": [
-            _shard("kubemaster", cron=True),
-            _shard("mspteal", account="cmh.preprod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
-        ]
-    },
-    "prod": {
-        "bom": [
-            _shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
-        ],
-        "cmh": [
-            _shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
-            _shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
-        ],
-        "east": [
-            _shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
-        ],
-        "northwest": [
-            _shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP, binpacking_state=BINPACKING_STATE.DISABLED),
-            _shard("kubeapiaa"),
-            _shard("kubeapibb"),
-            _shard("kubeapicc"),
-            _shard("kubeapidd", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
-            _shard("kubeapiee", binpacking_state=BINPACKING_STATE.DISABLED),
-            _shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
-            _shard("mspruby", account="northwest.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
-        ],
-    },
-}
-
-
-# Fake shards map to be used in tests. This allows us to decouple test cases from real shards
-MOCK_SHARDS_MAP = {
-    "qa": {
-        "northwest": [
-            _shard("shard1", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP, binpacking_state=BINPACKING_STATE.DISABLED),
-            _shard("shard2"),
-            _shard("shard3", cron=True, shard_type=SHARD_TYPE.CANARY),
-            _shard("shard4", account="mainland2", shard_type=SHARD_TYPE.TEST, binpacking_state=BINPACKING_STATE.DISABLED),
-            _shard("shard5", account="mainland3", shard_state=SHARD_STATE.PROVISIONING),
-        ],
-    },
-}
-
-
-def all_available_shards(ctx, shared_msp=None, shard_states=None, shard_types=None, binpacking_states=None, _override_shards_map=None):
+def all_available_shards_info(ctx, shared_msp=None, shard_states=None, shard_types=None, binpacking_states=None, _override_shards_map=None):
     """
-    Returns all available shards based on the current Henson context.
+    Returns all available shards info based on the current Henson context.
 
     Args:
       ctx: The Henson context.
@@ -137,12 +47,26 @@ def all_available_shards(ctx, shared_msp=None, shard_states=None, shard_types=No
         shards = [s for s in shards if s.shard_type in shard_types]
     if binpacking_states != None:
         shards = [s for s in shards if s.binpacking_state in binpacking_states]
-    return [s.name for s in shards]
+    return shards
 
+def all_available_shards(ctx, shared_msp=None, shard_states=None, shard_types=None, binpacking_states=None, _override_shards_map=None):
+    return [s.name for s in all_available_shards_info(ctx, shared_msp, shard_states, shard_types, binpacking_states, _override_shards_map )]
+
+
+def all_canary_shards_info(ctx, _override_shards_map=None):
+    """
+    Returns all GA canary shards information based on the current Henson context.
+    """
+    return all_available_shards_info(
+        ctx=ctx,
+        shard_states=SHARD_STATE.GA,
+        shard_types=[SHARD_TYPE.CANARY],
+        _override_shards_map=_override_shards_map,
+    )
 
 def all_canary_shards(ctx, _override_shards_map=None):
     """
-    Returns all GA canary shards based on the current Henson context.
+    Returns all GA canary shards names based on the current Henson context.
     """
     return all_available_shards(
         ctx=ctx,
@@ -187,24 +111,6 @@ def all_binpacking_enabled_shards(ctx, shared_msp=None, shard_states=None, shard
         _override_shards_map=_override_shards_map,
     )
 
-def is_shard_binpacking_enabled(ctx, shard, _override_shards_map=None):
-    """
-    Returns True if the shard has binpacking enabled based on the current Henson context.
-
-    Args:
-      ctx: The Henson context.
-      shard: The name of the MSP shard.
-    """
-    clusters = ENV_CLUSTER_SHARDS.get(get_env(ctx), {})
-    # Only used in tests to provide a custom list of shards
-    if _override_shards_map != None:
-        clusters = _override_shards_map.get(get_env(ctx), {})
-    shards = clusters.get(get_cluster(ctx), [])
-    for s in shards:
-        if s.name == shard:
-            return s.binpacking_state == BINPACKING_STATE.ENABLED
-    # Return False if the shard is not found
-    return False
 
 def account_for_shard(ctx, shard):
     """
@@ -254,27 +160,6 @@ def _set_msp_shard(ctx, plugin, resource_def):
 
     resource_def["metadata"]["annotations"].update(
             _shard_annotations(shard),
-    )
-
-def prefer_msp_shard(name = "kubeapiaa"):
-  """
-  Selects the shard if it's available within the current Henson context. If you are not
-  on Orchestration, this probably isn't the plugin you are looking for!
-  Args:
-    name: The name of the MSP shard. Defaults to 'kubeapiaa'.
-  """
-  return any_resource_plugin(_prefer_msp_shard, preferred = name)
-
-def _prefer_msp_shard(ctx, plugin, resource_def):
-    preferred = getattr(plugin, "preferred")
-    available_shards = all_available_shards(ctx)
-
-    shard = "kubemaster"
-    if preferred in available_shards:
-        shard = preferred
-
-    resource_def["metadata"]["annotations"].update(
-        _shard_annotations(shard)
     )
 
 def autoset_shard():

@@ -43,7 +43,10 @@ load("config/kubernetes/networking/internal/config/override.sky", "target", "NOT
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/sidecars/envoy_ratelimit.sky", "ratelimit_sidecar")
-
+load(
+    "config/kubernetes/networking/internal/proxyless.sky",
+    "proxyless_mesh_service_name",
+)
 PROXYLESS_METADATA_ANNOTATION_KEY = "networking.stripe.io/network-access-control-lists"
 
 # This array is responsible for keeping track of a list of Henson service names that can
@@ -191,7 +194,7 @@ def networking(ctx, namespace, pod_termination_grace_period_seconds, k8s_workloa
             mount_pod_networking(),
             proxyless_mount_admin_server_dir(),
             proxyless_annotations(ctx),
-            proxyless_container_env_vars(),
+            proxyless_container_env_vars(ctx, consul_agent_services, k8s_workload_name),
         ])
 
 
@@ -285,10 +288,13 @@ def proxyless_mount_admin_server_dir():
         volume_mount_all_containers(PROXYLESS_ADMIN_SERVER_DIR, read_only = False)
     )
 
-def proxyless_container_env_vars():
+def proxyless_container_env_vars(ctx, consul_agent_services, k8s_workload_name):
     return all_containers_env_vars(
         from_fields = {
-            "HENSON_CONFIG_JSON": ("metadata.annotations['%s']" % PROXYLESS_METADATA_ANNOTATION_KEY)
+            "HENSON_CONFIG_JSON": ("metadata.annotations['%s']" % PROXYLESS_METADATA_ANNOTATION_KEY),
+        },
+        vars = {
+            "PROXYLESS_ENABLED_SERVICES": proxyless_mesh_service_name(ctx, consul_agent_services, k8s_workload_name),
         },
     )
 

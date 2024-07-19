@@ -59,7 +59,6 @@ def monster_api_deployment(ctx, config):
         ["--max-concurrent-requests", str(max_concurrent_requests)],
         ["--mongo-connection-pool-max-size", str(mongo_connection_pool_max_size)],
         ["--mongo-address", mongo_address],
-        ["--config-addr", get_worker_envoy_address_from_consul(generate_consul_name(ig, "config-workers"))],
         get_monster_env_cmd_arguments(ctx, config.monster_isolation_group, host_type)
     ]
 

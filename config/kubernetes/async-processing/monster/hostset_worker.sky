@@ -69,7 +69,6 @@ def get_default_instance_type(env, cluster):
 def cluster(
         consume_replicas=None,
         fanout_replicas=None,
-        config_replicas=None,
         mb_per_worker=None,
         instance_type=None,
         graviton_migration_enabled=False,
@@ -79,7 +78,6 @@ def cluster(
     return struct(
         consume=consume_replicas,
         fanout=fanout_replicas,
-        config=config_replicas,
         mb_per_worker=mb_per_worker,
         instance_type=instance_type,
         graviton_migration_enabled=graviton_migration_enabled,
@@ -105,7 +103,6 @@ def _global_default_template_cluster():
     return cluster(
         consume_replicas=DEFAULT_WORKER_COUNT,
         fanout_replicas=DEFAULT_WORKER_COUNT,
-        config_replicas=0,
         mb_per_worker=DEFAULT_MB_PER_WORKER,
         instance_type=None,
         graviton_migration_enabled=False,
@@ -123,7 +120,6 @@ def worker_defs(template_cluster=_global_default_template_cluster(),
 
     if template_cluster.consume == None \
         or template_cluster.fanout == None \
-        or template_cluster.config == None \
         or template_cluster.mb_per_worker == None:
         fail("template_cluster cannot have any unset fields in worker_defs")
 
@@ -142,7 +138,6 @@ def _merge_templates(new_cluster, old_defs):
     template = cluster(
         consume_replicas=_first_set(new_cluster.consume, old_defs.template.consume),
         fanout_replicas=_first_set(new_cluster.fanout, old_defs.template.fanout),
-        config_replicas=_first_set(new_cluster.config, old_defs.template.config),
         mb_per_worker=_first_set(new_cluster.mb_per_worker, old_defs.template.mb_per_worker),
         instance_type=_first_set(new_cluster.instance_type, old_defs.template.instance_type),
         graviton_migration_enabled=_first_set(new_cluster.graviton_migration_enabled, old_defs.template.graviton_migration_enabled),
@@ -184,7 +179,6 @@ def render_cluster(env_name, cluster_map, cluster_name, defs):
         cluster_name: {
             "consume": _first_set(c.consume, defs.template.consume),
             "fanout": _first_set(c.fanout, defs.template.fanout),
-            "config": _first_set(c.config, defs.template.config),
             "mb_per_worker": worker_mem(c, cluster_name, defs),
             "instance_type": instance_type,
             "graviton_migration_enabled": _first_set(c.graviton_migration_enabled, defs.template.graviton_migration_enabled),
@@ -215,13 +209,13 @@ def hostset(name,
             default=None,
             qa=None,
             preprod=cluster(consume_replicas=0,
-                            config_replicas=0,
                             fanout_replicas=0),
             prod=None,
             is_canary=False,
             disable_preloading=False,
             defs=worker_defs(),
-            suffix=""):
+            suffix="",
+            autoscaling = None):
     # Setting suffix will add to it to the k8s service name
     # nothing else would change, so that capacity would share the same consul service name as main capacity
     # Similarly, setting is_canary will add "-canary" (after the suffix, if any)
@@ -231,4 +225,12 @@ def hostset(name,
     preprod_json = render_env("preprod", preprod or {}, defs)
     prod_json = render_env("prod", prod or {}, defs)
 
-    return struct(name=name, qa=qa_json, preprod=preprod_json, prod=prod_json, is_canary=is_canary, disable_preloading=disable_preloading, suffix=suffix)
+    return struct(
+        name=name,
+        qa=qa_json,
+        preprod=preprod_json,
+        prod=prod_json,
+        is_canary=is_canary,
+        disable_preloading=disable_preloading,
+        suffix=suffix,
+        autoscaling = autoscaling)

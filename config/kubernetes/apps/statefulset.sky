@@ -5,7 +5,6 @@ Functions for creating and configuring Kubernetes [StatefulSet][]s.
 [statefulset]: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/
 """
 load("config/kubernetes/core/pod.sky", "all_containers", "main_container")
-load("config/kubernetes/helpers/msp_shard.sky", "MSP_SHARD_ANNOTATION", "prefer_msp_shard")
 load("config/kubernetes/meta/metadata.sky", "render_metadata", "render_selector", "get_availability_tier_from_metadata")
 load("config/kubernetes/core/lifecycle.sky", "prestop_all_containers", "prestop_all_infra_sidecars", "DEFAULT_GRACE_PERIOD_SECONDS", "grace_period", "generate_prestop_sleep_action", "DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME")
 load("config/kubernetes/networking/public/networking.sky", "networking")

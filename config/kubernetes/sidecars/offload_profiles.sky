@@ -10,6 +10,7 @@ load("config/kubernetes/core/env_var.sky", "container_env_vars", "default_env_va
 load("config/kubernetes/helpers/context.sky", "get_env", "get_container_images")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "EnvVar", "Container")
 load("config/kubernetes/core/container.sky", "resource_requirements")
+load("config/kubernetes/ruby/use_ruby_next.sky", "use_next_ruby_env_var")
 
 def use_offload_profiles():
     """
@@ -68,6 +69,10 @@ def _offload_profiles_container(ctx, container_def, pod):
     is_shared = container_def["is_shared"]
     env = default_env_vars(ctx)
     env.append(EnvVar(ctx, name = "STRIPE_BUNDLE_USE_SORBET_RUBY", value = "true"))
+    # The second parameter is the priority tier, however sidecars are the same
+    # across availability tiers so we will elide that as a rollout parameter.
+    for name, value in use_next_ruby_env_var(ctx, "").items():
+        env.append(EnvVar(ctx, name = name, value = value))
 
     if is_shared:
         env.append(EnvVar(ctx, name = "AWS_CONFIG_FILE", value = "/pay/aws-config/kube_iam_aws_credentials.ini"))

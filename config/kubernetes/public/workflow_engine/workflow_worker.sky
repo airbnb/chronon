@@ -8,6 +8,7 @@ load("config/kubernetes/apps/strategy.sky", "rolling_update_strategy")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
 load("config/kubernetes/core/lifecycle.sky", "DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME", "grace_period")
 load("config/kubernetes/core/probe.sky", "command_probe", "probes")
+load("config/kubernetes/crds/keda/scaledobject.sky", "scaled_object_plugin_from_compute_config")
 load("config/kubernetes/helpers/availability_tiers.sky", "A100", "A400")
 load("config/kubernetes/helpers/aws_instance_sizes.sky", "aws_instance_size")
 load("config/kubernetes/helpers/context.sky", "get_env", "get_name", "get_owner", "get_target_shard")
@@ -21,7 +22,7 @@ load("config/kubernetes/pay-server.sky", "einhorn_service", "pay_server_pod")
 load("config/kubernetes/policy/pdb.sky", "pod_disruption_budget")
 load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config")
 load("config/kubernetes/service-config/ruby_common.sky", "ruby_canary_suffix")
-
+load("config/kubernetes/core/ha.sky", "prefer_node_balance_by_henson_service")
 
 # Can't be overriden because the canary is always one node.
 def deployment_strategy_canary_func(ctx):
@@ -209,6 +210,8 @@ def ruby_workflow_worker_shared_msp(
         replicas = replicas_func(ctx)
         if not serverless:
             _validate_replicas(ctx, replicas)
+            replicas = replicas - 1  # the canary counts for one in non-serverless workers
+
         _validate_drain_timeout(drain_timeout)
 
         if availability_tier == A100:
@@ -226,7 +229,7 @@ def ruby_workflow_worker_shared_msp(
             workers_per_replica = workers_per_replica,
             startup_timeout = startup_timeout,
             drain_timeout = drain_timeout,
-            replicas = replicas - 1,  # the canary counts for one
+            replicas = replicas,
             is_canary = False,
             manage_workers = manage_workers,
             separate_canary_by_name = separate_canary_by_name,
@@ -406,6 +409,9 @@ def _service_shared_msp(
         )
 
     all_plugins = [
+        # we should try to place pods on different nodes, segregating pods
+        # of the same _henson service_ instead of the same deployment.
+        prefer_node_balance_by_henson_service(),
         pay_server_pod(
             ctx,
             name = name,
@@ -450,6 +456,11 @@ def _service_shared_msp(
         pod_disruption_budget(disable = True),
     ]
     all_plugins.extend(*plugins)
+
+    compute_config = ctx.vars.get("service.config.compute_v2")
+    if compute_config and not is_canary:
+        compute_config = get_merged_compute_v2_config(ctx)
+        all_plugins.append(scaled_object_plugin_from_compute_config(compute_config))
 
     deploy = deployment(
         ctx,

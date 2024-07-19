@@ -41,29 +41,6 @@ def generate_max_connection_pool_size(config):
 
     return [arg_name, "300"]
 
-
-def generate_fqe_lock_preemption_s(config):
-    """
-    This is the time feeder leases an FQE for consumption before assuming consumption failed and trying again.
-    """
-    ig = format_isolation_group(config.monster_isolation_group)
-    arg_name = "--fqe-lock-preemption-s"
-
-    if ig == "general":
-        return [arg_name, "1200"]
-    elif ig in ["high_priority_webhooks", "webhooks"]:
-        # Webhook consumers time out at 45s
-        return [arg_name, "90"]
-    elif ig in ["payouts", "usersec"]:
-        # Max consumer timeout is 300 seconds, adding 60 seconds to account for any delay between acquiring the FQE
-        # and the consumer processing the FQE. Actual value chosen per FQE is jittered between 1-2x this value.
-        return [arg_name, "360"]
-    elif ig == "sigma":
-        return [arg_name, "600"]
-    else:
-        return []
-
-
 def generate_max_poll_sleep_ms(config):
     """
     Cap the maximum interval between attempts to poll a shard for work much lower
@@ -131,10 +108,8 @@ def monster_feeder_deployment(ctx, config):
         ["./src/scala/com/stripe/monster/feeder/main"],
         ["--consume-addr", get_worker_envoy_address_from_consul(generate_consul_name(ig, "consume-workers"))],
         ["--consul-service-name", consul_service_name],
-        ["--config-addr", get_worker_envoy_address_from_consul(generate_consul_name(ig, "config-workers"))],
         ["--mongo-addr", mongo_address],
         generate_workers_per_shard(config),
-        generate_fqe_lock_preemption_s(config),
         generate_max_poll_sleep_ms(config),
         generate_max_restart_downtime_ms(config),
         generate_feeder_consul_poll_ms(config),

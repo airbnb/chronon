@@ -39,15 +39,9 @@ def get_dynamic_replicas(compute_config, use_canary = False):
     Returns:
         None if a dynamic replica config is not found; if one is found, return a plugin to configure it
     """
-    desired_count = 1
+    desired_count = get_num_replicas(compute_config)
     max_count = None
     min_count = None
-
-    if (
-        compute_config.get("resources")
-        and compute_config["resources"].get("num_replicas")
-    ):
-        desired_count = int(compute_config["resources"]["num_replicas"])
 
     if (
         compute_config.get("resources")
@@ -64,7 +58,7 @@ def get_dynamic_replicas(compute_config, use_canary = False):
     # If use_canary, then decrement the desired_count or checks in deployment.sky
     # will fail when the replica count (decremented elsewhere) doesn't match the desired count.
     if use_canary:
-        desired_count -= 1
+        desired_count -= get_num_replicas(compute_config, is_canary = True)
 
     # If either max/min are defined, setup dynamic replicas
     if max_count != None and min_count != None:
@@ -77,3 +71,30 @@ def get_dynamic_replicas(compute_config, use_canary = False):
         )
 
     return None
+
+def get_num_replicas(compute_config, is_canary = False):
+    """ Retrieves the replica count from service config; defaults to 1.
+
+    Args:
+        compute_config: A ComputeV2 protobuf.
+        is_canary: A boolean indicator for canary deployment. Defaults to False.
+
+    Returns:
+        The number of replicas as an integer. If no dynamic replica configuration is found, returns 1. If canary configuration is enabled and present, provides replica number for canary.
+    """
+    num_replicas = 1
+
+    if is_canary:
+        if (
+            compute_config.get("ruby_process")
+            and compute_config["ruby_process"].get("canary_config")
+            and compute_config["ruby_process"]["canary_config"].get("num_replicas")
+        ):
+            num_replicas = int(compute_config["ruby_process"]["canary_config"]["num_replicas"])
+    elif (
+            compute_config.get("resources")
+            and compute_config["resources"].get("num_replicas")
+        ):
+            num_replicas = int(compute_config["resources"]["num_replicas"])
+
+    return num_replicas

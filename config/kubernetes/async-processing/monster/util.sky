@@ -21,17 +21,15 @@ SIDECAR_OVERHEAD_MIB = 6 * 1024
 ROLLING_UPDATE_STRATEGIES = {
     "canary": {"max_unavailable_percent": 75, "max_surge_percent": 100}, # canary can use main stage surge capacity
     "sigma": {"max_unavailable_percent": 25, "max_surge_percent": 50},
-    "worker_config_low_replica": {"max_unavailable_percent": 50, "max_surge_percent": 50},
-    "worker_config_high_replica": {"max_unavailable_percent": 25, "max_surge_percent": 50},
     "qa": {"max_unavailable_percent": 75, "max_surge_percent": 0},
     "default_low_replica": {"max_unavailable_percent": 0, "max_surge_percent": 100},
     "default_high_replica": {"max_unavailable_percent": 10, "max_surge_percent": 50},
     # For services that need higher availability
     "ha_low_replica": {"max_unavailable_percent": 0, "max_surge_percent": 100},
-    "ha_high_replica": {"max_unavailable_percent": 0, "max_surge_percent": 100},
+    "ha_high_replica": {"max_unavailable_percent": 5, "max_surge_percent": 100},
     # special case
-    "prod_general_consume": {"max_unavailable_percent": 0, "max_surge_percent": 50},
-    "qa_general": {"max_unavailable_percent": 0, "max_surge_percent": 100}
+    "prod_general_consume": {"max_unavailable_percent": 5, "max_surge_percent": 50},
+    "qa_general": {"max_unavailable_percent": 20, "max_surge_percent": 100}
 }
 
 def generate_consul_name(monster_isolation_group, monster_service):
@@ -41,7 +39,6 @@ def generate_consul_name(monster_isolation_group, monster_service):
     return {
         "consume-workers": "monster-workers-http2-{}-msp".format(formatted_isolation_group),
         "fanout-workers": "monster-fanout-workers-{}-msp".format(formatted_isolation_group),
-        "config-workers": "monster-config-workers-{}-msp".format(formatted_isolation_group),
         "sweeper": "monster-fqe-sweeper-{}".format(formatted_isolation_group),
         "feeder": "monster-feeder-{}".format(formatted_isolation_group),
         "express": "monster-express-{}".format(formatted_isolation_group),
@@ -178,7 +175,6 @@ def worker_type(monster_service):
     return {
         "consume-workers": "workers",
         "fanout-workers": "fanout",
-        "config-workers": "config",
     }.get(monster_service, monster_service)
 
 def get_gc_args(ctx, runtime_jdk, is_in_jdk17_migration):

@@ -16,19 +16,9 @@
 #
 _CRONS = [
     {
-        # Link is exempt from SOX
-        "name": "link-instant-debits-risk-tierer",
-        "namespace": "kubeacronnoegress",
-    },
-    {
-        # Link is exempt from SOX
-        "name": "link-instant-debits-merchant-offboarder",
-        "namespace": "kubeacronnoegress",
-    },
-    {
-        # Link is exempt from SOX
-        "name": "link-send-instant-debits-daily-slack-summary",
-        "namespace": "kubeacronnoegress",
+        # Job computes internal data, only to be used in internal contexts
+        "name": "data-quality--generate-product-ops-review-slide",
+        "namespace": "kubeacronnoegress"
     },
     {
         # "cronjob-disabling-test-job" is a MSP cron which does not handle any financial data
@@ -678,12 +668,12 @@ _CRONS = [
         "namespace": "kubeacronnoegress",
     },
     {
-    	"name": "gtm-ui-automation-p2-opportunity-sales",
-    	"namespace": "gtmspeuibox"
+        "name": "gtm-ui-automation-p2-opportunity-sales",
+        "namespace": "gtmspeuibox"
     },
     {
-    	"name": "gtm-ui-automation-p1-opportunity",
-    	"namespace": "gtmspeuibox"
+        "name": "gtm-ui-automation-p1-opportunity",
+        "namespace": "gtmspeuibox"
     },
         # creates Jira RUN tickets linking to new Confluence Questions and does not handle any financial data
     {
@@ -775,7 +765,423 @@ _CRONS = [
         "name": "corpnetcronbox-alertrefiner",
         "namespace": "corpnetcronbox",
     },
+    {
+        # archive-stale-golinks does not handle any financial data
+        "name": "archive-stale-golinks",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # askbot-sync-canned-responses-from-sheet does not handle any financial data
+        "name": "askbot-sync-canned-responses-from-sheet",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # askbot-sync-doc-requests-from-sheet does not handle any financial data
+        "name": "askbot-sync-doc-requests-from-sheet",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # askbot-sync-reacji-from-sheet does not handle any financial data
+        "name": "askbot-sync-reacji-from-sheet",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # askbot-sync-slack-channels does not handle any financial data
+        "name": "askbot-sync-slack-channels",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # askbot-sync-slack-emoji does not handle any financial data
+        "name": "askbot-sync-slack-emoji",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # askbot-sync-slack-users does not handle any financial data
+        "name": "askbot-sync-slack-users",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # askbot-sync-welcome-messages-from-sheet does not handle any financial data
+        "name": "askbot-sync-welcome-messages-from-sheet",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # collaboration-pagerduty-slack-sync does not handle any financial data
+        "name": "collaboration-pagerduty-slack-sync",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # compass-projects-pageviews-aggregate does not handle any financial data
+        "name": "compass-projects-pageviews-aggregate",
+        "namespace": "kubeacronnoegress"
+    },
 
+    # Cron jobs from collaboration.sky
+    {
+        # home-check-ownership-references does not handle any financial data
+        "name": "home-check-ownership-references",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-compute-stripe-employee-count does not handle any financial data
+        "name": "home-compute-stripe-employee-count",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-deprecate-old-teams does not handle any financial data
+        "name": "home-deprecate-old-teams",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-notify-teams-about-team-username does not handle any financial data
+        "name": "home-notify-teams-about-team-username",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-nudge-teams-to-edit-org-info does not handle any financial data
+        "name": "home-nudge-teams-to-edit-org-info",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-pageviews-aggregate-1day does not handle any financial data
+        "name": "home-pageviews-aggregate-1day",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-pageviews-aggregate-28day does not handle any financial data
+        "name": "home-pageviews-aggregate-28day",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-pageviews-aggregate-7days does not handle any financial data
+        "name": "home-pageviews-aggregate-7days",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-reassign-stale-ownership-issues does not handle any financial data
+        "name": "home-reassign-stale-ownership-issues",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-reindex-email-lists does not handle any financial data
+        "name": "home-reindex-email-lists",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-save-daily-reference-search-scores does not handle any financial data
+        "name": "home-save-daily-reference-search-scores",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-build-search-session-logs does not handle any financial data
+        "name": "home-search-build-search-session-logs",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-clean-up-unused-indices does not handle any financial data
+        "name": "home-search-clean-up-unused-indices",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-collect-daily-click-counts does not handle any financial data
+        "name": "home-search-collect-daily-click-counts",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-collect-link-counts does not handle any financial data
+        "name": "home-search-collect-link-counts",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-index-latest-confluence-pages does not handle any financial data
+        "name": "home-search-index-latest-confluence-pages",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-admin-apps does not handle any financial data
+        "name": "home-search-reindex-admin-apps",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-api-methods does not handle any financial data
+        "name": "home-search-reindex-api-methods",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-chalk-models does not handle any financial data
+        "name": "home-search-reindex-chalk-models",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-communities does not handle any financial data
+        "name": "home-search-reindex-communities",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-compass does not handle any financial data
+        "name": "home-search-reindex-compass",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-confluence-blogs does not handle any financial data
+        "name": "home-search-reindex-confluence-blogs",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-confluence-pages does not handle any financial data
+        "name": "home-search-reindex-confluence-pages",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-confluence-questions does not handle any financial data
+        "name": "home-search-reindex-confluence-questions",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-decision does not handle any financial data
+        "name": "home-search-reindex-decision",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-definitions does not handle any financial data
+        "name": "home-search-reindex-definitions",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-golinks does not handle any financial data
+        "name": "home-search-reindex-golinks",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-google-drive does not handle any financial data
+        "name": "home-search-reindex-google-drive",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-home-shipped-emails does not handle any financial data
+        "name": "home-search-reindex-home-shipped-emails",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-host-types does not handle any financial data
+        "name": "home-search-reindex-host-types",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-incidents does not handle any financial data
+        "name": "home-search-reindex-incidents",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-job-post does not handle any financial data
+        "name": "home-search-reindex-job-post",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-launch-cal-project does not handle any financial data
+        "name": "home-search-reindex-launch-cal-project",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-legacy-home-projects does not handle any financial data
+        "name": "home-search-reindex-legacy-home-projects",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-legos does not handle any financial data
+        "name": "home-search-reindex-legos",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-network does not handle any financial data
+        "name": "home-search-reindex-network",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-offices does not handle any financial data
+        "name": "home-search-reindex-offices",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-people-support-docs does not handle any financial data
+        "name": "home-search-reindex-people-support-docs",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-people does not handle any financial data
+        "name": "home-search-reindex-people",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-product-feedback-jira does not handle any financial data
+        "name": "home-search-reindex-product-feedback-jira",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-sail does not handle any financial data
+        "name": "home-search-reindex-sail",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-saved-scenario does not handle any financial data
+        "name": "home-search-reindex-saved-scenario",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-services does not handle any financial data
+        "name": "home-search-reindex-services",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-slack-channels does not handle any financial data
+        "name": "home-search-reindex-slack-channels",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-slack-emoji does not handle any financial data
+        "name": "home-search-reindex-slack-emoji",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-sokrs does not handle any financial data
+        "name": "home-search-reindex-sokrs",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-sorbet does not handle any financial data
+        "name": "home-search-reindex-sorbet",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-stripe-docs does not handle any financial data
+        "name": "home-search-reindex-stripe-docs",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-stripe-rewards does not handle any financial data
+        "name": "home-search-reindex-stripe-rewards",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-support-articles does not handle any financial data
+        "name": "home-search-reindex-support-articles",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-search-reindex-teams does not handle any financial data
+        "name": "home-search-reindex-teams",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-send-matchmaker-notifications does not handle any financial data
+        "name": "home-send-matchmaker-notifications",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-send-new-email-list-notifications does not handle any financial data
+        "name": "home-send-new-email-list-notifications",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-automated-google-lists does not handle any financial data
+        "name": "home-sync-automated-google-lists",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-automated-slack-channels does not handle any financial data
+        "name": "home-sync-automated-slack-channels",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-email-lists-activity does not handle any financial data
+        "name": "home-sync-email-lists-activity",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-email-lists-all does not handle any financial data
+        "name": "home-sync-email-lists-all",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-google-calendar-events does not handle any financial data
+        "name": "home-sync-google-calendar-events",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-jira-components does not handle any financial data
+        "name": "home-sync-jira-components",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-workday-calendar--qa does not handle any financial data
+        "name": "home-sync-workday-calendar--qa",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-workday-calendar does not handle any financial data
+        "name": "home-sync-workday-calendar",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-workday-new-hires does not handle any financial data
+        "name": "home-sync-workday-new-hires",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-workday-people--qa does not handle any financial data
+        "name": "home-sync-workday-people--qa",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-workday-self-review-status--qa does not handle any financial data
+        "name": "home-sync-workday-self-review-status--qa",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-sync-workday-self-review-status does not handle any financial data
+        "name": "home-sync-workday-self-review-status",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-update-email-list-orders does not handle any financial data
+        "name": "home-update-email-list-orders",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # home-update-team-pr-counts does not handle any financial data
+        "name": "home-update-team-pr-counts",
+        "namespace": "kubeacronnoegress"
+    },
+    # End of cron jobs from collaboration.sky
+    {
+        # Job does not handle any financial data. It helps the Devbox Data pipeline replication from NW to CMH
+        "name": "test-data-infra--devbox-data-cmh-replication-updater",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        "name": "idps--verification-intent-abandoned-redaction",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        "name": "idps--verification-intent-expiration-redaction",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        "name": "idps--verification-intent-biometrics-redaction",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        "name": "idps--identity-data-retention-reminder-email",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        "name": "idps--identity-bio-retention-reminder-email",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        "name": "idps--lexisnexis-phonefinder-retention",
+        "namespace": "kubeacronnoegress"
+    },
 ]
 
 #########################################################
@@ -943,102 +1349,112 @@ _LEGACY_YAML_ENTRIES = [
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-ping-finicity",
+      "name": "connections--run-ping-finicity",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-ping-mx",
+      "name": "connections--run-ping-mx",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-ping-wells-fargo",
+      "name": "connections--run-ping-wells-fargo",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--purge-finicity-testing-customers",
+      "name": "connections--prune-http-requests",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--refresh-all-finicity-institutions",
+      "name": "connections--prune-http-responses",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--refresh-all-mx-institutions",
+      "name": "connections--purge-finicity-testing-customers",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--refresh-direct-auth-tokens",
+      "name": "connections--refresh-all-finicity-institutions",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-compute-availability-snapshots",
+      "name": "connections--refresh-all-mx-institutions",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-recover-degraded-features",
+      "name": "connections--refresh-direct-auth-tokens",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-recover-unavailable-features",
+      "name": "connections--run-compute-availability-snapshots",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-update-partner-maintenance",
+      "name": "connections--run-recover-degraded-features",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--map-or-promote-partner-institutions",
+      "name": "connections--run-recover-unavailable-features",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--mx-bulk-set-background-aggregation",
+      "name": "connections--run-update-partner-maintenance",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--refresh-institutions-for-search-cache",
+      "name": "connections--map-or-promote-partner-institutions",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-prune-old-availability-snapshots",
+      "name": "connections--mx-bulk-set-background-aggregation",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-prune-old-stats-snapshots",
+      "name": "connections--refresh-institutions-for-search-cache",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-refresh-all-finicity-institution-certifications",
+      "name": "connections--run-prune-old-availability-snapshots",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-refresh-all-finicity-registration-statuses",
+      "name": "connections--run-prune-old-stats-snapshots",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-refresh-all-mx-registration-statuses",
+      "name": "connections--run-refresh-all-finicity-institution-certifications",
       "sox_control": "disabled"
     },
     # Connections is an out of scope product for SOX
     {
-      "name": "bank-connections--run-refresh-auth-party-name-cache",
+      "name": "connections--run-refresh-all-finicity-registration-statuses",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "connections--run-refresh-all-mx-registration-statuses",
+      "sox_control": "disabled"
+    },
+    # Connections is an out of scope product for SOX
+    {
+      "name": "connections--run-refresh-auth-party-name-cache",
       "sox_control": "disabled"
     },
     {
@@ -1089,76 +1505,6 @@ _LEGACY_YAML_ENTRIES = [
     # guru-sync does not handle any financial data
     {
       "name": "guru-sync",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-api-methods does not handle any financial data
-    {
-      "name": "home-search-reindex-api-methods",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-chalk-models does not handle any financial data
-    {
-      "name": "home-search-reindex-chalk-models",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-confluence-pages does not handle any financial data
-    {
-      "name": "home-search-reindex-confluence-pages",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-confluence-questions does not handle any financial data
-    {
-      "name": "home-search-reindex-confluence-questions",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-definitions does not handle any financial data
-    {
-      "name": "home-search-reindex-definitions",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-golinks does not handle any financial data
-    {
-      "name": "home-search-reindex-golinks",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-home-models does not handle any financial data
-    {
-      "name": "home-search-reindex-home-models",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-host-types does not handle any financial data
-    {
-      "name": "home-search-reindex-host-types",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-incidents does not handle any financial data
-    {
-      "name": "home-search-reindex-incidents",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-launch-cal-project does not handle any financial data
-    {
-      "name": "home-search-reindex-launch-cal-project",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-people-support-docs does not handle any financial data
-    {
-      "name": "home-search-reindex-people-support-docs",
-      "sox_control": "disabled"
-    },
-    # home-search-reindex-services does not handle any financial data
-    {
-      "name": "home-search-reindex-services",
-      "sox_control": "disabled"
-    },
-    # home-sync-google-calendar-events does not handle any financial data
-    {
-      "name": "home-sync-google-calendar-events",
-      "sox_control": "disabled"
-    },
-    # home-sync-automated-google-lists does not handle any financial data
-    {
-      "name": "home-sync-automated-google-lists",
       "sox_control": "disabled"
     },
     # i18n--automated-create-task does not handle any financial data
@@ -1601,6 +1947,14 @@ _LEGACY_YAML_ENTRIES = [
     # Job that publishes translations of text content from Lokalize into the CMS for stripe.com
     {
       "name": "wpp--cms-autopublish-translations",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "secret-metadata-scanner",
+      "sox_control": "disabled"
+    },
+    {
+      "name": "secret-monitor",
       "sox_control": "disabled"
     }
 ]

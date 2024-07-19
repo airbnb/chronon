@@ -22,6 +22,7 @@ COMPUTE_YAML_MISSING_ERROR = """
 # * get_instance_type
 ########################################################################
 """
+load("config/kubernetes/helpers/shards_list.sky", "ENV_CLUSTER_SHARDS", "BINPACKING_STATE")
 
 def get_name(ctx):
     """
@@ -565,7 +566,30 @@ def is_bin_packing_enabled(ctx):
     Returns:
         Bin packing enabled or not
     """
-    return ctx.vars.get("msp.binpacking", False) and get_render_yaml(ctx)
+    return ctx.vars.get("msp.binpacking", False) and get_render_yaml(ctx) and is_shard_binpacking_enabled(ctx, get_target_shard(ctx))
+
+def is_shard_binpacking_enabled(ctx, shard, _override_shards_map=None):
+    """
+    Returns True if the shard has binpacking enabled based on the current Henson context.
+
+    Args:
+      ctx: The Henson context.
+      shard: The name of the MSP shard.
+      _override_shards_map: A map of shards to override the default shards map. Only used in tests.
+
+    Returns:
+        True if the shard has binpacking enabled, False otherwise.
+    """
+    clusters = ENV_CLUSTER_SHARDS.get(get_env(ctx), {})
+    # Only used in tests to provide a custom list of shards
+    if _override_shards_map != None:
+        clusters = _override_shards_map.get(get_env(ctx), {})
+    shards = clusters.get(get_cluster(ctx), [])
+    for s in shards:
+        if s.name == shard:
+            return s.binpacking_state == BINPACKING_STATE.ENABLED
+    # Return False if the shard is not found
+    return False
 
 def is_horizontal_pod_autoscaling_enabled(ctx):
     """
@@ -739,3 +763,6 @@ def get_service_deploy_config(ctx):
     """
 def should_use_sansshell_sidecar_gocode(ctx):
     return ctx.vars.get("henson.enable_gocode_sansshell_sidecar", False)
+
+def is_isolated_account_identity_enabled(ctx):
+    return ctx.vars.get("cloudsec.isolated_account_identity_enabled", False)

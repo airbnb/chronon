@@ -20,6 +20,7 @@ load("config/kubernetes/sidecars/worker.sky", "add_worker_sidecar")
 load("config/kubernetes/helpers/context.sky", "get_env", "get_availability_tier", "has_availability_tier")
 load("config/kubernetes/helpers/images.sky", "image_defaults")
 load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
+load("config/kubernetes/ruby/use_ruby_next.sky", "use_next_ruby_env_var")
 
 
 default_pay_server_image = image_defaults(
@@ -38,15 +39,20 @@ def _default_gem_override_policy(ctx, **kwargs):
     """
     return False
 
-def _gem_override_plugin(value):
+def _gem_override_plugin(ctx, value):
+    # Circuit breaker to disable Gem overrides regardless of the gem policy
+    # https://amp.corp.stripe.com/feature-flags/flag/gocode.henson.disable_pay_server_gem_overrides
+    if ctx.vars.get("henson.disable_pay_server_gem_overrides", False):
+        return compose_plugins()
+
     if value == True:
         return _enable_gem_override()
     elif value == False:
         return compose_plugins()
     elif type(value) == "int":
-        return _1_in_n_enable_gem_override(value)
+        return _gem_override_percentage_enabled(value)
     else:
-        fail("_gem_override_plugin invalid return value, must be integer (1/N frequency) or boolean. (Got %s)" % value)
+        fail("_gem_override_plugin invalid return value, must be integer representing percentage enabled or boolean. (Got %s)" % value)
 
 def pay_server_pod(ctx, gem_override_policy=_default_gem_override_policy, **kwargs):
     """
@@ -109,7 +115,7 @@ def pay_server_pod(ctx, gem_override_policy=_default_gem_override_policy, **kwar
         labels({
           "stripe.io/platform": "pay-server",
         }),
-        _gem_override_plugin(gem_override_policy(ctx, **kwargs)),
+        _gem_override_plugin(ctx, gem_override_policy(ctx, **kwargs)),
     )
     pay_health_mount = compose_plugins()
     if kwargs.get("opt_out_of_safe_deploys", False):
@@ -692,11 +698,28 @@ def rbenv_version_env_var(ctx):
 # based on bapi experimentation
 def bapi_gc_config():
     return {
+        ################
+        #  INIT_SLOTS  #
+        ################
+        ## Ruby 3.1
         # INIT_SLOTS should be close to the number of available slots
         # in steady state but not much higher. Check the number of available
         # slots after 100 requests:
         #   GC-STAT-LINE sourcetype=mono-bapi-srv-* request_count=100 | stats min(before_heap_available_slots) by sourcetype
         "RUBY_GC_HEAP_INIT_SLOTS": "19000000",
+
+        ## Ruby 3.3
+        # Ruby 3.2 introduced the concept of "variable width allocations". Objects can now be 40, 80, 160, 320, or 640 bytes.
+        # These numbers were taken from a QA load test and are about equal to the maximum observed steady state for each
+        # of these "size pools". This allows Ruby to malloc more memory upfront instead of incrementally increasing the heap
+        # which can cause major GCs to take longer.
+        # See https://docs.google.com/document/d/1_OlGuqeqekNyXuvh0fJxkqg_GBVmGrjHT6p8CW9kBI4/edit for full details.
+        "RUBY_GC_HEAP_0_INIT_SLOTS": "19000000",
+        "RUBY_GC_HEAP_1_INIT_SLOTS": "4000000",
+        "RUBY_GC_HEAP_2_INIT_SLOTS": "4000000",
+        "RUBY_GC_HEAP_3_INIT_SLOTS": "1000000",
+        "RUBY_GC_HEAP_4_INIT_SLOTS": "100000",
+
         # If there are fewer than max(FREE_SLOTS, FREE_SLOTS_MIN_RATIO * total slots)
         # free slots after minor GC, major GC is triggered. If that's the case after
         # major GC, heap is expanded. Set the ratio low so that the absolute limit is used.
@@ -724,20 +747,36 @@ def _enable_gem_override():
     return compose_plugins(
         container_env_vars({
             "STRIPE_BUNDLE_MSP_GEM_OVERRIDE": "Y",
-            "STRIPE_BUNDLE_MSP_GEM_OVERRIDE_FREQUENCY": "100",
+            "STRIPE_BUNDLE_MSP_GEM_OVERRIDE_PCT_ENABLED": "100",
         }),
         labels({
             "pay-server.stripe.io/gem_override": "True",
         }),
     )
 
-def _1_in_n_enable_gem_override(n):
+def _gem_override_percentage_enabled(n):
     if type(n) != "int" or n < 0 or n > 100:
-        fail("_1_in_n_enable_gem_override: n must be an integer 100 >= N >= 0. (Got %s)" % n)
+        fail("_gem_override_percentage_enabled: n must be an integer 100 >= N >= 0. (Got %s)" % n)
     return container_env_vars({
         "STRIPE_BUNDLE_MSP_GEM_OVERRIDE": "Y",
-        "STRIPE_BUNDLE_MSP_GEM_OVERRIDE_FREQUENCY": str(n),
+        "STRIPE_BUNDLE_MSP_GEM_OVERRIDE_PCT_ENABLED": str(n),
     })
+
+# Allows env var controlled features to be deployed on a per-priority tier basis.
+# Useful for rolling out features to A1XX services' less important traffic first.
+def pay_server_per_priority_tier_env_vars(ctx, priority_tier):
+    # Example:
+    #   env_vars = {}
+    #   if get_env(ctx) == "qa":
+    #       env_vars["feature"] = "100"
+    #   elif get_availability_tier(ctx) in [A400, A300, A200]:
+    #       env_vars["feature"] = "100"
+    #   else:
+    #       if get_env(ctx) == "prod" and priority_tier in ["testmode", "batch"]:
+    #           env_vars["feature"] = "50"
+    env_vars = {}
+    env_vars.update(use_next_ruby_env_var(ctx, priority_tier))
+    return compose_plugins(container_env_vars(env_vars))
 
 _einhorn_socket_dir = "/pay/einhorn_sockets"
 _einhorn_socket_name = "einhorn.sock"
