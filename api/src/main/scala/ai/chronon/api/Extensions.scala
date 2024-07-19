@@ -30,6 +30,7 @@ import java.util.regex.Pattern
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
+import scala.collection.JavaConverters._
 
 object Extensions {
 
@@ -852,7 +853,7 @@ object Extensions {
      * semanticHash contains hashes of left side and each join part, and is used to detect join definition
      * changes and determine whether any intermediate/final tables of the join need to be recomputed.
      */
-    def semanticHash: Map[String, String] = {
+    private[api] def baseSemanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
       logger.info(s"Join Left Object: ${ThriftJsonCodec.toJsonStr(join.left)}")
       val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
@@ -865,6 +866,38 @@ object Extensions {
         .getOrElse(Map.empty)
       val bootstrapHash = ThriftJsonCodec.md5Digest(join.bootstrapParts)
       partHashes ++ Map(leftSourceKey -> leftHash, join.metaData.bootstrapTable -> bootstrapHash) ++ derivedHashMap
+    }
+
+    /*
+     * Unset topic / mutationTopic in everywhere for this join recursively.
+     * Input join will be modified in place.
+     */
+    private def cleanTopic(join: Join): Join = {
+      def cleanTopicInSource(source: Source): Unit = {
+        if (source.isSetEvents) {
+          source.getEvents.unsetTopic()
+        } else if (source.isSetEntities) {
+          source.getEntities.unsetMutationTopic()
+        } else if (source.isSetJoinSource) {
+          cleanTopic(source.getJoinSource.getJoin)
+        }
+      }
+
+      cleanTopicInSource(join.left)
+      join.getJoinParts.toScala.foreach(_.groupBy.sources.toScala.foreach(cleanTopicInSource))
+      join
+    }
+
+    /*
+     * Compute variants of semantic_hash with different flags. A flag is stored on Hive metadata and used to
+     * indicate which version of semantic_hash logic to use.
+     */
+    def semanticHash(excludeTopic: Boolean): Map[String, String] = {
+      val joinCopy = join.deepCopy()
+      if (excludeTopic) {
+        cleanTopic(joinCopy)
+      }
+      joinCopy.baseSemanticHash
     }
 
     /*

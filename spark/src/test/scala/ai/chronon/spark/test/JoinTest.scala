@@ -1070,7 +1070,7 @@ class JoinTest {
   }
 
   @Test
-  def testMigration(): Unit = {
+  def testMigrationForBootstrap(): Unit = {
 
     // Left
     val itemQueriesTable = s"$namespace.item_queries"
@@ -1103,7 +1103,7 @@ class JoinTest {
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, prefix = "user")),
       metaData = Builders.MetaData(name = s"test.join_migration", namespace = namespace, team = "chronon")
     )
-    val newSemanticHash = join.semanticHash
+    val newSemanticHash = join.semanticHash(excludeTopic = false)
 
     // test older versions before migration
     // older versions do not have the bootstrap hash, but should not trigger recompute if no bootstrap_parts

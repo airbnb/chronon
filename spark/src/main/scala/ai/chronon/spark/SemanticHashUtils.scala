@@ -7,6 +7,12 @@ import com.google.gson.Gson
 
 import scala.util.ScalaJavaConversions.MapOps
 
+/*
+ * Metadata stored in Hive table properties to track semantic hashes and flags.
+ * The flags are used to indicate the versioned logic that was used to compute the semantic hash
+ */
+case class SemanticHashHiveMetadata(semanticHash: Map[String, String], excludeTopic: Boolean)
+
 object SemanticHashUtils {
 
   // Finds all join output tables (join parts and final table) that need recomputing (in monolithic spark job mode)
@@ -23,26 +29,29 @@ object SemanticHashUtils {
                              outputTable: String,
                              tableUtils: TableUtils,
                              computeDiffFunc: (Map[String, String], Map[String, String], ai.chronon.api.Join) => T,
-                             defaultFunc: => T): T = {
-    val oldSemanticHashOpt = getOldSemanticHash(outputTable, tableUtils)
-    if (oldSemanticHashOpt.isDefined) {
-      val newSemanticHash = getNewSemanticHash(joinConf)
-      logger.info(s"Comparing Hashes:\nNew: $newSemanticHash,\nOld: ${oldSemanticHashOpt.get}")
-      computeDiffFunc(oldSemanticHashOpt.get, newSemanticHash, joinConf)
+                             emptyFunc: => T): T = {
+    val semanticHashHiveMetadata = getSemanticHashFromHive(outputTable, tableUtils)
+
+    if (semanticHashHiveMetadata.isDefined) {
+      val oldSemanticHash = semanticHashHiveMetadata.get.semanticHash
+      val newSemanticHash = joinConf.semanticHash(excludeTopic = semanticHashHiveMetadata.get.excludeTopic)
+      logger.info(s"Comparing Hashes:\nNew: $newSemanticHash,\nOld: $oldSemanticHash")
+      computeDiffFunc(oldSemanticHash, newSemanticHash, joinConf)
     } else {
-      defaultFunc
+      emptyFunc
     }
   }
 
-  private def getOldSemanticHash(outputTable: String, tableUtils: TableUtils): Option[Map[String, String]] = {
+  private def getSemanticHashFromHive(outputTable: String, tableUtils: TableUtils): Option[SemanticHashHiveMetadata] = {
     val gson = new Gson()
     val tablePropsOpt = tableUtils.getTableProperties(outputTable)
     val oldSemanticJsonOpt = tablePropsOpt.flatMap(_.get(Constants.SemanticHashKey))
-    oldSemanticJsonOpt.map(json => gson.fromJson(json, classOf[java.util.HashMap[String, String]]).toScala)
-  }
+    val oldSemanticHash =
+      oldSemanticJsonOpt.map(json => gson.fromJson(json, classOf[java.util.HashMap[String, String]]).toScala)
+    val hasSemanticHashExcludeTopicFlag =
+      tablePropsOpt.flatMap(_.get(Constants.SemanticHashExcludeTopicKey)).exists(_.equals("true"))
 
-  private def getNewSemanticHash(joinConf: ai.chronon.api.Join): Map[String, String] = {
-    joinConf.semanticHash
+    oldSemanticHash.map(hashes => SemanticHashHiveMetadata(hashes, hasSemanticHashExcludeTopicFlag))
   }
 
   private def isLeftHashChanged(oldSemanticHash: Map[String, String],
