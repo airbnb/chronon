@@ -10,14 +10,15 @@ import org.json4s._
 import scala.reflect.ClassTag
 
 case class MetadataEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag](
-    extractFn: (String, Conf) => (String, String),
-    name: String
+                                                                      extractFn: (String, Conf) => (String, String),
+                                                                      dataset: String
 )
 object MetadataEndPoint {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   val ConfByKeyEndPointName = "ZIPLINE_METADATA"
   val NameByTeamEndPointName = "CHRONON_ENTITY_BY_TEAM"
+  val ActiveEntityListEndPointName = "CHRONON_ACTIVE_ENTITY_LIST"
 
   private def getTeamFromMetadata(metaData: MetaData): String = {
     val team = metaData.team
@@ -40,12 +41,24 @@ object MetadataEndPoint {
     }
   }
 
+  private def parseEntityType[Conf <: TBase[_, _]: Manifest: ClassTag](conf: Conf): String = {
+    conf match {
+      case join: Join                 => "joins"
+      case groupBy: GroupBy           => "group_bys"
+      case stagingQuery: StagingQuery => "staging_queries"
+      case _ =>
+        logger.error(s"Failed to parse entity type from $conf")
+        throw new Exception(s"Failed to parse entity type from $conf")
+    }
+  }
+
+
   // key: entity path, e.g. joins/team/team.example_join.v1
   // value: entity config in json format
   private def confByKeyEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag] =
     new MetadataEndPoint[Conf](
       extractFn = (path, conf) => (path.confPathToKey, ThriftJsonCodec.toJsonStr(conf)),
-      name = ConfByKeyEndPointName
+      dataset = ConfByKeyEndPointName
     )
 
   // key: entity type + team name, e.g. joins/team
@@ -53,13 +66,22 @@ object MetadataEndPoint {
   private def NameByTeamEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag] =
     new MetadataEndPoint[Conf](
       extractFn = (path, conf) => (parseTeam[Conf](conf), path.confPathToKey),
-      name = NameByTeamEndPointName
+      dataset = NameByTeamEndPointName
+    )
+
+  // key: entity type, e.g. joins
+  // value: list of entities of that entity type, e.g. joins/team/team.example_join.v1, joins/team/team.example_join.v2
+  private def ActiveEntityListEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag] =
+    new MetadataEndPoint[Conf](
+      extractFn = (path, conf) => (parseEntityType[Conf](conf), path.confPathToKey),
+      dataset = NameByTeamEndPointName
     )
 
   def getEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag](endPointName: String): MetadataEndPoint[Conf] = {
     endPointName match {
       case ConfByKeyEndPointName  => confByKeyEndPoint[Conf]
       case NameByTeamEndPointName => NameByTeamEndPoint[Conf]
+      case ActiveEntityListEndPointName => ActiveEntityListEndPoint[Conf]
       case _ =>
         logger.error(s"Failed to find endpoint for $endPointName")
         throw new Exception(s"Failed to find endpoint for $endPointName")
