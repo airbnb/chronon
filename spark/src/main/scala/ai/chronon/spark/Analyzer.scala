@@ -310,6 +310,18 @@ class Analyzer(tableUtils: TableUtils,
       if (gbStartPartition.nonEmpty)
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
+    if (joinConf.onlineExternalParts != null) {
+      joinConf.onlineExternalParts.toScala.foreach { part =>
+        aggregationsMetadata ++= part.source.valueFields.map { field =>
+          AggregationMetadata(part.fullName + "_" + field.name,
+                              field.fieldType,
+                              null,
+                              null,
+                              field.name,
+                              part.source.valueSchema.name)
+        }
+      }
+    }
     val noAccessTables = if (validateTablePermission) {
       runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
     } else Set()
