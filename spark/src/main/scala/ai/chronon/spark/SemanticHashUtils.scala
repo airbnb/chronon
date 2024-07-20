@@ -18,27 +18,57 @@ object SemanticHashUtils {
   // Finds all join output tables (join parts and final table) that need recomputing (in monolithic spark job mode)
   def tablesToRecompute(joinConf: ai.chronon.api.Join,
                         outputTable: String,
-                        tableUtils: TableUtils): collection.Seq[String] =
-    computeDiff(joinConf, outputTable, tableUtils, tableHashesChanged, Seq.empty)
+                        tableUtils: TableUtils,
+                        unsetSemanticHash: Boolean): (collection.Seq[String], Boolean) =
+    computeDiff(joinConf, outputTable, tableUtils, unsetSemanticHash, tableHashesChanged, Seq.empty)
 
   // Determines if the saved left table of the join (includes bootstrap) needs to be recomputed due to semantic changes since last run
-  def shouldRecomputeLeft(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: TableUtils): Boolean =
-    computeDiff(joinConf, outputTable, tableUtils, isLeftHashChanged, false)
+  def shouldRecomputeLeft(joinConf: ai.chronon.api.Join,
+                          outputTable: String,
+                          tableUtils: TableUtils,
+                          unsetSemanticHash: Boolean): (Boolean, Boolean) = {
+    computeDiff(joinConf, outputTable, tableUtils, unsetSemanticHash, isLeftHashChanged, false)
+  }
+
+  /*
+   * When semantic_hash versions are different, a diff does not automatically mean a semantic change.
+   * In those scenarios, we print out the diff tables and differ to users about dropping.
+   */
+  private def canAutoArchive(semanticHashHiveMetadata: SemanticHashHiveMetadata): Boolean = {
+    semanticHashHiveMetadata.excludeTopic
+  }
 
   private def computeDiff[T](joinConf: ai.chronon.api.Join,
                              outputTable: String,
                              tableUtils: TableUtils,
+                             unsetSemanticHash: Boolean,
                              computeDiffFunc: (Map[String, String], Map[String, String], ai.chronon.api.Join) => T,
-                             emptyFunc: => T): T = {
-    val semanticHashHiveMetadata = getSemanticHashFromHive(outputTable, tableUtils)
+                             emptyFunc: => T): (T, Boolean) = {
+    val semanticHashHiveMetadata = if (unsetSemanticHash) {
+      None
+    } else {
+      getSemanticHashFromHive(outputTable, tableUtils)
+    }
 
     if (semanticHashHiveMetadata.isDefined) {
       val oldSemanticHash = semanticHashHiveMetadata.get.semanticHash
       val newSemanticHash = joinConf.semanticHash(excludeTopic = semanticHashHiveMetadata.get.excludeTopic)
-      logger.info(s"Comparing Hashes:\nNew: $newSemanticHash,\nOld: $oldSemanticHash")
-      computeDiffFunc(oldSemanticHash, newSemanticHash, joinConf)
+      def prettyPrintMap(map: Map[String, String]): String = {
+        map.toSeq.sorted.map { case (key, value) => s"- $key: $value" }.mkString("\n")
+      }
+      logger.info(
+        s"""Comparing Hashes:
+           |Old Hashes:
+           |${prettyPrintMap(oldSemanticHash)}
+           |New Hashes:
+           |${prettyPrintMap(newSemanticHash)}
+           |""".stripMargin
+      )
+      val diff = computeDiffFunc(oldSemanticHash, newSemanticHash, joinConf)
+      val autoArchive = canAutoArchive(semanticHashHiveMetadata.get)
+      (diff, autoArchive)
     } else {
-      emptyFunc
+      (emptyFunc, true)
     }
   }
 

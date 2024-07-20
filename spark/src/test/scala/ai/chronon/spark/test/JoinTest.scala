@@ -799,19 +799,21 @@ class JoinTest {
     oldJoin.computeJoin(Some(100))
 
     // Make sure that there is no versioning-detected changes at this phase
-    val joinPartsToRecomputeNoChange = tablesToRecompute(joinConf, joinConf.metaData.outputTable, tableUtils)
-    assertEquals(joinPartsToRecomputeNoChange.size, 0)
+    val joinPartsToRecomputeNoChange = tablesToRecompute(joinConf, joinConf.metaData.outputTable, tableUtils, false)
+    assertEquals(joinPartsToRecomputeNoChange._1.size, 0)
 
     // First test changing the left side table - this should trigger a full recompute
     val leftChangeJoinConf = joinConf.deepCopy()
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val leftChangeRecompute = tablesToRecompute(leftChangeJoinConf, leftChangeJoinConf.metaData.outputTable, tableUtils)
+    val leftChangeRecompute =
+      tablesToRecompute(leftChangeJoinConf, leftChangeJoinConf.metaData.outputTable, tableUtils, false)
     println(leftChangeRecompute)
-    assertEquals(leftChangeRecompute.size, 3)
+    assertEquals(leftChangeRecompute._1.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
-    assertEquals(leftChangeRecompute,
+    assertEquals(leftChangeRecompute._1,
                  Seq(partTable, leftChangeJoinConf.metaData.bootstrapTable, leftChangeJoinConf.metaData.outputTable))
+    assertTrue(leftChangeRecompute._2)
 
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
@@ -819,9 +821,10 @@ class JoinTest {
     val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(suffix = "versioning"), prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val addPartRecompute = tablesToRecompute(addPartJoinConf, addPartJoinConf.metaData.outputTable, tableUtils)
-    assertEquals(addPartRecompute.size, 1)
-    assertEquals(addPartRecompute, Seq(addPartJoinConf.metaData.outputTable))
+    val addPartRecompute = tablesToRecompute(addPartJoinConf, addPartJoinConf.metaData.outputTable, tableUtils, false)
+    assertEquals(addPartRecompute._1.size, 1)
+    assertEquals(addPartRecompute._1, Seq(addPartJoinConf.metaData.outputTable))
+    assertTrue(addPartRecompute._2)
     // Compute to ensure that it works and to set the stage for the next assertion
     addPartJoin.computeJoin(Some(100))
 
@@ -829,10 +832,12 @@ class JoinTest {
     val rightModJoinConf = addPartJoinConf.deepCopy()
     rightModJoinConf.getJoinParts.get(1).setPrefix("user_3")
     val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val rightModRecompute = tablesToRecompute(rightModJoinConf, rightModJoinConf.metaData.outputTable, tableUtils)
-    assertEquals(rightModRecompute.size, 2)
+    val rightModRecompute =
+      tablesToRecompute(rightModJoinConf, rightModJoinConf.metaData.outputTable, tableUtils, false)
+    assertEquals(rightModRecompute._1.size, 2)
     val rightModPartTable = s"${addPartJoinConf.metaData.outputTable}_user_2_unit_test_item_views"
-    assertEquals(rightModRecompute, Seq(rightModPartTable, addPartJoinConf.metaData.outputTable))
+    assertEquals(rightModRecompute._1, Seq(rightModPartTable, addPartJoinConf.metaData.outputTable))
+    assertTrue(rightModRecompute._2)
     // Modify both
     rightModJoinConf.getJoinParts.get(0).setPrefix("user_4")
     val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)

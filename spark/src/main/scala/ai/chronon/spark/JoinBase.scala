@@ -41,7 +41,8 @@ abstract class JoinBase(joinConf: api.Join,
                         tableUtils: TableUtils,
                         skipFirstHole: Boolean,
                         showDf: Boolean = false,
-                        selectedJoinParts: Option[Seq[String]] = None) {
+                        selectedJoinParts: Option[Seq[String]] = None,
+                        unsetSemanticHash: Boolean) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
@@ -346,13 +347,29 @@ abstract class JoinBase(joinConf: api.Join,
        .getOrElse(Seq.empty))
   }
 
+  private def performArchive(tables: Seq[String], autoArchive: Boolean, mainTable: String): Unit = {
+    if (autoArchive) {
+      val archivedAtTs = Instant.now()
+      tables.foreach(tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
+    } else {
+      val errorMsg = s"""Auto archive is disabled due to semantic hash out of date.
+                        |Please verify if your config involves true semantic changes. If so, archive the following tables:
+                        |${tables.map(t => s"- $t").mkString("\n")}
+                        |If not, please rerun the job with `--unset-semantic-hash` flag
+                        |OR run the spark SQL cmd:  ALTER TABLE $mainTable UNSET TBLPROPERTIES ('semantic_hash')
+                        |""".stripMargin
+      logger.error(errorMsg)
+      throw new Exception(errorMsg)
+    }
+  }
+
   def computeLeft(overrideStartPartition: Option[String] = None): Unit = {
     // Runs the left side query for a join and saves the output to a table, for reuse by joinPart
     // Computation in parallelized joinPart execution mode.
-    if (shouldRecomputeLeft(joinConf, bootstrapTable, tableUtils)) {
+    val (shouldRecompute, autoArchive) = shouldRecomputeLeft(joinConf, bootstrapTable, tableUtils, unsetSemanticHash)
+    if (shouldRecompute) {
       logger.info(s"Detected semantic change in left side of join, archiving left table for recomputation.")
-      val archivedAtTs = Instant.now()
-      tableUtils.archiveOrDropTableIfExists(bootstrapTable, Some(archivedAtTs))
+      performArchive(Seq(bootstrapTable), autoArchive, bootstrapTable)
     }
 
     val (rangeToFill, unfilledRanges) = getUnfilledRange(overrideStartPartition, bootstrapTable)
@@ -379,15 +396,15 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit
 
-  def computeFinal(overrideStartPartition: Option[String] = None) = {
+  def computeFinal(overrideStartPartition: Option[String] = None): Unit = {
 
     // Utilizes the same tablesToRecompute check as the monolithic spark job, because if any joinPart changes, then so does the output table
-    if (tablesToRecompute(joinConf, outputTable, tableUtils).isEmpty) {
+    val (tablesChanged, autoArchive) = tablesToRecompute(joinConf, outputTable, tableUtils, unsetSemanticHash)
+    if (tablesChanged.isEmpty) {
       logger.info(s"No semantic change detected, leaving output table in place.")
     } else {
       logger.info(s"Semantic changes detected, archiving output table.")
-      val archivedAtTs = Instant.now()
-      tableUtils.archiveOrDropTableIfExists(outputTable, Some(archivedAtTs))
+      performArchive(tablesChanged, autoArchive, outputTable)
     }
 
     val (rangeToFill, unfilledRanges) = getUnfilledRange(overrideStartPartition, outputTable)
@@ -452,11 +469,15 @@ abstract class JoinBase(joinConf: api.Join,
       leftDf(joinConf, PartitionRange(endPartition, endPartition)(tableUtils), tableUtils, limit = Some(1)).map(df =>
         df.schema)
 
-    val archivedAtTs = Instant.now()
-    // Check semantic hash before overwriting left side
-    // TODO: We should not archive the output table in the case of selected join parts mode
-    tablesToRecompute(joinConf, outputTable, tableUtils).foreach(
-      tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
+    // Run command to archive ALL tables that have changed semantically since the last run
+    // TODO: We should not archive the output table or other JP's intermediate tables in the case of selected join parts mode
+    val (tablesChanged, autoArchive) = tablesToRecompute(joinConf, outputTable, tableUtils, unsetSemanticHash)
+    if (tablesChanged.isEmpty) {
+      logger.info(s"No semantic change detected, leaving output table in place.")
+    } else {
+      logger.info(s"Semantic changes detected, archiving output table.")
+      performArchive(tablesChanged, autoArchive, outputTable)
+    }
 
     // Overwriting Join Left with bootstrap table to simplify later computation
     val source = joinConf.left

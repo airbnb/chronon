@@ -245,6 +245,13 @@ object Driver {
           required = false,
           default = Some(false),
           descr = "Whether or not to use the cached bootstrap table as the source - used in parallelized join flow.")
+      val unsetSemanticHash: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          default = Some(false),
+          descr =
+            "When set to true, semantic_hash is unset in join tblprops to allow for config update without recompute."
+        )
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() = s"join_${joinConf.metaData.name}"
     }
@@ -256,7 +263,8 @@ object Driver {
         args.endDate(),
         args.buildTableUtils(),
         !args.runFirstHole(),
-        selectedJoinParts = args.selectedJoinParts.toOption
+        selectedJoinParts = args.selectedJoinParts.toOption,
+        unsetSemanticHash = args.unsetSemanticHash.getOrElse(false)
       )
 
       if (args.selectedJoinParts.isDefined) {
