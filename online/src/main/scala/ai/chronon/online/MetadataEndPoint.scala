@@ -87,4 +87,15 @@ object MetadataEndPoint {
         throw new Exception(s"Failed to find endpoint for $endPointName")
     }
   }
+
+  def getEndPointDatasetName(endPointName: String): String = {
+    endPointName match {
+      case ConfByKeyEndPointName  => ConfByKeyEndPointName
+      case NameByTeamEndPointName => NameByTeamEndPointName
+      case ActiveEntityListEndPointName => NameByTeamEndPointName
+      case _ =>
+        logger.error(s"Failed to find endpoint for $endPointName")
+        throw new Exception(s"Failed to find endpoint for $endPointName")
+    }
+  }
 }
