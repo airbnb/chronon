@@ -27,7 +27,7 @@ This can be achieved by using the output of one `GroupBy` as the input to the ne
 
 ## Supported aggregations
 
-All supported aggregations are defined [here](https://github.com/airbnb/chronon/blob/main/api/thrift/api.thrift#L51).
+All supported aggregations are defined [here](https://github.com/airbnb/chronon/blob/922d7b7578263292d878f3e2a4ebd5d2cde44fe5/api/thrift/api.thrift#L135).
 Chronon supports powerful aggregation patterns and the section below goes into detail of the properties and behaviors
 of aggregations.
 
