@@ -28,7 +28,11 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{
+  QueryProgressEvent,
+  QueryStartedEvent,
+  QueryTerminatedEvent
+}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -729,10 +733,11 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val acceptedEndPoints = List(MetadataEndPoint.ActiveEntityListEndPointName)
+      val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName,
+                                   MetadataEndPoint.NameByTeamEndPointName,
+                                   MetadataEndPoint.ActiveEntityListEndPointName)
       val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
       val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
-      logger.info(s"[test] ${kvMap}")
       implicit val ec: ExecutionContext = ExecutionContext.global
       val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
         case (endPoint, kvMap) => args.metaDataStore.put(kvMap, getEndPointDatasetName(endPoint))

@@ -10,8 +10,8 @@ import org.json4s._
 import scala.reflect.ClassTag
 
 case class MetadataEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag](
-                                                                      extractFn: (String, Conf) => (String, String),
-                                                                      dataset: String
+    extractFn: (String, Conf) => (String, String),
+    dataset: String
 )
 object MetadataEndPoint {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
@@ -52,7 +52,6 @@ object MetadataEndPoint {
     }
   }
 
-
   // key: entity path, e.g. joins/team/team.example_join.v1
   // value: entity config in json format
   private def confByKeyEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag] =
@@ -79,8 +78,8 @@ object MetadataEndPoint {
 
   def getEndPoint[Conf <: TBase[_, _]: Manifest: ClassTag](endPointName: String): MetadataEndPoint[Conf] = {
     endPointName match {
-      case ConfByKeyEndPointName  => confByKeyEndPoint[Conf]
-      case NameByTeamEndPointName => NameByTeamEndPoint[Conf]
+      case ConfByKeyEndPointName        => confByKeyEndPoint[Conf]
+      case NameByTeamEndPointName       => NameByTeamEndPoint[Conf]
       case ActiveEntityListEndPointName => ActiveEntityListEndPoint[Conf]
       case _ =>
         logger.error(s"Failed to find endpoint for $endPointName")
@@ -90,8 +89,8 @@ object MetadataEndPoint {
 
   def getEndPointDatasetName(endPointName: String): String = {
     endPointName match {
-      case ConfByKeyEndPointName  => ConfByKeyEndPointName
-      case NameByTeamEndPointName => NameByTeamEndPointName
+      case ConfByKeyEndPointName        => ConfByKeyEndPointName
+      case NameByTeamEndPointName       => NameByTeamEndPointName
       case ActiveEntityListEndPointName => NameByTeamEndPointName
       case _ =>
         logger.error(s"Failed to find endpoint for $endPointName")
