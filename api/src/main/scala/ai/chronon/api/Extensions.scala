@@ -893,11 +893,15 @@ object Extensions {
      * indicate which version of semantic_hash logic to use.
      */
     def semanticHash(excludeTopic: Boolean): Map[String, String] = {
-      val joinCopy = join.deepCopy()
       if (excludeTopic) {
+        // WARN: deepCopy doesn't guarantee same semantic_hash will be produced due to reordering of map keys
+        // but the behavior is deterministic
+        val joinCopy = join.deepCopy()
         cleanTopic(joinCopy)
+        joinCopy.baseSemanticHash
+      } else {
+        baseSemanticHash
       }
-      joinCopy.baseSemanticHash
     }
 
     /*

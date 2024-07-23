@@ -58,6 +58,8 @@ object SemanticHashUtils {
       }
       logger.info(
         s"""Comparing Hashes:
+           |Hive Flag:
+           |${Constants.SemanticHashExcludeTopicKey}: ${semanticHashHiveMetadata.get.excludeTopic}
            |Old Hashes:
            |${prettyPrintMap(oldSemanticHash)}
            |New Hashes:
@@ -68,6 +70,7 @@ object SemanticHashUtils {
       val autoArchive = canAutoArchive(semanticHashHiveMetadata.get)
       (diff, autoArchive)
     } else {
+      logger.info("No semantic hash found in Hive. Proceed to computation and table creation.")
       (emptyFunc, true)
     }
   }
