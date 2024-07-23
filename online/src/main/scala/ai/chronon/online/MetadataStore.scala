@@ -139,6 +139,23 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     },
     { join => Metrics.Context(environment = "join.meta.fetch", join = join) })
 
+  def validateJoinExist(joinOps: JoinOps, name: String): Boolean = {
+    val join = joinOps.join
+    val team = MetadataEndPoint.getTeamFromMetadata(join.metaData)
+    val activeJoinList: Try[Seq[String]] = getJoinListByTeam(team)
+    if (activeJoinList.isFailure) {
+      logger.error(s"Failed to fetch active join list for team $team")
+      false
+    } else {
+      val joinKey = "joins/" + name
+      if (activeJoinList.get.contains(joinKey)) true
+      else {
+        logger.error(s"Join $name not found in active join list for team $team")
+        false
+      }
+    }
+  }
+
   def putJoinConf(join: Join): Unit = {
     logger.info(s"uploading join conf to dataset: $dataset by key: joins/${join.metaData.nameToFilePath}")
     kvStore.put(

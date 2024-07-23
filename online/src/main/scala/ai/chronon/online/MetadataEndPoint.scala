@@ -19,7 +19,7 @@ object MetadataEndPoint {
   val ConfByKeyEndPointName = "ZIPLINE_METADATA"
   val NameByTeamEndPointName = "CHRONON_ENTITY_BY_TEAM"
 
-  private def getTeamFromMetadata(metaData: MetaData): String = {
+  def getTeamFromMetadata(metaData: MetaData): String = {
     val team = metaData.team
     if (metaData.customJson != null && metaData.customJson.nonEmpty) {
       implicit val formats = DefaultFormats

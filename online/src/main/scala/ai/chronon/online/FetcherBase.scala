@@ -511,7 +511,7 @@ class FetcherBase(kvStore: KVStore,
                 joinConf: Option[Join] = None): Future[scala.collection.Seq[Response]] = {
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
-    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, KeyMissingException]]])] =
+    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, FetchException]]])] =
       requests.map { request =>
         val joinTry: Try[JoinOps] = if (joinConf.isEmpty) {
           getJoinConf(request.name)
@@ -521,20 +521,24 @@ class FetcherBase(kvStore: KVStore,
         }
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
-          joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
-          joinContext.get.increment("join_request.count")
-          join.joinPartOps.map { part =>
-            val joinContextInner = Metrics.Context(joinContext.get, part)
-            val missingKeys = part.leftToRight.keys.filterNot(request.keys.contains)
-            if (missingKeys.nonEmpty) {
-              Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq, request.keys))
-            } else {
-              val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
-              Left(
-                PrefixedRequest(
-                  part.fullPrefix,
-                  Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner))))
+          if (validateJoinExist(join, request.name)) {
+            joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
+            joinContext.get.increment("join_request.count")
+            join.joinPartOps.map { part =>
+              val joinContextInner = Metrics.Context(joinContext.get, part)
+              val missingKeys = part.leftToRight.keys.filterNot(request.keys.contains)
+              if (missingKeys.nonEmpty) {
+                Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq, request.keys))
+              } else {
+                val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
+                Left(
+                  PrefixedRequest(
+                    part.fullPrefix,
+                    Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner))))
+              }
             }
+          } else {
+            Seq(Right(InactiveEntityException(request.name)))
           }
         }
         request.copy(context = joinContext) -> decomposedTry
@@ -558,8 +562,8 @@ class FetcherBase(kvStore: KVStore,
           case (joinRequest, decomposedRequestsTry) =>
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
               groupByRequestsWithPrefix.iterator.flatMap {
-                case Right(keyMissingException) => {
-                  Map(keyMissingException.requestName + "_exception" -> keyMissingException.getMessage)
+                case Right(fetchException) => {
+                  Map(fetchException.getRequestName + "_exception" -> fetchException.getMessage)
                 }
                 case Left(PrefixedRequest(prefix, groupByRequest)) => {
                   responseMap
