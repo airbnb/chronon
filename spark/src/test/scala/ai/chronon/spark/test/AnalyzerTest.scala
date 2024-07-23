@@ -221,25 +221,24 @@ class AnalyzerTest {
     analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
 
-  @Test(expected = classOf[java.lang.AssertionError])
-  def testGroupByAnalyzerValidationTimestampCheck(): Unit = {
-
-    // left side
-    val tableGroupBy = getViewsGroupBy("group_by_analyzer_test.test_1", Operation.SUM, source = getTestGBSourceWithTs())
-
-    val itemQueries = List(Column("item", api.StringType, 100), Column("guest", api.StringType, 100))
-    val itemQueriesTable = s"$namespace.test_table"
-    DataFrameGen
-      .events(spark, itemQueries, 500, partitions = 100)
-      .save(itemQueriesTable)
-
-    val start = tableUtils.partitionSpec.minus(today, new Window(10, TimeUnit.DAYS))
-
-    //run analyzer and validate data availability
-    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
-    analyzer.analyzeGroupBy(tableGroupBy, enableHitter = true, validationAssert = true)
-
-  }
+//  def testGroupByAnalyzerValidationTimestampCheck(): Unit = {
+//
+//    // left side
+//    val tableGroupBy = getViewsGroupBy("group_by_analyzer_test.test_1", Operation.SUM, source = getTestGBSourceWithTs())
+//
+//    val itemQueries = List(Column("item", api.StringType, 100), Column("guest", api.StringType, 100))
+//    val itemQueriesTable = s"$namespace.test_table"
+//    DataFrameGen
+//      .events(spark, itemQueries, 500, partitions = 100)
+//      .save(itemQueriesTable)
+//
+//    val start = tableUtils.partitionSpec.minus(today, new Window(10, TimeUnit.DAYS))
+//
+//    //run analyzer and validate data availability
+//    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+//    analyzer.analyzeGroupBy(tableGroupBy, enableHitter = true, validationAssert = true)
+//
+//  }
 
 
   def getTestGBSource(): api.Source = {

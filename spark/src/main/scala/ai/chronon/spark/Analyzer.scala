@@ -150,31 +150,6 @@ class Analyzer(tableUtils: TableUtils,
     (header +: colPrints).mkString("\n")
   }
 
-  // if timestamp provided check if values are in unix timestamp milliseconds
-  def checkTimestamp(df: DataFrame, sampleFraction: Double = 0.1): String = {
-
-    // if timestamp column is present, sample if the timestamp values are not null
-    val checkTs = if ( df.schema.fieldNames.contains(Constants.TimeColumn) ) {
-      val sumNulls = df
-        .sample(sampleFraction)
-        .agg(
-          sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1))).cast(StringType).as("notNullCount")
-        )
-        .select(col("notNullCount"))
-        .rdd.collect().head.toString()
-      sumNulls
-    } else {
-      "No Ts Column"
-    }
-
-    val tsStat = checkTs match {
-      case "0" => "Only Null Values"
-      case _ => "Valid Timestamp Input"
-    }
-
-    tsStat
-  }
-
   // Rich version of structType which includes additional info for a groupBy feature schema
   case class AggregationMetadata(name: String,
                                  columnType: DataType,
@@ -522,6 +497,32 @@ class Analyzer(tableUtils: TableUtils,
           List.empty
       }
     }
+  }
+
+  // For groupBys validate if the timestamp provided produces some values
+  // if all values are null this should be flagged as an error
+  def checkTimestamp(df: DataFrame, sampleFraction: Double = 0.1): String = {
+
+    // if timestamp column is present, sample if the timestamp values are not null
+    val checkTs = if ( df.schema.fieldNames.contains(Constants.TimeColumn) ) {
+      val sumNulls = df
+        .sample(sampleFraction)
+        .agg(
+          sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1))).cast(StringType).as("notNullCount")
+        )
+        .select(col("notNullCount"))
+        .rdd.collect().head.toString()
+      sumNulls
+    } else {
+      "No Ts Column"
+    }
+
+    val tsStat = checkTs match {
+      case "0" => "Only Null Values"
+      case _ => "Valid Timestamp Input"
+    }
+
+    tsStat
   }
 
   def run(): Unit =
