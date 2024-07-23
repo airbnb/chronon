@@ -221,6 +221,27 @@ class AnalyzerTest {
     analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
 
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testGroupByAnalyzerValidationTimestampCheck(): Unit = {
+
+    // left side
+    val tableGroupBy = getViewsGroupBy("group_by_analyzer_test.test_1", Operation.SUM, source = getTestGBSourceWithTs())
+
+    val itemQueries = List(Column("item", api.StringType, 100), Column("guest", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.test_table"
+    DataFrameGen
+      .events(spark, itemQueries, 500, partitions = 100)
+      .save(itemQueriesTable)
+
+    val start = tableUtils.partitionSpec.minus(today, new Window(10, TimeUnit.DAYS))
+
+    //run analyzer and validate data availability
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+    analyzer.analyzeGroupBy(tableGroupBy, enableHitter = true, validationAssert = true)
+
+  }
+
+
   def getTestGBSource(): api.Source = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
@@ -234,6 +255,23 @@ class AnalyzerTest {
 
     Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("time_spent_ms", "user_review"), startPartition = oneYearAgo),
+      table = viewsTable
+    )
+  }
+
+  def getTestGBSourceWithTs(): api.Source = {
+    val testSchema = List(
+      Column("key", api.StringType, 1000),
+      Column("ts", api.IntType, 1600),
+      Column("col1", api.IntType, 100),
+      Column("col2", api.IntType, 1000),
+    )
+
+    val viewsTable = s"$namespace.test_table"
+    DataFrameGen.events(spark, testSchema, count = 100, partitions = 20).drop("ts").save(viewsTable)
+
+    Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("col1", "col2"), startPartition = oneYearAgo),
       table = viewsTable
     )
   }

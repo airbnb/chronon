@@ -26,7 +26,7 @@ import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, Row, types}
-import org.apache.spark.sql.functions.{col, from_unixtime, lit}
+import org.apache.spark.sql.functions.{col, from_unixtime, lit, sum, when}
 import org.apache.spark.sql.types.{StringType, StructType}
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 
@@ -150,6 +150,31 @@ class Analyzer(tableUtils: TableUtils,
     (header +: colPrints).mkString("\n")
   }
 
+  // if timestamp provided check if values are in unix timestamp milliseconds
+  def checkTimestamp(df: DataFrame, sampleFraction: Double = 0.1): String = {
+
+    // if timestamp column is present, sample if the timestamp values are not null
+    val checkTs = if ( df.schema.fieldNames.contains(Constants.TimeColumn) ) {
+      val sumNulls = df
+        .sample(sampleFraction)
+        .agg(
+          sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1))).cast(StringType).as("notNullCount")
+        )
+        .select(col("notNullCount"))
+        .rdd.collect().head.toString()
+      sumNulls
+    } else {
+      "No Ts Column"
+    }
+
+    val tsStat = checkTs match {
+      case "0" => "Only Null Values"
+      case _ => "Valid Timestamp Input"
+    }
+
+    tsStat
+  }
+
   // Rich version of structType which includes additional info for a groupBy feature schema
   case class AggregationMetadata(name: String,
                                  columnType: DataType,
@@ -186,11 +211,16 @@ class Analyzer(tableUtils: TableUtils,
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
-                     enableHitter: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
+                     enableHitter: Boolean = false,
+                     validationAssert: Boolean = false
+                    ): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
+
+    val checkTs = checkTimestamp(groupBy.inputDf)
+
     val analysis =
       if (enableHitter)
         analyze(groupBy.inputDf,
@@ -238,6 +268,10 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
+    if (validationAssert) {
+      assert(checkTs == "Only Null Values", "ERROR: GroupBy validation failed. Please check that source has valid timestamps.")
+    }
+
     val aggMetadata = if (groupByConf.aggregations != null) {
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
     } else {
@@ -247,6 +281,7 @@ class Analyzer(tableUtils: TableUtils,
       field.name -> SparkConversions.toChrononType(field.name, field.dataType)
     }.toMap
     (aggMetadata, keySchemaMap)
+
   }
 
   def analyzeJoin(joinConf: api.Join,
