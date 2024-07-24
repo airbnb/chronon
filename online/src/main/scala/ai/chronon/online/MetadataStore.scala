@@ -161,10 +161,14 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     val team = MetadataEndPoint.getTeamFromMetadata(groupBy.metaData)
     val activeGroupByList: Try[Seq[String]] = getGroupByListByTeam(team)
     if (activeGroupByList.isFailure) {
-      logger.error(s"Failed to fetch active join list for team $team")
+      logger.error(s"Failed to fetch active group_by list for team $team")
       false
     } else {
-      val groupByKey = "group_bys/" + name
+      val groupByKey = if (name.contains("/")) {
+        "group_bys/" + name
+      } else {
+        "group_bys/" + name.replaceFirst("\\.", "/")
+      }
       if (activeGroupByList.get.contains(groupByKey)) {
         true
       } else {
