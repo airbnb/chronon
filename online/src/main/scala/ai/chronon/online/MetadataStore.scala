@@ -157,6 +157,23 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     }
   }
 
+  def validateGroupByExist(groupBy: GroupBy, name: String): Boolean = {
+    val team = MetadataEndPoint.getTeamFromMetadata(groupBy.metaData)
+    val activeGroupByList: Try[Seq[String]] = getGroupByListByTeam(team)
+    if (activeGroupByList.isFailure) {
+      logger.error(s"Failed to fetch active join list for team $team")
+      false
+    } else {
+      val groupByKey = "group_bys/" + name
+      if (activeGroupByList.get.contains(groupByKey)) {
+        true
+      } else {
+        logger.error(s"GroupBy $name not found in active group_by list for team $team")
+        false
+      }
+    }
+  }
+
   def putJoinConf(join: Join): Unit = {
     logger.info(s"uploading join conf to dataset: $dataset by key: joins/${join.metaData.nameToFilePath}")
     kvStore.put(

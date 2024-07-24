@@ -317,13 +317,16 @@ class FetcherBase(kvStore: KVStore,
           try {
             // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
             // on the KVStore implementation, so we encode each distinctly.
-            batchKeyBytes =
-              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
-            streamingKeyBytes =
-              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
+            if (!isEntityValidityCheckEnabled || validateGroupByExist(groupByServingInfo.groupBy, request.name)) {
+              batchKeyBytes =
+                kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+              streamingKeyBytes =
+                kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
+            } else throw new InvalidEntityException(request.name)
           } catch {
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
+            case ex: InvalidEntityException => throw ex
             case ex: Exception =>
               val castedKeys = groupByServingInfo.keyChrononSchema.fields.map {
                 case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)
@@ -526,8 +529,8 @@ class FetcherBase(kvStore: KVStore,
         }
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
+          joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
           if (!isEntityValidityCheckEnabled || validateJoinExist(join, request.name)) {
-            joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
             joinContext.get.increment("join_request.count")
             join.joinPartOps.map { part =>
               val joinContextInner = Metrics.Context(joinContext.get, part)
