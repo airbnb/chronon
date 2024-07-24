@@ -148,8 +148,9 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       false
     } else {
       val joinKey = "joins/" + name
-      if (activeJoinList.get.contains(joinKey)) true
-      else {
+      if (activeJoinList.get.contains(joinKey)) {
+        true
+      } else {
         logger.error(s"Join $name not found in active join list for team $team")
         false
       }

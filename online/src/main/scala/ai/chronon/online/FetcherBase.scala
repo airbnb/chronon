@@ -295,6 +295,11 @@ class FetcherBase(kvStore: KVStore,
     isCachingFlagEnabled
   }
 
+  def isEntityValidityCheckEnabled: Boolean = {
+    Option(flagStore)
+      .exists(_.isSet("enable_entity_validity_check", Map.empty[String, String].asJava))
+  }
+
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
@@ -521,7 +526,7 @@ class FetcherBase(kvStore: KVStore,
         }
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
-          if (validateJoinExist(join, request.name)) {
+          if (!isEntityValidityCheckEnabled || validateJoinExist(join, request.name)) {
             joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
             joinContext.get.increment("join_request.count")
             join.joinPartOps.map { part =>
@@ -538,7 +543,7 @@ class FetcherBase(kvStore: KVStore,
               }
             }
           } else {
-            Seq(Right(InactiveEntityException(request.name)))
+            Seq(Right(InvalidEntityException(request.name)))
           }
         }
         request.copy(context = joinContext) -> decomposedTry

@@ -17,12 +17,12 @@
 package ai.chronon.api
 
 class FetchException(requestName: String, message: String)
-  extends IllegalArgumentException(s"Failed to fetch $requestName: $message"){
+    extends IllegalArgumentException(s"Failed to fetch $requestName: $message") {
   def getRequestName: String = requestName
 }
 
 case class KeyMissingException(requestName: String, missingKeys: Seq[String], query: Map[String, Any])
     extends FetchException(requestName, s"Missing keys $missingKeys required by $requestName in query: $query")
 
-case class InactiveEntityException(requestName: String)
-  extends FetchException(requestName, s"Inactive entity $requestName")
+case class InvalidEntityException(requestName: String)
+    extends FetchException(requestName, s"Invalid entity $requestName")
