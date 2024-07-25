@@ -49,7 +49,7 @@ run.py --mode=analyze --conf=production/joins/<path_to_conf_file> --enable-hitte
 
 Optional parameters:
 
-`--endable-hitter`: enable skewed data analysis - include the heavy hitter analysis in output, only output schema if not specified
+`--enable-hitter`: enable skewed data analysis - include the heavy hitter analysis in output, only output schema if not specified
 
 `--start-date` : Finds heavy hitters & time-distributions for a specified start date. Default 3 days prior to "today"
 
