@@ -505,14 +505,14 @@ class Analyzer(tableUtils: TableUtils,
 
     // if timestamp column is present, sample if the timestamp values are not null
     val checkTs = if ( df.schema.fieldNames.contains(Constants.TimeColumn) ) {
-      val sumNulls = df
+      val sumNotNulls = df
         .sample(sampleFraction)
         .agg(
           sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1))).cast(StringType).as("notNullCount")
         )
         .select(col("notNullCount"))
         .rdd.collect()(0)(0).toString
-      sumNulls
+      sumNotNulls
     } else {
       "No Ts Column"
     }
