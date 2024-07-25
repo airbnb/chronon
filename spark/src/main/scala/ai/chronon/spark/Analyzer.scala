@@ -187,8 +187,7 @@ class Analyzer(tableUtils: TableUtils,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
                      enableHitter: Boolean = false,
-                     validationAssert: Boolean = false
-                    ): (Array[AggregationMetadata], Map[String, DataType]) = {
+                     validationAssert: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -244,7 +243,8 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     if (validationAssert) {
-      assert(checkTs == "Acceptable Timestamp Input", "[ERROR]: GroupBy validation failed. Please check that source has valid timestamps.")
+      assert(checkTs == "Acceptable Timestamp Input",
+             "[ERROR]: GroupBy validation failed. Please check that source has valid timestamps.")
     }
 
     val aggMetadata = if (groupByConf.aggregations != null) {
@@ -504,14 +504,16 @@ class Analyzer(tableUtils: TableUtils,
   def runTimestampCheck(df: DataFrame, sampleFraction: Double = 0.1): String = {
 
     // if timestamp column is present, sample if the timestamp values are not null
-    val checkTs = if ( df.schema.fieldNames.contains(Constants.TimeColumn) ) {
+    val checkTs = if (df.schema.fieldNames.contains(Constants.TimeColumn)) {
       val sumNotNulls = df
         .sample(sampleFraction)
         .agg(
           sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1))).cast(StringType).as("notNullCount")
         )
         .select(col("notNullCount"))
-        .rdd.collect()(0)(0).toString
+        .rdd
+        .collect()(0)(0)
+        .toString
       sumNotNulls
     } else {
       "No Ts Column"
@@ -519,7 +521,7 @@ class Analyzer(tableUtils: TableUtils,
 
     val tsStatus = checkTs match {
       case "0" => "Only Null Values" // this will trigger an assertion error
-      case _ => "Acceptable Timestamp Input"
+      case _   => "Acceptable Timestamp Input"
     }
 
     tsStatus
