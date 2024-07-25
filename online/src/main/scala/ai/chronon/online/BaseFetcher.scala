@@ -198,23 +198,13 @@ class BaseFetcher(kvStore: KVStore,
     responseMap
   }
 
+  // At Stripe, these metrics are redundant because our KV Stores already report their own. We make this function a
+  // no-op instead of deleting it to facilitate future rebases on the upstream codebase.
   def reportKvResponse(ctx: Metrics.Context,
                        response: Seq[TimedValue],
                        queryTsMillis: Long,
                        latencyMillis: Long,
-                       totalResponseBytes: Int): Unit = {
-    val latestResponseTs = response.iterator.map(_.millis).reduceOption(_ max _)
-    val responseBytes = response.iterator.map(_.bytes.length).sum
-    val context = ctx.withSuffix("response")
-    context.histogram(Name.RowCount, response.length)
-    context.histogram(Name.Bytes, responseBytes)
-    latestResponseTs.foreach { ts =>
-      context.histogramTagged(Name.FreshnessMillis, queryTsMillis - ts)
-      context.histogram(Name.FreshnessMinutes, (queryTsMillis - ts) / 60000)
-    }
-    context.histogramTagged("attributed_latency.millis",
-                            (responseBytes.toDouble / totalResponseBytes.toDouble) * latencyMillis)
-  }
+                       totalResponseBytes: Int): Unit = {}
 
   /**
     * Get the latest serving information based on a batch response.
@@ -280,7 +270,7 @@ class BaseFetcher(kvStore: KVStore,
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
-    val requestTimeMillis = System.currentTimeMillis()
+    val fetchGroupBysStartTimeNanos = System.nanoTime()
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator
       .filter(r => r.keys == null || r.keys.values == null || r.keys.values.exists(_ != null))
@@ -337,6 +327,12 @@ class BaseFetcher(kvStore: KVStore,
       request -> groupByRequestMetaTry
     }.toSeq
 
+    val timeAfterPreparingKvStoreRequestsNanos = System.nanoTime()
+    // Assume all groupBys use the same join, so we can use the first request's context for metrics
+    requests.headOption.foreach(
+      _.context.foreach(_.histogramTagged("prep_kv_store_requests.latency_nanos",
+                                          timeAfterPreparingKvStoreRequestsNanos - fetchGroupBysStartTimeNanos)))
+
     // If caching is enabled, we check if any of the GetRequests are already cached. If so, we store them in a Map
     // and avoid the work of re-fetching them.
     val cachedRequests: Map[GetRequest, CachedBatchResponse] = getCachedRequests(groupByRequestToKvRequest)
@@ -351,6 +347,10 @@ class BaseFetcher(kvStore: KVStore,
       }
       case _ => Seq.empty
     }
+
+    requests.headOption.foreach(
+      _.context.foreach(_.histogramTagged("get_cached_requests.latency_nanos",
+                                          System.nanoTime() - timeAfterPreparingKvStoreRequestsNanos)))
 
     val startTimeMs = System.currentTimeMillis()
     val kvResponseFuture: Future[Seq[GetResponse]] = if (allRequestsToFetch.nonEmpty) {
@@ -378,10 +378,11 @@ class BaseFetcher(kvStore: KVStore,
               val responseMapTry = requestMetaTry.map { requestMeta =>
                 val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
 
+                // At Stripe, we don't need to report these metrics because our KV Stores already report their own.
                 context.count("multi_get.batch.size", allRequestsToFetch.length)
                 context.histogram("multi_get.bytes", totalResponseValueBytes)
                 context.histogram("multi_get.response.length", kvResponses.length)
-                context.histogram("multi_get.latency.millis", multiGetMillis)
+                context.histogramTagged("multi_get.latency.millis", multiGetMillis)
 
                 // pick the batch version with highest timestamp
                 val batchResponses: BatchResponses =
@@ -522,7 +523,7 @@ class BaseFetcher(kvStore: KVStore,
                 }
             }
             joinRequest.context.foreach { ctx =>
-              ctx.histogram("internal.latency.millis", System.currentTimeMillis() - startTimeMs)
+              ctx.histogramTagged("internal.latency.millis", System.currentTimeMillis() - startTimeMs)
               ctx.increment("internal.request.count")
             }
             Response(joinRequest, joinValuesTry)

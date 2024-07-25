@@ -137,11 +137,7 @@ class Fetcher(val kvStore: KVStore,
               val entityKeySchema = StructType(s"${joinName}_entity_key", entityKeyFields.toArray)
               val externalKeySchema = StructType(s"${joinName}_external_key", externalKeyFields.toArray)
               val baseValueSchema = StructType(s"${joinName}_value", valueFields.toArray)
-              val joinCodec = JoinCodec(joinConf,
-                                        keySchema,
-                                        entityKeySchema,
-                                        externalKeySchema,
-                                        baseValueSchema)
+              val joinCodec = JoinCodec(joinConf, keySchema, entityKeySchema, externalKeySchema, baseValueSchema)
               logControlEvent(joinCodec)
               joinCodec
           }
@@ -198,7 +194,7 @@ class Fetcher(val kvStore: KVStore,
               }
             }
             val requestEndTs = System.currentTimeMillis()
-            ctx.histogram("derivation.latency.millis", requestEndTs - derivationStartTs)
+            ctx.histogramTagged("derivation.latency.millis", requestEndTs - derivationStartTs)
             ctx.histogram("overall.latency.millis", requestEndTs - ts)
             ResponseWithContext(internalResponse.request, derivedMap, baseMap)
         }
@@ -423,7 +419,7 @@ class Fetcher(val kvStore: KVStore,
       joinRequests.map { req =>
         Metrics
           .Context(Environment.JoinFetching, join = req.name)
-          .histogram("external.latency.millis", System.currentTimeMillis() - startTime)
+          .histogramTagged("external.latency.millis", System.currentTimeMillis() - startTime)
         Response(req, resultMap(req).map(_.mapValues(_.asInstanceOf[AnyRef]).toMap))
       }
     }
