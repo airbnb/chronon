@@ -23,7 +23,7 @@ import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.functions.{col, lit}
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.slf4j.LoggerFactory
@@ -222,25 +222,67 @@ class AnalyzerTest {
   }
 
   @Test
-  def testGroupByAnalyzerValidationTimestampCheck(): Unit = {
+  def testGroupByAnalyzerCheckTimestampHasValues(): Unit = {
 
-    // left side
-    val tableGroupBy = getViewsGroupBy("group_by_analyzer_test.test_1", Operation.SUM, source = getTestGBSourceWithTs())
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs()),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test.test_1", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
 
-    val itemQueries = List(Column("item", api.StringType, 100), Column("guest", api.StringType, 100))
-    val itemQueriesTable = s"$namespace.test_table"
-    DataFrameGen
-      .events(spark, itemQueries, 500, partitions = 100)
-      .save(itemQueriesTable)
-
-    val start = tableUtils.partitionSpec.minus(today, new Window(10, TimeUnit.DAYS))
-
-    //run analyzer and validate data availability
+    //run analyzer an ensure ts timestamp values result in analyzer passing
     val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
-    analyzer.analyzeGroupBy(tableGroupBy, enableHitter = true, validationAssert = true)
+    analyzer.analyzeGroupBy(tableGroupBy, validationAssert = true)
 
   }
 
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testGroupByAnalyzerCheckTimestampAllNulls(): Unit = {
+
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs(nullTs = true)),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col2")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test.test_2", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    //run analyzer and trigger assertion error when timestamps are all NULL
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+    analyzer.analyzeGroupBy(tableGroupBy, validationAssert = true)
+  }
+
+  def getTestGBSourceWithTs(nullTs: Boolean = false): api.Source = {
+    val testSchema = List(
+      Column("key", api.StringType, 10),
+      Column("col1", api.IntType, 10),
+      Column("col2", api.IntType, 10),
+    )
+
+    val viewsTable = s"$namespace.test_table"
+    if (nullTs) {
+      DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+        .withColumn("ts", lit(null).cast("bigint")) // set ts to null to test analyzer
+        .save(viewsTable)
+    } else {
+      DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+        .save(viewsTable)
+    }
+
+    val out = Builders.Source.events(
+        query = Builders.Query(selects = Builders.Selects("col1", "col2"), startPartition = oneYearAgo),
+        table = viewsTable
+      )
+
+    out
+
+  }
 
   def getTestGBSource(): api.Source = {
     val viewsSchema = List(
@@ -255,23 +297,6 @@ class AnalyzerTest {
 
     Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("time_spent_ms", "user_review"), startPartition = oneYearAgo),
-      table = viewsTable
-    )
-  }
-
-  def getTestGBSourceWithTs(): api.Source = {
-    val testSchema = List(
-      Column("key", api.StringType, 1000),
-      Column("ts", api.IntType, 1600),
-      Column("col1", api.IntType, 100),
-      Column("col2", api.IntType, 1000),
-    )
-
-    val viewsTable = s"$namespace.test_table"
-    DataFrameGen.events(spark, testSchema, count = 100, partitions = 20).drop("ts").save(viewsTable)
-
-    Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("col1", "col2"), startPartition = oneYearAgo),
       table = viewsTable
     )
   }

@@ -194,7 +194,7 @@ class Analyzer(tableUtils: TableUtils,
     val name = "group_by/" + prefix + groupByConf.metaData.name
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
 
-    val checkTs = checkTimestamp(groupBy.inputDf)
+    val checkTs = runTimestampCheck(groupBy.inputDf)
 
     val analysis =
       if (enableHitter)
@@ -244,7 +244,7 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     if (validationAssert) {
-      assert(checkTs == "Only Null Values", "ERROR: GroupBy validation failed. Please check that source has valid timestamps.")
+      assert(checkTs == "Valid Timestamp Input", "ERROR: GroupBy validation failed. Please check that source has valid timestamps.")
     }
 
     val aggMetadata = if (groupByConf.aggregations != null) {
@@ -501,7 +501,7 @@ class Analyzer(tableUtils: TableUtils,
 
   // For groupBys validate if the timestamp provided produces some values
   // if all values are null this should be flagged as an error
-  def checkTimestamp(df: DataFrame, sampleFraction: Double = 0.1): String = {
+  def runTimestampCheck(df: DataFrame, sampleFraction: Double = 0.1): String = {
 
     // if timestamp column is present, sample if the timestamp values are not null
     val checkTs = if ( df.schema.fieldNames.contains(Constants.TimeColumn) ) {
@@ -511,7 +511,7 @@ class Analyzer(tableUtils: TableUtils,
           sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1))).cast(StringType).as("notNullCount")
         )
         .select(col("notNullCount"))
-        .rdd.collect().head.toString()
+        .rdd.collect()(0)(0).toString
       sumNulls
     } else {
       "No Ts Column"
