@@ -295,6 +295,7 @@ class FetcherBase(kvStore: KVStore,
     isCachingFlagEnabled
   }
 
+  // If the flag is set, we check whether the entity is in the active entity list saved on k-v store
   def isEntityValidityCheckEnabled: Boolean = {
     Option(flagStore)
       .exists(_.isSet("enable_entity_validity_check", Map.empty[String, String].asJava))
@@ -315,18 +316,19 @@ class FetcherBase(kvStore: KVStore,
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {
-            // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
-            // on the KVStore implementation, so we encode each distinctly.
             if (!isEntityValidityCheckEnabled || validateGroupByExist(groupByServingInfo.groupBy, request.name)) {
+              // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
+              // on the KVStore implementation, so we encode each distinctly.
               batchKeyBytes =
                 kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
               streamingKeyBytes =
                 kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
-            } else throw new InvalidEntityException(request.name)
+            } else throw InvalidEntityException(request.name)
           } catch {
+            // If the group_by is inactive, throw the exception
+            case ex: InvalidEntityException => throw ex
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
-            case ex: InvalidEntityException => throw ex
             case ex: Exception =>
               val castedKeys = groupByServingInfo.keyChrononSchema.fields.map {
                 case StructField(name, typ) => name -> ColumnAggregator.castTo(request.keys.getOrElse(name, null), typ)

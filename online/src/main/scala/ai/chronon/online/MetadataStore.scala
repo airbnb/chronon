@@ -139,6 +139,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     },
     { join => Metrics.Context(environment = "join.meta.fetch", join = join) })
 
+  // Validate whether the join exists in the active groupBy list saved in kv store
   def validateJoinExist(joinOps: JoinOps, name: String): Boolean = {
     val join = joinOps.join
     val team = MetadataEndPoint.getTeamFromMetadata(join.metaData)
@@ -157,6 +158,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     }
   }
 
+  // Validate whether the groupBy exists in the active groupBy list saved in kv store
   def validateGroupByExist(groupBy: GroupBy, name: String): Boolean = {
     val team = MetadataEndPoint.getTeamFromMetadata(groupBy.metaData)
     val activeGroupByList: Try[Seq[String]] = getGroupByListByTeam(team)
