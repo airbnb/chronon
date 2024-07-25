@@ -244,7 +244,7 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     if (validationAssert) {
-      assert(checkTs == "Valid Timestamp Input", "ERROR: GroupBy validation failed. Please check that source has valid timestamps.")
+      assert(checkTs == "Acceptable Timestamp Input", "[ERROR]: GroupBy validation failed. Please check that source has valid timestamps.")
     }
 
     val aggMetadata = if (groupByConf.aggregations != null) {
@@ -517,12 +517,12 @@ class Analyzer(tableUtils: TableUtils,
       "No Ts Column"
     }
 
-    val tsStat = checkTs match {
-      case "0" => "Only Null Values"
-      case _ => "Valid Timestamp Input"
+    val tsStatus = checkTs match {
+      case "0" => "Only Null Values" // this will trigger an assertion error
+      case _ => "Acceptable Timestamp Input"
     }
 
-    tsStat
+    tsStatus
   }
 
   def run(): Unit =
