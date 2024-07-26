@@ -54,6 +54,22 @@ class ExtensionsTest {
       metadata.team
     )
 
+    val metadata2 =
+      Builders.MetaData(
+        customJson = "{\"check_consistency\": true, \"lag\": 0}",
+        team = "chronon"
+      )
+
+    assertEquals(
+      "chronon",
+      metadata2.owningTeam
+    )
+
+    assertEquals(
+      "chronon",
+      metadata2.team
+    )
+
     val metadata3 =
       Builders.MetaData(
         customJson = null,
