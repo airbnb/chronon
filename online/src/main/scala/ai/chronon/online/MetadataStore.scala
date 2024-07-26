@@ -140,8 +140,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     { join => Metrics.Context(environment = "join.meta.fetch", join = join) })
 
   // Validate whether the join exists in the active groupBy list saved in kv store
-  def validateJoinExist(joinOps: JoinOps, name: String): Boolean = {
-    val team = joinOps.join.metaData.owningTeam
+  def validateJoinExist(team: String, name: String): Boolean = {
     val activeJoinList: Try[Seq[String]] = getJoinListByTeam(team)
     if (activeJoinList.isFailure) {
       logger.error(s"Failed to fetch active join list for team $team")
@@ -159,8 +158,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
   }
 
   // Validate whether the groupBy exists in the active groupBy list saved in kv store
-  def validateGroupByExist(groupBy: GroupBy, name: String): Boolean = {
-    val team = groupBy.metaData.owningTeam
+  def validateGroupByExist(team: String, name: String): Boolean = {
     val activeGroupByList: Try[Seq[String]] = getGroupByListByTeam(team)
     if (activeGroupByList.isFailure) {
       logger.error(s"Failed to fetch active group_by list for team $team")

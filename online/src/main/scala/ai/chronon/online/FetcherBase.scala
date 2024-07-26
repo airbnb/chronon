@@ -20,7 +20,7 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, ThrowableOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
@@ -316,7 +316,7 @@ class FetcherBase(kvStore: KVStore,
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {
-            if (!isEntityValidityCheckEnabled || validateGroupByExist(groupByServingInfo.groupBy, request.name)) {
+            if (!isEntityValidityCheckEnabled || validateGroupByExist(groupByServingInfo.groupBy.metaData.owningTeam, request.name)) {
               // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
               // on the KVStore implementation, so we encode each distinctly.
               batchKeyBytes =
@@ -538,7 +538,7 @@ class FetcherBase(kvStore: KVStore,
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
           joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
-          if (!isEntityValidityCheckEnabled || validateJoinExist(join, request.name)) {
+          if (!isEntityValidityCheckEnabled || validateJoinExist(join.join.metaData.owningTeam, request.name)) {
             joinContext.get.increment("join_request.count")
             join.joinPartOps.map { part =>
               val joinContextInner = Metrics.Context(joinContext.get, part)

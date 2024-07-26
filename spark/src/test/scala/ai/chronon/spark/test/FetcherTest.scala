@@ -87,6 +87,8 @@ class FetcherTest extends TestCase {
     assertTrue(res.latest.isSuccess)
     val actual = new String(res.values.get.head.bytes)
     assertEquals(expected, actual.replaceAll("\\s+", ""))
+    assertTrue(singleFileMetadataStore.getJoinListByTeam("team").get.contains("example_join.v1"))
+    assertTrue(singleFileMetadataStore.validateJoinExist("team", "team/example_join.v1"))
 
     val teamMetadataResponse = inMemoryKvStore.getString("joins/relevance", singleFileDataSet, 10000)
     val teamMetadataRes = teamMetadataResponse.get
