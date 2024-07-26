@@ -186,14 +186,31 @@ class Analyzer(tableUtils: TableUtils,
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
-                     enableHitter: Boolean = false,
-                     validationAssert: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
+                     enableHitter: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
 
-    val checkTs = runTimestampCheck(groupBy.inputDf)
+    val timestampChecks = runTimestampChecks(groupBy.inputDf)
+    if (timestampChecks("TsColumn") == "Has Ts Column") {
+      // do timestamp checks
+      assert(timestampChecks("NullCheck") != "0",
+             "[ERROR]: GroupBy validation failed. Please check that source has non-null timestamps.")
+      assert(timestampChecks("BadRangeCheck") == "0",
+             "[ERROR]: GroupBy validation failed. Please check that source has valid epoch millisecond timestamps.")
+
+      logger.info(s"""ANALYSIS TIMESTAMP completed for group_by/${name}.
+           |check ts column: ${timestampChecks("TsColumn")}
+           |check notNullCount: ${timestampChecks("NullCheck")}
+           |check badRangeCount: ${timestampChecks("BadRangeCheck")}
+           |""".stripMargin)
+
+    } else {
+      logger.info(s"""ANALYSIS TIMESTAMP completed for group_by/${name}.
+           |check ts column: ${timestampChecks("TsColumn")}
+           |""".stripMargin)
+    }
 
     val analysis =
       if (enableHitter)
@@ -240,11 +257,6 @@ class Analyzer(tableUtils: TableUtils,
            |${schema.mkString("\n")}
            |------ END --------------
            |""".stripMargin)
-    }
-
-    if (validationAssert) {
-      assert(checkTs == "Acceptable Timestamp Input",
-             "[ERROR]: GroupBy validation failed. Please check that source has valid timestamps.")
     }
 
     val aggMetadata = if (groupByConf.aggregations != null) {
@@ -501,10 +513,10 @@ class Analyzer(tableUtils: TableUtils,
 
   // For groupBys validate if the timestamp provided produces some values
   // if all values are null this should be flagged as an error
-  def runTimestampCheck(df: DataFrame, sampleFraction: Double = 0.1): String = {
+  def runTimestampChecks(df: DataFrame, sampleFraction: Double = 0.1): Map[String, String] = {
 
-    // if timestamp column is present, sample if the timestamp values are not null
-    val checkTs = if (df.schema.fieldNames.contains(Constants.TimeColumn)) {
+    val hasTimestamp = df.schema.fieldNames.contains(Constants.TimeColumn)
+    val mapTimestampChecks = if (hasTimestamp) {
       val sumNotNulls = df
         .sample(sampleFraction)
         .agg(
@@ -514,17 +526,34 @@ class Analyzer(tableUtils: TableUtils,
         .rdd
         .collect()(0)(0)
         .toString
-      sumNotNulls
+
+      // assumes that we have valid unix milliseconds between the date range of
+      // 1970-01-01 00:00:00 (0L) to 2099-12-31 23:59:59 (4102473599999L)
+      val hasBadRangeTimestamps = df
+        .sample(sampleFraction)
+        .agg(
+          sum(when(col(Constants.TimeColumn).between(0L, 4102473599999L), lit(0)).otherwise(lit(1)))
+            .cast(StringType)
+            .as("badRangeCount")
+        )
+        .select(col("badRangeCount"))
+        .rdd
+        .collect()(0)(0)
+        .toString
+
+      Map(
+        "NullCheck" -> sumNotNulls,
+        "BadRangeCheck" -> hasBadRangeTimestamps,
+        "TsColumn" -> "Has Ts Column"
+      )
+
     } else {
-      "No Ts Column"
+      Map(
+        "TsColumn" -> "No Ts Column"
+      )
     }
 
-    val tsStatus = checkTs match {
-      case "0" => "Only Null Values" // this will trigger an assertion error
-      case _   => "Acceptable Timestamp Input"
-    }
-
-    tsStatus
+    mapTimestampChecks
   }
 
   def run(): Unit =

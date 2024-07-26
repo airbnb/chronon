@@ -236,7 +236,7 @@ class AnalyzerTest {
 
     //run analyzer an ensure ts timestamp values result in analyzer passing
     val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
-    analyzer.analyzeGroupBy(tableGroupBy, validationAssert = true)
+    analyzer.analyzeGroupBy(tableGroupBy)
 
   }
 
@@ -244,7 +244,7 @@ class AnalyzerTest {
   def testGroupByAnalyzerCheckTimestampAllNulls(): Unit = {
 
     val tableGroupBy = Builders.GroupBy(
-      sources = Seq(getTestGBSourceWithTs(nullTs = true)),
+      sources = Seq(getTestGBSourceWithTs("nulls")),
       keyColumns = Seq("key"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM, inputColumn = "col2")
@@ -255,10 +255,29 @@ class AnalyzerTest {
 
     //run analyzer and trigger assertion error when timestamps are all NULL
     val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
-    analyzer.analyzeGroupBy(tableGroupBy, validationAssert = true)
+    analyzer.analyzeGroupBy(tableGroupBy)
   }
 
-  def getTestGBSourceWithTs(nullTs: Boolean = false): api.Source = {
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testGroupByAnalyzerCheckTimestampOutOfRange(): Unit = {
+
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs("out_of_range")),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col2")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test.test_3", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    //run analyzer and trigger assertion error when timestamps are all NULL
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+    analyzer.analyzeGroupBy(tableGroupBy)
+
+  }
+
+  def getTestGBSourceWithTs(option: String = "default"): api.Source = {
     val testSchema = List(
       Column("key", api.StringType, 10),
       Column("col1", api.IntType, 10),
@@ -266,13 +285,24 @@ class AnalyzerTest {
     )
 
     val viewsTable = s"$namespace.test_table"
-    if (nullTs) {
-      DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
-        .withColumn("ts", lit(null).cast("bigint")) // set ts to null to test analyzer
-        .save(viewsTable)
-    } else {
-      DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
-        .save(viewsTable)
+    option match {
+      case "default" => {
+        DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+          .save(viewsTable)
+      }
+      case "nulls" => {
+        DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+          .withColumn("ts", lit(null).cast("bigint")) // set ts to null to test analyzer
+          .save(viewsTable)
+      }
+      case "out_of_range" => {
+        DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+          .withColumn("ts", col("ts")*lit(1000)) // convert to nanoseconds to test analyzer
+          .save(viewsTable)
+      }
+      case _ => {
+        throw new IllegalArgumentException(s"$option is not a valid timestamp generation option")
+      }
     }
 
     val out = Builders.Source.events(
