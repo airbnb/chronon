@@ -361,8 +361,9 @@ class FetcherBase(kvStore: KVStore,
         groupByRequestMetaTry match {
           case Failure(ex: InvalidEntityException) =>
             request.context.foreach(_.increment("fetch_invalid_group_by_failure.count"))
-          case Failure(ex: EncodeKeyException) => request.context.foreach(_.increment("encode_group_by_key_failure.count"))
-          case Failure(ex: _) => request.context.foreach(_.increment("group_by_serving_info_failure.count"))
+          case Failure(ex: EncodeKeyException) =>
+            request.context.foreach(_.increment("encode_group_by_key_failure.count"))
+          case Failure(ex: Exception) => request.context.foreach(_.increment("group_by_serving_info_failure.count"))
         }
       }
       request -> groupByRequestMetaTry
@@ -562,7 +563,17 @@ class FetcherBase(kvStore: KVStore,
     val groupByRequests = joinDecomposed.flatMap {
       case (_, gbTry) =>
         gbTry match {
-          case Failure(_)        => Iterator.empty
+          case Failure(ex) => {
+            ex match {
+              case _: InvalidEntityException =>
+                Metrics.Context(Metrics.Environment.JoinFetching).increment("fetch_invalid_join_failure.count")
+              case _: KeyMissingException =>
+                Metrics.Context(Metrics.Environment.JoinFetching).increment("fetch_missing_key_failure.count")
+              case _: Exception =>
+                Metrics.Context(Metrics.Environment.JoinFetching).increment("fetch_join_failure.count")
+            }
+            Iterator.empty
+          }
           case Success(requests) => requests.iterator.flatMap(_.left.toOption).map(_.request)
         }
     }
