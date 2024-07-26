@@ -341,7 +341,7 @@ class FetcherBase(kvStore: KVStore,
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)
-                  throw new RuntimeException("Couldn't encode request keys or casted keys", exInner)
+                  throw EncodeKeyException(request.name, "Couldn't encode request keys or casted keys")
               }
           }
           val batchRequest = GetRequest(batchKeyBytes, groupByServingInfo.groupByOps.batchDataset)
@@ -358,7 +358,12 @@ class FetcherBase(kvStore: KVStore,
           GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis, context)
         }
       if (groupByRequestMetaTry.isFailure) {
-        request.context.foreach(_.increment("group_by_serving_info_failure.count"))
+        groupByRequestMetaTry match {
+          case Failure(ex: InvalidEntityException) =>
+            request.context.foreach(_.increment("fetch_invalid_group_by_failure.count"))
+          case Failure(ex: EncodeKeyException) => request.context.foreach(_.increment("encode_group_by_key_failure.count"))
+          case Failure(ex: _) => request.context.foreach(_.increment("group_by_serving_info_failure.count"))
+        }
       }
       request -> groupByRequestMetaTry
     }.toSeq

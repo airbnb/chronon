@@ -26,3 +26,6 @@ case class KeyMissingException(requestName: String, missingKeys: Seq[String], qu
 
 case class InvalidEntityException(requestName: String)
     extends FetchException(requestName, s"Invalid entity $requestName")
+
+case class EncodeKeyException(requestName: String, message: String)
+    extends IllegalArgumentException(s"Failed to encode key for $requestName: $message")
