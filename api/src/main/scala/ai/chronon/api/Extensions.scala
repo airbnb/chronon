@@ -143,7 +143,7 @@ object Extensions {
     }
 
     def owningTeam: String = {
-      val teamOverride = Try(customJsonLookUp(Constants.TeamOverride).asInstanceOf[String]).toOption
+      val teamOverride = Option(Try(customJsonLookUp(Constants.TeamOverride).asInstanceOf[String]).getOrElse(null))
       teamOverride.getOrElse(metaData.team)
     }
   }

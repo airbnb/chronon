@@ -53,6 +53,22 @@ class ExtensionsTest {
       "chronon",
       metadata.team
     )
+
+    val metadata3 =
+      Builders.MetaData(
+        customJson = null,
+        team = "chronon"
+      )
+
+    assertEquals(
+      "chronon",
+      metadata3.owningTeam
+    )
+
+    assertEquals(
+      "chronon",
+      metadata3.team
+    )
   }
 
   @Test
