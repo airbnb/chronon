@@ -2,6 +2,7 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions.StringOps
 import ai.chronon.api.{GroupBy, Join, StagingQuery, ThriftJsonCodec, MetaData}
+import ai.chronon.api.Extensions.MetadataOps
 import org.apache.thrift.TBase
 import org.slf4j.LoggerFactory
 import org.json4s.jackson.JsonMethods._
@@ -19,21 +20,11 @@ object MetadataEndPoint {
   val ConfByKeyEndPointName = "ZIPLINE_METADATA"
   val NameByTeamEndPointName = "CHRONON_ENTITY_BY_TEAM"
 
-  def getTeamFromMetadata(metaData: MetaData): String = {
-    val team = metaData.team
-    if (metaData.customJson != null && metaData.customJson.nonEmpty) {
-      implicit val formats = DefaultFormats
-      val customJson = parse(metaData.customJson)
-      val teamFromJson: String = (customJson \ "team_override").extractOpt[String].getOrElse("")
-      if (teamFromJson.nonEmpty) teamFromJson else team
-    } else team
-  }
-
   private def parseTeam[Conf <: TBase[_, _]: Manifest: ClassTag](conf: Conf): String = {
     conf match {
-      case join: Join                 => "joins/" + getTeamFromMetadata(join.metaData)
-      case groupBy: GroupBy           => "group_bys/" + getTeamFromMetadata(groupBy.metaData)
-      case stagingQuery: StagingQuery => "staging_queries/" + getTeamFromMetadata(stagingQuery.metaData)
+      case join: Join                 => "joins/" + join.metaData.owningTeam
+      case groupBy: GroupBy           => "group_bys/" + groupBy.metaData.owningTeam
+      case stagingQuery: StagingQuery => "staging_queries/" + stagingQuery.metaData.owningTeam
       case _ =>
         logger.error(s"Failed to parse team from $conf")
         throw new Exception(s"Failed to parse team from $conf")

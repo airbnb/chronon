@@ -141,8 +141,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   // Validate whether the join exists in the active groupBy list saved in kv store
   def validateJoinExist(joinOps: JoinOps, name: String): Boolean = {
-    val join = joinOps.join
-    val team = MetadataEndPoint.getTeamFromMetadata(join.metaData)
+    val team = joinOps.join.metaData.owningTeam
     val activeJoinList: Try[Seq[String]] = getJoinListByTeam(team)
     if (activeJoinList.isFailure) {
       logger.error(s"Failed to fetch active join list for team $team")
@@ -150,6 +149,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     } else {
       val joinKey = "joins/" + name
       if (activeJoinList.get.contains(joinKey)) {
+        logger.info(s"[test code] ${joinKey} found in ${activeJoinList.get}")
         true
       } else {
         logger.error(s"Join $name not found in active join list for team $team")
@@ -160,7 +160,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   // Validate whether the groupBy exists in the active groupBy list saved in kv store
   def validateGroupByExist(groupBy: GroupBy, name: String): Boolean = {
-    val team = MetadataEndPoint.getTeamFromMetadata(groupBy.metaData)
+    val team = groupBy.metaData.owningTeam
     val activeGroupByList: Try[Seq[String]] = getGroupByListByTeam(team)
     if (activeGroupByList.isFailure) {
       logger.error(s"Failed to fetch active group_by list for team $team")
@@ -172,6 +172,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         "group_bys/" + name.replaceFirst("\\.", "/")
       }
       if (activeGroupByList.get.contains(groupByKey)) {
+        logger.info(s"[test code] ${groupByKey} found in ${activeGroupByList.get}")
         true
       } else {
         logger.error(s"GroupBy $name not found in active group_by list for team $team")
