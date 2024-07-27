@@ -195,10 +195,20 @@ class Analyzer(tableUtils: TableUtils,
     val timestampChecks = runTimestampChecks(groupBy.inputDf)
     if (timestampChecks("TsColumn") == "Has Ts Column") {
       // do timestamp checks
-      assert(timestampChecks("NullCheck") != "0",
-             "[ERROR]: GroupBy validation failed. Please check that source has non-null timestamps.")
-      assert(timestampChecks("BadRangeCheck") == "0",
-             "[ERROR]: GroupBy validation failed. Please check that source has valid epoch millisecond timestamps.")
+      assert(
+        timestampChecks("NullCheck") != "0",
+        s"""[ERROR]: GroupBy validation failed.
+                 | Please check that source has non-null timestamps.
+                 | check notNullCount: ${timestampChecks("NullCheck")}
+                 | """.stripMargin
+      )
+      assert(
+        timestampChecks("BadRangeCheck") == "0",
+        s"""[ERROR]: GroupBy validation failed.
+                 | Please check that source has valid epoch millisecond timestamps.
+                 | badRangeCount: ${timestampChecks("BadRangeCheck")}
+                 | """.stripMargin
+      )
 
       logger.info(s"""ANALYSIS TIMESTAMP completed for group_by/${name}.
            |check ts column: ${timestampChecks("TsColumn")}
