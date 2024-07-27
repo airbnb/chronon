@@ -49,7 +49,7 @@ class JoinFlowTest {
       .where(col("user").isNotNull)
       .save(transactionsTable)
 
-    val joinPart = Builders.JoinPart(groupBy = Builders.GroupBy(
+    val joinPart: JoinPart = Builders.JoinPart(groupBy = Builders.GroupBy(
       keyColumns = Seq("user"),
       sources = Seq(
         Builders.Source.events(
