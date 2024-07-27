@@ -193,32 +193,31 @@ class Analyzer(tableUtils: TableUtils,
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
 
     val timestampChecks = runTimestampChecks(groupBy.inputDf)
-    if (timestampChecks("TsColumn") == "Has Ts Column") {
+    if (!timestampChecks.contains("noTsColumn")) {
       // do timestamp checks
       assert(
-        timestampChecks("NullCheck") != "0",
+        timestampChecks("notNullCount") != "0",
         s"""[ERROR]: GroupBy validation failed.
                  | Please check that source has non-null timestamps.
-                 | check notNullCount: ${timestampChecks("NullCheck")}
+                 | check notNullCount: ${timestampChecks("notNullCount")}
                  | """.stripMargin
       )
       assert(
-        timestampChecks("BadRangeCheck") == "0",
+        timestampChecks("badRangeCount") == "0",
         s"""[ERROR]: GroupBy validation failed.
                  | Please check that source has valid epoch millisecond timestamps.
-                 | badRangeCount: ${timestampChecks("BadRangeCheck")}
+                 | badRangeCount: ${timestampChecks("badRangeCount")}
                  | """.stripMargin
       )
 
       logger.info(s"""ANALYSIS TIMESTAMP completed for group_by/${name}.
-           |check ts column: ${timestampChecks("TsColumn")}
-           |check notNullCount: ${timestampChecks("NullCheck")}
-           |check badRangeCount: ${timestampChecks("BadRangeCheck")}
+           |check notNullCount: ${timestampChecks("notNullCount")}
+           |check badRangeCount: ${timestampChecks("badRangeCount")}
            |""".stripMargin)
 
     } else {
       logger.info(s"""ANALYSIS TIMESTAMP completed for group_by/${name}.
-           |check ts column: ${timestampChecks("TsColumn")}
+           |check TsColumn: ${timestampChecks("noTsColumn")}
            |""".stripMargin)
     }
 
@@ -527,43 +526,43 @@ class Analyzer(tableUtils: TableUtils,
 
     val hasTimestamp = df.schema.fieldNames.contains(Constants.TimeColumn)
     val mapTimestampChecks = if (hasTimestamp) {
-      val sumNotNulls = df
-        .sample(sampleFraction)
-        .agg(
-          sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1))).cast(StringType).as("notNullCount")
-        )
-        .select(col("notNullCount"))
-        .rdd
-        .collect()(0)(0)
-        .toString
-
-      // assumes that we have valid unix milliseconds between the date range of
-      // 1970-01-01 00:00:00 (0L) to 2099-12-31 23:59:59 (4102473599999L)
-      val hasBadRangeTimestamps = df
-        .sample(sampleFraction)
-        .agg(
-          sum(when(col(Constants.TimeColumn).between(0L, 4102473599999L), lit(0)).otherwise(lit(1)))
-            .cast(StringType)
-            .as("badRangeCount")
-        )
-        .select(col("badRangeCount"))
-        .rdd
-        .collect()(0)(0)
-        .toString
-
-      Map(
-        "NullCheck" -> sumNotNulls,
-        "BadRangeCheck" -> hasBadRangeTimestamps,
-        "TsColumn" -> "Has Ts Column"
+      dataFrameToMap(
+        df.sample(sampleFraction)
+          .agg(
+            // will return 0 if all values are null
+            sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1)))
+              .cast(StringType)
+              .as("notNullCount"),
+            // assumes that we have valid unix milliseconds between the date range of
+            // 1970-01-01 00:00:00 (0L) to 2099-12-31 23:59:59 (4102473599999L)
+            // will return 0 if all values are within the range
+            sum(when(col(Constants.TimeColumn).between(0L, 4102473599999L), lit(0)).otherwise(lit(1)))
+              .cast(StringType)
+              .as("badRangeCount")
+          )
+          .select(col("notNullCount"), col("badRangeCount"))
       )
-
     } else {
       Map(
-        "TsColumn" -> "No Ts Column"
+        "noTsColumn" -> "No Timestamp Column"
       )
     }
 
     mapTimestampChecks
+  }
+
+  def dataFrameToMap(inputDf: DataFrame): Map[String, String] = {
+    val row: Row = inputDf.head()
+    val schema = inputDf.schema
+    val columns = schema.fieldNames
+    val values = row.toSeq
+    columns
+      .zip(values)
+      .map {
+        case (column, value) =>
+          (column, value.toString)
+      }
+      .toMap
   }
 
   def run(): Unit =
