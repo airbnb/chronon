@@ -316,7 +316,10 @@ class FetcherBase(kvStore: KVStore,
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {
-            if (!isEntityValidityCheckEnabled || validateGroupByExist(groupByServingInfo.groupBy.metaData.owningTeam, request.name)) {
+            if (
+              !isEntityValidityCheckEnabled || validateGroupByExist(groupByServingInfo.groupBy.metaData.owningTeam,
+                                                                    request.name)
+            ) {
               // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
               // on the KVStore implementation, so we encode each distinctly.
               batchKeyBytes =
