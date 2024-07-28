@@ -86,7 +86,7 @@ class JoinBackfill:
     def command_template(self, config_path: str, extra_args: dict):
         if self.start_date:
             extra_args.update({"start_ds": self.start_date})
-        return f"""python3 /tmp/run.py --conf=/tmp/{config_path} --ds={self.end_date} \
+        return f"""run.py --conf={config_path} --ds={self.end_date} \
 {dict_to_bash_commands(extra_args)}"""
 
     def run_join_part(self, join_name: dict, join_part: str):
