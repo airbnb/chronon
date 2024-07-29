@@ -222,10 +222,11 @@ object Extensions {
       bloomFilter
     }
 
-    def removeNulls(cols: Seq[String]): DataFrame = {
+    def removeNulls(cols: Seq[String], includePartial: Boolean): DataFrame = {
       logger.info(s"filtering nulls from columns: [${cols.mkString(", ")}]")
+      val comparison = if (includePartial) "OR" else "AND"
       // do not use != or <> operator with null, it doesn't return false ever!
-      df.filter(cols.map(_ + " IS NOT NULL").mkString(" AND "))
+      df.filter(cols.map(_ + " IS NOT NULL").mkString(s" $comparison "))
     }
 
     def nullSafeJoin(right: DataFrame, keys: Seq[String], joinType: String): DataFrame = {

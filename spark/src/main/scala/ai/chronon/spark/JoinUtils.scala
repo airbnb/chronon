@@ -24,7 +24,7 @@ import ai.chronon.spark.Extensions._
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
-import org.apache.spark.sql.functions.{coalesce, col, udf}
+import org.apache.spark.sql.functions.{coalesce, col, lit, udf, when}
 import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.LoggerFactory
 
@@ -137,23 +137,34 @@ object JoinUtils {
              s"Column '$column' has mismatched data types - left type: $leftDataType vs. right type $rightDataType")
     }
 
-    val joinedDf = leftDf.join(rightDf, keys.toSeq, joinType)
+    val leftJoinDf = leftDf.alias("leftDf")
+    val rightJoinDf = rightDf.alias("rightDf")
+
+    val joinCondition = keys
+      .map { key =>
+        (col(s"leftDf.$key") === col(s"rightDf.$key")) or
+          (col(s"leftDf.$key").isNull and col(s"rightDf.$key").isNull)
+      }
+      .reduce(_ && _)
+
+    val joinedDf = leftJoinDf.join(rightJoinDf, joinCondition, joinType)
+
     // find columns that exist both on left and right that are not keys and coalesce them
-    val selects = keys.map(col) ++
-      leftDf.columns.flatMap { colName =>
+    val selects = keys.map(k => col(s"leftDf.$k").as(k)) ++
+      leftJoinDf.columns.flatMap { colName =>
         if (keys.contains(colName)) {
           None
         } else if (sharedColumns.contains(colName)) {
-          Some(coalesce(leftDf(colName), rightDf(colName)).as(colName))
+          Some(coalesce(col(s"leftDf.$colName"), col(s"rightDf.$colName")).as(colName))
         } else {
-          Some(leftDf(colName))
+          Some(col(s"leftDf.$colName").as(colName))
         }
       } ++
-      rightDf.columns.flatMap { colName =>
+      rightJoinDf.columns.flatMap { colName =>
         if (sharedColumns.contains(colName)) {
           None // already selected previously
         } else {
-          Some(rightDf(colName))
+          Some(col(s"rightDf.$colName").as(colName))
         }
       }
     val finalDf = joinedDf.select(selects.toSeq: _*)
@@ -365,7 +376,7 @@ object JoinUtils {
             }.toSet
 
             // Form the final WHERE clause for injection
-            s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
+            s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")}) or $groupByKeyExpression is null"
         }
         .foreach { whereClause =>
           // Skip adding the filter if it is a join source
