@@ -122,7 +122,9 @@ object BootstrapInfo {
       .map(schema => SparkConversions.toChrononSchema(schema))
       .map(_.map(field => StructField(field._1, field._2)))
       .getOrElse(Array.empty[StructField])
-    val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema) ++ leftFields
+    val baseFieldsWithoutLeft = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
+    val baseFields =
+      baseFieldsWithoutLeft ++ leftFields.filterNot(lf => baseFieldsWithoutLeft.exists(bf => bf.name == lf.name))
     val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
 
     val baseDf = tableUtils.sparkSession.createDataFrame(

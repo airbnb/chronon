@@ -22,11 +22,13 @@ class FrequentItemsTest extends TestCase {
 
     val result = items.finalize(ir)
 
-    assertEquals(toHashMap(Map(
-      "4" -> 4,
-      "3" -> 3,
-      "2" -> 2
-    )), result)
+    assertEquals(toHashMap(
+                   Map(
+                     "4" -> 4,
+                     "3" -> 3,
+                     "2" -> 2
+                   )),
+                 result)
   }
 
   def testLessItemsThanSize(): Unit = {
@@ -42,11 +44,13 @@ class FrequentItemsTest extends TestCase {
 
     val result = items.finalize(ir)
 
-    assertEquals(toHashMap(Map(
-      "3" -> 3L,
-      "2" -> 2L,
-      "1" -> 1L
-    )), result)
+    assertEquals(toHashMap(
+                   Map(
+                     "3" -> 3L,
+                     "2" -> 2L,
+                     "1" -> 1L
+                   )),
+                 result)
   }
 
   def testZeroSize(): Unit = {
@@ -115,23 +119,25 @@ class FrequentItemsTest extends TestCase {
     assertEquals(expectedStringValues, actualStringValues)
   }
 
-   def testBulkMerge(): Unit = {
-     val sketch = new FrequentItems[String](3)
+  def testBulkMerge(): Unit = {
+    val sketch = new FrequentItems[String](3)
 
-     val irs = Seq(
-       toSketch(Map("3" -> 3)),
-       toSketch(Map("2" -> 2)),
-       toSketch(Map("1" -> 1)),
-     ).map(i => i._2).iterator
+    val irs = Seq(
+      toSketch(Map("3" -> 3)),
+      toSketch(Map("2" -> 2)),
+      toSketch(Map("1" -> 1))
+    ).map(i => i._2).iterator
 
-     val ir = sketch.bulkMerge(irs)
+    val ir = sketch.bulkMerge(irs)
 
-     assertEquals(toHashMap(Map(
-       "3" -> 3,
-       "2" -> 2,
-       "1" -> 1
-     )), sketch.finalize(ir))
-   }
+    assertEquals(toHashMap(
+                   Map(
+                     "3" -> 3,
+                     "2" -> 2,
+                     "1" -> 1
+                   )),
+                 sketch.finalize(ir))
+  }
 
   private def toSketch[T: FrequentItemsFriendly](counts: Map[T, Int]): (FrequentItems[T], ItemsSketchIR[T]) = {
     val sketch = new FrequentItems[T](4)

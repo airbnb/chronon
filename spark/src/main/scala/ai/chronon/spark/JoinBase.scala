@@ -107,15 +107,15 @@ abstract class JoinBase(joinConf: api.Join,
     }
 
     logger.info(s"""
-               |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
-               |Left Schema:
-               |${leftDf.schema.pretty}
-               |Right Schema:
-               |${joinableRightDf.schema.pretty}""".stripMargin)
+                   |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
+                   |Left Schema:
+                   |${leftDf.schema.pretty}
+                   |Right Schema:
+                   |${joinableRightDf.schema.pretty}""".stripMargin)
     val joinedDf = coalescedJoin(leftDf, joinableRightDf, keys)
     logger.info(s"""Final Schema:
-               |${joinedDf.schema.pretty}
-               |""".stripMargin)
+                   |${joinedDf.schema.pretty}
+                   |""".stripMargin)
 
     joinedDf
   }
@@ -263,9 +263,9 @@ abstract class JoinBase(joinConf: api.Join,
       .map { sf =>
         val filtered = leftDf.filter(sf)
         logger.info(s"""Skew filtering left-df for
-                   |GroupBy: ${joinPart.groupBy.metaData.name}
-                   |filterClause: $sf
-                   |""".stripMargin)
+                       |GroupBy: ${joinPart.groupBy.metaData.name}
+                       |filterClause: $sf
+                       |""".stripMargin)
         filtered
       }
       .getOrElse(leftDf)
@@ -443,13 +443,18 @@ abstract class JoinBase(joinConf: api.Join,
       }
     }
 
-    // First run command to archive tables that have changed semantically since the last run
+    // Save left schema before overwriting left side
+    val leftSchema =
+      leftDf(joinConf, PartitionRange(endPartition, endPartition)(tableUtils), tableUtils, limit = Some(1)).map(df =>
+        df.schema)
+
     val archivedAtTs = Instant.now()
+    // Check semantic hash before overwriting left side
     // TODO: We should not archive the output table in the case of selected join parts mode
     tablesToRecompute(joinConf, outputTable, tableUtils).foreach(
       tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
 
-    // Check semantic hash before overwriting left side
+    // Overwriting Join Left with bootstrap table to simplify later computation
     val source = joinConf.left
     if (useBootstrapForLeft) {
       logger.info("Overwriting left side to use saved Bootstrap table...")
@@ -480,7 +485,6 @@ abstract class JoinBase(joinConf: api.Join,
     // Register UDFs. `setups` from entire joinConf are run due to BootstrapInfo computation
     joinConf.setups.foreach(tableUtils.sql)
 
-    val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
     // build bootstrap info once for the entire job
     val bootstrapInfo = BootstrapInfo.from(
       joinConf,

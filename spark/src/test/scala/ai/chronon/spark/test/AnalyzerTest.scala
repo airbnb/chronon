@@ -61,8 +61,8 @@ class AnalyzerTest {
       externalSource = Builders.ContextualSource(
         fields = Array(
           StructField("reservation", StringType),
-          StructField("rule_name", StringType),
-        ),
+          StructField("rule_name", StringType)
+        )
       )
     )
 
