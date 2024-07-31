@@ -31,8 +31,8 @@ class JoinBackfill:
         start_date: str,
         end_date: str,
         config_path: str,
-        extra_args: dict = {},
-        settings: dict = DEFAULT_SPARK_SETTINGS,
+        extra_args: dict = None,
+        settings: dict = None,
     ):
         self.dag_id = "_".join(
             map(
@@ -42,8 +42,8 @@ class JoinBackfill:
         self.start_date = start_date
         self.end_date = end_date
         self.config_path = config_path
-        self.extra_args = extra_args
-        self.settings = settings
+        self.extra_args = extra_args or {}
+        self.settings = settings or DEFAULT_SPARK_SETTINGS
         with open(self.config_path, "r") as file:
             config = file.read()
         self.join = convert_json_to_obj(json.loads(config))
