@@ -25,6 +25,7 @@ import ai.chronon.api.Extensions.{DerivationOps, JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
 import ai.chronon.online.KVStore.GetRequest
+import ai.chronon.online.MetadataEndPoint.NameByTeamEndPointName
 import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataDirWalker, MetadataEndPoint, MetadataStore, SparkConversions, StringArrayConverter}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
@@ -71,14 +72,16 @@ class FetcherTest extends TestCase {
 
     val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
     val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
-    val singleFileDataSet = ChrononMetadataKey + "_single_file_test"
+    val singleFileDataSet = ChrononMetadataKey
+    val singleFileMetaDataSet = NameByTeamEndPointName
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
+    inMemoryKvStore.create(NameByTeamEndPointName)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
     val singleFileDirWalker = new MetadataDirWalker(confResource.getPath, acceptedEndPoints)
     val singleFileKvMap = singleFileDirWalker.run
     val singleFilePut: Seq[Future[scala.collection.Seq[Boolean]]] = singleFileKvMap.toSeq.map {
-      case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, singleFileDataSet)
+      case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, endPoint)
     }
     singleFilePut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
 
@@ -88,9 +91,12 @@ class FetcherTest extends TestCase {
     val actual = new String(res.values.get.head.bytes)
     assertEquals(expected, actual.replaceAll("\\s+", ""))
 
-    val teamMetadataResponse = inMemoryKvStore.getString("joins/relevance", singleFileDataSet, 10000)
-    val teamMetadataRes = teamMetadataResponse.get
+    val teamMetadataResponse = inMemoryKvStore.getStringArray("joins/relevance", singleFileMetaDataSet, 10000)
+    val teamMetadataRes = teamMetadataResponse.get.head
     assert(teamMetadataRes.equals("joins/team/example_join.v1"))
+    assertTrue(singleFileMetadataStore.validateJoinExist("relevance", "team/example_join.v1"))
+    assertFalse(singleFileMetadataStore.validateJoinExist("team", "team/example_join.v1"))
+
 
     val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
