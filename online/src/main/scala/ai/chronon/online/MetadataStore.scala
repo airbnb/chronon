@@ -148,7 +148,6 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     } else {
       val joinKey = "joins/" + name
       if (activeJoinList.get.contains(joinKey)) {
-        logger.info(s"[test code] ${joinKey} found in ${activeJoinList.get}")
         true
       } else {
         logger.error(s"Join $name not found in active join list for team $team")
@@ -170,7 +169,6 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         "group_bys/" + name.replaceFirst("\\.", "/")
       }
       if (activeGroupByList.get.contains(groupByKey)) {
-        logger.info(s"[test code] ${groupByKey} found in ${activeGroupByList.get}")
         true
       } else {
         logger.error(s"GroupBy $name not found in active group_by list for team $team")
