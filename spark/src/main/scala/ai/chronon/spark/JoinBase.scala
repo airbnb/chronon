@@ -355,8 +355,8 @@ abstract class JoinBase(joinConf: api.Join,
       val errorMsg = s"""Auto archive is disabled due to semantic hash out of date.
                         |Please verify if your config involves true semantic changes. If so, archive the following tables:
                         |${tables.map(t => s"- $t").mkString("\n")}
-                        |If not, please rerun the job with `--unset-semantic-hash` flag
-                        |OR run the spark SQL cmd:  ALTER TABLE $mainTable UNSET TBLPROPERTIES ('semantic_hash')
+                        |If not, please retry this job with `--unset-semantic-hash` flag in your run.py args.
+                        |OR run the spark SQL cmd:  ALTER TABLE $mainTable UNSET TBLPROPERTIES ('semantic_hash') and then retry this job.
                         |""".stripMargin
       logger.error(errorMsg)
       throw new Exception(errorMsg)
@@ -367,8 +367,16 @@ abstract class JoinBase(joinConf: api.Join,
     // Runs the left side query for a join and saves the output to a table, for reuse by joinPart
     // Computation in parallelized joinPart execution mode.
     val (shouldRecompute, autoArchive) = shouldRecomputeLeft(joinConf, bootstrapTable, tableUtils, unsetSemanticHash)
-    if (shouldRecompute) {
-      logger.info(s"Detected semantic change in left side of join, archiving left table for recomputation.")
+    if (!shouldRecompute) {
+      logger.info(s"No semantic change detected, leaving bootstrap table in place.")
+      // Still update the semantic hash of the bootstrap table.
+      // It is possible that while bootstrap_table's semantic_hash is unchanged, the rest has changed, so
+      // we keep everything in sync.
+      if (tableUtils.tableExists(bootstrapTable)) {
+        tableUtils.alterTableProperties(bootstrapTable, tableProps)
+      }
+    } else {
+      logger.info(s"Detected semantic change in left side of join, archiving bootstrap table for recomputation.")
       performArchive(Seq(bootstrapTable), autoArchive, bootstrapTable)
     }
 

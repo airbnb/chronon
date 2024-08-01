@@ -13,6 +13,9 @@ import scala.util.ScalaJavaConversions.MapOps
  */
 case class SemanticHashHiveMetadata(semanticHash: Map[String, String], excludeTopic: Boolean)
 
+/*
+ * Utilities to handle semantic_hash computation, comparison, migration and table_archiving.
+ */
 object SemanticHashUtils {
 
   // Finds all join output tables (join parts and final table) that need recomputing (in monolithic spark job mode)
