@@ -139,7 +139,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     },
     { join => Metrics.Context(environment = "join.meta.fetch", join = join) })
 
-  // Validate whether the join exists in the active groupBy list saved in kv store
+  // Validate whether the join exists in the active join list saved in kv store
   def validateJoinExist(team: String, name: String): Boolean = {
     val activeJoinList: Try[Seq[String]] = getJoinListByTeam(team)
     if (activeJoinList.isFailure) {
