@@ -532,6 +532,7 @@ class FetcherBase(kvStore: KVStore,
     // convert join requests to groupBy requests
     val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, FetchException]]])] =
       requests.map { request =>
+        // get join conf from metadata store if not passed in
         val joinTry: Try[JoinOps] = if (joinConf.isEmpty) {
           getJoinConf(request.name)
         } else {
