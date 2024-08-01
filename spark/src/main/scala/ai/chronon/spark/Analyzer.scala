@@ -522,12 +522,14 @@ class Analyzer(tableUtils: TableUtils,
 
   // For groupBys validate if the timestamp provided produces some values
   // if all values are null this should be flagged as an error
-  def runTimestampChecks(df: DataFrame, sampleFraction: Double = 0.1): Map[String, String] = {
+  def runTimestampChecks(df: DataFrame, sampleNumber: Int = 1000): Map[String, String] = {
 
     val hasTimestamp = df.schema.fieldNames.contains(Constants.TimeColumn)
     val mapTimestampChecks = if (hasTimestamp) {
+      // set max sample to 1000 rows if larger input is provided
+      val sampleN = if (sampleNumber > 1000) {1000} else {sampleNumber}
       dataFrameToMap(
-        df.sample(sampleFraction)
+        df.limit(sampleN)
           .agg(
             // will return 0 if all values are null
             sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1)))
@@ -547,7 +549,6 @@ class Analyzer(tableUtils: TableUtils,
         "noTsColumn" -> "No Timestamp Column"
       )
     }
-
     mapTimestampChecks
   }
 
