@@ -527,7 +527,8 @@ class Analyzer(tableUtils: TableUtils,
     val hasTimestamp = df.schema.fieldNames.contains(Constants.TimeColumn)
     val mapTimestampChecks = if (hasTimestamp) {
       // set max sample to 1000 rows if larger input is provided
-      val sampleN = if (sampleNumber > 1000) {1000} else {sampleNumber}
+      val sampleN = if (sampleNumber > 1000) { 1000 }
+      else { sampleNumber }
       dataFrameToMap(
         df.limit(sampleN)
           .agg(
