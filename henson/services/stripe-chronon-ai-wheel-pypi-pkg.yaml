@@ -2,8 +2,8 @@ service_name: stripe-chronon-ai-wheel-pypi-pkg
 description: Stripes version of the Chronon Python Package.
 repo: stripe-private-oss-forks/chronon
 contact:
-  responsible_team: ml-features
-  slack_channel: ml-infra
+  responsible_team: feature-computation
+  slack_channel: ml-features-team
 deploy:
   clusters:
     - northwest
