@@ -13,6 +13,8 @@ import scala.util.ScalaJavaConversions.MapOps
  */
 case class SemanticHashHiveMetadata(semanticHash: Map[String, String], excludeTopic: Boolean)
 
+case class SemanticHashException(message: String) extends Exception(message)
+
 /*
  * Utilities to handle semantic_hash computation, comparison, migration and table_archiving.
  */

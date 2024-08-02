@@ -105,19 +105,20 @@ class JoinFlowTest {
     )
 
     val endDs = tableUtils.partitions(queryTable).max
-    val joinJob = new Join(join, endDs, tableUtils)
 
     // compute left
-    joinJob.computeLeft()
+    val joinLeftJob = new Join(join.deepCopy(), endDs, tableUtils)
+    joinLeftJob.computeLeft()
     assertTrue(tableUtils.tableExists(join.metaData.bootstrapTable))
 
     // compute right
-    val joinPartJob = new Join(join, endDs, tableUtils, selectedJoinParts = Some(List(joinPart.fullPrefix)))
+    val joinPartJob = new Join(join.deepCopy(), endDs, tableUtils, selectedJoinParts = Some(List(joinPart.fullPrefix)))
     joinPartJob.computeJoinOpt(useBootstrapForLeft = true)
     assertTrue(tableUtils.tableExists(join.partOutputTable(joinPart)))
 
     // compute final
-    joinJob.computeFinal()
+    val joinFinalJob = new Join(join.deepCopy(), endDs, tableUtils)
+    joinFinalJob.computeFinal()
     assertTrue(tableUtils.tableExists(join.metaData.outputTable))
   }
 }

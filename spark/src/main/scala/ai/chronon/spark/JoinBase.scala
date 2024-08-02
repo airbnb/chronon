@@ -359,7 +359,7 @@ abstract class JoinBase(joinConf: api.Join,
                         |OR run the spark SQL cmd:  ALTER TABLE $mainTable UNSET TBLPROPERTIES ('semantic_hash') and then retry this job.
                         |""".stripMargin
       logger.error(errorMsg)
-      throw new Exception(errorMsg)
+      throw SemanticHashException(errorMsg)
     }
   }
 
