@@ -33,7 +33,7 @@ The analyzer will compute the following information by simply taking a Chronon c
 * Output schemas - to quickly validate the sql statements and understand the output schema.
 * Timestamp Validations for GroupBy configs
   * Confirms that timestamp columns are not all NULLs
-  * Confirms that timestamp columns are in epoch milliseconds in the range between 1970-01-01 and 2099-01-01
+  * Confirms that timestamp columns are in epoch milliseconds in the range between 1971-01-01 and 2099-01-01
 * Validations for JOIN config - to make sure the join conf is valid for backfill. Here is a list of items we validate:
   * Confirm Join keys are matching on the left and right side
   * Confirm you have access to all the tables involved in the join
