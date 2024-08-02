@@ -23,7 +23,7 @@ from ai.chronon.repo import dependency_tracker
 
 @pytest.fixture
 def dependency_tracker():
-    return dependency_tracker.ChrononRepoValidator(
+    return dependency_tracker.ChrononEntityDependencyTracker(
         chronon_root_path='test/sample'
     )
 

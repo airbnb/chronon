@@ -18,13 +18,10 @@ import logging
 import os
 from ai.chronon.logger import get_logger
 from typing import List
-from ai.chronon.repo.serializer import \
-    file2thrift
 from ai.chronon.api.ttypes import \
     GroupBy, Join, Source, Derivation, ExternalPart
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME
-from ai.chronon.repo.validator import extract_json_confs
 
 
 class ChrononEntityDependencyTracker(object):
