@@ -1197,10 +1197,19 @@ class JoinTest {
     val oldVersionSemanticHash = join.semanticHash(excludeTopic = false)
     val oldTableProperties = Map(
       Constants.SemanticHashKey -> gson.toJson(oldVersionSemanticHash.asJava),
-      Constants.SemanticHashExcludeTopicKey -> "false"
+      Constants.SemanticHashOptionsKey -> gson.toJson(
+        Map(
+          Constants.SemanticHashExcludeTopic -> "false"
+        ).asJava)
     )
     tableUtils.alterTableProperties(join.metaData.outputTable, oldTableProperties)
     tableUtils.alterTableProperties(join.metaData.bootstrapTable, oldTableProperties)
+  }
+
+  private def hasExcludeTopicFlag(tableProps: Map[String, String], gson: Gson): Boolean = {
+    val optionsString = tableProps(Constants.SemanticHashOptionsKey)
+    val options = gson.fromJson(optionsString, classOf[java.util.HashMap[String, String]]).asScala
+    options.get(Constants.SemanticHashExcludeTopic).contains("true")
   }
 
   @Test
@@ -1235,7 +1244,7 @@ class JoinTest {
     val newVersionSemanticHash = join.semanticHash(excludeTopic = true)
 
     val tablePropsV1 = tableUtils.getTableProperties(join.metaData.outputTable).get
-    assertEquals("true", tablePropsV1(Constants.SemanticHashExcludeTopicKey))
+    assertTrue(hasExcludeTopicFlag(tablePropsV1, gson))
     assertEquals(gson.toJson(newVersionSemanticHash.asJava), tablePropsV1(Constants.SemanticHashKey))
 
     // Modify the topic and rerun
@@ -1247,7 +1256,7 @@ class JoinTest {
 
     // Verify that the semantic hash has NOT changed
     val tablePropsV2 = tableUtils.getTableProperties(join.metaData.outputTable).get
-    assertEquals("true", tablePropsV2(Constants.SemanticHashExcludeTopicKey))
+    assertTrue(hasExcludeTopicFlag(tablePropsV2, gson))
     assertEquals(gson.toJson(newVersionSemanticHash.asJava), tablePropsV2(Constants.SemanticHashKey))
   }
 
@@ -1288,7 +1297,7 @@ class JoinTest {
     // Verify that semantic_hash has been updated
     val newVersionSemanticHash = join.semanticHash(excludeTopic = true)
     val tableProps = tableUtils.getTableProperties(join.metaData.outputTable).get
-    assertEquals("true", tableProps(Constants.SemanticHashExcludeTopicKey))
+    assertTrue(hasExcludeTopicFlag(tableProps, gson))
     assertNotEquals(gson.toJson(newVersionSemanticHash.asJava), tableProps(Constants.SemanticHashKey))
   }
 

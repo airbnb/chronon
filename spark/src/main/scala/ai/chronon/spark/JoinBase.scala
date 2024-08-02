@@ -61,7 +61,10 @@ abstract class JoinBase(joinConf: api.Join,
   protected val tableProps: Map[String, String] =
     confTableProps ++ Map(
       Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash(excludeTopic = true).asJava),
-      Constants.SemanticHashExcludeTopicKey -> true.toString
+      Constants.SemanticHashOptionsKey -> gson.toJson(
+        Map(
+          Constants.SemanticHashExcludeTopic -> "true"
+        ).asJava)
     )
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {

@@ -64,7 +64,7 @@ object SemanticHashUtils {
       logger.info(
         s"""Comparing Hashes:
            |Hive Flag:
-           |${Constants.SemanticHashExcludeTopicKey}: ${semanticHashHiveMetadata.get.excludeTopic}
+           |${Constants.SemanticHashExcludeTopic}: ${semanticHashHiveMetadata.get.excludeTopic}
            |Old Hashes:
            |${prettyPrintMap(oldSemanticHash)}
            |New Hashes:
@@ -86,8 +86,13 @@ object SemanticHashUtils {
     val oldSemanticJsonOpt = tablePropsOpt.flatMap(_.get(Constants.SemanticHashKey))
     val oldSemanticHash =
       oldSemanticJsonOpt.map(json => gson.fromJson(json, classOf[java.util.HashMap[String, String]]).toScala)
+
+    val oldSemanticHashOptions = tablePropsOpt
+      .flatMap(_.get(Constants.SemanticHashOptionsKey))
+      .map(m => gson.fromJson(m, classOf[java.util.HashMap[String, String]]).toScala)
+      .getOrElse(Map.empty)
     val hasSemanticHashExcludeTopicFlag =
-      tablePropsOpt.flatMap(_.get(Constants.SemanticHashExcludeTopicKey)).exists(_.equals("true"))
+      oldSemanticHashOptions.get(Constants.SemanticHashExcludeTopic).contains("true")
 
     oldSemanticHash.map(hashes => SemanticHashHiveMetadata(hashes, hasSemanticHashExcludeTopicFlag))
   }
