@@ -76,18 +76,17 @@ html_theme_options = {
         {
             "name": "Discord",
             "url": "https://discord.gg/GbmGATNqqP",
-            "icon": "fa-brands fa-discord",
-            "type": "fontawesome",
+            "icon": "_static/discord.png",
+            "type": "local",
         },
-        # {
-        #     "name": "Pip Package",
-        #     "url": "https://pypi.org/project/chronon-ai/",
-        #     "icon": "fa-brands fa-python",
-        #     "type": "fontawesome",
-        # }
+        {
+            "name": "GitHub",
+            "url": "https://github.com/airbnb/chronon",  # required
+            "icon": "_static/git.png",
+            "type": "local",
+        }
     ],
     "article_header_end": ["navbar-icon-links.html", "theme-switcher.html"],
-    # "navbar_end": ["navbar-icon-links.html", "search-field.html"]
 }
 
 html_sidebars = {
