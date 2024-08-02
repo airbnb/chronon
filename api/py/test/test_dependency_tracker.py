@@ -31,6 +31,4 @@ def dependency_tracker():
 def track_group_by_dependency(dependency_tracker):
     conf_path = 'group_bys/sample_team/sample_group_by.v1'
     downstream = dependency_tracker.check_downstream(conf_path)
-    assert(downstream == ['sample_team.sample_join.v1'])
-
-
+    assert (downstream == ['sample_team.sample_join.v1'])
