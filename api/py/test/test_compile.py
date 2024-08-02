@@ -59,13 +59,14 @@ def test_failed_compile():
     ])
     assert result.exit_code != 0
 
+
 def test_failed_compile_missing_input_column():
     """
     Should raise errors as we are trying to create aggregations without input column.
     """
     runner = CliRunner()
     result = runner.invoke(extract_and_convert, [
-        '--zipline_root=test/sample',
+        '--chronon_root=test/sample',
         '--input_path=group_bys/sample_team/sample_group_by_missing_input_column.py',
         '--debug'
     ])

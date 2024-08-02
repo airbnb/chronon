@@ -16,7 +16,13 @@
 
 package ai.chronon.online
 
+import ai.chronon.aggregator.windowing.FinalBatchIr
+import ai.chronon.api.Extensions.GroupByOps
+import ai.chronon.api.{Builders, GroupBy, MetaData}
 import ai.chronon.online.Fetcher.{ColumnSpec, Request, Response}
+import ai.chronon.online.FetcherCache.BatchResponses
+import ai.chronon.online.KVStore.TimedValue
+import org.junit.Assert.{assertFalse, assertTrue, fail}
 import org.junit.{Before, Test}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
@@ -29,8 +35,9 @@ import org.scalatestplus.mockito.MockitoSugar
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
+import scala.util.Try
 
-class FetcherBaseTest extends MockitoSugar with Matchers {
+class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   val GroupBy = "relevance.short_term_user_features"
   val Column = "pdp_view_count_14d"
   val GuestKey = "guest"
@@ -51,7 +58,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers {
   }
 
   @Test
-  def testFetchColumns_SingleQuery(): Unit = {
+  def testFetchColumnsSingleQuery(): Unit = {
     // Fetch a single query
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
@@ -80,7 +87,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers {
   }
 
   @Test
-  def testFetchColumns_Batch(): Unit = {
+  def testFetchColumnsBatch(): Unit = {
     // Fetch a batch of queries
     val guestKeyMap = Map(GuestKey -> GuestId)
     val guestQuery = ColumnSpec(GroupBy, Column, Some(GuestKey), Some(guestKeyMap))
@@ -114,11 +121,11 @@ class FetcherBaseTest extends MockitoSugar with Matchers {
   }
 
   @Test
-  def testFetchColumns_MissingResponse(): Unit = {
+  def testFetchColumnsMissingResponse(): Unit = {
     // Fetch a single query
     val keyMap = Map(GuestKey -> GuestId)
     val query = ColumnSpec(GroupBy, Column, None, Some(keyMap))
-    
+
     doAnswer(new Answer[Future[Seq[Fetcher.Response]]] {
       def answer(invocation: InvocationOnMock): Future[Seq[Response]] = {
         Future.successful(Seq())
@@ -130,7 +137,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers {
     queryResults.contains(query) shouldBe true
     queryResults.get(query).map(_.values) match {
       case Some(Failure(ex: IllegalStateException)) => succeed
-      case _ => fail()
+      case _                                        => fail()
     }
 
     // GroupBy request sent to KV store for the query
@@ -140,5 +147,77 @@ class FetcherBaseTest extends MockitoSugar with Matchers {
     actualRequest shouldNot be(None)
     actualRequest.get.name shouldBe query.groupByName + "." + query.columnName
     actualRequest.get.keys shouldBe query.keyMapping.get
+  }
+
+  // updateServingInfo() is called when the batch response is from the KV store.
+  @Test
+  def testGetServingInfoShouldCallUpdateServingInfoIfBatchResponseIsFromKvStore(): Unit = {
+    val oldServingInfo = mock[GroupByServingInfoParsed]
+    val updatedServingInfo = mock[GroupByServingInfoParsed]
+    doReturn(updatedServingInfo).when(fetcherBase).updateServingInfo(any(), any())
+
+    val batchTimedValuesSuccess = Success(Seq(TimedValue(Array(1.toByte), 2000L)))
+    val kvStoreBatchResponses = BatchResponses(batchTimedValuesSuccess)
+
+    val result = fetcherBase.getServingInfo(oldServingInfo, kvStoreBatchResponses)
+
+    // updateServingInfo is called
+    result shouldEqual updatedServingInfo
+    verify(fetcherBase).updateServingInfo(any(), any())
+  }
+
+  // If a batch response is cached, the serving info should be refreshed. This is needed to prevent
+  // the serving info from becoming stale if all the requests are cached.
+  @Test
+  def testGetServingInfoShouldRefreshServingInfoIfBatchResponseIsCached(): Unit = {
+    val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
+    doReturn(ttlCache).when(fetcherBase).getGroupByServingInfo
+
+    val oldServingInfo = mock[GroupByServingInfoParsed]
+    doReturn(Success(oldServingInfo)).when(ttlCache).refresh(any[String])
+
+    val metaDataMock = mock[MetaData]
+    val groupByOpsMock = mock[GroupByOps]
+    metaDataMock.name = "test"
+    groupByOpsMock.metaData = metaDataMock
+    doReturn(groupByOpsMock).when(oldServingInfo).groupByOps
+
+    val cachedBatchResponses = BatchResponses(mock[FinalBatchIr])
+    val result = fetcherBase.getServingInfo(oldServingInfo, cachedBatchResponses)
+
+    // FetcherBase.updateServingInfo is not called, but getGroupByServingInfo.refresh() is.
+    result shouldEqual oldServingInfo
+    verify(ttlCache).refresh(any())
+    verify(fetcherBase, never()).updateServingInfo(any(), any())
+  }
+
+  @Test
+  def testIsCachingEnabledCorrectlyDetermineIfCacheIsEnabled(): Unit = {
+    val flagStore: FlagStore = (flagName: String, attributes: java.util.Map[String, String]) => {
+      flagName match {
+        case "enable_fetcher_batch_ir_cache" =>
+          attributes.get("groupby_streaming_dataset") match {
+            case "test_groupby_2" => false
+            case "test_groupby_3" => true
+            case other @ _ =>
+              fail(s"Unexpected groupby_streaming_dataset: $other")
+              false
+          }
+        case _ => false
+      }
+    }
+
+    kvStore = mock[KVStore](Answers.RETURNS_DEEP_STUBS)
+    when(kvStore.executionContext).thenReturn(ExecutionContext.global)
+    val fetcherBaseWithFlagStore = spy(new FetcherBase(kvStore, flagStore = flagStore))
+    when(fetcherBaseWithFlagStore.isCacheSizeConfigured).thenReturn(true)
+
+    def buildGroupByWithCustomJson(name: String): GroupBy = Builders.GroupBy(metaData = Builders.MetaData(name = name))
+
+    // no name set
+    assertFalse(fetcherBaseWithFlagStore.isCachingEnabled(Builders.GroupBy()))
+
+    assertFalse(fetcherBaseWithFlagStore.isCachingEnabled(buildGroupByWithCustomJson("test_groupby_2")))
+    assertTrue(fetcherBaseWithFlagStore.isCachingEnabled(buildGroupByWithCustomJson("test_groupby_3")))
   }
 }

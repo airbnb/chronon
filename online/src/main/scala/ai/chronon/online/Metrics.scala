@@ -18,7 +18,7 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import com.timgroup.statsd.NonBlockingStatsDClient
+import com.timgroup.statsd.{Event, NonBlockingStatsDClient}
 
 import scala.util.ScalaJavaConversions.ListOps
 
@@ -30,7 +30,7 @@ object Metrics {
     val GroupByFetching = "group_by.fetch"
     val GroupByUpload = "group_by.upload"
     val GroupByStreaming = "group_by.streaming"
-
+    val Fetcher = "fetcher"
     val JoinOffline = "join.offline"
     val GroupByOffline = "group_by.offline"
     val StagingQueryOffline = "staging_query.offline"
@@ -50,6 +50,7 @@ object Metrics {
     val Production = "production"
     val Accuracy = "accuracy"
     val Team = "team"
+    val Owner = "owner"
   }
 
   object Name {
@@ -196,12 +197,16 @@ object Metrics {
 
     def gauge(metric: String, value: Long): Unit = stats.gauge(prefix(metric), value, tags)
 
+    def gauge(metric: String, value: Double): Unit = stats.gauge(prefix(metric), value, tags)
+
+    def recordEvent(metric: String, event: Event): Unit = stats.recordEvent(event, prefix(metric), tags)
+
     def toTags: Array[String] = {
       val joinNames: Array[String] = Option(join).map(_.split(",")).getOrElse(Array.empty[String]).map(_.sanitize)
       assert(
         environment != null,
         "Environment needs to be set - group_by.upload, group_by.streaming, join.fetching, group_by.fetching, group_by.offline etc")
-      val buffer = new Array[String](7 + joinNames.length)
+      val buffer = new Array[String](8 + joinNames.length)
       var counter = 0
 
       def addTag(key: String, value: String): Unit = {
@@ -219,6 +224,7 @@ object Metrics {
       addTag(Tag.StagingQuery, stagingQuery)
       addTag(Tag.Production, production.toString)
       addTag(Tag.Team, team)
+      addTag(Tag.Owner, team)
       addTag(Tag.Environment, environment)
       addTag(Tag.JoinPartPrefix, joinPartPrefix)
       addTag(Tag.Accuracy, if (accuracy != null) accuracy.name() else null)

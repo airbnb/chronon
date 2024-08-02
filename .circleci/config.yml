@@ -9,10 +9,10 @@ executors:
         resource_class: xlarge
         working_directory: /chronon
         docker:
-            - image: houpy0829/chronon-ci:base--${CIRCLE_SHA1}
+            - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
 
 jobs:
-    "Docker Base Build":
+    "Pull Docker Image":
         <<: *base_defaults
         docker:
             - image: docker:17.05.0-ce-git
@@ -24,22 +24,7 @@ jobs:
                 name: Pull existing docker image
                 command: |
                     set +o pipefail
-                    docker pull houpy0829/chronon-ci:base || true
-            - run:
-                name: Build docker image
-                command: |
-                    set +o pipefail
-                    docker build -t houpy0829/chronon-ci:base--${CIRCLE_SHA1} --build-arg base_image="cimg/base:2020.01" -f .circleci/Dockerfile .
-            - deploy:
-                name: Push docker image
-                command: |
-                    set +euxo pipefail
-                    docker login -u ${DOCKER_USER} -p ${DOCKER_PASSWORD}
-                    docker push houpy0829/chronon-ci:base--${CIRCLE_SHA1}
-                    if [ "${CIRCLE_BRANCH}" == "master" ]; then
-                        docker tag houpy0829/chronon-ci:base--${CIRCLE_SHA1} houpy0829/chronon-ci:base
-                        docker push houpy0829/chronon-ci:base
-                    fi
+                    docker pull houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 || true
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
@@ -93,6 +78,19 @@ jobs:
                   destination: spark_warehouse.tar.gz
                   when: on_fail
 
+    "Scala 11 -- Compile":
+      executor: docker_baseimg_executor
+      steps:
+        - checkout
+        - run:
+            name: Compile Scala 11
+            shell: /bin/bash -leuxo pipefail
+            command: |
+              conda activate chronon_py
+              # Increase if we see OOM.
+              export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+              sbt "++ 2.11.12 compile"
+
     "Chronon Python Lint":
         executor: docker_baseimg_executor
         steps:
@@ -104,7 +102,7 @@ jobs:
                       conda activate chronon_py
                       cd /chronon/api/py/ai/chronon
                       pip install importlib-metadata==4.11.4 #Install importlib-metadata < 5
-                      flake8 --extend-ignore=W605,Q000,F631
+                      flake8 --extend-ignore=W605,Q000,F631,E203
 
     "Chronon Python Tests":
         executor: docker_baseimg_executor
@@ -139,19 +137,22 @@ jobs:
 workflows:
     build_test_deploy:
         jobs:
-            - "Docker Base Build"
+            - "Pull Docker Image"
+            - "Scala 11 -- Compile":
+                requires:
+                  - "Pull Docker Image"
             - "Scala 12 -- Spark 3 Tests":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"
             - "Scala 13 -- Tests":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"
             - "Scalafmt Check":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"
             - "Chronon Python Tests":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"
             - "Chronon Python Lint":
                   requires:
-                      - "Docker Base Build"
+                      - "Pull Docker Image"

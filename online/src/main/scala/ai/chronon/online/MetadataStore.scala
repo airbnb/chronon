@@ -21,12 +21,13 @@ import ai.chronon.api.Constants.{ChrononMetadataKey, UTF8}
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps, StringOps, WindowOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest, TimedValue}
+import ai.chronon.online.MetadataEndPoint.{ConfByKeyEndPointName, NameByTeamEndPointName}
+import ai.chronon.online.Metrics.Name.Exception
 import com.google.gson.{Gson, GsonBuilder}
 import org.apache.thrift.TBase
 
 import java.io.File
 import java.nio.file.{Files, Paths}
-import scala.collection.JavaConverters.{mapAsJavaMapConverter, mapAsScalaMapConverter}
 import scala.collection.immutable.SortedMap
 import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
@@ -55,7 +56,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
 
   def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
     val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
-    val confKey = pathToKey(confPathOrName)
+    val confKey = confPathOrName.confPathToKey
     kvStore
       .getString(confKey, dataset, timeoutMillis)
       .map(conf => ThriftJsonCodec.fromJsonStr[T](conf, false, clazz))
@@ -67,6 +68,51 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
               th
             ))
       }
+  }
+
+  def getEntityListByTeam[T <: TBase[_, _]: Manifest](team: String): Try[Seq[String]] = {
+    val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
+    val dataset = NameByTeamEndPointName
+    kvStore
+      .getStringArray(team, dataset, timeoutMillis)
+      .recoverWith {
+        case th: Throwable =>
+          Failure(
+            new RuntimeException(
+              s"Couldn't fetch ${clazz.getName} for key $team. Perhaps metadata upload wasn't successful.",
+              th
+            ))
+      }
+  }
+
+  lazy val getGroupByListByTeam: TTLCache[String, Try[Seq[String]]] = {
+    new TTLCache[String, Try[Seq[String]]](
+      { team =>
+        getEntityListByTeam[GroupBy]("group_bys/" + team)
+          .recover {
+            case e: java.util.NoSuchElementException =>
+              logger.error(
+                s"Failed to fetch conf for team $team at group_bys/$team, please check metadata upload to make sure the metadata has been uploaded")
+              throw e
+          }
+      },
+      { team => Metrics.Context(environment = "group_by.list.fetch", groupBy = team) }
+    )
+  }
+
+  lazy val getJoinListByTeam: TTLCache[String, Try[Seq[String]]] = {
+    new TTLCache[String, Try[Seq[String]]](
+      { team =>
+        getEntityListByTeam[Join]("joins/" + team)
+          .recover {
+            case e: java.util.NoSuchElementException =>
+              logger.error(
+                s"Failed to fetch conf for team $team at joins/$team, please check metadata upload to make sure the metadata has been uploaded")
+              throw e
+          }
+      },
+      { team => Metrics.Context(environment = "join.list.fetch", groupBy = team) }
+    )
   }
 
   lazy val getJoinConf: TTLCache[String, Try[JoinOps]] = new TTLCache[String, Try[JoinOps]](
@@ -149,94 +195,33 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       },
       { gb => Metrics.Context(environment = "group_by.serving_info.fetch", groupBy = gb) })
 
-  // derive a key from path to file
-  def pathToKey(confPath: String): String = {
-    // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
-    confPath.split("/").takeRight(3).mkString("/")
-  }
-
-  // upload the materialized JSONs to KV store:
-  // key = <conf_type>/<team>/<conf_name> in bytes e.g joins/team/team.example_join.v1 value = materialized json string in bytes
-  def putConf(configPath: String): Future[Seq[Boolean]] = {
-    val configFile = new File(configPath)
-    assert(configFile.exists(), s"$configFile does not exist")
-    logger.info(s"Uploading Chronon configs from $configPath")
-    val fileList = listFiles(configFile)
-
-    val puts = fileList
-      .filter { file =>
-        val name = parseName(file.getPath)
-        if (name.isEmpty) logger.info(s"Skipping invalid file ${file.getPath}")
-        name.isDefined
-      }
-      .flatMap { file =>
-        val path = file.getPath
-        val confJsonOpt = path match {
-          case value if value.contains("staging_queries/") => loadJson[StagingQuery](value)
-          case value if value.contains("joins/")           => loadJson[Join](value)
-          case value if value.contains("group_bys/")       => loadJson[GroupBy](value)
-          case _                                           => logger.info(s"unknown config type in file $path"); None
+  def put(
+      kVPairs: Map[String, Seq[String]],
+      datasetName: String = ChrononMetadataKey,
+      batchSize: Int = CONF_BATCH_SIZE
+  ): Future[Seq[Boolean]] = {
+    val puts = kVPairs.map {
+      case (k, v) => {
+        logger.info(s"""Putting metadata for
+             |dataset: $datasetName
+             |key: $k
+             |conf: $v""".stripMargin)
+        val kBytes = k.getBytes()
+        // The value is a single string by default, for NameByTeamEndPointName, it's a list of strings
+        val vBytes = if (datasetName == NameByTeamEndPointName) {
+          StringArrayConverter.stringsToBytes(v)
+        } else {
+          v.head.getBytes()
         }
-        val key = pathToKey(path)
-        confJsonOpt.map { conf =>
-          logger.info(s"""Putting metadata for 
-               |key: $key 
-               |conf: $conf""".stripMargin)
-          PutRequest(keyBytes = key.getBytes(),
-                     valueBytes = conf.getBytes(),
-                     dataset = dataset,
-                     tsMillis = Some(System.currentTimeMillis()))
-        }
+        PutRequest(keyBytes = kBytes,
+                   valueBytes = vBytes,
+                   dataset = datasetName,
+                   tsMillis = Some(System.currentTimeMillis()))
       }
-    val putsBatches = puts.grouped(CONF_BATCH_SIZE).toSeq
-    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$dataset")
+    }.toSeq
+    val putsBatches = puts.grouped(batchSize).toSeq
+    logger.info(s"Putting ${puts.size} configs to KV Store, dataset=$datasetName")
     val futures = putsBatches.map(batch => kvStore.multiPut(batch))
     Future.sequence(futures).map(_.flatten)
-  }
-
-  // list file recursively
-  private def listFiles(base: File, recursive: Boolean = true): Seq[File] = {
-    if (base.isFile) {
-      Seq(base)
-    } else {
-      val files = base.listFiles
-      val result = files.filter(_.isFile)
-      result ++
-        files
-          .filter(_.isDirectory)
-          .filter(_ => recursive)
-          .flatMap(listFiles(_, recursive))
-    }
-  }
-
-  // process chronon configs only. others will be ignored
-  // todo: add metrics
-  private def loadJson[T <: TBase[_, _]: Manifest: ClassTag](file: String): Option[String] = {
-    try {
-      val configConf = ThriftJsonCodec.fromJsonFile[T](file, check = true)
-      Some(ThriftJsonCodec.toJsonStr(configConf))
-    } catch {
-      case e: Throwable =>
-        logger.error(s"Failed to parse compiled Chronon config file: $file, \nerror=${e.getMessage}")
-        None
-    }
-  }
-
-  def parseName(path: String): Option[String] = {
-    val gson = new Gson()
-    val reader = Files.newBufferedReader(Paths.get(path))
-    try {
-      val map = gson.fromJson(reader, classOf[java.util.Map[String, AnyRef]])
-      Option(map.get("metaData"))
-        .map(_.asInstanceOf[java.util.Map[String, AnyRef]])
-        .map(_.get("name"))
-        .flatMap(Option(_))
-        .map(_.asInstanceOf[String])
-    } catch {
-      case ex: Throwable =>
-        logger.error(s"Failed to parse Chronon config file at $path as JSON", ex)
-        ex.printStackTrace()
-        None
-    }
   }
 }

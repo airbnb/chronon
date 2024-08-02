@@ -54,5 +54,5 @@ case class PartitionSpec(format: String, spanMillis: Long) {
 
   def now: String = at(System.currentTimeMillis())
 
-  def shiftBackFromNow(days: Int) = shift(now, 0 - days)
+  def shiftBackFromNow(days: Int): String = shift(now, 0 - days)
 }

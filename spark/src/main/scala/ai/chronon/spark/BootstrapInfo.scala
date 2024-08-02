@@ -76,14 +76,15 @@ object BootstrapInfo {
            range: PartitionRange,
            tableUtils: TableUtils,
            leftSchema: Option[StructType],
-           mutationScan: Boolean = true): BootstrapInfo = {
+           computeDependency: Boolean = false): BootstrapInfo = {
 
     // Enrich each join part with the expected output schema
     logger.info(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
     var joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
       .getOrElse(Seq.empty)
       .map(part => {
-        val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency = true, mutationScan = mutationScan)
+        // set computeDependency to False as we compute dependency upstream
+        val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency)
         val keySchema = SparkConversions
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
@@ -121,7 +122,9 @@ object BootstrapInfo {
       .map(schema => SparkConversions.toChrononSchema(schema))
       .map(_.map(field => StructField(field._1, field._2)))
       .getOrElse(Array.empty[StructField])
-    val baseFields = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema) ++ leftFields
+    val baseFieldsWithoutLeft = joinParts.flatMap(_.valueSchema) ++ externalParts.flatMap(_.valueSchema)
+    val baseFields =
+      baseFieldsWithoutLeft ++ leftFields.filterNot(lf => baseFieldsWithoutLeft.exists(bf => bf.name == lf.name))
     val sparkSchema = StructType(SparkConversions.fromChrononSchema(api.StructType("", baseFields.toArray)))
 
     val baseDf = tableUtils.sparkSession.createDataFrame(

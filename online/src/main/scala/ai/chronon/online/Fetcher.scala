@@ -24,18 +24,19 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
+import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildDerivedFields}
 import com.google.gson.Gson
+import com.timgroup.statsd.Event
+import com.timgroup.statsd.Event.AlertType
 import org.apache.avro.generic.GenericRecord
-import java.util.function.Consumer
+import org.json4s.BuildInfo
 
+import java.util.function.Consumer
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
-import scala.collection.immutable.Map
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
-
-import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildDerivedFields}
 
 object Fetcher {
   case class Request(name: String,
@@ -81,10 +82,28 @@ class Fetcher(val kvStore: KVStore,
               timeoutMillis: Long = 10000,
               logFunc: Consumer[LoggableResponse] = null,
               debug: Boolean = false,
-              val externalSourceRegistry: ExternalSourceRegistry = null)
-    extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug) {
+              val externalSourceRegistry: ExternalSourceRegistry = null,
+              callerName: String = null,
+              flagStore: FlagStore = null,
+              disableErrorThrows: Boolean = false)
+    extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug, flagStore, disableErrorThrows) {
 
-  def buildJoinCodec(joinConf: api.Join): JoinCodec = {
+  private def reportCallerNameFetcherVersion(): Unit = {
+    val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
+    val ctx = Metrics.Context(Environment.Fetcher)
+    val event = Event
+      .builder()
+      .withTitle("FetcherInitialization")
+      .withText(message)
+      .withAlertType(AlertType.INFO)
+      .build()
+    ctx.recordEvent("caller_name_fetcher_version", event)
+  }
+
+  // run during initialization
+  reportCallerNameFetcherVersion()
+
+  def buildJoinCodec(joinConf: Join): JoinCodec = {
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
     // collect keyFields and valueFields from joinParts/GroupBys
@@ -172,9 +191,10 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  override def fetchJoin(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+  override def fetchJoin(requests: scala.collection.Seq[Request],
+                         joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
-    val internalResponsesF = super.fetchJoin(requests)
+    val internalResponsesF = super.fetchJoin(requests, joinConf)
     val externalResponsesF = fetchExternal(requests)
     val combinedResponsesF = internalResponsesF.zip(externalResponsesF).map {
       case (internalResponses, externalResponses) =>
@@ -230,10 +250,13 @@ class Fetcher(val kvStore: KVStore,
                       Map("derivation_fetch_exception" -> exception.traceString.asInstanceOf[AnyRef])
                     renameOnlyDerivedMap ++ derivedExceptionMap
                 }
+                // Preserve exceptions from baseMap
+                val baseMapExceptions = baseMap.filter(_._1.endsWith("_exception"))
+                val finalizedDerivedMap = derivedMap ++ baseMapExceptions
                 val requestEndTs = System.currentTimeMillis()
                 ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
                 ctx.distribution("overall.latency.millis", requestEndTs - ts)
-                ResponseWithContext(internalResponse.request, derivedMap, baseMap)
+                ResponseWithContext(internalResponse.request, finalizedDerivedMap, baseMap)
               case Failure(exception) =>
                 // more validation logic will be covered in compile.py to avoid this case
                 ctx.incrementException(exception)

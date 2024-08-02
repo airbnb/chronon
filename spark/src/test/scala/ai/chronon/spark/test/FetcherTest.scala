@@ -21,11 +21,11 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps, DerivationOps}
+import ai.chronon.api.Extensions.{DerivationOps, JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
 import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataDirWalker, MetadataEndPoint, MetadataStore, SparkConversions, StringArrayConverter}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
@@ -42,7 +42,7 @@ import java.util.concurrent.Executors
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.io.Source
 import scala.util.ScalaJavaConversions._
 
@@ -69,32 +69,48 @@ class FetcherTest extends TestCase {
       finally src.close()
     }.replaceAll("\\s+", "")
 
+    val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
     val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
     val singleFileDataSet = ChrononMetadataKey + "_single_file_test"
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(singleFileDataSet)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFilePut = singleFileMetadataStore.putConf(confResource.getPath)
-    Await.result(singleFilePut, Duration.Inf)
+    val singleFileDirWalker = new MetadataDirWalker(confResource.getPath, acceptedEndPoints)
+    val singleFileKvMap = singleFileDirWalker.run
+    val singleFilePut: Seq[Future[scala.collection.Seq[Boolean]]] = singleFileKvMap.toSeq.map {
+      case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, singleFileDataSet)
+    }
+    singleFilePut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
+
     val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
     val res = Await.result(response, Duration.Inf)
     assertTrue(res.latest.isSuccess)
     val actual = new String(res.values.get.head.bytes)
-
     assertEquals(expected, actual.replaceAll("\\s+", ""))
+
+    val teamMetadataResponse = inMemoryKvStore.getString("joins/relevance", singleFileDataSet, 10000)
+    val teamMetadataRes = teamMetadataResponse.get
+    assert(teamMetadataRes.equals("joins/team/example_join.v1"))
 
     val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryPut = directoryMetadataStore.putConf(confResource.getPath.replace(s"/$joinPath", ""))
-    Await.result(directoryPut, Duration.Inf)
+    val directoryDataDirWalker = new MetadataDirWalker(confResource.getPath.replace(s"/$joinPath", ""), acceptedEndPoints)
+    val directoryDataKvMap = directoryDataDirWalker.run
+    val directoryPut = directoryDataKvMap.toSeq.map {
+      case (endPoint, kvMap) => directoryMetadataStore.put(kvMap, directoryDataSetDataSet)
+    }
+    directoryPut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
     val dirResponse =
       inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))
     val dirRes = Await.result(dirResponse, Duration.Inf)
     assertTrue(dirRes.latest.isSuccess)
     val dirActual = new String(dirRes.values.get.head.bytes)
-
     assertEquals(expected, dirActual.replaceAll("\\s+", ""))
+
+    val teamMetadataDirResponse = inMemoryKvStore.getString("group_bys/team", directoryDataSetDataSet, 10000)
+    val teamMetadataDirRes = teamMetadataDirResponse.get
+    assert(teamMetadataDirRes.equals("group_bys/team/example_group_by.v1"))
 
     val emptyResponse =
       inMemoryKvStore.get(GetRequest("NoneExistKey".getBytes(), "NonExistDataSetName"))
@@ -106,7 +122,7 @@ class FetcherTest extends TestCase {
     * Generate deterministic data for testing and checkpointing IRs and streaming data.
     */
   def generateMutationData(namespace: String): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
     val eventData = Seq(
       Row(595125622443733822L, toTs("2021-04-10 09:00:00"), "2021-04-10"),
@@ -223,6 +239,11 @@ class FetcherTest extends TestCase {
           operation = Operation.AVERAGE,
           inputColumn = "rating",
           windows = Seq(new Window(1, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.SKEW,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
         )
       ),
       accuracy = Accuracy.TEMPORAL,
@@ -238,7 +259,7 @@ class FetcherTest extends TestCase {
   }
 
   def generateRandomData(namespace: String, keyCount: Int = 10, cardinality: Int = 100): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
     val rowCount = cardinality * keyCount
     val userCol = Column("user", StringType, keyCount)
     val vendorCol = Column("vendor", StringType, keyCount)
@@ -288,7 +309,14 @@ class FetcherTest extends TestCase {
                              inputColumn = "rating",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)),
                              buckets = Seq("bucket")),
+        Builders.Aggregation(operation = Operation.SKEW,
+                             inputColumn = "rating",
+                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)),
+                             buckets = Seq("bucket")),
         Builders.Aggregation(operation = Operation.HISTOGRAM,
+                             inputColumn = "txn_types",
+                             windows = Seq(new Window(3, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.APPROX_HISTOGRAM_K,
                              inputColumn = "txn_types",
                              windows = Seq(new Window(3, TimeUnit.DAYS))),
         Builders.Aggregation(operation = Operation.LAST_K,
@@ -416,7 +444,7 @@ class FetcherTest extends TestCase {
   }
 
   def generateEventOnlyData(namespace: String, groupByCustomJson: Option[String] = None): api.Join = {
-    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    tableUtils.createDatabase(namespace)
 
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
 
@@ -514,6 +542,11 @@ class FetcherTest extends TestCase {
           operation = Operation.AVERAGE,
           inputColumn = "rating",
           windows = Seq(new Window(2, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.APPROX_HISTOGRAM_K,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
         )
       ),
       accuracy = Accuracy.TEMPORAL,
@@ -692,7 +725,7 @@ class FetcherTest extends TestCase {
     val namespace = "empty_request"
     val joinConf = generateRandomData(namespace, 5, 5)
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#empty_request")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
 
@@ -705,8 +738,11 @@ class FetcherTest extends TestCase {
     val responseMap = responses.head.values.get
 
     logger.info("====== Empty request response map ======")
-    assertEquals(joinConf.joinParts.size() + joinConf.derivations.toScala.derivationsWithoutStar.size, responseMap.size)
-    assertEquals(responseMap.keys.count(_.endsWith("_exception")), joinConf.joinParts.size())
+    logger.info(responseMap.toString)
+    // In this case because of empty keys, both attempts to compute derivation will fail
+    val derivationExceptionTypes = Seq("derivation_fetch_exception", "derivation_rename_exception")
+    assertEquals(joinConf.joinParts.size() + derivationExceptionTypes.size, responseMap.size)
+    assertTrue(responseMap.keys.forall(_.endsWith("_exception")))
   }
 }
 

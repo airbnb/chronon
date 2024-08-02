@@ -143,7 +143,7 @@ object Extensions {
     }
 
     def owningTeam: String = {
-      val teamOverride = Try(customJsonLookUp(Constants.TeamOverride).asInstanceOf[String]).toOption
+      val teamOverride = Option(Try(customJsonLookUp(Constants.TeamOverride).asInstanceOf[String]).getOrElse(null))
       teamOverride.getOrElse(metaData.team)
     }
   }
@@ -344,6 +344,17 @@ object Extensions {
       else { source.getJoinSource.getJoin.metaData.outputTable }
     }
 
+    def overwriteTable(table: String): Unit = {
+      if (source.isSetEntities) { source.getEntities.setSnapshotTable(table) }
+      else if (source.isSetEvents) { source.getEvents.setTable(table) }
+      else {
+        val metadata = source.getJoinSource.getJoin.getMetaData
+        val Array(namespace, tableName) = table.split(".")
+        metadata.setOutputNamespace(namespace)
+        metadata.setName(tableName)
+      }
+    }
+
     def table: String = rawTable.cleanSpec
 
     def subPartitionFilters: Map[String, String] = {
@@ -413,6 +424,7 @@ object Extensions {
   }
 
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
     def maxWindow: Option[Window] = {
       val allWindowsOpt = Option(groupBy.aggregations)
         .flatMap(_.toScala.toSeq.allWindowsOpt)
@@ -432,6 +444,7 @@ object Extensions {
     def semanticHash: String = {
       val newGroupBy = groupBy.deepCopy()
       newGroupBy.unsetMetaData()
+      logger.info(s"Computing semantic hash for GroupBy object: ${ThriftJsonCodec.toJsonStr(newGroupBy)}")
       ThriftJsonCodec.md5Digest(newGroupBy)
     }
 
@@ -623,6 +636,12 @@ object Extensions {
     def sanitize: String = Option(string).map(_.replaceAll("[^a-zA-Z0-9_]", "_")).orNull
 
     def cleanSpec: String = string.split("/").head
+
+    // derive a feature name key from path to file
+    def confPathToKey: String = {
+      // capture <conf_type>/<team>/<conf_name> as key e.g joins/team/team.example_join.v1
+      string.split("/").takeRight(3).mkString("/")
+    }
   }
 
   implicit class ExternalSourceOps(externalSource: ExternalSource) extends ExternalSource(externalSource) {
@@ -835,6 +854,7 @@ object Extensions {
      */
     def semanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
+      logger.info(s"Join Left Object: ${ThriftJsonCodec.toJsonStr(join.left)}")
       val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
       val derivedHashMap = Option(join.derivations)
         .map { derivations =>
@@ -882,6 +902,16 @@ object Extensions {
       externalPartHashes ++ semanticHash
     }
 
+    def leftChanged(oldSemanticHash: Map[String, String]): Boolean = {
+      // Checks for semantic changes in left or bootstrap, because those are saved together
+      val bootstrapExistsAndChanged = oldSemanticHash.contains(join.metaData.bootstrapTable) && oldSemanticHash.get(
+        join.metaData.bootstrapTable) != semanticHash.get(join.metaData.bootstrapTable)
+      logger.info(s"Bootstrap table changed: $bootstrapExistsAndChanged")
+      logger.info(s"Old Semantic Hash: $oldSemanticHash")
+      logger.info(s"New Semantic Hash: $semanticHash")
+      oldSemanticHash.get(leftSourceKey) != semanticHash.get(leftSourceKey) || bootstrapExistsAndChanged
+    }
+
     def tablesToDrop(oldSemanticHash: Map[String, String]): Seq[String] = {
       val newSemanticHash = semanticHash
       // only right join part hashes for convenience
@@ -890,7 +920,7 @@ object Extensions {
       }
 
       // drop everything if left source changes
-      val partsToDrop = if (oldSemanticHash(leftSourceKey) != newSemanticHash(leftSourceKey)) {
+      val partsToDrop = if (leftChanged(oldSemanticHash)) {
         partHashes(oldSemanticHash).keys.toSeq
       } else {
         val changed = partHashes(newSemanticHash).flatMap {

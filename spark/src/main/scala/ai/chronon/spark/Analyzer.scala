@@ -251,17 +251,29 @@ class Analyzer(tableUtils: TableUtils,
 
   def analyzeJoin(joinConf: api.Join,
                   enableHitter: Boolean = false,
+                  validateTablePermission: Boolean = true,
                   validationAssert: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
     joinConf.setups.foreach(tableUtils.sql)
 
-    val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
-    val analysis = if (enableHitter) analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table) else ""
-    val leftSchema: Map[String, DataType] =
-      leftDf.schema.fields.map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType))).toMap
+    val (analysis, leftDf) = if (enableHitter) {
+      val leftDf = JoinUtils.leftDf(joinConf, range, tableUtils, allowEmpty = true).get
+      val analysis = analyze(leftDf, joinConf.leftKeyCols, joinConf.left.table)
+      (analysis, leftDf)
+    } else {
+      val analysis = ""
+      val scanQuery = range.genScanQuery(joinConf.left.query,
+                                         joinConf.left.table,
+                                         fillIfAbsent = Map(tableUtils.partitionColumn -> null))
+      val leftDf: DataFrame = tableUtils.sql(scanQuery)
+      (analysis, leftDf)
+    }
 
+    val leftSchema = leftDf.schema.fields
+      .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
+      .toMap
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbTables = ListBuffer[String]()
@@ -298,7 +310,21 @@ class Analyzer(tableUtils: TableUtils,
       if (gbStartPartition.nonEmpty)
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
-    val noAccessTables = runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
+    if (joinConf.onlineExternalParts != null) {
+      joinConf.onlineExternalParts.toScala.foreach { part =>
+        aggregationsMetadata ++= part.source.valueFields.map { field =>
+          AggregationMetadata(part.fullName + "_" + field.name,
+                              field.fieldType,
+                              null,
+                              null,
+                              field.name,
+                              part.source.valueSchema.name)
+        }
+      }
+    }
+    val noAccessTables = if (validateTablePermission) {
+      runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
+    } else Set()
 
     val rightSchema: Map[String, DataType] =
       aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
@@ -319,7 +345,7 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     logger.info(s"----- Validations for join/${joinConf.metaData.cleanName} -----")
-    if (!gbStartPartitions.isEmpty) {
+    if (gbStartPartitions.nonEmpty) {
       logger.info(
         "----- Following Group_Bys contains a startPartition. Please check if any startPartition will conflict with your backfill. -----")
       gbStartPartitions.foreach {
@@ -338,14 +364,23 @@ class Analyzer(tableUtils: TableUtils,
       logger.info(noAccessTables.mkString("\n"))
       logger.info(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
       dataAvailabilityErrors.foreach(error =>
-        logger.info(s"Table ${error._1} : Group_By ${error._2} : Expected start ${error._3}"))
+        logger.info(s"Group_By ${error._2} : Source Tables ${error._1} : Expected start ${error._3}"))
     }
 
     if (validationAssert) {
-      assert(
-        keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty,
-        "ERROR: Join validation failed. Please check error message for details."
-      )
+      if (joinConf.isSetBootstrapParts) {
+        // For joins with bootstrap_parts, do not assert on data availability errors, as bootstrap can cover them
+        // Only print out the errors as a warning
+        assert(
+          keysWithError.isEmpty && noAccessTables.isEmpty,
+          "ERROR: Join validation failed. Please check error message for details."
+        )
+      } else {
+        assert(
+          keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty,
+          "ERROR: Join validation failed. Please check error message for details."
+        )
+      }
     }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
     (leftSchema ++ rightSchema, aggregationsMetadata)
@@ -390,9 +425,9 @@ class Analyzer(tableUtils: TableUtils,
   // - For aggregation case, gb table earliest partition should go back to (first_unfilled_partition - max_window) date
   // - For none aggregation case or unbounded window, no earliest partition is required
   // return a list of (table, gb_name, expected_start) that don't have data available
-  def runDataAvailabilityCheck(leftDataModel: DataModel,
-                               groupBy: api.GroupBy,
-                               unfilledRanges: Seq[PartitionRange]): List[(String, String, String)] = {
+  private def runDataAvailabilityCheck(leftDataModel: DataModel,
+                                       groupBy: api.GroupBy,
+                                       unfilledRanges: Seq[PartitionRange]): List[(String, String, String)] = {
     if (unfilledRanges.isEmpty) {
       logger.info("No unfilled ranges found.")
       List.empty
@@ -416,14 +451,36 @@ class Analyzer(tableUtils: TableUtils,
             case (Events, Entities, Accuracy.TEMPORAL) =>
               tableUtils.partitionSpec.minus(leftShiftedPartitionRangeStart, window)
           }
-          groupBy.sources.toScala.flatMap { source =>
-            val table = source.table
-            logger.info(s"Checking table $table for data availability ... Expected start partition: $expectedStart")
-            //check if partition available or table is cumulative
-            if (!tableUtils.ifPartitionExistsInTable(table, expectedStart) && !source.isCumulative) {
-              Some((table, groupBy.getMetaData.getName, expectedStart))
+          logger.info(
+            s"Checking data availability for group_by ${groupBy.metaData.name} ... Expected start partition: $expectedStart")
+          if (groupBy.sources.toScala.exists(s => s.isCumulative)) {
+            List.empty
+          } else {
+            val tableToPartitions = groupBy.sources.toScala.map { source =>
+              val table = source.table
+              logger.info(s"Checking table $table for data availability ...")
+              val partitions = tableUtils.partitions(table)
+              val startOpt = if (partitions.isEmpty) None else Some(partitions.min)
+              val endOpt = if (partitions.isEmpty) None else Some(partitions.max)
+              (table, partitions, startOpt, endOpt)
+            }
+            val allPartitions = tableToPartitions.flatMap(_._2)
+            val minPartition = if (allPartitions.isEmpty) None else Some(allPartitions.min)
+
+            if (minPartition.isEmpty || minPartition.get > expectedStart) {
+              logger.info(s"""
+                         |Join needs data older than what is available for GroupBy: ${groupBy.metaData.name}
+                         |left-$leftDataModel, right-${groupBy.dataModel}, accuracy-${groupBy.inferredAccuracy}
+                         |expected earliest available data partition: $expectedStart""".stripMargin)
+              tableToPartitions.foreach {
+                case (table, _, startOpt, endOpt) =>
+                  logger.info(
+                    s"Table $table startPartition ${startOpt.getOrElse("empty")} endPartition ${endOpt.getOrElse("empty")}")
+              }
+              val tables = tableToPartitions.map(_._1)
+              List((tables.mkString(", "), groupBy.metaData.name, expectedStart))
             } else {
-              None
+              List.empty
             }
           }
         case None =>

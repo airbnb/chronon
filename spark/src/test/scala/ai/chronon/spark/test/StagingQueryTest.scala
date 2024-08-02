@@ -34,7 +34,7 @@ class StagingQueryTest {
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val ninetyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
   private val namespace = "staging_query_chronon_test"
-  spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+  tableUtils.createDatabase(namespace)
 
   @Test
   def testStagingQuery(): Unit = {

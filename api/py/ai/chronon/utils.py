@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,8 +12,6 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-import ai.chronon.api.ttypes as api
-import ai.chronon.repo.extract_objects as eo
 import gc
 import importlib
 import json
@@ -24,14 +21,15 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterable
-from typing import List, Union, cast, Optional
-from ai.chronon.repo import teams
-from ai.chronon.repo import TEAMS_FILE_PATH
+from typing import List, Optional, Union, cast
 
+import ai.chronon.api.ttypes as api
+import ai.chronon.repo.extract_objects as eo
+from ai.chronon.repo import TEAMS_FILE_PATH, teams
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
-chronon_root_path = ''  # passed from compile.py
+chronon_root_path = ""  # passed from compile.py
 
 
 def edit_distance(str1, str2):
@@ -47,33 +45,26 @@ def edit_distance(str1, str2):
             elif str1[i - 1] == str2[j - 1]:
                 dp[i][j] = dp[i - 1][j - 1]
             else:
-                dp[i][j] = 1 + min(dp[i][j - 1],
-                                   dp[i - 1][j],
-                                   dp[i - 1][j - 1])
+                dp[i][j] = 1 + min(dp[i][j - 1], dp[i - 1][j], dp[i - 1][j - 1])
     return dp[m - 1][n - 1]
 
 
 class JsonDiffer:
     def __init__(self):
         self.temp_dir = tempfile.mkdtemp()
-        self.new_name = 'new.json'
-        self.old_name = 'old.json'
+        self.new_name = "new.json"
+        self.old_name = "old.json"
 
-    def diff(
-            self,
-            new_json_str: object,
-            old_json_str: object,
-            skipped_keys=[]) -> str:
-        new_json = {k: v for k, v in json.loads(new_json_str).items()
-                    if k not in skipped_keys}
-        old_json = {k: v for k, v in json.loads(old_json_str).items()
-                    if k not in skipped_keys}
+    def diff(self, new_json_str: object, old_json_str: object, skipped_keys=[]) -> str:
+        new_json = {k: v for k, v in json.loads(new_json_str).items() if k not in skipped_keys}
+        old_json = {k: v for k, v in json.loads(old_json_str).items() if k not in skipped_keys}
 
-        with open(os.path.join(self.temp_dir, self.old_name), mode='w') as old, \
-                open(os.path.join(self.temp_dir, self.new_name), mode='w') as new:
+        with open(os.path.join(self.temp_dir, self.old_name), mode="w") as old, open(
+            os.path.join(self.temp_dir, self.new_name), mode="w"
+        ) as new:
             old.write(json.dumps(old_json, sort_keys=True, indent=2))
             new.write(json.dumps(new_json, sort_keys=True, indent=2))
-        diff_str = subprocess.run(['diff', old.name, new.name], stdout=subprocess.PIPE).stdout.decode('utf-8')
+        diff_str = subprocess.run(["diff", old.name, new.name], stdout=subprocess.PIPE).stdout.decode("utf-8")
         return diff_str
 
     def clean(self):
@@ -86,10 +77,14 @@ def check_contains_single(candidate, valid_items, type_name, name, print_functio
     if not valid_items:
         assert f"{candidate_str}, is not a valid {type_name} because no {type_name}s are specified {name_suffix}"
     elif candidate not in valid_items:
-        sorted_items = sorted(map(print_function, valid_items),
-                              key=lambda item: edit_distance(candidate_str, item))
-        printed_items = '\n    '.join(sorted_items)
-        assert candidate in valid_items, f"""{candidate_str}, is not a valid {type_name} {name_suffix}
+        sorted_items = sorted(
+            map(print_function, valid_items),
+            key=lambda item: edit_distance(candidate_str, item),
+        )
+        printed_items = "\n    ".join(sorted_items)
+        assert (
+            candidate in valid_items
+        ), f"""{candidate_str}, is not a valid {type_name} {name_suffix}
 Please pick one from:
     {printed_items}
 """
@@ -110,11 +105,14 @@ def get_streaming_sources(group_by: api.GroupBy) -> List[api.Source]:
 
 def is_streaming(source: api.Source) -> bool:
     """Checks if the source has streaming enabled."""
-    return (source.entities and source.entities.mutationTopic is not None) or \
-           (source.events and source.events.topic is not None)
+    return (source.entities and source.entities.mutationTopic is not None) or (
+        source.events and source.events.topic is not None
+    )
 
 
-def get_underlying_source(source: api.Source) -> Union[api.EventSource, api.EntitySource, api.JoinSource]:
+def get_underlying_source(
+    source: api.Source,
+) -> Union[api.EventSource, api.EntitySource, api.JoinSource]:
     if source.entities:
         return source.entities
     elif source.events:
@@ -134,7 +132,7 @@ def get_table(source: api.Source) -> str:
         table = source.events.table
     else:
         table = get_join_output_table_name(source.joinSource.join, True)
-    return table.split('/')[0]
+    return table.split("/")[0]
 
 
 def get_topic(source: api.Source) -> str:
@@ -154,8 +152,8 @@ def get_mod_name_from_gc(obj, mod_prefix):
     # get obj's module info from garbage collector
     gc.collect()
     for ref in gc.get_referrers(obj):
-        if '__name__' in ref and ref['__name__'].startswith(mod_prefix):
-            mod_name = ref['__name__']
+        if "__name__" in ref and ref["__name__"].startswith(mod_prefix):
+            mod_name = ref["__name__"]
             break
     return mod_name
 
@@ -175,6 +173,28 @@ def sanitize(name):
     return None
 
 
+def dict_to_bash_commands(d):
+    """
+    Convert a dict into a bash command substring
+    """
+    if not d:
+        return ""
+    bash_commands = []
+    for key, value in d.items():
+        cmd = f"--{key.replace('_', '-')}={value}" if value else f"--{key.replace('_', '-')}"
+        bash_commands.append(cmd)
+    return " ".join(bash_commands)
+
+
+def dict_to_exports(d):
+    if not d:
+        return ""
+    exports = []
+    for key, value in d.items():
+        exports.append(f"export {key.upper()}={value}")
+    return " && ".join(exports)
+
+
 def output_table_name(obj, full_name: bool):
     table_name = sanitize(obj.metaData.name)
     db = obj.metaData.outputNamespace
@@ -183,6 +203,16 @@ def output_table_name(obj, full_name: bool):
         return db + "." + table_name
     else:
         return table_name
+
+
+def join_part_name(jp):
+    if jp.groupBy is None:
+        raise NotImplementedError("Join Part names for non group bys is not implemented.")
+    if not jp.groupBy.metaData.name and isinstance(jp.groupBy, api.GroupBy):
+        __set_name(jp.groupBy, api.GroupBy, "group_bys")
+    return "_".join(
+        [component for component in [jp.prefix, sanitize(jp.groupBy.metaData.name)] if component is not None]
+    )
 
 
 def join_part_output_table_name(join, jp, full_name: bool = False):
@@ -194,15 +224,16 @@ def join_part_output_table_name(join, jp, full_name: bool = False):
     def partOutputTable(jp: JoinPart): String = (Seq(join.metaData.outputTable) ++ Option(jp.prefix) :+
       jp.groupBy.metaData.cleanName).mkString("_")
     """
-    if jp.groupBy is None:
-        raise NotImplementedError("Join Part names for non group bys is not implemented.")
-    if not jp.groupBy.metaData.name:
-        __set_name(jp.groupBy, api.GroupBy, "group_bys")
-    return "_".join([component for component in [
-        output_table_name(join, full_name),
-        jp.prefix,
-        sanitize(jp.groupBy.metaData.name)
-    ] if component is not None])
+    return "_".join(
+        [
+            component
+            for component in [
+                output_table_name(join, full_name),
+                join_part_name(jp),
+            ]
+            if component is not None
+        ]
+    )
 
 
 def group_by_output_table_name(obj, full_name: bool = False):
@@ -227,7 +258,8 @@ def get_staging_query_output_table_name(staging_query: api.StagingQuery, full_na
 
 def get_join_output_table_name(join: api.Join, full_name: bool = False):
     """generate output table name for join backfill job"""
-    __set_name(join, api.Join, "joins")
+    if isinstance(join, api.Join):
+        __set_name(join, api.Join, "joins")
     # set output namespace
     if not join.metaData.outputNamespace:
         team_name = join.metaData.name.split(".")[0]
@@ -237,30 +269,32 @@ def get_join_output_table_name(join: api.Join, full_name: bool = False):
 
 
 def get_dependencies(
-        src: api.Source,
-        dependencies: List[str] = None,
-        meta_data: api.MetaData = None,
-        lag: int = 0) -> List[str]:
+    src: api.Source,
+    dependencies: List[str] = None,
+    meta_data: api.MetaData = None,
+    lag: int = 0,
+) -> List[str]:
     query = get_query(src)
     start = query.startPartition
     end = query.endPartition
     if meta_data is not None:
         result = [json.loads(dep) for dep in meta_data.dependencies]
     elif dependencies:
-        result = [{
-            "name": wait_for_name(dep),
-            "spec": dep,
-            "start": start,
-            "end": end
-        } for dep in dependencies]
+        result = [{"name": wait_for_name(dep), "spec": dep, "start": start, "end": end} for dep in dependencies]
     else:
         if src.entities and src.entities.mutationTable:
             # Opting to use no lag for all use cases because that the "safe catch-all" case when
             # it comes to dependencies (assuming ds lands before ds + 1). The actual query lag logic
             # is more complicated and depends on temporal/snapshot accuracy for join.
-            result = list(filter(None, [
-                wait_for_simple_schema(src.entities.snapshotTable, lag, start, end),
-                wait_for_simple_schema(src.entities.mutationTable, lag, start, end)]))
+            result = list(
+                filter(
+                    None,
+                    [
+                        wait_for_simple_schema(src.entities.snapshotTable, lag, start, end),
+                        wait_for_simple_schema(src.entities.mutationTable, lag, start, end),
+                    ],
+                )
+            )
         elif src.entities:
             result = [wait_for_simple_schema(src.entities.snapshotTable, lag, start, end)]
         elif src.joinSource:
@@ -280,22 +314,23 @@ def get_bootstrap_dependencies(bootstrap_parts) -> List[str]:
         table = bootstrap_part.table
         start = bootstrap_part.query.startPartition if bootstrap_part.query is not None else None
         end = bootstrap_part.query.endPartition if bootstrap_part.query is not None else None
-        dependencies.append(
-            wait_for_simple_schema(table, 0, start, end)
-        )
+        dependencies.append(wait_for_simple_schema(table, 0, start, end))
     return [json.dumps(dep) for dep in dependencies]
 
 
 def get_label_table_dependencies(label_part) -> List[str]:
     label_info = [(label.groupBy.sources, label.groupBy.metaData) for label in label_part.labels]
     label_info = [(source, meta_data) for (sources, meta_data) in label_info for source in sources]
-    label_dependencies = [dep for (source, meta_data) in label_info for dep in
-                          get_dependencies(src=source, meta_data=meta_data)]
+    label_dependencies = [
+        dep for (source, meta_data) in label_info for dep in get_dependencies(src=source, meta_data=meta_data)
+    ]
     label_dependencies.append(
-        json.dumps({
-            "name": "wait_for_{{ join_backfill_table }}",
-            "spec": "{{ join_backfill_table }}/ds={{ ds }}"
-        })
+        json.dumps(
+            {
+                "name": "wait_for_{{ join_backfill_table }}",
+                "spec": "{{ join_backfill_table }}/ds={{ ds }}",
+            }
+        )
     )
     return label_dependencies
 
@@ -303,15 +338,15 @@ def get_label_table_dependencies(label_part) -> List[str]:
 def wait_for_simple_schema(table, lag, start, end):
     if not table:
         return None
-    table_tokens = table.split('/')
+    table_tokens = table.split("/")
     clean_name = table_tokens[0]
-    subpartition_spec = '/'.join(table_tokens[1:]) if len(table_tokens) > 1 else ''
+    subpartition_spec = "/".join(table_tokens[1:]) if len(table_tokens) > 1 else ""
     return {
         "name": "wait_for_{}_ds{}".format(clean_name, "" if lag == 0 else f"_minus_{lag}"),
         "spec": "{}/ds={}{}".format(
             clean_name,
             "{{ ds }}" if lag == 0 else "{{{{ macros.ds_add(ds, -{}) }}}}".format(lag),
-            '/{}'.format(subpartition_spec) if subpartition_spec else '',
+            "/{}".format(subpartition_spec) if subpartition_spec else "",
         ),
         "start": start,
         "end": end,
@@ -319,9 +354,9 @@ def wait_for_simple_schema(table, lag, start, end):
 
 
 def wait_for_name(dep):
-    replace_nonalphanumeric = re.sub('[^a-zA-Z0-9]', '_', dep)
+    replace_nonalphanumeric = re.sub("[^a-zA-Z0-9]", "_", dep)
     name = f"wait_for_{replace_nonalphanumeric}"
-    return re.sub('_+', '_', name).rstrip('_')
+    return re.sub("_+", "_", name).rstrip("_")
 
 
 def dedupe_in_order(seq):
@@ -373,8 +408,8 @@ def get_applicable_modes(conf: ChrononJobTypes) -> List[str]:
             modes.append("backfill")
             modes.append("stats-summary")
         if (
-            join.metaData.customJson is not None and
-            json.loads(join.metaData.customJson).get("check_consistency") is True
+            join.metaData.customJson is not None
+            and json.loads(join.metaData.customJson).get("check_consistency") is True
         ):
             modes.append("consistency-metrics-compute")
         if requires_log_flattening_task(join):
@@ -412,3 +447,26 @@ def get_related_table_names(conf: ChrononJobTypes) -> List[str]:
         related_tables.append(f"{table_name}_bootstrap")
 
     return related_tables
+
+
+class DotDict(dict):
+    def __getattr__(self, attr):
+        if attr in self:
+            value = self[attr]
+            return DotDict(value) if isinstance(value, dict) else value
+        return None
+
+
+def convert_json_to_obj(d):
+    if isinstance(d, dict):
+        return DotDict({k: convert_json_to_obj(v) for k, v in d.items()})
+    elif isinstance(d, list):
+        return [convert_json_to_obj(item) for item in d]
+    else:
+        return d
+
+
+def get_config_path(join_name: str) -> str:
+    assert "." in join_name, f"Invalid join name: {join_name}"
+    team_name, config_name = join_name.split(".", 1)
+    return f"production/joins/{team_name}/{config_name}"
