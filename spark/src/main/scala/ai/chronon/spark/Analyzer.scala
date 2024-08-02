@@ -537,7 +537,7 @@ class Analyzer(tableUtils: TableUtils,
               .cast(StringType)
               .as("notNullCount"),
             // assumes that we have valid unix milliseconds between the date range of
-            // 1971-01-01 00:00:00 (0L) to 2099-12-31 23:59:59 (4102473599999L)
+            // 1971-01-01 00:00:00 (31536000000L) to 2099-12-31 23:59:59 (4102473599999L)
             // will return 0 if all values are within the range
             sum(when(col(Constants.TimeColumn).between(31536000000L, 4102473599999L), lit(0)).otherwise(lit(1)))
               .cast(StringType)
