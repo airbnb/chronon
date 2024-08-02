@@ -26,7 +26,7 @@ import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import org.apache.spark.sql.{DataFrame, Row, types}
-import org.apache.spark.sql.functions.{col, from_unixtime, lit}
+import org.apache.spark.sql.functions.{col, from_unixtime, lit, sum, when}
 import org.apache.spark.sql.types.{StringType, StructType}
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 
@@ -191,6 +191,36 @@ class Analyzer(tableUtils: TableUtils,
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
+
+    val timestampChecks = runTimestampChecks(groupBy.inputDf)
+    if (!timestampChecks.contains("noTsColumn")) {
+      // do timestamp checks
+      assert(
+        timestampChecks("notNullCount") != "0",
+        s"""[ERROR]: GroupBy validation failed.
+                 | Please check that source has non-null timestamps.
+                 | check notNullCount: ${timestampChecks("notNullCount")}
+                 | """.stripMargin
+      )
+      assert(
+        timestampChecks("badRangeCount") == "0",
+        s"""[ERROR]: GroupBy validation failed.
+                 | Please check that source has valid epoch millisecond timestamps.
+                 | badRangeCount: ${timestampChecks("badRangeCount")}
+                 | """.stripMargin
+      )
+
+      logger.info(s"""ANALYSIS TIMESTAMP completed for group_by/${name}.
+           |check notNullCount: ${timestampChecks("notNullCount")}
+           |check badRangeCount: ${timestampChecks("badRangeCount")}
+           |""".stripMargin)
+
+    } else {
+      logger.info(s"""ANALYSIS TIMESTAMP completed for group_by/${name}.
+           |check TsColumn: ${timestampChecks("noTsColumn")}
+           |""".stripMargin)
+    }
+
     val analysis =
       if (enableHitter)
         analyze(groupBy.inputDf,
@@ -247,6 +277,7 @@ class Analyzer(tableUtils: TableUtils,
       field.name -> SparkConversions.toChrononType(field.name, field.dataType)
     }.toMap
     (aggMetadata, keySchemaMap)
+
   }
 
   def analyzeJoin(joinConf: api.Join,
@@ -487,6 +518,53 @@ class Analyzer(tableUtils: TableUtils,
           List.empty
       }
     }
+  }
+
+  // For groupBys validate if the timestamp provided produces some values
+  // if all values are null this should be flagged as an error
+  def runTimestampChecks(df: DataFrame, sampleNumber: Int = 1000): Map[String, String] = {
+
+    val hasTimestamp = df.schema.fieldNames.contains(Constants.TimeColumn)
+    val mapTimestampChecks = if (hasTimestamp) {
+      // set max sample to 1000 rows if larger input is provided
+      val sampleN = if (sampleNumber > 1000) { 1000 }
+      else { sampleNumber }
+      dataFrameToMap(
+        df.limit(sampleN)
+          .agg(
+            // will return 0 if all values are null
+            sum(when(col(Constants.TimeColumn).isNull, lit(0)).otherwise(lit(1)))
+              .cast(StringType)
+              .as("notNullCount"),
+            // assumes that we have valid unix milliseconds between the date range of
+            // 1971-01-01 00:00:00 (31536000000L) to 2099-12-31 23:59:59 (4102473599999L)
+            // will return 0 if all values are within the range
+            sum(when(col(Constants.TimeColumn).between(31536000000L, 4102473599999L), lit(0)).otherwise(lit(1)))
+              .cast(StringType)
+              .as("badRangeCount")
+          )
+          .select(col("notNullCount"), col("badRangeCount"))
+      )
+    } else {
+      Map(
+        "noTsColumn" -> "No Timestamp Column"
+      )
+    }
+    mapTimestampChecks
+  }
+
+  def dataFrameToMap(inputDf: DataFrame): Map[String, String] = {
+    val row: Row = inputDf.head()
+    val schema = inputDf.schema
+    val columns = schema.fieldNames
+    val values = row.toSeq
+    columns
+      .zip(values)
+      .map {
+        case (column, value) =>
+          (column, value.toString)
+      }
+      .toMap
   }
 
   def run(): Unit =
