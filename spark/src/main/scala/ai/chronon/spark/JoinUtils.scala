@@ -21,7 +21,6 @@ import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions.{JoinOps, _}
 import ai.chronon.spark.Extensions._
-import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
@@ -31,12 +30,11 @@ import org.slf4j.LoggerFactory
 import java.util
 import scala.collection.compat._
 import scala.jdk.CollectionConverters._
-import scala.util.ScalaJavaConversions.MapOps
 
 object JoinUtils {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
-  /***
+  /** *
     * Util methods for join computation
     */
 
@@ -97,7 +95,7 @@ object JoinUtils {
       }
     })
 
-  /***
+  /** *
     * Compute partition range to be filled for given join conf
     */
   def getRangesToFill(leftSource: ai.chronon.api.Source,
@@ -118,7 +116,7 @@ object JoinUtils {
     PartitionRange(leftStart, leftEnd)(tableUtils)
   }
 
-  /***
+  /** *
     * join left and right dataframes, merging any shared columns if exists by the coalesce rule.
     * fails if there is any data type mismatch between shared columns.
     *
@@ -160,7 +158,7 @@ object JoinUtils {
     finalDf
   }
 
-  /***
+  /** *
     * Method to create or replace a view for feature table joining with labels.
     * Label columns will be prefixed with "label" or custom prefix for easy identification
     */
@@ -206,7 +204,7 @@ object JoinUtils {
     tableUtils.sql(sqlStatement)
   }
 
-  /***
+  /** *
     * Method to create a view with latest available label_ds for a given ds. This view is built
     * on top of final label view which has all label versions available.
     * This view will inherit the final label view properties as well.
@@ -288,6 +286,7 @@ object JoinUtils {
   /**
     * Generate a Bloom filter for 'joinPart' when the row count to be backfilled falls below a specified threshold.
     * This method anticipates that there will likely be a substantial number of rows on the right side that need to be filtered out.
+    *
     * @return bloomfilter map option for right part
     */
 
@@ -317,15 +316,15 @@ object JoinUtils {
 
     logger.info(s"""
            Generating bloom filter for joinPart:
-           |  part name : ${joinPart.groupBy.metaData.name},
-           |  left type : ${joinConf.left.dataModel},
-           |  right type: ${joinPart.groupBy.dataModel},
-           |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
-           |  part unfilled range: $unfilledRange,
-           |  left row count: $leftRowCount
-           |  bloom sizes: $bloomSizes
-           |  groupBy: ${joinPart.groupBy.toString}
-           |""".stripMargin)
+         |  part name : ${joinPart.groupBy.metaData.name},
+         |  left type : ${joinConf.left.dataModel},
+         |  right type: ${joinPart.groupBy.dataModel},
+         |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
+         |  part unfilled range: $unfilledRange,
+         |  left row count: $leftRowCount
+         |  bloom sizes: $bloomSizes
+         |  groupBy: ${joinPart.groupBy.toString}
+         |""".stripMargin)
     rightBlooms
   }
 
@@ -384,31 +383,4 @@ object JoinUtils {
     df.drop(columnsToDrop: _*)
   }
 
-  def tablesToRecompute(joinConf: ai.chronon.api.Join,
-                        outputTable: String,
-                        tableUtils: TableUtils): collection.Seq[String] = {
-    // Finds all join output tables (join parts and final table) that need recomputing (in monolithic spark job mode)
-    val gson = new Gson()
-    (for (
-      props <- tableUtils.getTableProperties(outputTable);
-      oldSemanticJson <- props.get(Constants.SemanticHashKey);
-      oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
-    ) yield {
-      logger.info(s"Comparing Hashes:\nNew: ${joinConf.semanticHash},\nOld: $oldSemanticHash")
-      joinConf.tablesToDrop(oldSemanticHash)
-    }).getOrElse(collection.Seq.empty)
-  }
-
-  def shouldRecomputeLeft(joinConf: ai.chronon.api.Join, outputTable: String, tableUtils: TableUtils): Boolean = {
-    // Determines if the saved left table of the join (includes bootstrap) needs to be recomputed due to semantic changes since last run
-    if (tableUtils.tableExists(outputTable)) {
-      val gson = new Gson()
-      val props = tableUtils.getTableProperties(outputTable);
-      val oldSemanticJson = props.get(Constants.SemanticHashKey);
-      val oldSemanticHash = gson.fromJson(oldSemanticJson, classOf[java.util.HashMap[String, String]]).toScala
-      joinConf.leftChanged(oldSemanticHash)
-    } else {
-      false
-    }
-  }
 }
