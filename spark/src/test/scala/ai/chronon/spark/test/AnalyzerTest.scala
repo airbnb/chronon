@@ -23,7 +23,7 @@ import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.col
+import org.apache.spark.sql.functions.{col, lit}
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.slf4j.LoggerFactory
@@ -219,6 +219,99 @@ class AnalyzerTest {
 
     val analyzer = new Analyzer(tableUtils, joinConf, leftMinDs, leftMaxDs)
     analyzer.analyzeJoin(joinConf, validationAssert = true)
+  }
+
+  @Test
+  def testGroupByAnalyzerCheckTimestampHasValues(): Unit = {
+
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs()),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test.test_1", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    //run analyzer an ensure ts timestamp values result in analyzer passing
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+    analyzer.analyzeGroupBy(tableGroupBy)
+
+  }
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testGroupByAnalyzerCheckTimestampAllNulls(): Unit = {
+
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs("nulls")),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col2")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test.test_2", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    //run analyzer and trigger assertion error when timestamps are all NULL
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+    analyzer.analyzeGroupBy(tableGroupBy)
+  }
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testGroupByAnalyzerCheckTimestampOutOfRange(): Unit = {
+
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs("out_of_range")),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col2")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test.test_3", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    //run analyzer and trigger assertion error when timestamps are all NULL
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+    analyzer.analyzeGroupBy(tableGroupBy)
+
+  }
+
+  def getTestGBSourceWithTs(option: String = "default"): api.Source = {
+    val testSchema = List(
+      Column("key", api.StringType, 10),
+      Column("col1", api.IntType, 10),
+      Column("col2", api.IntType, 10),
+    )
+
+    val viewsTable = s"$namespace.test_table"
+    option match {
+      case "default" => {
+        DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+          .save(viewsTable)
+      }
+      case "nulls" => {
+        DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+          .withColumn("ts", lit(null).cast("bigint")) // set ts to null to test analyzer
+          .save(viewsTable)
+      }
+      case "out_of_range" => {
+        DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+          .withColumn("ts", col("ts")*lit(1000)) // convert to nanoseconds to test analyzer
+          .save(viewsTable)
+      }
+      case _ => {
+        throw new IllegalArgumentException(s"$option is not a valid timestamp generation option")
+      }
+    }
+
+    val out = Builders.Source.events(
+        query = Builders.Query(selects = Builders.Selects("col1", "col2"), startPartition = oneYearAgo),
+        table = viewsTable
+      )
+
+    out
+
   }
 
   def getTestGBSource(): api.Source = {
