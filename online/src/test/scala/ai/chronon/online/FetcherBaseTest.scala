@@ -220,4 +220,19 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     assertFalse(fetcherBaseWithFlagStore.isCachingEnabled(buildGroupByWithCustomJson("test_groupby_2")))
     assertTrue(fetcherBaseWithFlagStore.isCachingEnabled(buildGroupByWithCustomJson("test_groupby_3")))
   }
+
+  @Test
+  def testIsEntityValidityCheckEnabledFlag(): Unit = {
+    val flagStore: FlagStore = (flagName: String, attributes: java.util.Map[String, String]) => {
+      flagName match {
+        case "enable_entity_validity_check" => true
+        case _ => false
+      }
+    }
+
+    kvStore = mock[KVStore](Answers.RETURNS_DEEP_STUBS)
+    val fetcherBaseWithFlagStore = spy(new FetcherBase(kvStore, flagStore = flagStore))
+
+    assertTrue(fetcherBaseWithFlagStore.isEntityValidityCheckEnabled)
+  }
 }
