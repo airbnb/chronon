@@ -22,13 +22,21 @@ from ai.chronon.repo import dependency_tracker
 
 
 @pytest.fixture
-def dependency_tracker():
+def test_dependency_tracker():
     return dependency_tracker.ChrononEntityDependencyTracker(
-        chronon_root_path='test/sample'
+        chronon_root_path='test/sample/production'
     )
 
 
-def track_group_by_dependency(dependency_tracker):
-    conf_path = 'group_bys/sample_team/sample_group_by.v1'
-    downstream = dependency_tracker.check_downstream(conf_path)
-    assert (downstream == ['sample_team.sample_join.v1'])
+def test_group_by_dependency(test_dependency_tracker):
+    conf_path = 'group_bys/sample_team/event_sample_group_by.v1'
+    downstream = test_dependency_tracker.check_downstream(conf_path)
+    assert (len(downstream) == 8)
+    assert ('sample_team.sample_join_derivation.v1' in downstream)
+
+
+def test_join_dependency(test_dependency_tracker):
+    conf_path = 'joins/sample_team/sample_chaining_join.parent_join'
+    downstream = test_dependency_tracker.check_downstream(conf_path)
+    assert (len(downstream) == 1)
+    assert ('sample_team.sample_chaining_group_by' in downstream)

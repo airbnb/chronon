@@ -22,6 +22,7 @@ from ai.chronon.api.ttypes import \
     GroupBy, Join, Source, Derivation, ExternalPart
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME
+from ai.chronon.repo.validator import extract_json_confs
 
 
 class ChrononEntityDependencyTracker(object):
@@ -30,7 +31,7 @@ class ChrononEntityDependencyTracker(object):
         self.chronon_root_path = chronon_root_path
 
     def check_join_downstream(self, conf_path) -> List[str]:
-        joins = self.extract_json_confs(
+        joins = extract_json_confs(
             Join,
             os.path.join(self.chronon_root_path, conf_path))
         downstreams = []
@@ -42,7 +43,7 @@ class ChrononEntityDependencyTracker(object):
             return downstreams
         join = joins[0]
         join_name = join.metaData.name
-        group_bys = self.extract_json_confs(
+        group_bys = extract_json_confs(
             GroupBy,
             os.path.join(self.chronon_root_path, GROUP_BY_FOLDER_NAME))
         for group_by in group_bys:
@@ -52,7 +53,7 @@ class ChrononEntityDependencyTracker(object):
         return downstreams
 
     def check_group_by_downstream(self, conf_path) -> List[str]:
-        group_bys = self.extract_json_confs(
+        group_bys = extract_json_confs(
             GroupBy,
             os.path.join(self.chronon_root_path, conf_path))
         downstreams = []
@@ -64,7 +65,7 @@ class ChrononEntityDependencyTracker(object):
             return downstreams
         group_by = group_bys[0]
         group_by_name = group_by.metaData.name
-        joins = self.extract_json_confs(
+        joins = extract_json_confs(
             Join,
             os.path.join(self.chronon_root_path, JOIN_FOLDER_NAME))
         for join in joins:
