@@ -19,13 +19,13 @@ import os
 from ai.chronon.logger import get_logger
 from typing import List
 from ai.chronon.api.ttypes import \
-    GroupBy, Join, Source, Derivation, ExternalPart
+    GroupBy, Join
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
     GROUP_BY_FOLDER_NAME
 from ai.chronon.repo.validator import extract_json_confs
 
 
-class ChrononEntityDependencyTracker(object):
+class ChrononEntityDependencyTracker(object)
     def __init__(self, chronon_root_path: str, log_level=logging.INFO):
         self.logger = get_logger(log_level)
         self.chronon_root_path = chronon_root_path
