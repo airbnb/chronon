@@ -18,7 +18,6 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.Builders.{ContextualSource, Query}
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
