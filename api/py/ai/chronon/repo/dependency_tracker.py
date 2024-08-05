@@ -25,7 +25,7 @@ from ai.chronon.repo import JOIN_FOLDER_NAME, \
 from ai.chronon.repo.validator import extract_json_confs
 
 
-class ChrononEntityDependencyTracker(object)
+class ChrononEntityDependencyTracker(object):
     def __init__(self, chronon_root_path: str, log_level=logging.INFO):
         self.logger = get_logger(log_level)
         self.chronon_root_path = chronon_root_path
