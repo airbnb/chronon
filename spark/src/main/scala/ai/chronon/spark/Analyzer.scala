@@ -302,6 +302,35 @@ class Analyzer(tableUtils: TableUtils,
       (analysis, leftDf)
     }
 
+    val timestampChecks = runTimestampChecks(leftDf)
+    if (!timestampChecks.contains("noTsColumn")) {
+      // do timestamp checks
+      assert(
+        timestampChecks("notNullCount") != "0",
+        s"""[ERROR]: Join validation failed.
+           | Please check that left source has non-null timestamps.
+           | check notNullCount: ${timestampChecks("notNullCount")}
+           | """.stripMargin
+      )
+      assert(
+        timestampChecks("badRangeCount") == "0",
+        s"""[ERROR]: Join validation failed.
+           | Please check that left source has valid epoch millisecond timestamps.
+           | badRangeCount: ${timestampChecks("badRangeCount")}
+           | """.stripMargin
+      )
+
+      logger.info(s"""ANALYSIS TIMESTAMP completed for join/${name}.
+                     |check notNullCount: ${timestampChecks("notNullCount")}
+                     |check badRangeCount: ${timestampChecks("badRangeCount")}
+                     |""".stripMargin)
+
+    } else {
+      logger.info(s"""ANALYSIS TIMESTAMP completed for join/${name}.
+                     |check TsColumn: ${timestampChecks("noTsColumn")}
+                     |""".stripMargin)
+    }
+
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
       .toMap

@@ -18,7 +18,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.Builders.ContextualSource
+import ai.chronon.api.Builders.{ContextualSource, Query}
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
@@ -222,6 +222,102 @@ class AnalyzerTest {
   }
 
   @Test
+  def testJoinAnalyzerCheckTimestampHasValues(): Unit = {
+
+    // left side
+    // create the event source with values
+    getTestGBSourceWithTs()
+
+    // join parts
+    val joinPart = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs()),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
+      ),
+      metaData = Builders.MetaData(name = "join_analyzer_test.test_1", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = s"$namespace.test_table"),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = joinPart, prefix = "validation")
+      ),
+      metaData = Builders.MetaData(name = "test_join_analyzer.key_validation", namespace = namespace, team = "chronon")
+    )
+
+    //run analyzer an ensure ts timestamp values result in analyzer passing
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+
+  }
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testJoinAnalyzerCheckTimestampOutOfRange(): Unit = {
+
+    // left side
+    // create the event source with values out of range
+    getTestGBSourceWithTs("out_of_range")
+
+    // join parts
+    val joinPart = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs("out_of_range")),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
+      ),
+      metaData = Builders.MetaData(name = "join_analyzer_test.test_1", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = s"$namespace.test_table"),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = joinPart, prefix = "validation")
+      ),
+      metaData = Builders.MetaData(name = "test_join_analyzer.key_validation", namespace = namespace, team = "chronon")
+    )
+
+    //run analyzer an ensure ts timestamp values result in analyzer passing
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+
+  }
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testJoinAnalyzerCheckTimestampAllNulls(): Unit = {
+
+    // left side
+    // create the event source with nulls
+    getTestGBSourceWithTs("nulls")
+
+    // join parts
+    val joinPart = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs("nulls")),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
+      ),
+      metaData = Builders.MetaData(name = "join_analyzer_test.test_1", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = s"$namespace.test_table"),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = joinPart, prefix = "validation")
+      ),
+      metaData = Builders.MetaData(name = "test_join_analyzer.key_validation", namespace = namespace, team = "chronon")
+    )
+
+    //run analyzer an ensure ts timestamp values result in analyzer passing
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+
+  }
+
+  @Test
   def testGroupByAnalyzerCheckTimestampHasValues(): Unit = {
 
     val tableGroupBy = Builders.GroupBy(
@@ -370,4 +466,5 @@ class AnalyzerTest {
       accuracy = Accuracy.SNAPSHOT
     )
   }
+
 }
