@@ -530,6 +530,13 @@ class Analyzer(tableUtils: TableUtils,
     mapTimestampChecks
   }
 
+  /**
+    * This method can be used to trigger the assertion checks
+    * or print the summary stats once the timestamp checks have been run
+    * @param timestampCheckMap
+    * @param configType
+    * @param configName
+    */
   def validateTimestampChecks(timestampCheckMap: Map[String, String], configType: String, configName: String): Unit = {
 
     if (!timestampCheckMap.contains("noTsColumn")) {
