@@ -139,6 +139,44 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     },
     { join => Metrics.Context(environment = "join.meta.fetch", join = join) })
 
+  // Validate whether the join exists in the active join list saved in kv store
+  def validateJoinExist(team: String, name: String): Boolean = {
+    val activeJoinList: Try[Seq[String]] = getJoinListByTeam(team)
+    if (activeJoinList.isFailure) {
+      logger.error(s"Failed to fetch active join list for team $team")
+      false
+    } else {
+      val joinKey = "joins/" + name
+      if (activeJoinList.get.contains(joinKey)) {
+        true
+      } else {
+        logger.error(s"Join $name not found in active join list for team $team")
+        false
+      }
+    }
+  }
+
+  // Validate whether the groupBy exists in the active groupBy list saved in kv store
+  def validateGroupByExist(team: String, name: String): Boolean = {
+    val activeGroupByList: Try[Seq[String]] = getGroupByListByTeam(team)
+    if (activeGroupByList.isFailure) {
+      logger.error(s"Failed to fetch active group_by list for team $team")
+      false
+    } else {
+      val groupByKey = if (name.contains("/")) {
+        "group_bys/" + name
+      } else {
+        "group_bys/" + name.replaceFirst("\\.", "/")
+      }
+      if (activeGroupByList.get.contains(groupByKey)) {
+        true
+      } else {
+        logger.error(s"GroupBy $name not found in active group_by list for team $team")
+        false
+      }
+    }
+  }
+
   def putJoinConf(join: Join): Unit = {
     logger.info(s"uploading join conf to dataset: $dataset by key: joins/${join.metaData.nameToFilePath}")
     kvStore.put(

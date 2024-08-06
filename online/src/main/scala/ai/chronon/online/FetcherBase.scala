@@ -20,7 +20,7 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, ThrowableOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
@@ -295,6 +295,12 @@ class FetcherBase(kvStore: KVStore,
     isCachingFlagEnabled
   }
 
+  // If the flag is set, we check whether the entity is in the active entity list saved on k-v store
+  def isEntityValidityCheckEnabled: Boolean = {
+    Option(flagStore)
+      .exists(_.isSet("enable_entity_validity_check", Map.empty[String, String].asJava))
+  }
+
   // 1. fetches GroupByServingInfo
   // 2. encodes keys as keyAvroSchema
   // 3. Based on accuracy, fetches streaming + batch data and aggregates further.
@@ -310,13 +316,20 @@ class FetcherBase(kvStore: KVStore,
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {
-            // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
-            // on the KVStore implementation, so we encode each distinctly.
-            batchKeyBytes =
-              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
-            streamingKeyBytes =
-              kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
+            if (
+              !isEntityValidityCheckEnabled || validateGroupByExist(groupByServingInfo.groupBy.metaData.owningTeam,
+                                                                    request.name)
+            ) {
+              // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
+              // on the KVStore implementation, so we encode each distinctly.
+              batchKeyBytes =
+                kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.batchDataset)
+              streamingKeyBytes =
+                kvStore.createKeyBytes(request.keys, groupByServingInfo, groupByServingInfo.groupByOps.streamingDataset)
+            } else throw InvalidEntityException(request.name)
           } catch {
+            // If the group_by is inactive, throw the exception
+            case ex: InvalidEntityException => throw ex
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
             case ex: Exception =>
@@ -331,7 +344,7 @@ class FetcherBase(kvStore: KVStore,
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)
-                  throw new RuntimeException("Couldn't encode request keys or casted keys", exInner)
+                  throw EncodeKeyException(request.name, "Couldn't encode request keys or casted keys")
               }
           }
           val batchRequest = GetRequest(batchKeyBytes, groupByServingInfo.groupByOps.batchDataset)
@@ -348,7 +361,13 @@ class FetcherBase(kvStore: KVStore,
           GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis, context)
         }
       if (groupByRequestMetaTry.isFailure) {
-        request.context.foreach(_.increment("group_by_serving_info_failure.count"))
+        groupByRequestMetaTry match {
+          case Failure(ex: InvalidEntityException) =>
+            request.context.foreach(_.increment("fetch_invalid_group_by_failure.count"))
+          case Failure(ex: EncodeKeyException) =>
+            request.context.foreach(_.increment("encode_group_by_key_failure.count"))
+          case Failure(ex: Exception) => request.context.foreach(_.increment("group_by_serving_info_failure.count"))
+        }
       }
       request -> groupByRequestMetaTry
     }.toSeq
@@ -511,8 +530,9 @@ class FetcherBase(kvStore: KVStore,
                 joinConf: Option[Join] = None): Future[scala.collection.Seq[Response]] = {
     val startTimeMs = System.currentTimeMillis()
     // convert join requests to groupBy requests
-    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, KeyMissingException]]])] =
+    val joinDecomposed: scala.collection.Seq[(Request, Try[Seq[Either[PrefixedRequest, FetchException]]])] =
       requests.map { request =>
+        // get join conf from metadata store if not passed in
         val joinTry: Try[JoinOps] = if (joinConf.isEmpty) {
           getJoinConf(request.name)
         } else {
@@ -522,19 +542,23 @@ class FetcherBase(kvStore: KVStore,
         var joinContext: Option[Metrics.Context] = None
         val decomposedTry = joinTry.map { join =>
           joinContext = Some(Metrics.Context(Metrics.Environment.JoinFetching, join.join))
-          joinContext.get.increment("join_request.count")
-          join.joinPartOps.map { part =>
-            val joinContextInner = Metrics.Context(joinContext.get, part)
-            val missingKeys = part.leftToRight.keys.filterNot(request.keys.contains)
-            if (missingKeys.nonEmpty) {
-              Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq, request.keys))
-            } else {
-              val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
-              Left(
-                PrefixedRequest(
-                  part.fullPrefix,
-                  Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner))))
+          if (!isEntityValidityCheckEnabled || validateJoinExist(join.join.metaData.owningTeam, request.name)) {
+            joinContext.get.increment("join_request.count")
+            join.joinPartOps.map { part =>
+              val joinContextInner = Metrics.Context(joinContext.get, part)
+              val missingKeys = part.leftToRight.keys.filterNot(request.keys.contains)
+              if (missingKeys.nonEmpty) {
+                Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq, request.keys))
+              } else {
+                val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
+                Left(
+                  PrefixedRequest(
+                    part.fullPrefix,
+                    Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner))))
+              }
             }
+          } else {
+            Seq(Right(InvalidEntityException(request.name)))
           }
         }
         request.copy(context = joinContext) -> decomposedTry
@@ -543,7 +567,17 @@ class FetcherBase(kvStore: KVStore,
     val groupByRequests = joinDecomposed.flatMap {
       case (_, gbTry) =>
         gbTry match {
-          case Failure(_)        => Iterator.empty
+          case Failure(ex) => {
+            ex match {
+              case _: InvalidEntityException =>
+                Metrics.Context(Metrics.Environment.JoinFetching).increment("fetch_invalid_join_failure.count")
+              case _: KeyMissingException =>
+                Metrics.Context(Metrics.Environment.JoinFetching).increment("fetch_missing_key_failure.count")
+              case _: Exception =>
+                Metrics.Context(Metrics.Environment.JoinFetching).increment("fetch_join_failure.count")
+            }
+            Iterator.empty
+          }
           case Success(requests) => requests.iterator.flatMap(_.left.toOption).map(_.request)
         }
     }
@@ -558,8 +592,8 @@ class FetcherBase(kvStore: KVStore,
           case (joinRequest, decomposedRequestsTry) =>
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
               groupByRequestsWithPrefix.iterator.flatMap {
-                case Right(keyMissingException) => {
-                  Map(keyMissingException.requestName + "_exception" -> keyMissingException.getMessage)
+                case Right(fetchException) => {
+                  Map(fetchException.getRequestName + "_exception" -> fetchException.getMessage)
                 }
                 case Left(PrefixedRequest(prefix, groupByRequest)) => {
                   responseMap

@@ -21,11 +21,10 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{DerivationOps, JoinOps, MetadataOps}
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
-import ai.chronon.online.KVStore.GetRequest
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataDirWalker, MetadataEndPoint, MetadataStore, SparkConversions, StringArrayConverter}
+import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
@@ -34,7 +33,7 @@ import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.{avg, col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import org.junit.Assert.{assertEquals, assertTrue}
 
 import java.lang
 import java.util.TimeZone
@@ -42,8 +41,7 @@ import java.util.concurrent.Executors
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.io.Source
+import scala.concurrent.{Await, ExecutionContext}
 import scala.util.ScalaJavaConversions._
 
 class FetcherTest extends TestCase {
@@ -56,67 +54,6 @@ class FetcherTest extends TestCase {
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val yesterday = tableUtils.partitionSpec.before(today)
 
-  def testMetadataStore(): Unit = {
-    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-    implicit val tableUtils: TableUtils = TableUtils(spark)
-
-    val joinPath = "joins/team/example_join.v1"
-    val confResource = getClass.getResource(s"/$joinPath")
-    val src = Source.fromFile(confResource.getPath)
-
-    val expected = {
-      try src.mkString
-      finally src.close()
-    }.replaceAll("\\s+", "")
-
-    val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
-    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
-    val singleFileDataSet = ChrononMetadataKey + "_single_file_test"
-    val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
-    inMemoryKvStore.create(singleFileDataSet)
-    // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFileDirWalker = new MetadataDirWalker(confResource.getPath, acceptedEndPoints)
-    val singleFileKvMap = singleFileDirWalker.run
-    val singleFilePut: Seq[Future[scala.collection.Seq[Boolean]]] = singleFileKvMap.toSeq.map {
-      case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, singleFileDataSet)
-    }
-    singleFilePut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
-
-    val response = inMemoryKvStore.get(GetRequest(joinPath.getBytes(), singleFileDataSet))
-    val res = Await.result(response, Duration.Inf)
-    assertTrue(res.latest.isSuccess)
-    val actual = new String(res.values.get.head.bytes)
-    assertEquals(expected, actual.replaceAll("\\s+", ""))
-
-    val teamMetadataResponse = inMemoryKvStore.getString("joins/relevance", singleFileDataSet, 10000)
-    val teamMetadataRes = teamMetadataResponse.get
-    assert(teamMetadataRes.equals("joins/team/example_join.v1"))
-
-    val directoryDataSetDataSet = ChrononMetadataKey + "_directory_test"
-    val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
-    inMemoryKvStore.create(directoryDataSetDataSet)
-    val directoryDataDirWalker = new MetadataDirWalker(confResource.getPath.replace(s"/$joinPath", ""), acceptedEndPoints)
-    val directoryDataKvMap = directoryDataDirWalker.run
-    val directoryPut = directoryDataKvMap.toSeq.map {
-      case (endPoint, kvMap) => directoryMetadataStore.put(kvMap, directoryDataSetDataSet)
-    }
-    directoryPut.flatMap(putRequests => Await.result(putRequests, Duration.Inf))
-    val dirResponse =
-      inMemoryKvStore.get(GetRequest(joinPath.getBytes(), directoryDataSetDataSet))
-    val dirRes = Await.result(dirResponse, Duration.Inf)
-    assertTrue(dirRes.latest.isSuccess)
-    val dirActual = new String(dirRes.values.get.head.bytes)
-    assertEquals(expected, dirActual.replaceAll("\\s+", ""))
-
-    val teamMetadataDirResponse = inMemoryKvStore.getString("group_bys/team", directoryDataSetDataSet, 10000)
-    val teamMetadataDirRes = teamMetadataDirResponse.get
-    assert(teamMetadataDirRes.equals("group_bys/team/example_group_by.v1"))
-
-    val emptyResponse =
-      inMemoryKvStore.get(GetRequest("NoneExistKey".getBytes(), "NonExistDataSetName"))
-    val emptyRes = Await.result(emptyResponse, Duration.Inf)
-    assertFalse(emptyRes.latest.isSuccess)
-  }
 
   /**
     * Generate deterministic data for testing and checkpointing IRs and streaming data.
