@@ -193,33 +193,7 @@ class Analyzer(tableUtils: TableUtils,
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
 
     val timestampChecks = runTimestampChecks(groupBy.inputDf)
-    if (!timestampChecks.contains("noTsColumn")) {
-      // do timestamp checks
-      assert(
-        timestampChecks("notNullCount") != "0",
-        s"""[ERROR]: GroupBy validation failed.
-                 | Please check that source has non-null timestamps.
-                 | check notNullCount: ${timestampChecks("notNullCount")}
-                 | """.stripMargin
-      )
-      assert(
-        timestampChecks("badRangeCount") == "0",
-        s"""[ERROR]: GroupBy validation failed.
-                 | Please check that source has valid epoch millisecond timestamps.
-                 | badRangeCount: ${timestampChecks("badRangeCount")}
-                 | """.stripMargin
-      )
-
-      logger.info(s"""ANALYSIS TIMESTAMP completed for group_by/${name}.
-           |check notNullCount: ${timestampChecks("notNullCount")}
-           |check badRangeCount: ${timestampChecks("badRangeCount")}
-           |""".stripMargin)
-
-    } else {
-      logger.info(s"""ANALYSIS TIMESTAMP completed for group_by/${name}.
-           |check TsColumn: ${timestampChecks("noTsColumn")}
-           |""".stripMargin)
-    }
+    validateTimestampChecks(timestampChecks, "GroupBy", name)
 
     val analysis =
       if (enableHitter)
@@ -301,6 +275,9 @@ class Analyzer(tableUtils: TableUtils,
       val leftDf: DataFrame = tableUtils.sql(scanQuery)
       (analysis, leftDf)
     }
+
+    val timestampChecks = runTimestampChecks(leftDf)
+    validateTimestampChecks(timestampChecks, "Join", name)
 
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
@@ -551,6 +528,45 @@ class Analyzer(tableUtils: TableUtils,
       )
     }
     mapTimestampChecks
+  }
+
+  /**
+    * This method can be used to trigger the assertion checks
+    * or print the summary stats once the timestamp checks have been run
+    * @param timestampCheckMap
+    * @param configType
+    * @param configName
+    */
+  def validateTimestampChecks(timestampCheckMap: Map[String, String], configType: String, configName: String): Unit = {
+
+    if (!timestampCheckMap.contains("noTsColumn")) {
+      // do timestamp checks
+      assert(
+        timestampCheckMap("notNullCount") != "0",
+        s"""[ERROR]: $configType validation failed.
+           | Please check that source has non-null timestamps.
+           | check notNullCount: ${timestampCheckMap("notNullCount")}
+           | """.stripMargin
+      )
+      assert(
+        timestampCheckMap("badRangeCount") == "0",
+        s"""[ERROR]: $configType validation failed.
+           | Please check that source has valid epoch millisecond timestamps.
+           | badRangeCount: ${timestampCheckMap("badRangeCount")}
+           | """.stripMargin
+      )
+
+      logger.info(s"""ANALYSIS TIMESTAMP completed for ${configName}.
+                     |check notNullCount: ${timestampCheckMap("notNullCount")}
+                     |check badRangeCount: ${timestampCheckMap("badRangeCount")}
+                     |""".stripMargin)
+
+    } else {
+      logger.info(s"""ANALYSIS TIMESTAMP completed for ${configName}.
+                     |check TsColumn: ${timestampCheckMap("noTsColumn")}
+                     |""".stripMargin)
+    }
+
   }
 
   def dataFrameToMap(inputDf: DataFrame): Map[String, String] = {
