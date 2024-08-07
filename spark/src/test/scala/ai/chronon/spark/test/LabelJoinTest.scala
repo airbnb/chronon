@@ -58,8 +58,8 @@ class LabelJoinTest {
                                         dim_room_type as listing_attributes_dim_room_type,
                                         a.ds as label_ds,
                                         v.ds
-                                     FROM label_join.listing_views as v
-                                     LEFT OUTER JOIN label_join.listing_attributes as a
+                                     FROM ${namespace}.listing_views as v
+                                     LEFT OUTER JOIN ${namespace}.listing_attributes as a
                                      ON v.listing_id = a.listing_id
                                      WHERE a.ds = '2022-10-30'""".stripMargin)
     logger.info(" == Expected == ")
@@ -103,14 +103,14 @@ class LabelJoinTest {
                                      |         dim_room_type as listing_attributes_room_dim_room_type,
                                      |         a.ds as label_ds,
                                      |         v.ds
-                                     |  FROM label_join.listing_views as v
-                                     |  LEFT OUTER JOIN label_join.listing_attributes_room as a
+                                     |  FROM ${namespace}.listing_views as v
+                                     |  LEFT OUTER JOIN ${namespace}.listing_attributes_room as a
                                      |  ON v.listing_id = a.listing_id
                                      |  WHERE a.ds = '2022-10-30'
                                      |) aa
                                      |LEFT OUTER JOIN (
                                      |  SELECT listing_id, dim_reservations
-                                     |  FROM label_join.listing_attributes_reservation
+                                     |  FROM ${namespace}.listing_attributes_reservation
                                      |  WHERE ds = '2022-10-30'
                                      |) b
                                      |ON aa.listing = b.listing_id
@@ -354,8 +354,8 @@ class LabelJoinTest {
            | SELECT v.listing_id as listing,
            |       v.ds,
            |       MAX(is_active) as listing_label_group_by_is_active_max_5d
-           | FROM label_join.listing_view_agg as v
-           | LEFT JOIN label_join.listing_label_group_by as a
+           | FROM ${namespace}.listing_view_agg as v
+           | LEFT JOIN ${namespace}.listing_label_group_by as a
            |   ON v.listing_id = a.listing_id AND
            |     a.ds >= v.ds AND a.ds < DATE_ADD(v.ds, 5)
            | WHERE v.ds == '2022-10-02'

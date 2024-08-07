@@ -1128,13 +1128,13 @@ class JoinTest {
     // older versions do not have the bootstrap hash, but should not trigger recompute if no bootstrap_parts
     val productionHashV1 = Map(
       "left_source" -> "vbQc07vaqm",
-      "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "OLFBDTqwMX"
+      "${namespace}.test_join_migration_user_unit_test_item_views" -> "OLFBDTqwMX"
     )
     assertEquals(0, tableHashesChanged(productionHashV1, newSemanticHash, join).length)
 
     // test newer versions
     val productionHashV2 = productionHashV1 ++ Map(
-      "test_namespace_jointest.test_join_migration_bootstrap" -> "1B2M2Y8Asg"
+      "${namespace}.test_join_migration_bootstrap" -> "1B2M2Y8Asg"
     )
     assertEquals(0, tableHashesChanged(productionHashV2, newSemanticHash, join).length)
   }

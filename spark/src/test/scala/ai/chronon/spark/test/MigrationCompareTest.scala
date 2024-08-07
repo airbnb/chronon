@@ -34,7 +34,7 @@ class MigrationCompareTest {
   private val tableUtils = TableUtils(spark)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val ninetyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
-  private val namespace = "migration_compare_chronon_test"  + "_" + Random.alphanumeric.take(6).mkString
+  private val namespace = "migration_compare_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
   private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
   private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
   tableUtils.createDatabase(namespace)

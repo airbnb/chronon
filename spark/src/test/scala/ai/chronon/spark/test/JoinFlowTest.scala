@@ -18,7 +18,7 @@ class JoinFlowTest {
   val spark: SparkSession = SparkSessionBuilder.build("JoinFlowTest", local = true)
   private val tableUtils = TableUtils(spark)
 
-  private val namespace = "test_namespace_joinflowtest"+ "_" + Random.alphanumeric.take(6).mkString
+  private val namespace = "test_namespace_joinflowtest" + "_" + Random.alphanumeric.take(6).mkString
   tableUtils.createDatabase(namespace)
 
   @Test

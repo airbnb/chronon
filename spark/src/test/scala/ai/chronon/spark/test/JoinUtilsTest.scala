@@ -36,7 +36,7 @@ class JoinUtilsTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("JoinUtilsTest", local = true)
   private val tableUtils = TableUtils(spark)
-  private val namespace = "joinUtil"  + "_" + Random.alphanumeric.take(6).mkString
+  private val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
   @Test
   def testUDFSetAdd(): Unit = {
     val data = Seq(
@@ -236,8 +236,8 @@ class JoinUtilsTest {
   @Test
   def testCreateJoinView(): Unit = {
     val finalViewName = "testCreateView"
-    val leftTableName = "joinUtil.testFeatureTable"
-    val rightTableName = "joinUtil.testLabelTable"
+    val leftTableName = s"${namespace}.testFeatureTable"
+    val rightTableName = s"${namespace}.testLabelTable"
     tableUtils.createDatabase(namespace)
     TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
     TestUtils.createSampleLabelTableDf(spark).write.saveAsTable(rightTableName)
@@ -274,9 +274,9 @@ class JoinUtilsTest {
 
   @Test
   def testCreateLatestLabelView(): Unit = {
-    val finalViewName = "joinUtil.testFinalView"
-    val leftTableName = "joinUtil.testFeatureTable2"
-    val rightTableName = "joinUtil.testLabelTable2"
+    val finalViewName = s"${namespace}.testFinalView"
+    val leftTableName = s"${namespace}.testFeatureTable2"
+    val rightTableName = s"${namespace}.testLabelTable2"
     tableUtils.createDatabase(namespace)
     TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
     tableUtils.insertPartitions(TestUtils.createSampleLabelTableDf(spark),
@@ -331,7 +331,7 @@ class JoinUtilsTest {
     tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
-    val itemQueriesTable = "joinUtil.item_queries_table"
+    val itemQueriesTable = s"${namespace}.item_queries_table"
     DataFrameGen
       .events(spark, itemQueries, 1000, partitions = 100)
       .save(itemQueriesTable)
@@ -348,7 +348,7 @@ class JoinUtilsTest {
     tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
-    val itemQueriesTable = "joinUtil.queries_table"
+    val itemQueriesTable = s"${namespace}.queries_table"
     DataFrameGen
       .events(spark, itemQueries, 1000, partitions = 50)
       .save(itemQueriesTable)
