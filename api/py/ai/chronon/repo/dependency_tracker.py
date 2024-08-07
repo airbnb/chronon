@@ -36,11 +36,9 @@ class ChrononEntityDependencyTracker(object):
             os.path.join(self.chronon_root_path, conf_path))
         downstreams = []
         if len(joins) == 0:
-            print(f"No joins found in {conf_path}")
-            return downstreams
+            raise Exception(f"No joins found in {conf_path}")
         elif len(joins) > 1:
-            print(f"Multiple joins found in {conf_path}")
-            return downstreams
+            raise Exception(f"Multiple joins found in {conf_path}")
         join = joins[0]
         join_name = join.metaData.name
         group_bys = extract_json_confs(
@@ -58,11 +56,9 @@ class ChrononEntityDependencyTracker(object):
             os.path.join(self.chronon_root_path, conf_path))
         downstreams = []
         if len(group_bys) == 0:
-            print(f"No group_bys found in {conf_path}")
-            return downstreams
+            raise Exception(f"No group_bys found in {conf_path}")
         elif len(group_bys) > 1:
-            print(f"Multiple group_bys found in {conf_path}")
-            return downstreams
+            raise Exception(f"Multiple group_bys found in {conf_path}")
         group_by = group_bys[0]
         group_by_name = group_by.metaData.name
         joins = extract_json_confs(
@@ -80,6 +76,5 @@ class ChrononEntityDependencyTracker(object):
         elif "group_bys" in conf_path:
             downstream = self.check_group_by_downstream(conf_path)
         else:
-            print(f"Invalid conf path: {conf_path}")
-            downstream = []
+            raise Exception(f"Invalid conf path: {conf_path}")
         return downstream
