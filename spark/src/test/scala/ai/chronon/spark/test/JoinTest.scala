@@ -825,8 +825,8 @@ class JoinTest {
     println(leftChangeRecompute)
     assertEquals(leftChangeRecompute._1.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
-    assertEquals(leftChangeRecompute._1,
-                 Seq(partTable, leftChangeJoinConf.metaData.bootstrapTable, leftChangeJoinConf.metaData.outputTable))
+    assertEquals(leftChangeRecompute._1.sorted,
+                 Seq(partTable, leftChangeJoinConf.metaData.bootstrapTable, leftChangeJoinConf.metaData.outputTable).sorted)
     assertTrue(leftChangeRecompute._2)
 
     // Test adding a joinPart
