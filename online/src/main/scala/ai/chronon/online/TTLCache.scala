@@ -1,11 +1,17 @@
 package ai.chronon.online
 
-import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{AbstractExecutorService, ArrayBlockingQueue, ConcurrentHashMap, ThreadPoolExecutor, TimeUnit}
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function
+import scala.util.Failure
 
 object TTLCache {
-  private[TTLCache] val executor = FlexibleExecutionContext.buildExecutor
+  private[TTLCache] var executor: AbstractExecutorService = FlexibleExecutionContext.buildExecutor
+
+  // Used for testing.
+  def setExecutor(executor: AbstractExecutorService): Unit = {
+    this.executor = executor
+  }
 }
 // can continuously grow, only used for schemas
 // has two methods apply & refresh. Apply uses a longer ttl before updating than refresh
@@ -15,7 +21,9 @@ class TTLCache[I, O](f: I => O,
                      contextBuilder: I => Metrics.Context,
                      ttlMillis: Long = 2 * 60 * 60 * 1000, // 2 hours
                      nowFunc: () => Long = { () => System.currentTimeMillis() },
-                     refreshIntervalMillis: Long = 8 * 1000 // 8 seconds
+                     refreshIntervalMillis: Long = 8 * 1000, // 8 seconds
+                     // same as ttlMillis, so behavior is unchanged barring an override
+                     failureTTLMillis: Long = 2 * 60 * 60 * 1000, // 2 hours
 ) {
   case class Entry(value: O, updatedAtMillis: Long, var markedForUpdate: AtomicBoolean = new AtomicBoolean(false))
 
@@ -40,8 +48,14 @@ class TTLCache[I, O](f: I => O,
       // block all concurrent callers of this key only on the very first read
       cMap.compute(i, updateWhenNull).value
     } else {
+      val minFailureUpdateTTL = Math.min(intervalMillis, failureTTLMillis)
+      val shouldUpdate = entry.value match {
+        // Encountered a failure, update according to failure TTL.
+        case Failure(_) => nowFunc() - entry.updatedAtMillis > minFailureUpdateTTL
+        case _ => nowFunc() - entry.updatedAtMillis > intervalMillis
+      }
       if (
-        (nowFunc() - entry.updatedAtMillis > intervalMillis) &&
+        shouldUpdate &&
         // CAS so that update is enqueued only once per expired entry
         entry.markedForUpdate.compareAndSet(false, true)
       ) {
