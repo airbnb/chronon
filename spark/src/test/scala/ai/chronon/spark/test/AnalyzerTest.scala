@@ -27,6 +27,8 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.slf4j.LoggerFactory
 
+import scala.util.Random
+
 class AnalyzerTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
@@ -36,7 +38,7 @@ class AnalyzerTest {
   private val oneMonthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
   private val oneYearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
 
-  private val namespace = "analyzer_test_ns"
+  private val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
   tableUtils.createDatabase(namespace)
 
   private val viewsSource = getTestEventSource()

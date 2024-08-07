@@ -25,11 +25,13 @@ import org.apache.spark.sql.functions.{max, min}
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+import scala.util.Random
+
 class FeatureWithLabelJoinTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val spark: SparkSession = SparkSessionBuilder.build("FeatureWithLabelJoinTest", local = true)
 
-  private val namespace = "final_join"
+  private val namespace = "final_join" + "_" + Random.alphanumeric.take(6).mkString
   private val tableName = "test_feature_label_join"
   private val tableUtils = TableUtils(spark)
   tableUtils.createDatabase(namespace)

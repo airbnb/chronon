@@ -31,13 +31,14 @@ import org.junit.Test
 
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.Await
+import scala.util.Random
 import scala.util.ScalaJavaConversions.{JMapOps, ListOps, MapOps}
 
 class GroupByUploadTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest", local = true)
-  private val namespace = "group_by_upload_test"
+  private val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
   private val tableUtils = TableUtils(spark)
 
   @Test

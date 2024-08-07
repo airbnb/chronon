@@ -26,6 +26,8 @@ import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+import scala.util.Random
+
 class StagingQueryTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("StagingQueryTest", local = true)
@@ -33,7 +35,7 @@ class StagingQueryTest {
 
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val ninetyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
-  private val namespace = "staging_query_chronon_test"
+  private val namespace = "staging_query_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
   tableUtils.createDatabase(namespace)
 
   @Test
