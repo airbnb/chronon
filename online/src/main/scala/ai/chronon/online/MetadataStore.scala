@@ -163,6 +163,10 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
       logger.error(s"Failed to fetch active group_by list for team $team")
       false
     } else {
+      // The groupBy fetch could be through the groupBy fetch directly or through the join part fetch inside a join.
+      // For the first situation the name is the name user sent to the fetcher client, like zipline_test/test_online_group_by_small.v2
+      // For the second situation the name is the join part name, like zipline_test.test_online_group_by_small.v2
+      // The work around here is to normalize the groupBy name.
       val groupByKey = if (name.contains("/")) {
         "group_bys/" + name
       } else {
