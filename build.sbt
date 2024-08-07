@@ -310,7 +310,7 @@ lazy val online = project
       "com.datadoghq" % "java-dogstatsd-client" % "2.7",
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1",
-      "com.github.ben-manes.caffeine" % "caffeine" % "2.9.3"
+      "com.github.ben-manes.caffeine" % "caffeine" % "2.8.5"
     ),
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer"),
     version := git.versionProperty.value
@@ -328,7 +328,7 @@ lazy val online_unshaded = (project in file("online"))
       "com.datadoghq" % "java-dogstatsd-client" % "2.7",
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1",
-      "com.github.ben-manes.caffeine" % "caffeine" % "2.9.3"
+      "com.github.ben-manes.caffeine" % "caffeine" % "2.8.5"
     ),
     libraryDependencies ++= fromMatrix(scalaVersion.value,
                                        "jackson",

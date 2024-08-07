@@ -22,17 +22,18 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, Constants, JoinPart}
 import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf, tablesToRecompute, shouldRecomputeLeft}
+import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf}
+import ai.chronon.spark.SemanticHashUtils.{shouldRecomputeLeft, tablesToRecompute}
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
 import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.LoggerFactory
-import java.time.Instant
 
+import java.time.Instant
+import java.util
 import scala.collection.JavaConverters._
 import scala.collection.Seq
-import java.util
 import scala.util.ScalaJavaConversions.ListOps
 
 abstract class JoinBase(joinConf: api.Join,
@@ -40,7 +41,8 @@ abstract class JoinBase(joinConf: api.Join,
                         tableUtils: TableUtils,
                         skipFirstHole: Boolean,
                         showDf: Boolean = false,
-                        selectedJoinParts: Option[Seq[String]] = None) {
+                        selectedJoinParts: Option[Seq[String]] = None,
+                        unsetSemanticHash: Boolean) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
@@ -57,7 +59,13 @@ abstract class JoinBase(joinConf: api.Join,
   private val gson = new Gson()
   // Combine tableProperties set on conf with encoded Join
   protected val tableProps: Map[String, String] =
-    confTableProps ++ Map(Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash.asJava))
+    confTableProps ++ Map(
+      Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash(excludeTopic = true).asJava),
+      Constants.SemanticHashOptionsKey -> gson.toJson(
+        Map(
+          Constants.SemanticHashExcludeTopic -> "true"
+        ).asJava)
+    )
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
@@ -107,15 +115,15 @@ abstract class JoinBase(joinConf: api.Join,
     }
 
     logger.info(s"""
-               |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
-               |Left Schema:
-               |${leftDf.schema.pretty}
-               |Right Schema:
-               |${joinableRightDf.schema.pretty}""".stripMargin)
+                   |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
+                   |Left Schema:
+                   |${leftDf.schema.pretty}
+                   |Right Schema:
+                   |${joinableRightDf.schema.pretty}""".stripMargin)
     val joinedDf = coalescedJoin(leftDf, joinableRightDf, keys)
     logger.info(s"""Final Schema:
-               |${joinedDf.schema.pretty}
-               |""".stripMargin)
+                   |${joinedDf.schema.pretty}
+                   |""".stripMargin)
 
     joinedDf
   }
@@ -263,9 +271,9 @@ abstract class JoinBase(joinConf: api.Join,
       .map { sf =>
         val filtered = leftDf.filter(sf)
         logger.info(s"""Skew filtering left-df for
-                   |GroupBy: ${joinPart.groupBy.metaData.name}
-                   |filterClause: $sf
-                   |""".stripMargin)
+                       |GroupBy: ${joinPart.groupBy.metaData.name}
+                       |filterClause: $sf
+                       |""".stripMargin)
         filtered
       }
       .getOrElse(leftDf)
@@ -342,13 +350,37 @@ abstract class JoinBase(joinConf: api.Join,
        .getOrElse(Seq.empty))
   }
 
+  private def performArchive(tables: Seq[String], autoArchive: Boolean, mainTable: String): Unit = {
+    if (autoArchive) {
+      val archivedAtTs = Instant.now()
+      tables.foreach(tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
+    } else {
+      val errorMsg = s"""Auto archive is disabled due to semantic hash out of date.
+                        |Please verify if your config involves true semantic changes. If so, archive the following tables:
+                        |${tables.map(t => s"- $t").mkString("\n")}
+                        |If not, please retry this job with `--unset-semantic-hash` flag in your run.py args.
+                        |OR run the spark SQL cmd:  ALTER TABLE $mainTable UNSET TBLPROPERTIES ('semantic_hash') and then retry this job.
+                        |""".stripMargin
+      logger.error(errorMsg)
+      throw SemanticHashException(errorMsg)
+    }
+  }
+
   def computeLeft(overrideStartPartition: Option[String] = None): Unit = {
     // Runs the left side query for a join and saves the output to a table, for reuse by joinPart
     // Computation in parallelized joinPart execution mode.
-    if (shouldRecomputeLeft(joinConf, bootstrapTable, tableUtils)) {
-      logger.info(s"Detected semantic change in left side of join, archiving left table for recomputation.")
-      val archivedAtTs = Instant.now()
-      tableUtils.archiveOrDropTableIfExists(bootstrapTable, Some(archivedAtTs))
+    val (shouldRecompute, autoArchive) = shouldRecomputeLeft(joinConf, bootstrapTable, tableUtils, unsetSemanticHash)
+    if (!shouldRecompute) {
+      logger.info(s"No semantic change detected, leaving bootstrap table in place.")
+      // Still update the semantic hash of the bootstrap table.
+      // It is possible that while bootstrap_table's semantic_hash is unchanged, the rest has changed, so
+      // we keep everything in sync.
+      if (tableUtils.tableExists(bootstrapTable)) {
+        tableUtils.alterTableProperties(bootstrapTable, tableProps)
+      }
+    } else {
+      logger.info(s"Detected semantic change in left side of join, archiving bootstrap table for recomputation.")
+      performArchive(Seq(bootstrapTable), autoArchive, bootstrapTable)
     }
 
     val (rangeToFill, unfilledRanges) = getUnfilledRange(overrideStartPartition, bootstrapTable)
@@ -356,7 +388,7 @@ abstract class JoinBase(joinConf: api.Join,
     if (unfilledRanges.isEmpty) {
       logger.info(s"Range to fill already computed. Skipping query execution...")
     } else {
-      // Register UDFs for the left part computation
+      // Register UDFs. `setups` from entire joinConf are run due to BootstrapInfo computation
       joinConf.setups.foreach(tableUtils.sql)
       val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
       val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
@@ -375,15 +407,15 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit
 
-  def computeFinal(overrideStartPartition: Option[String] = None) = {
+  def computeFinal(overrideStartPartition: Option[String] = None): Unit = {
 
     // Utilizes the same tablesToRecompute check as the monolithic spark job, because if any joinPart changes, then so does the output table
-    if (tablesToRecompute(joinConf, outputTable, tableUtils).isEmpty) {
+    val (tablesChanged, autoArchive) = tablesToRecompute(joinConf, outputTable, tableUtils, unsetSemanticHash)
+    if (tablesChanged.isEmpty) {
       logger.info(s"No semantic change detected, leaving output table in place.")
     } else {
       logger.info(s"Semantic changes detected, archiving output table.")
-      val archivedAtTs = Instant.now()
-      tableUtils.archiveOrDropTableIfExists(outputTable, Some(archivedAtTs))
+      performArchive(tablesChanged, autoArchive, outputTable)
     }
 
     val (rangeToFill, unfilledRanges) = getUnfilledRange(overrideStartPartition, outputTable)
@@ -391,6 +423,8 @@ abstract class JoinBase(joinConf: api.Join,
     if (unfilledRanges.isEmpty) {
       logger.info(s"Range to fill already computed. Skipping query execution...")
     } else {
+      // Register UDFs. `setups` from entire joinConf are run due to BootstrapInfo computation
+      joinConf.setups.foreach(tableUtils.sql)
       val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
       val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
       logger.info(s"Running ranges: $unfilledRanges")
@@ -441,13 +475,22 @@ abstract class JoinBase(joinConf: api.Join,
       }
     }
 
-    // First run command to archive tables that have changed semantically since the last run
-    val archivedAtTs = Instant.now()
-    // TODO: We should not archive the output table in the case of selected join parts mode
-    tablesToRecompute(joinConf, outputTable, tableUtils).foreach(
-      tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
+    // Save left schema before overwriting left side
+    val leftSchema =
+      leftDf(joinConf, PartitionRange(endPartition, endPartition)(tableUtils), tableUtils, limit = Some(1)).map(df =>
+        df.schema)
 
-    // Check semantic hash before overwriting left side
+    // Run command to archive ALL tables that have changed semantically since the last run
+    // TODO: We should not archive the output table or other JP's intermediate tables in the case of selected join parts mode
+    val (tablesChanged, autoArchive) = tablesToRecompute(joinConf, outputTable, tableUtils, unsetSemanticHash)
+    if (tablesChanged.isEmpty) {
+      logger.info(s"No semantic change detected, leaving output table in place.")
+    } else {
+      logger.info(s"Semantic changes detected, archiving output table.")
+      performArchive(tablesChanged, autoArchive, outputTable)
+    }
+
+    // Overwriting Join Left with bootstrap table to simplify later computation
     val source = joinConf.left
     if (useBootstrapForLeft) {
       logger.info("Overwriting left side to use saved Bootstrap table...")
@@ -475,7 +518,9 @@ abstract class JoinBase(joinConf: api.Join,
       stepDays.map(unfilledRange.steps).getOrElse(Seq(unfilledRange))
     }
 
-    val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
+    // Register UDFs. `setups` from entire joinConf are run due to BootstrapInfo computation
+    joinConf.setups.foreach(tableUtils.sql)
+
     // build bootstrap info once for the entire job
     val bootstrapInfo = BootstrapInfo.from(
       joinConf,

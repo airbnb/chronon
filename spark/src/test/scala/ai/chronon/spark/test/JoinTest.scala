@@ -18,12 +18,25 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, Builders, Constants, LongType, Operation, StringType, TimeUnit, Window}
+import ai.chronon.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  JoinPart,
+  LongType,
+  Operation,
+  PartitionSpec,
+  StringType,
+  TimeUnit,
+  Window
+}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.renderDataSourceQuery
+import ai.chronon.spark.SemanticHashUtils.{tableHashesChanged, tablesToRecompute}
 import ai.chronon.spark._
 import ai.chronon.spark.stats.SummaryJob
+import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
@@ -37,6 +50,7 @@ import org.apache.spark.sql.Row
 import scala.collection.JavaConverters._
 import scala.util.Random
 import scala.util.ScalaJavaConversions.ListOps
+import scala.util.Try
 
 class JoinTest {
 
@@ -799,20 +813,21 @@ class JoinTest {
     oldJoin.computeJoin(Some(100))
 
     // Make sure that there is no versioning-detected changes at this phase
-    val joinPartsToRecomputeNoChange = JoinUtils.tablesToRecompute(joinConf, joinConf.metaData.outputTable, tableUtils)
-    assertEquals(joinPartsToRecomputeNoChange.size, 0)
+    val joinPartsToRecomputeNoChange = tablesToRecompute(joinConf, joinConf.metaData.outputTable, tableUtils, false)
+    assertEquals(joinPartsToRecomputeNoChange._1.size, 0)
 
     // First test changing the left side table - this should trigger a full recompute
     val leftChangeJoinConf = joinConf.deepCopy()
     leftChangeJoinConf.getLeft.getEvents.setTable("some_other_table_name")
     val leftChangeJoin = new Join(joinConf = leftChangeJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val leftChangeRecompute =
-      JoinUtils.tablesToRecompute(leftChangeJoinConf, leftChangeJoinConf.metaData.outputTable, tableUtils)
+      tablesToRecompute(leftChangeJoinConf, leftChangeJoinConf.metaData.outputTable, tableUtils, false)
     println(leftChangeRecompute)
-    assertEquals(leftChangeRecompute.size, 3)
+    assertEquals(leftChangeRecompute._1.size, 3)
     val partTable = s"${leftChangeJoinConf.metaData.outputTable}_user_unit_test_item_views"
-    assertEquals(leftChangeRecompute,
+    assertEquals(leftChangeRecompute._1,
                  Seq(partTable, leftChangeJoinConf.metaData.bootstrapTable, leftChangeJoinConf.metaData.outputTable))
+    assertTrue(leftChangeRecompute._2)
 
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
@@ -820,10 +835,10 @@ class JoinTest {
     val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(suffix = "versioning"), prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
-    val addPartRecompute =
-      JoinUtils.tablesToRecompute(addPartJoinConf, addPartJoinConf.metaData.outputTable, tableUtils)
-    assertEquals(addPartRecompute.size, 1)
-    assertEquals(addPartRecompute, Seq(addPartJoinConf.metaData.outputTable))
+    val addPartRecompute = tablesToRecompute(addPartJoinConf, addPartJoinConf.metaData.outputTable, tableUtils, false)
+    assertEquals(addPartRecompute._1.size, 1)
+    assertEquals(addPartRecompute._1, Seq(addPartJoinConf.metaData.outputTable))
+    assertTrue(addPartRecompute._2)
     // Compute to ensure that it works and to set the stage for the next assertion
     addPartJoin.computeJoin(Some(100))
 
@@ -832,10 +847,11 @@ class JoinTest {
     rightModJoinConf.getJoinParts.get(1).setPrefix("user_3")
     val rightModJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val rightModRecompute =
-      JoinUtils.tablesToRecompute(rightModJoinConf, rightModJoinConf.metaData.outputTable, tableUtils)
-    assertEquals(rightModRecompute.size, 2)
+      tablesToRecompute(rightModJoinConf, rightModJoinConf.metaData.outputTable, tableUtils, false)
+    assertEquals(rightModRecompute._1.size, 2)
     val rightModPartTable = s"${addPartJoinConf.metaData.outputTable}_user_2_unit_test_item_views"
-    assertEquals(rightModRecompute, Seq(rightModPartTable, addPartJoinConf.metaData.outputTable))
+    assertEquals(rightModRecompute._1, Seq(rightModPartTable, addPartJoinConf.metaData.outputTable))
+    assertTrue(rightModRecompute._2)
     // Modify both
     rightModJoinConf.getJoinParts.get(0).setPrefix("user_4")
     val rightModBothJoin = new Join(joinConf = rightModJoinConf, endPartition = dayAndMonthBefore, tableUtils)
@@ -1073,7 +1089,7 @@ class JoinTest {
   }
 
   @Test
-  def testMigration(): Unit = {
+  def testMigrationForBootstrap(): Unit = {
 
     // Left
     val itemQueriesTable = s"$namespace.item_queries"
@@ -1106,6 +1122,7 @@ class JoinTest {
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, prefix = "user")),
       metaData = Builders.MetaData(name = s"test.join_migration", namespace = namespace, team = "chronon")
     )
+    val newSemanticHash = join.semanticHash(excludeTopic = false)
 
     // test older versions before migration
     // older versions do not have the bootstrap hash, but should not trigger recompute if no bootstrap_parts
@@ -1113,13 +1130,176 @@ class JoinTest {
       "left_source" -> "vbQc07vaqm",
       "test_namespace_jointest.test_join_migration_user_unit_test_item_views" -> "OLFBDTqwMX"
     )
-    assertEquals(0, join.tablesToDrop(productionHashV1).length)
+    assertEquals(0, tableHashesChanged(productionHashV1, newSemanticHash, join).length)
 
     // test newer versions
     val productionHashV2 = productionHashV1 ++ Map(
       "test_namespace_jointest.test_join_migration_bootstrap" -> "1B2M2Y8Asg"
     )
-    assertEquals(0, join.tablesToDrop(productionHashV2).length)
+    assertEquals(0, tableHashesChanged(productionHashV2, newSemanticHash, join).length)
+  }
+
+  private def prepareTopicTestConfs(prefix: String): (api.Join, String) = {
+    // left part
+    val querySchema = Seq(Column("user", api.LongType, 100))
+    val queryTable = s"$namespace.${prefix}_left_table"
+    DataFrameGen
+      .events(spark, querySchema, 400, partitions = 10)
+      .where(col("user").isNotNull)
+      .dropDuplicates("user")
+      .save(queryTable)
+    val querySource = Builders.Source.events(
+      table = queryTable,
+      query = Builders.Query(Builders.Selects("user"), timeColumn = "ts")
+    )
+
+    // right part
+    val transactionSchema = Seq(
+      Column("user", LongType, 100),
+      Column("amount", LongType, 1000)
+    )
+    val transactionsTable = s"$namespace.${prefix}_transactions"
+    DataFrameGen
+      .events(spark, transactionSchema, 2000, partitions = 50)
+      .where(col("user").isNotNull)
+      .save(transactionsTable)
+
+    val joinPart: JoinPart = Builders.JoinPart(groupBy = Builders.GroupBy(
+      keyColumns = Seq("user"),
+      sources = Seq(
+        Builders.Source.events(
+          query = Builders.Query(
+            selects = Builders.Selects("amount"),
+            timeColumn = "ts"
+          ),
+          table = transactionsTable,
+          topic = "transactions_topic_v1"
+        )),
+      aggregations = Seq(
+        Builders
+          .Aggregation(operation = Operation.SUM, inputColumn = "amount", windows = Seq(new Window(3, TimeUnit.DAYS)))),
+      accuracy = Accuracy.SNAPSHOT,
+      metaData = Builders.MetaData(name = s"join_test.${prefix}_txn", namespace = namespace, team = "chronon")
+    ))
+
+    // join
+    val join = Builders.Join(
+      left = querySource,
+      joinParts = Seq(joinPart),
+      metaData = Builders.MetaData(name = s"unit_test.${prefix}_join", namespace = namespace, team = "chronon")
+    )
+
+    val endDs = tableUtils.partitions(queryTable).max
+    (join, endDs)
+  }
+
+  private def overwriteWithOldSemanticHash(join: api.Join, gson: Gson): Unit = {
+    // Compute and manually set the semantic_hash computed from using old logic
+    val oldVersionSemanticHash = join.semanticHash(excludeTopic = false)
+    val oldTableProperties = Map(
+      Constants.SemanticHashKey -> gson.toJson(oldVersionSemanticHash.asJava),
+      Constants.SemanticHashOptionsKey -> gson.toJson(
+        Map(
+          Constants.SemanticHashExcludeTopic -> "false"
+        ).asJava)
+    )
+    tableUtils.alterTableProperties(join.metaData.outputTable, oldTableProperties)
+    tableUtils.alterTableProperties(join.metaData.bootstrapTable, oldTableProperties)
+  }
+
+  private def hasExcludeTopicFlag(tableProps: Map[String, String], gson: Gson): Boolean = {
+    val optionsString = tableProps(Constants.SemanticHashOptionsKey)
+    val options = gson.fromJson(optionsString, classOf[java.util.HashMap[String, String]]).asScala
+    options.get(Constants.SemanticHashExcludeTopic).contains("true")
+  }
+
+  @Test
+  def testMigrationForTopicSuccess(): Unit = {
+    val (join, endDs) = prepareTopicTestConfs("test_migration_for_topic_success")
+    def runJob(join: api.Join, shiftDays: Int): Unit = {
+      val deepCopy = join.deepCopy()
+      val joinJob = new Join(deepCopy, tableUtils.partitionSpec.shift(endDs, shiftDays), tableUtils)
+      joinJob.computeJoin()
+    }
+    runJob(join, -2)
+
+    // Compute and manually set the semantic_hash computed from using old logic
+    val gson = new Gson()
+    overwriteWithOldSemanticHash(join, gson)
+
+    // Compare semantic hash
+    val (tablesChanged, autoArchive) =
+      SemanticHashUtils.tablesToRecompute(join, join.metaData.outputTable, tableUtils, unsetSemanticHash = false)
+
+    assertEquals(0, tablesChanged.length)
+    assertEquals(false, autoArchive)
+
+    val (shouldRecomputeLeft, autoArchiveLeft) =
+      SemanticHashUtils.shouldRecomputeLeft(join, join.metaData.bootstrapTable, tableUtils, unsetSemanticHash = false)
+    assertEquals(false, shouldRecomputeLeft)
+    assertEquals(false, autoArchiveLeft)
+
+    // Rerun job and update semantic_hash with new logic
+    runJob(join, -1)
+
+    val newVersionSemanticHash = join.semanticHash(excludeTopic = true)
+
+    val tablePropsV1 = tableUtils.getTableProperties(join.metaData.outputTable).get
+    assertTrue(hasExcludeTopicFlag(tablePropsV1, gson))
+    assertEquals(gson.toJson(newVersionSemanticHash.asJava), tablePropsV1(Constants.SemanticHashKey))
+
+    // Modify the topic and rerun
+    val joinPartNew = join.joinParts.get(0).deepCopy()
+    joinPartNew.groupBy.sources.asScala.head.getEvents.setTopic("transactions_topic_v2")
+    val joinNew = join.deepCopy()
+    joinNew.setJoinParts(Seq(joinPartNew).asJava)
+    runJob(joinNew, 0)
+
+    // Verify that the semantic hash has NOT changed
+    val tablePropsV2 = tableUtils.getTableProperties(join.metaData.outputTable).get
+    assertTrue(hasExcludeTopicFlag(tablePropsV2, gson))
+    assertEquals(gson.toJson(newVersionSemanticHash.asJava), tablePropsV2(Constants.SemanticHashKey))
+  }
+
+  @Test
+  def testMigrationForTopicManualArchive(): Unit = {
+    val (join, endDs) = prepareTopicTestConfs("test_migration_for_topic_manual_archive")
+    def runJob(join: api.Join, shiftDays: Int, unsetSemanticHash: Boolean = false): Unit = {
+      val deepCopy = join.deepCopy()
+      val joinJob = new Join(deepCopy,
+                             tableUtils.partitionSpec.shift(endDs, shiftDays),
+                             tableUtils,
+                             unsetSemanticHash = unsetSemanticHash)
+      joinJob.computeJoin()
+    }
+    runJob(join, -2)
+
+    // Compute and manually set the semantic_hash computed from using old logic
+    val gson = new Gson()
+    overwriteWithOldSemanticHash(join, gson)
+
+    // Make real semantic hash change to join_part
+    val joinPartNew = join.getJoinParts.get(0).deepCopy()
+    joinPartNew.getGroupBy.getSources.asScala.head.getEvents.setTopic("transactions_topic_v2")
+    joinPartNew.getGroupBy.getAggregations.asScala.head.setWindows(Seq(new Window(7, TimeUnit.DAYS)).asJava)
+    val joinNew = join.deepCopy()
+    joinNew.setJoinParts(Seq(joinPartNew).asJava)
+
+    // Rerun job and update semantic_hash with new logic
+    // Expect that a failure is thrown to ask for manual archive
+    val runJobTry = Try(runJob(joinNew, -1))
+    assertTrue(runJobTry.isFailure)
+    assertTrue(runJobTry.failed.get.isInstanceOf[SemanticHashException])
+
+    // Explicitly unsetSemanticHash to rerun the job. Note: technically the correct behavior here
+    // should be drop table and rerun. But this is to test the unsetSemanticHash flag.
+    runJob(joinNew, 0, unsetSemanticHash = true)
+
+    // Verify that semantic_hash has been updated
+    val newVersionSemanticHash = join.semanticHash(excludeTopic = true)
+    val tableProps = tableUtils.getTableProperties(join.metaData.outputTable).get
+    assertTrue(hasExcludeTopicFlag(tableProps, gson))
+    assertNotEquals(gson.toJson(newVersionSemanticHash.asJava), tableProps(Constants.SemanticHashKey))
   }
 
   @Test

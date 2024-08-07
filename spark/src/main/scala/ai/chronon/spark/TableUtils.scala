@@ -317,7 +317,7 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
     if (tableProperties != null && tableProperties.nonEmpty) {
-      sql(alterTablePropertiesSql(tableName, tableProperties))
+      alterTableProperties(tableName, tableProperties)
     }
 
     if (autoExpand) {
@@ -381,7 +381,7 @@ case class TableUtils(sparkSession: SparkSession) {
       sql(createTableSql(tableName, df.schema, Seq.empty[String], tableProperties, fileFormat))
     } else {
       if (tableProperties != null && tableProperties.nonEmpty) {
-        sql(alterTablePropertiesSql(tableName, tableProperties))
+        alterTableProperties(tableName, tableProperties)
       }
     }
 
@@ -551,7 +551,7 @@ case class TableUtils(sparkSession: SparkSession) {
     Seq(createFragment, partitionFragment, fileFormatString, propertiesFragment).mkString("\n")
   }
 
-  private def alterTablePropertiesSql(tableName: String, properties: Map[String, String]): String = {
+  def alterTableProperties(tableName: String, properties: Map[String, String]): Unit = {
     // Only SQL api exists for setting TBLPROPERTIES
     val propertiesString = properties
       .map {
@@ -559,7 +559,8 @@ case class TableUtils(sparkSession: SparkSession) {
           s"'$key' = '$value'"
       }
       .mkString(", ")
-    s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
+    val query = s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
+    sql(query)
   }
 
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
@@ -804,7 +805,7 @@ case class TableUtils(sparkSession: SparkSession) {
       sql(expandTableQueryOpt.get)
 
       // set a flag in table props to indicate that this is a dynamic table
-      sql(alterTablePropertiesSql(tableName, Map(Constants.ChrononDynamicTable -> true.toString)))
+      alterTableProperties(tableName, Map(Constants.ChrononDynamicTable -> true.toString))
     }
   }
 }

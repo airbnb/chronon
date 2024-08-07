@@ -206,7 +206,7 @@ object Metrics {
       assert(
         environment != null,
         "Environment needs to be set - group_by.upload, group_by.streaming, join.fetching, group_by.fetching, group_by.offline etc")
-      val buffer = new Array[String](7 + joinNames.length)
+      val buffer = new Array[String](8 + joinNames.length)
       var counter = 0
 
       def addTag(key: String, value: String): Unit = {

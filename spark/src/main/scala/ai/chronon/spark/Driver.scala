@@ -61,6 +61,17 @@ object Driver {
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T =
     ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
 
+  trait JoinBackfillSubcommand {
+    this: ScallopConf =>
+    val unsetSemanticHash: ScallopOption[Boolean] =
+      opt[Boolean](
+        required = false,
+        default = Some(false),
+        descr =
+          "When set to true, semantic_hash is unset in join tblprops to allow for config update without recompute."
+      )
+  }
+
   trait OfflineSubcommand {
     this: ScallopConf =>
     val confPath: ScallopOption[String] = opt[String](required = true, descr = "Path to conf")
@@ -236,6 +247,7 @@ object Driver {
     class Args
         extends Subcommand("join")
         with OfflineSubcommand
+        with JoinBackfillSubcommand
         with LocalExportTableAbility
         with ResultValidationAbility {
       val selectedJoinParts: ScallopOption[List[String]] =
@@ -256,7 +268,8 @@ object Driver {
         args.endDate(),
         args.buildTableUtils(),
         !args.runFirstHole(),
-        selectedJoinParts = args.selectedJoinParts.toOption
+        selectedJoinParts = args.selectedJoinParts.toOption,
+        unsetSemanticHash = args.unsetSemanticHash.getOrElse(false)
       )
 
       if (args.selectedJoinParts.isDefined) {
@@ -291,6 +304,7 @@ object Driver {
     class Args
         extends Subcommand("join-left")
         with OfflineSubcommand
+        with JoinBackfillSubcommand
         with LocalExportTableAbility
         with ResultValidationAbility {
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
@@ -298,12 +312,12 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val tableUtils = args.buildTableUtils()
       val join = new Join(
         args.joinConf,
         args.endDate(),
         args.buildTableUtils(),
-        !args.runFirstHole()
+        !args.runFirstHole(),
+        unsetSemanticHash = args.unsetSemanticHash.getOrElse(false)
       )
       join.computeLeft(args.startPartitionOverride.toOption)
     }
@@ -314,6 +328,7 @@ object Driver {
     class Args
         extends Subcommand("join-final")
         with OfflineSubcommand
+        with JoinBackfillSubcommand
         with LocalExportTableAbility
         with ResultValidationAbility {
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
@@ -321,12 +336,12 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      val tableUtils = args.buildTableUtils()
       val join = new Join(
         args.joinConf,
         args.endDate(),
         args.buildTableUtils(),
-        !args.runFirstHole()
+        !args.runFirstHole(),
+        unsetSemanticHash = args.unsetSemanticHash.getOrElse(false)
       )
       join.computeFinal(args.startPartitionOverride.toOption)
     }

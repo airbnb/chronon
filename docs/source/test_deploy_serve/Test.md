@@ -31,6 +31,9 @@ The analyzer will compute the following information by simply taking a Chronon c
 * A simple count of items by year - to sanity check the timestamps.
 * A row count - to give users a sense of how large the data is.
 * Output schemas - to quickly validate the sql statements and understand the output schema.
+* Timestamp Validations for configs for GroupBys and Joins (with EventSources) 
+  * Confirms that timestamp columns are not all NULLs
+  * Confirms that timestamp columns are in epoch milliseconds in the range between 1971-01-01 and 2099-01-01
 * Validations for JOIN config - to make sure the join conf is valid for backfill. Here is a list of items we validate:
   * Confirm Join keys are matching on the left and right side
   * Confirm you have access to all the tables involved in the join
@@ -49,7 +52,7 @@ run.py --mode=analyze --conf=production/joins/<path_to_conf_file> --enable-hitte
 
 Optional parameters:
 
-`--endable-hitter`: enable skewed data analysis - include the heavy hitter analysis in output, only output schema if not specified
+`--enable-hitter`: enable skewed data analysis - include the heavy hitter analysis in output, only output schema if not specified
 
 `--start-date` : Finds heavy hitters & time-distributions for a specified start date. Default 3 days prior to "today"
 
