@@ -23,12 +23,14 @@ import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+import scala.util.Random
+
 class LabelJoinTest {
   @transient private lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("LabelJoinTest", local = true)
 
-  private val namespace = "label_join"
+  private val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
   private val tableName = "test_label_join"
   private val labelDS = "2022-10-30"
   private val tableUtils = TableUtils(spark)

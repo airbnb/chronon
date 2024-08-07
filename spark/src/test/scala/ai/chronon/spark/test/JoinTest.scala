@@ -31,11 +31,11 @@ import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 import org.scalatest.Assertions.intercept
-
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.Row
 
 import scala.collection.JavaConverters._
+import scala.util.Random
 import scala.util.ScalaJavaConversions.ListOps
 
 class JoinTest {
@@ -48,7 +48,7 @@ class JoinTest {
   private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
   private val dayAndMonthBefore = tableUtils.partitionSpec.before(monthAgo)
 
-  private val namespace = "test_namespace_jointest"
+  private val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
   tableUtils.createDatabase(namespace)
 
   @Test

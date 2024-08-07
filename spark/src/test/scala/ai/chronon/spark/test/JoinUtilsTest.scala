@@ -30,13 +30,13 @@ import org.junit.Assert._
 import org.junit.Test
 
 import scala.collection.mutable
-import scala.util.Try
+import scala.util.{Random, Try}
 
 class JoinUtilsTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("JoinUtilsTest", local = true)
   private val tableUtils = TableUtils(spark)
-  private val namespace = "joinUtil"
+  private val namespace = "joinUtil"  + "_" + Random.alphanumeric.take(6).mkString
   @Test
   def testUDFSetAdd(): Unit = {
     val data = Seq(
