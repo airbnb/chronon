@@ -1090,15 +1090,17 @@ class JoinTest {
 
   @Test
   def testMigrationForBootstrap(): Unit = {
+    val namespaceMigration = "test_namespace_jointest"
+    tableUtils.createDatabase(namespaceMigration)
 
     // Left
-    val itemQueriesTable = s"$namespace.item_queries"
+    val itemQueriesTable = s"$namespaceMigration.item_queries"
     val ds = "2023-01-01"
     val leftStart = tableUtils.partitionSpec.minus(ds, new Window(100, TimeUnit.DAYS))
     val leftSource = Builders.Source.events(Builders.Query(startPartition = leftStart), table = itemQueriesTable)
 
     // Right
-    val viewsTable = s"$namespace.view_events"
+    val viewsTable = s"$namespaceMigration.view_events"
     val viewsSource = Builders.Source.events(
       table = viewsTable,
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"),
@@ -1112,7 +1114,7 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
       ),
-      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace, team = "chronon"),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespaceMigration, team = "chronon"),
       accuracy = Accuracy.TEMPORAL
     )
 
@@ -1120,7 +1122,7 @@ class JoinTest {
     val join = Builders.Join(
       left = leftSource,
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy, prefix = "user")),
-      metaData = Builders.MetaData(name = s"test.join_migration", namespace = namespace, team = "chronon")
+      metaData = Builders.MetaData(name = s"test.join_migration", namespace = namespaceMigration, team = "chronon")
     )
     val newSemanticHash = join.semanticHash(excludeTopic = false)
 
@@ -1128,13 +1130,13 @@ class JoinTest {
     // older versions do not have the bootstrap hash, but should not trigger recompute if no bootstrap_parts
     val productionHashV1 = Map(
       "left_source" -> "vbQc07vaqm",
-      "${namespace}.test_join_migration_user_unit_test_item_views" -> "OLFBDTqwMX"
+      s"${namespaceMigration}.test_join_migration_user_unit_test_item_views" -> "OLFBDTqwMX"
     )
     assertEquals(0, tableHashesChanged(productionHashV1, newSemanticHash, join).length)
 
     // test newer versions
     val productionHashV2 = productionHashV1 ++ Map(
-      "${namespace}.test_join_migration_bootstrap" -> "1B2M2Y8Asg"
+      s"${namespaceMigration}.test_join_migration_bootstrap" -> "1B2M2Y8Asg"
     )
     assertEquals(0, tableHashesChanged(productionHashV2, newSemanticHash, join).length)
   }
