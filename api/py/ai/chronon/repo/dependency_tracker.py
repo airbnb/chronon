@@ -17,7 +17,7 @@
 import logging
 import os
 from ai.chronon.logger import get_logger
-from typing import List
+from typing import Set
 from ai.chronon.api.ttypes import \
     GroupBy, Join
 from ai.chronon.repo import JOIN_FOLDER_NAME, \
