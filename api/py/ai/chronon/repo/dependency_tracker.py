@@ -30,37 +30,35 @@ class ChrononEntityDependencyTracker(object):
         self.logger = get_logger(log_level)
         self.chronon_root_path = chronon_root_path
 
-    def check_join_downstream(self, conf_path) -> List[str]:
-        joins = extract_json_confs(
-            Join,
-            os.path.join(self.chronon_root_path, conf_path))
-        downstreams = []
-        if len(joins) == 0:
-            raise Exception(f"No joins found in {conf_path}")
-        elif len(joins) > 1:
-            raise Exception(f"Multiple joins found in {conf_path}")
-        join = joins[0]
+    def extract_conf(
+        self, obj_class: type, path: str
+    ) -> object:
+        obj = extract_json_confs(
+            obj_class,
+            os.path.join(self.chronon_root_path, path))
+        if len(obj) == 0:
+            raise Exception(f"No {obj_class} found in {path}")
+        elif len(obj) > 1:
+            raise Exception(f"Multiple {obj_class} found in {path}")
+        return obj[0]
+
+    def check_join_downstream(self, conf_path) -> Set[str]:
+        join = self.extract_conf(Join, conf_path)
         join_name = join.metaData.name
+        downstreams = set()
         group_bys = extract_json_confs(
             GroupBy,
             os.path.join(self.chronon_root_path, GROUP_BY_FOLDER_NAME))
         for group_by in group_bys:
             for source in group_by.sources:
                 if source.joinSource and source.joinSource.join.metaData.name == join_name:
-                    downstreams.append(group_by.metaData.name)
+                    downstreams.add(group_by.metaData.name)
         return downstreams
 
-    def check_group_by_downstream(self, conf_path) -> List[str]:
-        group_bys = extract_json_confs(
-            GroupBy,
-            os.path.join(self.chronon_root_path, conf_path))
-        downstreams = []
-        if len(group_bys) == 0:
-            raise Exception(f"No group_bys found in {conf_path}")
-        elif len(group_bys) > 1:
-            raise Exception(f"Multiple group_bys found in {conf_path}")
-        group_by = group_bys[0]
+    def check_group_by_downstream(self, conf_path) -> Set[str]:
+        group_by = self.extract_conf(GroupBy, conf_path)
         group_by_name = group_by.metaData.name
+        downstreams = set()
         joins = extract_json_confs(
             Join,
             os.path.join(self.chronon_root_path, JOIN_FOLDER_NAME))
@@ -70,7 +68,7 @@ class ChrononEntityDependencyTracker(object):
                     downstreams.append(join.metaData.name)
         return downstreams
 
-    def check_downstream(self, conf_path: str) -> List[str]:
+    def check_downstream(self, conf_path: str) -> Set[str]:
         if "joins" in conf_path:
             downstream = self.check_join_downstream(conf_path)
         elif "group_bys" in conf_path:
