@@ -65,7 +65,7 @@ class ChrononEntityDependencyTracker(object):
         for join in joins:
             for join_part in join.joinParts:
                 if join_part.groupBy.metaData.name == group_by_name:
-                    downstreams.append(join.metaData.name)
+                    downstreams.add(join.metaData.name)
         return downstreams
 
     def check_downstream(self, conf_path: str) -> Set[str]:
