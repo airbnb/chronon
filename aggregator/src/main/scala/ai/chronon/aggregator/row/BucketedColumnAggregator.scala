@@ -19,8 +19,6 @@ package ai.chronon.aggregator.row
 import ai.chronon.aggregator.base.BaseAggregator
 import ai.chronon.api.Row
 
-import scala.collection.mutable
-
 class BucketedColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, Output],
                                                   columnIndices: ColumnIndices,
                                                   bucketIndex: Int,
@@ -75,8 +73,9 @@ class BucketedColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR,
     lazy val prepared = rowUpdater.inversePrepare(inputRow)
     if (previousMap == null) { // map is absent
       if (prepared != null) {
-        val map = mutable.HashMap[String, IR](bucket -> prepared.asInstanceOf[IR])
-        ir.update(columnIndices.output, map)
+        val newMap = new IrMap()
+        newMap.put(bucket, prepared.asInstanceOf[IR])
+        ir.update(columnIndices.output, newMap)
       }
       return
     }
