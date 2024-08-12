@@ -29,7 +29,7 @@ class BaseFetcher(kvStore: KVStore,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false,
                   flagStore: FlagStore = null)
-    extends MetadataStore(kvStore, metaDataSet, timeoutMillis)
+    extends MetadataStore(kvStore, metaDataSet, timeoutMillis, flagStore)
     with FetcherCache {
   import BaseFetcher._
 

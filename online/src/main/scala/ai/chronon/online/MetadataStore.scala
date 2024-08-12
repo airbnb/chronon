@@ -19,7 +19,10 @@ import scala.util.{Failure, Success, Try}
 // [timestamp -> {metric name -> metric value}]
 case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
-class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
+class MetadataStore(kvStore: KVStore,
+                    val dataset: String = ChrononMetadataKey,
+                    timeoutMillis: Long,
+                    flagStore: FlagStore = null) {
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
 
   // Note this should match with the format used in the warehouse
@@ -122,6 +125,17 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     }
   }
 
+  private def getFailureTTLMillis: Long = {
+    if (flagStore.isSet("zoolander.shepherd.use_failure_ttl_cache",
+      Map[String, String]("priority_tier" -> " ").asJava))  {
+      println(s"Using the 5s TTLs for failures, dataset = $dataset")
+      5 * 1000 // 5 seconds
+    } else {
+      println(s"Using original 2 hour TTLs, dataset = $dataset")
+      2 * 60 * 60 * 100 // original 2 hour TTL
+    }
+  }
+
   // pull and cache groupByServingInfo from the groupBy uploads
   lazy val getGroupByServingInfo: TTLCache[String, Try[GroupByServingInfoParsed]] =
     new TTLCache[String, Try[GroupByServingInfoParsed]](
@@ -151,7 +165,11 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
           Success(new GroupByServingInfoParsed(groupByServingInfo, partitionSpec))
         }
       },
-      { gb => Metrics.Context(environment = "group_by.serving_info.fetch", groupBy = gb) })
+      { gb => Metrics.Context(environment = "group_by.serving_info.fetch", groupBy = gb) },
+      2 * 60 * 60 * 1000,
+      { () => System.currentTimeMillis() },
+      8 * 1000,
+      getFailureTTLMillis)
 
   // derive a key from path to file
   def pathToKey(confPath: String): String = {
