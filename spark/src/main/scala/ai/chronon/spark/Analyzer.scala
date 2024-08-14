@@ -68,7 +68,8 @@ class Analyzer(tableUtils: TableUtils,
                count: Int = 64,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
-               silenceMode: Boolean = false) {
+               silenceMode: Boolean = false,
+               analyzeForMetadata: Boolean = false) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
@@ -192,8 +193,10 @@ class Analyzer(tableUtils: TableUtils,
     val name = "group_by/" + prefix + groupByConf.metaData.name
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
 
-    val timestampChecks = runTimestampChecks(groupBy.inputDf)
-    validateTimestampChecks(timestampChecks, "GroupBy", name)
+    if (!analyzeForMetadata) {
+      val timestampChecks = runTimestampChecks(groupBy.inputDf)
+      validateTimestampChecks(timestampChecks, "GroupBy", name)
+    }
 
     val analysis =
       if (enableHitter)
@@ -276,8 +279,10 @@ class Analyzer(tableUtils: TableUtils,
       (analysis, leftDf)
     }
 
-    val timestampChecks = runTimestampChecks(leftDf)
-    validateTimestampChecks(timestampChecks, "Join", name)
+    if (!analyzeForMetadata) {
+      val timestampChecks = runTimestampChecks(leftDf)
+      validateTimestampChecks(timestampChecks, "Join", name)
+    }
 
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
