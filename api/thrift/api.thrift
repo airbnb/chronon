@@ -54,7 +54,7 @@ struct EventSource {
     1: optional string table
 
     /**
-    * Topic is a kafka table. The table contains all the events historically came through this topic.
+    * Topic is a kafka table. The table contains all the events that historically came through this topic.
     **/
     2: optional string topic
 
@@ -135,7 +135,7 @@ union Source {
 enum Operation {
     // Un-Deletable operations - Monoids
     // Once an aggregate is created from a group of elements,
-    // asking to delete on of the elements is invalid - and ignored.
+    // asking to delete one of the elements is invalid - and ignored.
     MIN = 0
     MAX = 1
     FIRST = 2
@@ -193,7 +193,7 @@ struct Aggregation {
     3: optional map<string, string> argMap
 
     /**
-    For TEMPORAL case windows are sawtooth. Meaning head slides ahead continuously in time, whereas, the tail only hops ahead, at discrete points in time. Hop is determined by the window size automatically. The maximum hop size is 1/12 of window size. You can specify multiple such windows at once.
+    For TEMPORAL case, windows are sawtooth. Meaning head slides ahead continuously in time, whereas, the tail only hops ahead, at discrete points in time. Hop is determined by the window size automatically. The maximum hop size is 1/12 of window size. You can specify multiple such windows at once.
       - Window > 12 days  -> Hop Size = 1 day
       - Window > 12 hours -> Hop Size = 1 hr
       - Window > 1hr      -> Hop Size = 5 minutes
@@ -315,7 +315,7 @@ struct Join {
     // Fields on left that uniquely identifies a single record
     8: optional list<string> rowIds
     /**
-    * List of a derived column names to the expression based on joinPart / externalPart columns
+    * List of a struct with derived column name and the expression based on joinPart / externalPart columns
     * The expression can be any valid Spark SQL select clause without aggregation functions.
     *
     * joinPart column names are automatically constructed according to the below convention

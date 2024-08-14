@@ -58,7 +58,7 @@ Optional parameters:
 
 `--count` : Finds the specified number of heavy hitters approximately. The larger this number is the more accurate the analysis will be. Default 128
 
-`--sample` : Sampling ratio - what fraction of rows into incorporate into the heavy hitter estimate. Default 0.1
+`--sample` : Sampling ratio - what fraction of rows to incorporate into the heavy hitter estimate. Default 0.1
 
 ## Backfill
 

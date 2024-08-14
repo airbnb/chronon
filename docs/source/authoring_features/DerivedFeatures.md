@@ -3,7 +3,7 @@
 While hydrating features for ML models, it is quite common to transform raw features further to make the model more effective at predicting. This is typically done to incorporate domain knowledge of a data scientist into the model. The ratio of a listing's current price and the user's historical booking price is a more helpful signal than the separate prices - while predicting relevant listings to recommend to a user.
 
 Chronon supports this use case by allowing users to define derived features. Derived features are defined as a Spark-SQL transformations of other features. The choice of Spark SQL allows Chronon to run both online and offline compute from the same unified user API: 
-- Chronon handles both offline computation in Spark/hive tables 
+- Chronon handles offline computation in Spark/hive tables 
 - Chronon handles online computation in the production service environment.
 
 ## API
@@ -219,6 +219,6 @@ The steps involved are
 
 Chronon supports schema evolution for derived features. This means that you can add new derived features to your join definition without having to recompute all of your features.
 
-During offline computation, derived features are computed at the end of the join, at the same time when the final output table is computed. When Chronon detects that a new derived feature has been added to a join, how it works currently is that it will archive the final output table and recompute it, but it will not recompute any of the intermediate tables that store computed group by data.
+During offline computation, derived features are computed at the end of the join, at the same time when the final output table is computed. When Chronon detects that a new derived feature has been added to a join, it will archive the final output table and recompute it, but it will not recompute any of the intermediate tables that store computed group-by data.
 
 During online serving, derived features are computed in the `Fetcher`, instead of at `GroupByUpload` or `GroupByStreaming` time, so it naturally supports schema evolution. Derived features are also covered by logging. When derived features are added or modified, Chronon generates a new schema version similar to when group bys are added to joins, such that offline decoding can continue to work. 
