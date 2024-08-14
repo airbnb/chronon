@@ -50,7 +50,8 @@ object SemanticHashUtils {
                              computeDiffFunc: (Map[String, String], Map[String, String], ai.chronon.api.Join) => T,
                              emptyFunc: => T): (T, Boolean) = {
     val semanticHashHiveMetadata = if (unsetSemanticHash) {
-      None
+      logger.info(s"Semantic hash has been unset for table ${outputTable}. Proceed to computation and table creation.")
+      return (emptyFunc, true)
     } else {
       getSemanticHashFromHive(outputTable, tableUtils)
     }
@@ -75,7 +76,7 @@ object SemanticHashUtils {
       val autoArchive = canAutoArchive(semanticHashHiveMetadata.get)
       (diff, autoArchive)
     } else {
-      logger.info("No semantic hash found in Hive. Proceed to computation and table creation.")
+      logger.info(s"No semantic hash found in table ${outputTable}. Proceed to computation and table creation.")
       (emptyFunc, true)
     }
   }
