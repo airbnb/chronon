@@ -25,9 +25,10 @@ import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessi
 import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}
-import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
+import java.time.Instant
 import scala.util.Try
 
 
@@ -422,6 +423,30 @@ class TableUtilsTest {
   def testDoubleUDFRegistration(): Unit = {
     tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF'")
     tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF'")
+  }
+
+  @Test
+  def testTableArchive(): Unit = {
+    val tableName = "db.test_table_archive"
+    prepareTestDataWithSubPartitions(tableName)
+    val timestamp = Instant.parse("2023-01-01T00:00:00Z")
+    tableUtils.archiveTableIfExists(tableName, Some(timestamp))
+
+    val archiveTableName = tableUtils.sql(s"SHOW TABLES IN db").rdd.collect().head.get(1)
+    val tblProps = tableUtils.sql(s"SHOW TBLPROPERTIES db.$archiveTableName").collect()
+
+    val mapVal: Map[String, Any] = tblProps.map { row =>
+      val key: String = row.getAs[String]("key")
+      val value: Any = row.getAs[Any]("value")
+      key -> value
+    }.toMap
+
+    // test that the archive table name is correct
+    assert(archiveTableName == "test_table_archive_20221231160000")
+
+    // test that chronon_archived flag exists and is set to true
+    assert(mapVal.getOrElse("chronon_archived","false") == "true")
+
   }
 
 }

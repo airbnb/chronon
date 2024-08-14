@@ -671,6 +671,9 @@ case class TableUtils(sparkSession: SparkSession) {
       val command = s"ALTER TABLE $tableName RENAME TO $finalArchiveTableName"
       logger.info(s"Archiving table with command: $command")
       sql(command)
+      val commandProp = s"ALTER TABLE $finalArchiveTableName SET TBLPROPERTIES ('chronon_archived' = 'true')"
+      logger.info(s"Update table properties to indicate archived table: $commandProp")
+      sql(commandProp)
     }
   }
 
