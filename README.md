@@ -352,7 +352,7 @@ Now you can compute consistency metrics with this command:
 run.py --mode consistency-metrics-compute --conf production/joins/quickstart/training_set.v2
 ```
 
-This job takes will take the primary key(s) and timestamps from the log table (`default.quickstart_training_set_v2_logged` in this case), and uses those to create and run a join backfill. It then compares the backfilled results to the actual logged values that were fetched online
+This job will take the primary key(s) and timestamps from the log table (`default.quickstart_training_set_v2_logged` in this case), and uses those to create and run a join backfill. It then compares the backfilled results to the actual logged values that were fetched online
 
 It produces two output tables:
 

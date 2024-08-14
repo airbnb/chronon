@@ -38,7 +38,7 @@ v1 = StagingQuery(
         "CREATE TEMPORARY FUNCTION EMAIL_PARSE AS 'com.you_company.udf.your_team.YourUdfClass'",
     ],
     metaData=MetaData(
-        dependencies=["data.users", "data.purchases"], # Used by airflow to setup partition sensors
+        dependencies=["data.dim_users", "data.fct_purchases"], # Used by airflow to setup partition sensors
     )
 )
 ```

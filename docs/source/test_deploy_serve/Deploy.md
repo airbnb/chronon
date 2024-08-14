@@ -14,7 +14,7 @@ Once merged into production, `GroupBy`s will get the following tasks and dags:
 
 Once merged into production, `Join`s will get the following tasks and dags:
 
-1. (if online=True) Then the metadata for this join will get updloaded to the KV store as part of the `chronon_metadata_upload` DAG (all joins share the same task).
+1. (if online=True) Then the metadata for this join will get uploaded to the KV store as part of the `chronon_metadata_upload` DAG (all joins share the same task).
 2. (if check_consistency=True) A DAG gets created with the name pattern: `online_offline_comparison_<team_name>_<join_name>` which writes out daily consistency metrics as new upstream data lands.
 
 ## StagingQuery
