@@ -270,14 +270,14 @@ Chronon improves the overall experience of creating and managing offline dataset
 
 ### Create a brand-new feature set
 Goal
-- build the training set for a brand-new model and serve the same feature set online for inference
+- Build the training set for a brand-new model and serve the same feature set online for inference
 
 Steps
 
 1. Create the driver table where each row represents a training example. This can be via a StagingQuery or directly from an existing hive table
 2. Define and/or locate the group bys that you want to include in your model
 3. Define the join which consists of your driver table on the left and the list of group bys on the right
-4. Run **join backfill** on gateway, and train your model using the output table of the join
+4. Run **join backfill** and train your model using the output table of the join
 5. You can modify the join by changing the list of group bys, and rerun the join backfill. Chronon will try as much as possible to avoid unnecessary backfills across runs.
 6. For online models, you can use this join for online serving in your service
 7. For offline models, you can use this join to enable daily feature generation
@@ -289,7 +289,7 @@ v1 = StagingQuery(
 )
 # ml_models/zipline/joins/team_name/model.py
 v1 = Join(
-  # driver table can be either output of an staging_query or custom hive table
+  # driver table can be either output of a staging_query or custom hive table
   left=HiveEventSource(
     namespace="db_name",
     table=get_staging_query_output_table_name(driver_table.v1),
@@ -407,7 +407,9 @@ v2 = Join(
 ### Improve an existing feature set of an online model
 Goal
 - Create a new version of an existing model, carrying over most of the existing features while adding some new features.
-  Steps
+
+Steps
+
 1. Define and/or locate the new group bys that you want to include in your model
 2. Create a new instance of the join similar to the join of the existing model but with an updated list of group bys (including both old and new).
 3. Include the existing join as a bootstrap_part in the new join so that all production feature values can be carried over to the new join without any backfill from scratch.
@@ -440,14 +442,16 @@ v2 = Join(
 ### Expand a model to a new set of drivers
 Goal
 - Create a new version of an existing model that expands to new traffic endpoints
-- This requires us to backfill features for the new endpoints in order to backtest the model, while keeping using log data for existing endpoints.
-  Steps
+- This requires us to backfill features for the new endpoints in order to backtest the model, while continuing to use log data for existing endpoints.
+
+Steps
+
 1. Create a new driver table that contains the unioned data of new driver rows and old driver rows.
 2. Create a new join with similar parameters except for the left where you would use the new driver table
 3. Include the existing join as a bootstrap_part so that existing feature data can be carried over to the new join without any backfill from scratch
 ```python
 # ml_models/zipline/staging_queries/team_name/driver_table.py
-v2 = StagingQuery(
+v1 = StagingQuery(
   query="""
 	SELECT * 
 	FROM db_name.team_name_driver_table_v1
@@ -486,7 +490,9 @@ v2 = Join(
 ### Reuse existing feature data from the same drivers
 Goal:
 - Build a new model while leveraging training data of an existing model that shares the same events.
-  Step
+
+Steps
+
 1. Identify existing join that share the same set of drivers
 2. Add that join as a bootstrap part in your join in order to reuse the data
 ```python
@@ -514,7 +520,9 @@ bootstrap_parts=[
 ### Utilize advanced features
 Goal:
 - Leverage external / contextual features in the model. Once they are served online, we want to log them for future model retrains. For initial backfills, users will come up with a custom way to provide backfilled values
-  Steps
+
+Steps
+
 1. Add online_external_parts to your join config, which includes defining the input and output schema of an external call
 2. In your online service, implement the actual external call logic in an ExternalSourceHandler and register it to Chronon.
 3. Since Chronon has no way to backfill the external features natively, instead we expect users to leverage bootstrap to
@@ -564,7 +572,9 @@ v1 = Join(
 ### Leverage feature data from legacy data pipelines
 Goal
 - We have feature data from a legacy data pipeline before a certain cutoff, and while we are moving over to Chronon after that, we would like to retain and ingest the historical data into the final training table produced by Chronon.
-  Steps
+
+Steps
+
 1. Create a driver table that contains the driver rows for the legacy data time period
 2. Finalize the mapping table between legacy table’s column names with chronon’s output table column names, because usually they are different, and in bootstrap we expect the selected column names to be matching with output names
 3. Register the legacy table as a bootstrap part in the join

@@ -17,8 +17,8 @@ While 100% consistency is desirable, it is not always possible.
 Realtime features consume streams of data(kafka topics) that have inherent 
 network latencies. For kafka, in at-least-once mode producers need to write 
 to multiple disks before the message can be sent to the consumers. Finally, 
-there is additional latency to write kv-store before the model can fetch the 
-update feature for inference. This is usually in the order of ms to seconds.
+there is additional latency to write to the kv-store before the model can fetch the 
+updated feature for inference. This is usually in the order of ms to seconds.
 
 Computing and uploading non-realtime features to kv-store 
 takes time. For example, midnight accurate features, need to wait for their 
@@ -26,7 +26,7 @@ upstream data to arrive and then need to be transformed into features and
 uploaded into kv-store. The total time to refresh batch features could be in
 the order of minutes or hours. This inconsistency is usually centered around 
 midnight until the bulk upload of new features to kv store finishes - for 
-features that need to refreshed daily.     
+features that need to be refreshed daily.     
 
 ## Design
 
