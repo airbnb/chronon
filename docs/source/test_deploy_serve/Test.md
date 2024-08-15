@@ -54,6 +54,8 @@ Optional parameters:
 
 `--enable-hitter`: enable skewed data analysis - include the heavy hitter analysis in output, only output schema if not specified
 
+`--skip-timestamp-check`: skip sampling and timestamp checks - setting to true will result in timestamp checks being skipped
+
 `--start-date` : Finds heavy hitters & time-distributions for a specified start date. Default 3 days prior to "today"
 
 `--count` : Finds the specified number of heavy hitters approximately. The larger this number is the more accurate the analysis will be. Default 128

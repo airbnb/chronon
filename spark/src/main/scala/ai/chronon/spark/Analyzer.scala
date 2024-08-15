@@ -69,8 +69,7 @@ class Analyzer(tableUtils: TableUtils,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
                silenceMode: Boolean = false,
-               skipTimestampCheck: Boolean = false
-              ) {
+               skipTimestampCheck: Boolean = false) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
@@ -189,8 +188,7 @@ class Analyzer(tableUtils: TableUtils,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
                      enableHitter: Boolean = false,
-                     skipTimestampCheck: Boolean = false,
-                    ): (Array[AggregationMetadata], Map[String, DataType]) = {
+                     skipTimestampCheck: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -264,8 +262,7 @@ class Analyzer(tableUtils: TableUtils,
                   enableHitter: Boolean = false,
                   validateTablePermission: Boolean = true,
                   validationAssert: Boolean = false,
-                  skipTimestampCheck: Boolean = false
-                 ): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+                  skipTimestampCheck: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
@@ -308,7 +305,11 @@ class Analyzer(tableUtils: TableUtils,
 
     joinConf.joinParts.toScala.foreach { part =>
       val (aggMetadata, gbKeySchema) =
-        analyzeGroupBy(part.groupBy, part.fullPrefix, includeOutputTableName = true, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+        analyzeGroupBy(part.groupBy,
+                       part.fullPrefix,
+                       includeOutputTableName = true,
+                       enableHitter = enableHitter,
+                       skipTimestampCheck = skipTimestampCheck)
       aggregationsMetadata ++= aggMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
@@ -603,7 +604,9 @@ class Analyzer(tableUtils: TableUtils,
           val groupByConf = parseConf[api.GroupBy](confPath)
           analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
         }
-      case groupByConf: api.GroupBy => analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
-      case joinConf: api.Join       => analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+      case groupByConf: api.GroupBy =>
+        analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+      case joinConf: api.Join =>
+        analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
     }
 }
