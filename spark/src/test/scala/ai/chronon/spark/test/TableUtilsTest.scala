@@ -368,6 +368,15 @@ class TableUtilsTest {
 
   }
 
+  def readTblPropertiesMap(inputData: Array[Row]): Map[String, Any] = {
+    val outputData = inputData.map { row =>
+      val key: String = row.getAs[String]("key")
+      val value: Any = row.getAs[Any]("value")
+      key -> value
+    }.toMap
+    outputData
+  }
+
   @Test
   def testLastAvailablePartition(): Unit = {
     val tableName = "db.test_last_available_partition"
@@ -428,24 +437,26 @@ class TableUtilsTest {
   @Test
   def testTableArchive(): Unit = {
     val tableName = "db.test_table_archive"
-    prepareTestDataWithSubPartitions(tableName)
+    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS db")
+    tableUtils.sql(s"CREATE TABLE $tableName (test INT, test_col STRING) PARTITIONED BY (ds STRING) STORED AS PARQUET")
     val timestamp = Instant.parse("2023-01-01T00:00:00Z")
     tableUtils.archiveTableIfExists(tableName, Some(timestamp))
 
-    val archiveTableName = tableUtils.sql(s"SHOW TABLES IN db").rdd.collect().head.get(1)
-    val tblProps = tableUtils.sql(s"SHOW TBLPROPERTIES db.$archiveTableName").collect()
-
-    val mapVal: Map[String, Any] = tblProps.map { row =>
-      val key: String = row.getAs[String]("key")
-      val value: Any = row.getAs[Any]("value")
-      key -> value
-    }.toMap
-
     // test that the archive table name is correct
+    val archiveTableName = tableUtils.sql(s"SHOW TABLES FROM db LIKE '*archive*'").rdd.collect().head.get(1)
     assert(archiveTableName == "test_table_archive_20221231160000")
 
     // test that chronon_archived flag exists and is set to true
+    val tblProps = tableUtils.sql(s"SHOW TBLPROPERTIES db.$archiveTableName").collect()
+    val mapVal = readTblPropertiesMap(tblProps)
     assert(mapVal.getOrElse("chronon_archived","false") == "true")
+
+    // test after a un-archive we can remove chronon_archived property
+    tableUtils.sql(s"ALTER TABLE db.$archiveTableName RENAME TO $tableName")
+    tableUtils.unsetTableProperties(tableName, Seq("chronon_archived","other_doesnt_exist"))
+    val tblPropsAfter = tableUtils.sql(s"SHOW TBLPROPERTIES $tableName").collect()
+    val mapValAfter = readTblPropertiesMap(tblPropsAfter)
+    assert(mapValAfter.getOrElse("chronon_archived","false") == "false")
 
   }
 

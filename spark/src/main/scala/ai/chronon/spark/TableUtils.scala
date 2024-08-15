@@ -82,6 +82,7 @@ case class TableUtils(sparkSession: SparkSession) {
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
   val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
   val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
+  val chrononArchiveFlag: String = "chronon_archived"
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
@@ -318,6 +319,8 @@ case class TableUtils(sparkSession: SparkSession) {
     }
     if (tableProperties != null && tableProperties.nonEmpty) {
       alterTableProperties(tableName, tableProperties)
+      // remove any properties set if table was previously archived
+      unsetTableProperties(tableName, Seq(chrononArchiveFlag))
     }
 
     if (autoExpand) {
@@ -382,6 +385,8 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       if (tableProperties != null && tableProperties.nonEmpty) {
         alterTableProperties(tableName, tableProperties)
+        // remove any properties set if table was previously archived
+        unsetTableProperties(tableName, Seq(chrononArchiveFlag))
       }
     }
 
@@ -563,6 +568,12 @@ case class TableUtils(sparkSession: SparkSession) {
     sql(query)
   }
 
+  def unsetTableProperties(tableName: String, properties: Seq[String]): Unit = {
+    val propertiesString = properties.map(s => s"'$s'").mkString(", ")
+    val query = s"ALTER TABLE $tableName UNSET TBLPROPERTIES IF EXISTS ($propertiesString)"
+    sql(query)
+  }
+
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
     val sortedDates = partitions.toSeq.sorted
     sortedDates.foldLeft(Seq[PartitionRange]()) { (ranges, nextDate) =>
@@ -671,9 +682,8 @@ case class TableUtils(sparkSession: SparkSession) {
       val command = s"ALTER TABLE $tableName RENAME TO $finalArchiveTableName"
       logger.info(s"Archiving table with command: $command")
       sql(command)
-      val commandProp = s"ALTER TABLE $finalArchiveTableName SET TBLPROPERTIES ('chronon_archived' = 'true')"
-      logger.info(s"Update table properties to indicate archived table: $commandProp")
-      sql(commandProp)
+      logger.info(s"Setting table property chronon_archived -> true")
+      alterTableProperties(finalArchiveTableName, Map(chrononArchiveFlag -> "true"))
     }
   }
 
