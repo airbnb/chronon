@@ -425,6 +425,12 @@ object Driver {
             "enable skewed data analysis - whether to include the heavy hitter analysis, will only output schema if disabled",
           default = Some(false)
         )
+      val skipTimestampCheck: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          descr = "skip sampling and timestamp checks - setting to true will result in timestamp checks being skipped",
+          default = Some(false)
+        )
 
       override def subcommandName() = "analyzer_util"
     }
@@ -437,7 +443,8 @@ object Driver {
                    args.endDate(),
                    args.count(),
                    args.sample(),
-                   args.enableHitter()).run
+                   args.enableHitter(),
+                   args.skipTimestampCheck()).run
     }
   }
 

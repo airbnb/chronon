@@ -68,7 +68,8 @@ class Analyzer(tableUtils: TableUtils,
                count: Int = 64,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
-               silenceMode: Boolean = false) {
+               silenceMode: Boolean = false,
+               skipTimestampCheck: Boolean = false) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
@@ -186,14 +187,17 @@ class Analyzer(tableUtils: TableUtils,
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
-                     enableHitter: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
+                     enableHitter: Boolean = false,
+                     skipTimestampCheck: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
 
-    val timestampChecks = runTimestampChecks(groupBy.inputDf)
-    validateTimestampChecks(timestampChecks, "GroupBy", name)
+    if (!skipTimestampCheck) {
+      val timestampChecks = runTimestampChecks(groupBy.inputDf)
+      validateTimestampChecks(timestampChecks, "GroupBy", name)
+    }
 
     val analysis =
       if (enableHitter)
@@ -257,7 +261,8 @@ class Analyzer(tableUtils: TableUtils,
   def analyzeJoin(joinConf: api.Join,
                   enableHitter: Boolean = false,
                   validateTablePermission: Boolean = true,
-                  validationAssert: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+                  validationAssert: Boolean = false,
+                  skipTimestampCheck: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
@@ -276,8 +281,10 @@ class Analyzer(tableUtils: TableUtils,
       (analysis, leftDf)
     }
 
-    val timestampChecks = runTimestampChecks(leftDf)
-    validateTimestampChecks(timestampChecks, "Join", name)
+    if (!skipTimestampCheck) {
+      val timestampChecks = runTimestampChecks(leftDf)
+      validateTimestampChecks(timestampChecks, "Join", name)
+    }
 
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
@@ -298,7 +305,11 @@ class Analyzer(tableUtils: TableUtils,
 
     joinConf.joinParts.toScala.foreach { part =>
       val (aggMetadata, gbKeySchema) =
-        analyzeGroupBy(part.groupBy, part.fullPrefix, includeOutputTableName = true, enableHitter = enableHitter)
+        analyzeGroupBy(part.groupBy,
+                       part.fullPrefix,
+                       includeOutputTableName = true,
+                       enableHitter = enableHitter,
+                       skipTimestampCheck = skipTimestampCheck)
       aggregationsMetadata ++= aggMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
@@ -499,12 +510,12 @@ class Analyzer(tableUtils: TableUtils,
 
   // For groupBys validate if the timestamp provided produces some values
   // if all values are null this should be flagged as an error
-  def runTimestampChecks(df: DataFrame, sampleNumber: Int = 1000): Map[String, String] = {
+  def runTimestampChecks(df: DataFrame, sampleNumber: Int = 100): Map[String, String] = {
 
     val hasTimestamp = df.schema.fieldNames.contains(Constants.TimeColumn)
     val mapTimestampChecks = if (hasTimestamp) {
-      // set max sample to 1000 rows if larger input is provided
-      val sampleN = if (sampleNumber > 1000) { 1000 }
+      // set max sample to 100 rows if larger input is provided
+      val sampleN = if (sampleNumber > 100) { 100 }
       else { sampleNumber }
       dataFrameToMap(
         df.limit(sampleN)
@@ -588,12 +599,14 @@ class Analyzer(tableUtils: TableUtils,
       case confPath: String =>
         if (confPath.contains("/joins/")) {
           val joinConf = parseConf[api.Join](confPath)
-          analyzeJoin(joinConf, enableHitter = enableHitter)
+          analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
         } else if (confPath.contains("/group_bys/")) {
           val groupByConf = parseConf[api.GroupBy](confPath)
-          analyzeGroupBy(groupByConf, enableHitter = enableHitter)
+          analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
         }
-      case groupByConf: api.GroupBy => analyzeGroupBy(groupByConf, enableHitter = enableHitter)
-      case joinConf: api.Join       => analyzeJoin(joinConf, enableHitter = enableHitter)
+      case groupByConf: api.GroupBy =>
+        analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+      case joinConf: api.Join =>
+        analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
     }
 }
