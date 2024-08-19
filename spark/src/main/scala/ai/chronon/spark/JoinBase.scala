@@ -378,7 +378,7 @@ abstract class JoinBase(joinConf: api.Join,
       if (tableUtils.tableExists(bootstrapTable)) {
         tableUtils.alterTableProperties(bootstrapTable, tableProps)
         // remove any properties set if table was previously archived
-        tableUtils.unsetTableProperties(bootstrapTable, Seq(tableUtils.chrononArchiveFlag))
+        tableUtils.unsetTableProperties(bootstrapTable, Seq(Constants.chrononArchiveFlag))
       }
     } else {
       logger.info(s"Detected semantic change in left side of join, archiving bootstrap table for recomputation.")

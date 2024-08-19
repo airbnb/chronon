@@ -82,7 +82,6 @@ case class TableUtils(sparkSession: SparkSession) {
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
   val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
   val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
-  val chrononArchiveFlag: String = "chronon_archived"
 
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
@@ -320,7 +319,7 @@ case class TableUtils(sparkSession: SparkSession) {
     if (tableProperties != null && tableProperties.nonEmpty) {
       alterTableProperties(tableName, tableProperties)
       // remove any properties set if table was previously archived
-      unsetTableProperties(tableName, Seq(chrononArchiveFlag))
+      unsetTableProperties(tableName, Seq(Constants.chrononArchiveFlag))
     }
 
     if (autoExpand) {
@@ -386,7 +385,7 @@ case class TableUtils(sparkSession: SparkSession) {
       if (tableProperties != null && tableProperties.nonEmpty) {
         alterTableProperties(tableName, tableProperties)
         // remove any properties set if table was previously archived
-        unsetTableProperties(tableName, Seq(chrononArchiveFlag))
+        unsetTableProperties(tableName, Seq(Constants.chrononArchiveFlag))
       }
     }
 
@@ -683,7 +682,7 @@ case class TableUtils(sparkSession: SparkSession) {
       logger.info(s"Archiving table with command: $command")
       sql(command)
       logger.info(s"Setting table property chronon_archived -> true")
-      alterTableProperties(finalArchiveTableName, Map(chrononArchiveFlag -> "true"))
+      alterTableProperties(finalArchiveTableName, Map(Constants.chrononArchiveFlag -> "true"))
     }
   }
 

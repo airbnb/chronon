@@ -457,7 +457,5 @@ class TableUtilsTest {
     val tblPropsAfter = tableUtils.sql(s"SHOW TBLPROPERTIES $tableName").collect()
     val mapValAfter = readTblPropertiesMap(tblPropsAfter)
     assert(mapValAfter.getOrElse("chronon_archived","false") == "false")
-
   }
-
 }
