@@ -381,6 +381,7 @@ def Join(left: api.Source,
          batchPartitionCadence = api.BatchPartitionCadence.DAILY,
          team_slug: str = None,
          name: str = None,
+         model_transformation: api.ModelTransformation = None,
          **kwargs
          ) -> api.Join:
     """
@@ -472,6 +473,8 @@ def Join(left: api.Source,
         Team slug is required when defining a Join in a notebook cell since we cannot infer the team name from the file path.
     :param name:
         The desired name of the output table when running in a Databricks notebook. 
+    :param model_transformation:
+        Model transformation to be applied to the output of the Join.
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -602,4 +605,41 @@ def Join(left: api.Source,
         rowIds=row_ids,
         labelPart=label_part,
         derivations=derivations,
+        modelTransformation=model_transformation,
+    )
+
+
+def InferenceSpec(
+        model_backend: str,
+        model_backend_params: Dict[str, str] = {}
+) -> api.InferenceSpec: 
+    assert model_backend is not None, "Model backend must be set to create an inference spec"
+    return api.InferenceSpec(
+        modelBackend = model_backend,
+        modelBackendParams = model_backend_params
+    )
+
+def Model(
+        inference_spec: api.InferenceSpec,
+        input_schema: List[api.InferenceExecutionSchemaItem],
+        output_schema: List[api.InferenceExecutionSchemaItem]
+) -> api.Model:
+    assert inference_spec is not None, "Inference spec must be set to create a model"
+    return api.Model(
+        inferenceSpec = inference_spec,
+        inputSchema = input_schema,
+        outputSchema = output_schema
+    )
+
+
+def ModelTransformation(
+        model: api.Model,
+        output_mappings: Dict[str, str],
+        pass_through_fields: List[str] = []
+) -> api.ModelTransformation:
+    assert model is not None, "Model must be set to create a model transformation"
+    return api.ModelTransformation(
+        model = model,
+        outputMappings = output_mappings,
+        passThroughFields = pass_through_fields
     )

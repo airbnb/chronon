@@ -337,6 +337,7 @@ struct Join {
     * columns.
     **/
     9: optional list<Derivation> derivations
+    10: optional ModelTransformation modelTransformation
 }
 
 enum BatchPartitionCadence {
@@ -425,4 +426,26 @@ struct TDataType {
     1: DataKind kind
     2: optional list<DataField> params
     3: optional string name // required only for struct types
+}
+
+struct InferenceSpec {
+    1: optional string modelBackend
+    2: optional map<string, string> modelBackendParams
+}
+
+struct InferenceExecutionSchemaItem{
+    1: optional string name
+    2: optional DataField dataField
+}
+
+struct Model {
+    1: optional InferenceSpec inferenceSpec
+    2: optional list<InferenceExecutionSchemaItem> inputSchema
+    3: optional list<InferenceExecutionSchemaItem> outputSchema
+}
+
+struct ModelTransformation {
+    1: optional Model model
+    2: optional map<string,string> outputMappings
+    3: optional list<string> passThroughFields
 }
