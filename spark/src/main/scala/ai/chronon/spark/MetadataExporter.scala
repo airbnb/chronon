@@ -50,7 +50,7 @@ object MetadataExporter {
 
   def enrichMetadata(path: String): String = {
     val configData = mapper.readValue(new File(path), classOf[Map[String, Any]])
-    val analyzer = new Analyzer(tableUtils, path, yesterday, today, silenceMode = true)
+    val analyzer = new Analyzer(tableUtils, path, yesterday, today, skipTimestampCheck = true)
     val enrichedData: Map[String, Any] =
       try {
         if (path.contains(GROUPBY_PATH_SUFFIX)) {
