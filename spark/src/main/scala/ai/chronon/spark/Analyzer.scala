@@ -188,7 +188,7 @@ class Analyzer(tableUtils: TableUtils,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
                      enableHitter: Boolean = false,
-                     skipTimestampCheck: Boolean = false): (Array[AggregationMetadata], Map[String, DataType]) = {
+                     skipTimestampCheck: Boolean = skipTimestampCheck): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -262,7 +262,7 @@ class Analyzer(tableUtils: TableUtils,
                   enableHitter: Boolean = false,
                   validateTablePermission: Boolean = true,
                   validationAssert: Boolean = false,
-                  skipTimestampCheck: Boolean = false): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+                  skipTimestampCheck: Boolean = skipTimestampCheck): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
