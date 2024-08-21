@@ -453,7 +453,7 @@ class TableUtilsTest {
 
     // test after a un-archive we can remove chronon_archived property
     tableUtils.sql(s"ALTER TABLE db.$archiveTableName RENAME TO $tableName")
-    tableUtils.unsetTableProperties(tableName, Seq("chronon_archived","other_doesnt_exist"))
+    tableUtils.alterTableProperties(tableName, properties = Map("chronon_archived" -> "true"), unsetProperties = Seq("chronon_archived"))
     val tblPropsAfter = tableUtils.sql(s"SHOW TBLPROPERTIES $tableName").collect()
     val mapValAfter = readTblPropertiesMap(tblPropsAfter)
     assert(mapValAfter.getOrElse("chronon_archived","false") == "false")
