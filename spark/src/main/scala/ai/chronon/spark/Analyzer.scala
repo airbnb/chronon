@@ -184,11 +184,12 @@ class Analyzer(tableUtils: TableUtils,
     AggregationMetadata(columnName, columnType, "No operation", "Unbounded", columnName)
   }
 
-  def analyzeGroupBy(groupByConf: api.GroupBy,
-                     prefix: String = "",
-                     includeOutputTableName: Boolean = false,
-                     enableHitter: Boolean = false,
-                     skipTimestampCheck: Boolean = skipTimestampCheck): (Array[AggregationMetadata], Map[String, DataType]) = {
+  def analyzeGroupBy(
+      groupByConf: api.GroupBy,
+      prefix: String = "",
+      includeOutputTableName: Boolean = false,
+      enableHitter: Boolean = false,
+      skipTimestampCheck: Boolean = skipTimestampCheck): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -258,11 +259,12 @@ class Analyzer(tableUtils: TableUtils,
 
   }
 
-  def analyzeJoin(joinConf: api.Join,
-                  enableHitter: Boolean = false,
-                  validateTablePermission: Boolean = true,
-                  validationAssert: Boolean = false,
-                  skipTimestampCheck: Boolean = skipTimestampCheck): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+  def analyzeJoin(
+      joinConf: api.Join,
+      enableHitter: Boolean = false,
+      validateTablePermission: Boolean = true,
+      validationAssert: Boolean = false,
+      skipTimestampCheck: Boolean = skipTimestampCheck): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
