@@ -29,7 +29,7 @@ import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
 import java.time.Instant
-import scala.util.Try
+import scala.util.{Random, Try}
 
 
 
@@ -436,23 +436,24 @@ class TableUtilsTest {
 
   @Test
   def testTableArchive(): Unit = {
-    val tableName = "db.test_table_archive"
-    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS db")
+    val dbName = "db_" + Random.alphanumeric.take(3).mkString
+    val tableName = s"$dbName.test_table_archive"
+    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
     tableUtils.sql(s"CREATE TABLE $tableName (test INT, test_col STRING) PARTITIONED BY (ds STRING) STORED AS PARQUET")
     val timestamp = Instant.parse("2023-01-01T00:00:00Z")
     tableUtils.archiveTableIfExists(tableName, Some(timestamp))
 
     // test that the archive table name is correct
-    val archiveTableName = tableUtils.sql(s"SHOW TABLES FROM db LIKE '*archive*'").rdd.collect().head.get(1)
-    assert(archiveTableName == "test_table_archive_20221231160000")
+    val archiveTableName = tableUtils.sql(s"SHOW TABLES FROM $dbName LIKE '*archive*'").rdd.collect().head.get(1)
+    assert(archiveTableName == "test_table_archive_20230101000000")
 
     // test that chronon_archived flag exists and is set to true
-    val tblProps = tableUtils.sql(s"SHOW TBLPROPERTIES db.$archiveTableName").collect()
+    val tblProps = tableUtils.sql(s"SHOW TBLPROPERTIES $dbName.$archiveTableName").collect()
     val mapVal = readTblPropertiesMap(tblProps)
     assert(mapVal.getOrElse("chronon_archived","false") == "true")
 
     // test after a un-archive we can remove chronon_archived property
-    tableUtils.sql(s"ALTER TABLE db.$archiveTableName RENAME TO $tableName")
+    tableUtils.sql(s"ALTER TABLE $dbName.$archiveTableName RENAME TO $tableName")
     tableUtils.alterTableProperties(tableName, properties = Map("chronon_archived" -> "true"), unsetProperties = Seq("chronon_archived"))
     val tblPropsAfter = tableUtils.sql(s"SHOW TBLPROPERTIES $tableName").collect()
     val mapValAfter = readTblPropertiesMap(tblPropsAfter)

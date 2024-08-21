@@ -47,7 +47,7 @@ case class TableUtils(sparkSession: SparkSession) {
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
   @transient private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
-    .withZone(ZoneId.systemDefault())
+    .withZone(ZoneId.of("UTC"))
   val partitionColumn: String =
     sparkSession.conf.get("spark.chronon.partition.column", "ds")
   private val partitionFormat: String =
