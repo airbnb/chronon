@@ -25,10 +25,11 @@ import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessi
 import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}
-import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
-import scala.util.Try
+import java.time.Instant
+import scala.util.{Random, Try}
 
 
 
@@ -367,6 +368,15 @@ class TableUtilsTest {
 
   }
 
+  def readTblPropertiesMap(inputData: Array[Row]): Map[String, Any] = {
+    val outputData = inputData.map { row =>
+      val key: String = row.getAs[String]("key")
+      val value: Any = row.getAs[Any]("value")
+      key -> value
+    }.toMap
+    outputData
+  }
+
   @Test
   def testLastAvailablePartition(): Unit = {
     val tableName = "db.test_last_available_partition"
@@ -424,4 +434,29 @@ class TableUtilsTest {
     tableUtils.sql("CREATE TEMPORARY FUNCTION test AS 'ai.chronon.spark.test.SimpleAddUDF'")
   }
 
+  @Test
+  def testTableArchive(): Unit = {
+    val dbName = "db_" + Random.alphanumeric.take(3).mkString
+    val tableName = s"$dbName.test_table_archive"
+    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
+    tableUtils.sql(s"CREATE TABLE $tableName (test INT, test_col STRING) PARTITIONED BY (ds STRING) STORED AS PARQUET")
+    val timestamp = Instant.parse("2023-01-01T00:00:00Z")
+    tableUtils.archiveTableIfExists(tableName, Some(timestamp))
+
+    // test that the archive table name is correct
+    val archiveTableName = tableUtils.sql(s"SHOW TABLES FROM $dbName LIKE '*archive*'").rdd.collect().head.get(1)
+    assert(archiveTableName == "test_table_archive_20230101000000")
+
+    // test that chronon_archived flag exists and is set to true
+    val tblProps = tableUtils.sql(s"SHOW TBLPROPERTIES $dbName.$archiveTableName").collect()
+    val mapVal = readTblPropertiesMap(tblProps)
+    assert(mapVal.getOrElse("chronon_archived","false") == "true")
+
+    // test after a un-archive we can remove chronon_archived property
+    tableUtils.sql(s"ALTER TABLE $dbName.$archiveTableName RENAME TO $tableName")
+    tableUtils.alterTableProperties(tableName, properties = Map("chronon_archived" -> "true"), unsetProperties = Seq("chronon_archived"))
+    val tblPropsAfter = tableUtils.sql(s"SHOW TBLPROPERTIES $tableName").collect()
+    val mapValAfter = readTblPropertiesMap(tblPropsAfter)
+    assert(mapValAfter.getOrElse("chronon_archived","false") == "false")
+  }
 }

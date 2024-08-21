@@ -376,7 +376,7 @@ abstract class JoinBase(joinConf: api.Join,
       // It is possible that while bootstrap_table's semantic_hash is unchanged, the rest has changed, so
       // we keep everything in sync.
       if (tableUtils.tableExists(bootstrapTable)) {
-        tableUtils.alterTableProperties(bootstrapTable, tableProps)
+        tableUtils.alterTableProperties(bootstrapTable, tableProps, unsetProperties = Seq(Constants.chrononArchiveFlag))
       }
     } else {
       logger.info(s"Detected semantic change in left side of join, archiving bootstrap table for recomputation.")

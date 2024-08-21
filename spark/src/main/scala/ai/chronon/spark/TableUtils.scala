@@ -47,7 +47,7 @@ case class TableUtils(sparkSession: SparkSession) {
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
   @transient private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
-    .withZone(ZoneId.systemDefault())
+    .withZone(ZoneId.of("UTC"))
   val partitionColumn: String =
     sparkSession.conf.get("spark.chronon.partition.column", "ds")
   private val partitionFormat: String =
@@ -317,7 +317,7 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
     if (tableProperties != null && tableProperties.nonEmpty) {
-      alterTableProperties(tableName, tableProperties)
+      alterTableProperties(tableName, tableProperties, unsetProperties = Seq(Constants.chrononArchiveFlag))
     }
 
     if (autoExpand) {
@@ -381,7 +381,7 @@ case class TableUtils(sparkSession: SparkSession) {
       sql(createTableSql(tableName, df.schema, Seq.empty[String], tableProperties, fileFormat))
     } else {
       if (tableProperties != null && tableProperties.nonEmpty) {
-        alterTableProperties(tableName, tableProperties)
+        alterTableProperties(tableName, tableProperties, unsetProperties = Seq(Constants.chrononArchiveFlag))
       }
     }
 
@@ -551,7 +551,9 @@ case class TableUtils(sparkSession: SparkSession) {
     Seq(createFragment, partitionFragment, fileFormatString, propertiesFragment).mkString("\n")
   }
 
-  def alterTableProperties(tableName: String, properties: Map[String, String]): Unit = {
+  def alterTableProperties(tableName: String,
+                           properties: Map[String, String],
+                           unsetProperties: Seq[String] = Seq()): Unit = {
     // Only SQL api exists for setting TBLPROPERTIES
     val propertiesString = properties
       .map {
@@ -561,6 +563,14 @@ case class TableUtils(sparkSession: SparkSession) {
       .mkString(", ")
     val query = s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
     sql(query)
+
+    // remove any properties that were set previously during archiving
+    if (unsetProperties.nonEmpty) {
+      val unsetPropertiesString = unsetProperties.map(s => s"'$s'").mkString(", ")
+      val unsetQuery = s"ALTER TABLE $tableName UNSET TBLPROPERTIES IF EXISTS ($unsetPropertiesString)"
+      sql(unsetQuery)
+    }
+
   }
 
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
@@ -671,6 +681,8 @@ case class TableUtils(sparkSession: SparkSession) {
       val command = s"ALTER TABLE $tableName RENAME TO $finalArchiveTableName"
       logger.info(s"Archiving table with command: $command")
       sql(command)
+      logger.info(s"Setting table property chronon_archived -> true")
+      alterTableProperties(finalArchiveTableName, Map(Constants.chrononArchiveFlag -> "true"))
     }
   }
 

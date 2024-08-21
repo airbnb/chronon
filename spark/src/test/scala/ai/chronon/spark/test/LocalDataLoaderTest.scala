@@ -43,9 +43,24 @@ object LocalDataLoaderTest {
 
 class LocalDataLoaderTest {
 
+  val srcPath = "src/test/resources/local_data_csv/"
+
+  def matchPath(srcPath: String, fileName: Option[String] = None): File = (new File (srcPath).exists (), fileName.isDefined) match {
+      // if src/ path exists and a filename is provided
+      case (true, true) => new File (srcPath + fileName.get)
+      // if src/ path exists and no filename is provided
+      case (true, false) => new File (srcPath)
+      // if src/ path does not exist and a filename is provided try spark/src/
+      case (false, true) => new File ("spark/" + srcPath + fileName.get)
+      // if src/ path does not exist and no filename is provided try spark/src/
+      case (false, false) => new File ("spark/" + srcPath)
+    }
+
   @Test
   def loadDataFileAsTableShouldBeCorrect(): Unit = {
-    val file = new File("spark/src/test/resources/local_data_csv/test_table_1_data.csv")
+
+    val fileName = "test_table_1_data.csv"
+    val file = matchPath(srcPath, Some(fileName))
     val nameSpaceAndTable = "test.table"
     LocalDataLoader.loadDataFileAsTable(file, spark, nameSpaceAndTable)
 
@@ -58,7 +73,7 @@ class LocalDataLoaderTest {
 
   @Test
   def loadDataRecursivelyShouldBeCorrect(): Unit = {
-    val path = new File("spark/src/test/resources/local_data_csv")
+    val path = matchPath(srcPath)
     LocalDataLoader.loadDataRecursively(path, spark)
 
     val loadedDataDf = spark.sql(s"SELECT * FROM local_data_csv.test_table_1_data")
