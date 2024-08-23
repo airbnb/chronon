@@ -30,12 +30,7 @@ import ai.chronon.online.OnlineDerivationUtil.{
   timeFields
 }
 
-case class JoinCodec(conf: JoinOps,
-                     keySchema: StructType,
-                     baseValueSchema: StructType,
-                     keyCodec: AvroCodec,
-                     baseValueCodec: AvroCodec)
-    extends Serializable {
+case class JoinCodec(conf: JoinOps, keySchema: StructType, baseValueSchema: StructType) extends Serializable {
 
   @transient lazy val valueSchema: StructType = {
     val fields = if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
@@ -65,7 +60,8 @@ case class JoinCodec(conf: JoinOps,
   @transient lazy val renameOnlyDeriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
     buildRenameOnlyDerivationFunction(conf.derivationsScala)
 
-  @transient lazy val valueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
+  def valueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
+  def keyCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
 
   /*
    * Get the serialized string repr. of the logging schema.
