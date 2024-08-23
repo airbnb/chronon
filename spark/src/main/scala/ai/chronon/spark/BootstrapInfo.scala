@@ -218,9 +218,12 @@ object BootstrapInfo {
     // one of defined fields in join parts or external parts
     for (
       (fields, table, query) <- tableHashes.values;
-      field <- fields
+      field <- fields;
+      skipValidation = tableUtils.sparkSession.sparkContext.getConf.getBoolean("spark.chronon.enable_bootstrap_skip_validation", defaultValue = false)
     ) yield {
-
+      if (skipValidation) {
+        println(s"Skipping validation for field $field in table $table")
+      } else {
       collectException(
         assert(
           bootstrapInfo.fieldsMap.contains(field.name),
@@ -239,6 +242,7 @@ object BootstrapInfo {
            |${query}
            |""".stripMargin
         ))
+        }
     }
     def stringify(schema: Array[StructField]): String = {
       if (schema.isEmpty) {
