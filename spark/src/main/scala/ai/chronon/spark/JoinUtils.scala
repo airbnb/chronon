@@ -295,9 +295,9 @@ object JoinUtils {
       joinConf: ai.chronon.api.Join,
       leftRowCount: Long,
       unfilledRange: PartitionRange,
-      joinLevelBloomMapOpt: Option[util.Map[String, BloomFilter]]): Option[util.Map[String, BloomFilter]] = {
+      bloomMapOpt: Option[util.Map[String, BloomFilter]]): Option[util.Map[String, BloomFilter]] = {
 
-    val rightBlooms = joinLevelBloomMapOpt.map { joinBlooms =>
+    val rightBlooms = bloomMapOpt.map { joinBlooms =>
       joinPart.rightToLeft.iterator.map {
         case (rightCol, leftCol) =>
           rightCol -> joinBlooms.get(leftCol)

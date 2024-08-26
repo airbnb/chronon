@@ -237,11 +237,7 @@ class Join(joinConf: api.Join,
     df.save(outputTable, tableProps, autoExpand = true)
   }
 
-  override def computeRange(leftDf: DataFrame,
-                            leftRange: PartitionRange,
-                            bootstrapInfo: BootstrapInfo,
-                            runSmallMode: Boolean = false,
-                            usingBootstrappedLeft: Boolean = false): Option[DataFrame] = {
+  override def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo, usingBootstrappedLeft: Boolean = false): Option[DataFrame] = {
 
     val leftTaggedDf = leftDf.addTimebasedColIfExists()
 
@@ -258,22 +254,6 @@ class Join(joinConf: api.Join,
     // for each join part, find the bootstrap sets that can fully "cover" the required fields. Later we will use this
     // info to filter records that need backfills vs can be waived from backfills
     val bootstrapCoveringSets = findBootstrapSetCoverings(bootstrapDf, bootstrapInfo, leftRange)
-
-    // compute a single bloom filter at join level if there is no bootstrap operation
-    lazy val joinLevelBloomMapOpt = if (bootstrapDf.columns.contains(Constants.MatchedHashes)) {
-      // do not compute if any bootstrap is involved
-      None
-    } else {
-      val leftRowCount = bootStrapWithStats.count
-      if (leftRowCount > tableUtils.bloomFilterThreshold) {
-        None
-      } else {
-        val leftBlooms = joinConf.leftKeyCols.iterator.map { key =>
-          key -> bootstrapDf.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange)
-        }.toJMap
-        Some(leftBlooms)
-      }
-    }
 
     val leftTimeRangeOpt = if (leftTaggedDf.schema.fieldNames.contains(Constants.TimePartitionColumn)) {
       val leftTimePartitionMinMax = leftTaggedDf.range[String](Constants.TimePartitionColumn)
@@ -317,13 +297,39 @@ class Join(joinConf: api.Join,
                     s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
                 }
 
+                val runSmallMode = {
+                  if (tableUtils.smallModelEnabled) {
+                    val thresholdCount: Int = unfilledLeftDf.map(_.count.toInt).getOrElse(0)
+                    val result = thresholdCount <= tableUtils.smallModeNumRowsCutoff
+                    if (result) {
+                      logger.info(s"Counted $thresholdCount rows, running join in small mode.")
+                    } else {
+                      logger.info(
+                        s"Counted greater than ${tableUtils.smallModeNumRowsCutoff} rows, proceeding with normal computation.")
+                    }
+                    result
+                  } else {
+                    false
+                  }
+                }
+
+                // create filter for leftDf
                 val bloomFilterOpt = if (runSmallMode) {
                   // If left DF is small, hardcode the key filter into the joinPart's GroupBy's where clause.
-                  injectKeyFilter(leftDf, joinPart)
+                  injectKeyFilter(unfilledLeftDf.map(_.df).get, joinPart)
                   None
                 } else {
-                  joinLevelBloomMapOpt
+                  val leftRowCount = bootStrapWithStats.count
+                  if (leftRowCount > tableUtils.bloomFilterThreshold) {
+                    None
+                  } else {
+                    val leftBlooms = joinConf.leftKeyCols.iterator.map { key =>
+                      key -> unfilledLeftDf.map(_.df.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange)).getOrElse(null)
+                    }.toJMap
+                    Some(leftBlooms)
+                  }
                 }
+
                 val df =
                   computeRightTable(unfilledLeftDf, joinPart, leftRange, leftTimeRangeOpt, bloomFilterOpt, runSmallMode)
                     .map(df => joinPart -> df)
