@@ -20,7 +20,6 @@ load("config/kubernetes/sidecars/worker.sky", "add_worker_sidecar")
 load("config/kubernetes/helpers/context.sky", "get_env", "get_availability_tier", "has_availability_tier")
 load("config/kubernetes/helpers/images.sky", "image_defaults")
 load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
-load("config/kubernetes/ruby/use_ruby_next.sky", "use_next_ruby_env_var")
 
 
 default_pay_server_image = image_defaults(
@@ -33,7 +32,7 @@ default_pay_server_image = image_defaults(
     artifact = "pay-server-image",
 )
 
-def _default_gem_override_policy(ctx, **kwargs):
+def default_gem_override_policy(ctx, **kwargs):
     """
     The default policy for whether services should opt in to the current gem upgrade experiment
     """
@@ -54,7 +53,7 @@ def _gem_override_plugin(ctx, value):
     else:
         fail("_gem_override_plugin invalid return value, must be integer representing percentage enabled or boolean. (Got %s)" % value)
 
-def pay_server_pod(ctx, gem_override_policy=_default_gem_override_policy, **kwargs):
+def pay_server_pod(ctx, gem_override_policy=default_gem_override_policy, **kwargs):
     """
     Create a standard pay-server job or service with a main container.
 
@@ -97,8 +96,8 @@ def pay_server_pod(ctx, gem_override_policy=_default_gem_override_policy, **kwar
         "LANG": "C.UTF-8",
         "LC_ALL": "C.UTF-8",
         "STRIPE_BUNDLE_USE_SORBET_RUBY": "true",
+        "STRIPE_BUNDLE_USE_NEXT_RUBY_PCT_ENABLED": "100",
     }
-    default_env_vars.update(rbenv_version_env_var(ctx))
 
     standard_plugins = compose_plugins(
         stripe_pod(
@@ -685,15 +684,6 @@ def _puma_cluster_service(ctx, port, healthcheck, container_name, failure_thresh
         container_name = container_name,
     )
 
-# Whether we should be using Ruby 3.3 for this deploy instead of the current 3.1
-# The value of henson.use_ruby_3_3 comes from the gocode.henson.should_use_ruby_3_3
-# feature flag.
-def rbenv_version_env_var(ctx):
-    if ctx.vars.get("henson.use_ruby_3_3", False):
-        return {"STRIPE_BUNDLE_MSP_OVERRIDE_RBENV_VERSION": "sorbet_ruby_3_3"}
-
-    return {}
-
 # Shared env-vars between bapi and baplings to control GC settings
 # based on bapi experimentation
 def bapi_gc_config():
@@ -715,7 +705,7 @@ def bapi_gc_config():
         # which can cause major GCs to take longer.
         # See https://docs.google.com/document/d/1_OlGuqeqekNyXuvh0fJxkqg_GBVmGrjHT6p8CW9kBI4/edit for full details.
         "RUBY_GC_HEAP_0_INIT_SLOTS": "19000000",
-        "RUBY_GC_HEAP_1_INIT_SLOTS": "4000000",
+        "RUBY_GC_HEAP_1_INIT_SLOTS": "5000000",
         "RUBY_GC_HEAP_2_INIT_SLOTS": "4000000",
         "RUBY_GC_HEAP_3_INIT_SLOTS": "1000000",
         "RUBY_GC_HEAP_4_INIT_SLOTS": "100000",
@@ -774,8 +764,9 @@ def pay_server_per_priority_tier_env_vars(ctx, priority_tier):
     #   else:
     #       if get_env(ctx) == "prod" and priority_tier in ["testmode", "batch"]:
     #           env_vars["feature"] = "50"
+    if priority_tier == None:
+        priority_tier = "livemode"
     env_vars = {}
-    env_vars.update(use_next_ruby_env_var(ctx, priority_tier))
     return compose_plugins(container_env_vars(env_vars))
 
 _einhorn_socket_dir = "/pay/einhorn_sockets"

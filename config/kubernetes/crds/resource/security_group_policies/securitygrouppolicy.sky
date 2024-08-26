@@ -54,7 +54,9 @@ def _render_sgp(ctx, sgp_mapping):
     total_sg_count = 0
     if hasattr(sgp_mapping, "secgroups"):
         secgroups = list(sgp_mapping.secgroups)
-        secgroups.extend(_default_prod_security_groups)
+        for _default_prod_security_group in _default_prod_security_groups:
+            if _default_prod_security_group not in secgroups:
+                secgroups.append(_default_prod_security_group)
 
         env_secgroups = []
         if get_env(ctx) == "qa":
@@ -79,17 +81,20 @@ def _render_sgp(ctx, sgp_mapping):
         fail("You can only set a maximum of 8 Security group per ENI (per pod)")
 
     match_labels = dict(_match_labels_scheme)
+    match_labels["matchLabels"] = {
+        "stripe.io/henson-service": sgp_obj["metadata"]["labels"]["stripe.io/henson-service"],
+        "stripe.io/henson-git-commit": sgp_obj["metadata"]["labels"]["stripe.io/henson-git-commit"],
+    }
+
     if sgp_obj["metadata"]["labels"].get("stripe.io/app", ""):
-        match_labels["matchLabels"] = {
-            "stripe.io/henson-service": sgp_obj["metadata"]["labels"]["stripe.io/henson-service"],
-            "stripe.io/henson-git-commit": sgp_obj["metadata"]["labels"]["stripe.io/henson-git-commit"],
+        match_labels["matchLabels"].update({
             "stripe.io/app": sgp_obj["metadata"]["labels"]["stripe.io/app"],
-            }
-    else:
-        match_labels["matchLabels"] = {
-            "stripe.io/henson-service": sgp_obj["metadata"]["labels"]["stripe.io/henson-service"],
-            "stripe.io/henson-git-commit": sgp_obj["metadata"]["labels"]["stripe.io/henson-git-commit"]
-            }
+        })
+
+    if sgp_obj["metadata"]["labels"].get("stripe.io/service-name", ""):
+        match_labels["matchLabels"].update({
+            "stripe.io/service-name": sgp_obj["metadata"]["labels"]["stripe.io/service-name"],
+        })
 
     spec["podSelector"] = match_labels
     sgp_obj["spec"] = spec

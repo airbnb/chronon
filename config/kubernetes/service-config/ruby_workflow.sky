@@ -21,8 +21,7 @@ load("config/kubernetes/meta/metadata.sky", "labels")
 load("config/kubernetes/public/workflow_engine/workflow_worker.sky", "ruby_workflow_worker_shared_msp")
 load("config/kubernetes/service-config/compute.sky", "get_merged_compute_v2_config", "get_num_replicas", "get_dynamic_replicas")
 load("config/kubernetes/service-config/ruby_common.sky", "get_networking_config")
-load("config/kubernetes/sidecars/confidant.sky", "raw_secret", "yaml_secret")
-load("config/kubernetes/sidecars/pandora.sky", pandora_raw_secret="raw_secret", pandora_yaml_secret="yaml_secret")
+load("config/kubernetes/sidecars/pandora.sky", "raw_secret", "yaml_secret")
 load("config/kubernetes/sidecars/sidecars.sky", "sidecars")
 
 compute_pb = proto.package("com.stripe.gocode.service_config")
@@ -176,15 +175,13 @@ def _build_args(ctx, compute_config, is_canary=False):
                 ys_args = {"prefix": secret["yaml_secret"]["prefix"], "allow_missing": secret["yaml_secret"]["allow_missing"] or False}
                 if "type" in secret["yaml_secret"]:
                     ys_args["key_type"] = secret["yaml_secret"]["type"]
-                if "secrets_source" in platform_options and platform_options["secrets_source"] == "PANDORA":
-                    readable_secrets.append(pandora_yaml_secret(**ys_args))
-                else:
-                    readable_secrets.append(yaml_secret(**ys_args))
+                if "secrets_source" in platform_options and platform_options["secrets_source"] != "PANDORA":
+                    fail("unsupported secrets_source %s" % (platform_options["secrets_source"]))
+                readable_secrets.append(yaml_secret(**ys_args))
             if "raw_secret" in secret:
-                if "secrets_source" in platform_options and platform_options["secrets_source"] == "PANDORA":
-                    readable_secrets.append(pandora_raw_secret(key=secret["raw_secret"]["key"], filename=secret["raw_secret"]["filename"]))
-                else:
-                    readable_secrets.append(raw_secret(key=secret["raw_secret"]["key"], filename=secret["raw_secret"]["filename"]))
+                if "secrets_source" in platform_options and platform_options["secrets_source"] != "PANDORA":
+                    fail("unsupported secrets_source %s" % (platform_options["secrets_source"]))
+                readable_secrets.append(raw_secret(key=secret["raw_secret"]["key"], filename=secret["raw_secret"]["filename"]))
         if readable_secrets:
             plugins += readable_secrets
 

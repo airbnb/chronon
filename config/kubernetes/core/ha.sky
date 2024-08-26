@@ -140,7 +140,6 @@ def render_topology_spreading(ctx, pod):
     if is_isolated_deploy(ctx):
         warn(ctx, "skipping applying topology spreading plugin due to isolated deployments")
         return None
-
     plugins = getattr(pod, "topology_spreading", None)
     if plugins == None:
         return None

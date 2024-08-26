@@ -6,6 +6,9 @@ load("config/kubernetes/helpers/version.sky", "SKYCFG_VERSION", "SKYCFG_DIGEST")
 SERVICE_OWNER_LABEL = "stripe.io/service-owner"
 DEPRECATED_OWNER_LABEL = "stripe.io/owner"
 
+PRIORITY_TIER_LABEL = "services.stripe.io/priority-tier"
+
+HENSON_ONEBOX_ORIGINAL_MAX_REPLICAS_LABEL = "henson.stripe.io/onebox-original-max-replicas"
 HENSON_SERVICE_VARIANT_LABEL = "henson.stripe.io/isolated-deploy-service-variant"
 DEVENV_ISOLATED_DEPLOY_RESOURCE_WORKSPACE_LABEL = "devenv.stripe.io/isolated-dev-resource-workspace-id"
 
@@ -73,4 +76,9 @@ def default_annotations(ctx, name, owner):
         SERVICE_OWNER_LABEL: owner,
         "stripe.io/service-repo": get_henson_repo(ctx),
         "stripe.io/service-version": get_henson_git_commit(ctx),
+    }
+
+def priority_tier_label(ctx, tier):
+    return {
+        PRIORITY_TIER_LABEL: tier,
     }

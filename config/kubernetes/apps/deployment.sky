@@ -10,16 +10,17 @@ load("config/kubernetes/core/pod.sky", "all_containers", "main_container")
 load("config/kubernetes/helpers/bluegreen.sky", "with_blue_green_traffic_shifting", "add_blue_green_strategy")
 load("config/kubernetes/helpers/warning.sky", "warn")
 load("config/kubernetes/core/lifecycle.sky", "prestop_all_containers", "prestop_all_infra_sidecars", "DEFAULT_GRACE_PERIOD_SECONDS", "grace_period", "generate_prestop_sleep_action", "DEFAULT_ENVOY_HEALTHCHECK_PROPAGATION_TIME")
+load("config/kubernetes/helpers/onebox.sky", "add_onebox_original_max_replicas_label")
 load("config/kubernetes/helpers/rolling.sky", "add_rolling_speed_override")
 load("config/kubernetes/helpers/service_consul_services.sky", "add_service_consul_services")
-load("config/kubernetes/meta/metadata.sky", "render_metadata", "render_selector", "get_availability_tier_from_metadata")
+load("config/kubernetes/meta/metadata.sky", "render_metadata", "render_selector", "get_availability_tier_from_metadata", "labels")
 load("config/kubernetes/networking/public/networking.sky", "networking")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "deployment_plugin")
 load("config/kubernetes/sidecars/metrics.sky", "metrics")
 load("config/kubernetes/sidecars/sansshell.sky", "sansshell_sidecar")
 load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
-load("config/kubernetes/helpers/context.sky", "get_blue_green_color", "get_env", "is_bin_packing_enabled", "is_horizontal_pod_autoscaling_enabled", "is_isolated_deploy", "is_vertical_pod_autoscaling_enabled", "get_name", "get_repo", "is_isolated_account_identity_enabled")
+load("config/kubernetes/helpers/context.sky", "get_blue_green_color", "get_env", "is_bin_packing_enabled", "is_horizontal_pod_autoscaling_enabled", "is_isolated_deploy", "is_onebox", "is_vertical_pod_autoscaling_enabled", "get_name", "get_repo", "is_isolated_account_identity_enabled")
 load("config/kubernetes/core/volume.sky", "volume_mount_all_containers")
 load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes", "LDAP_MOUNT_NAME")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Deployment", "DeploymentSpec")
@@ -33,6 +34,7 @@ load("config/kubernetes/core/container.sky", "container", "container_resources")
 load("config/kubernetes/helpers/quantities.sky", "millicores", "mebibytes")
 load("config/kubernetes/helpers/multi_arch_deployment_transition.sky", "calculate_multi_arch_replica_split", "multi_arch_dynamic_replicas_desired_size","multi_arch_override_node_selector","add_arch_suffix","graviton_deployment_0_replicas")
 load("config/kubernetes/helpers/aws_instance_sizes.sky","get_graviton_eq_instance_type","aws_instance_size")
+load("config/kubernetes/helpers/tags.sky", "priority_tier_label")
 load("config/kubernetes/core/env_var.sky", "container_env_vars", "all_containers_env_vars")
 load("config/kubernetes/helpers/binpacking.sky", "bin_packing")
 load("config/kubernetes/priority-tiers/host_isolation_allowlist.sky", "HOST_ISOLATION_ALLOWLIST")
@@ -79,8 +81,12 @@ def deployment(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, disable
         "plugin_overrides":[],
     }
 
-    # If we're performing an isolated deployment, hard-code the replica count to 1
+    # If we're performing an isolated deployment or onebox deployment, hard-code the replica count to 1
+    onebox_original_replicas = None
     if is_isolated_deploy(ctx):
+        kwargs["replicas"] = 1
+    elif is_onebox(ctx):
+        onebox_original_replicas = kwargs.get("replicas")
         kwargs["replicas"] = 1
 
     # Let's recompute the desired count for the non-graviton deployment
@@ -102,7 +108,8 @@ def deployment(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, disable
         mount_ldap_volumes=mount_ldap_volumes,
         disable_default_metrics_sidecar=disable_default_metrics_sidecar,
         set_require_node_balance_with_skew=set_require_node_balance_with_skew,
-        set_require_zone_balance_with_skew=set_require_zone_balance_with_skew
+        set_require_zone_balance_with_skew=set_require_zone_balance_with_skew,
+        onebox_original_replicas=onebox_original_replicas
         )
 
     if graviton_migration_enabled:
@@ -124,12 +131,14 @@ def deployment(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, disable
             set_require_node_balance_with_skew=set_require_node_balance_with_skew,
             set_require_zone_balance_with_skew=set_require_zone_balance_with_skew,
             kwargs = kwargs,
+            onebox_original_replicas=onebox_original_replicas
             )
 
         return [amd_64_deployment, graviton_deployment ]
     return amd_64_deployment
 
-def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False, set_require_zone_balance_with_skew=-1, set_require_node_balance_with_skew=-1):
+def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False, set_require_zone_balance_with_skew=-1, set_require_node_balance_with_skew=-1,
+    onebox_original_replicas=None):
     """
     This function encapsulates the creation of a deployment resource such that we can create multiple deployments from the a single request for a deployment.
     """
@@ -155,6 +164,7 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
     all_plugins.append(with_blue_green_traffic_shifting())
     all_plugins.append(add_rolling_speed_override())
     all_plugins.append(add_service_consul_services())
+    all_plugins.append(add_onebox_original_max_replicas_label(onebox_original_replicas))
 
     plugin = compose_plugins(*all_plugins)
     _apply_plugin(ctx, plugin, deployment)
@@ -204,7 +214,14 @@ def _deployment_impl(ctx, deployment, plugins, kwargs, shared_msp=False, mount_l
 
             # These will either both be set OR both be unset.
             if priority_tier and priority_tier_header:
-                _apply_plugin(ctx, compose_plugins(container_env_vars({"SERVER_PRIORITY_TIER": priority_tier, "PRIORITY_TIER_HEADER": priority_tier_header.lower()})), deployment)
+                _apply_plugin(ctx, compose_plugins(
+                    container_env_vars({"SERVER_PRIORITY_TIER": priority_tier, "PRIORITY_TIER_HEADER": priority_tier_header.lower()}),
+
+                    # If the service has priority tiers defined, add those as a label
+                    # on each deployment. This is used by Henson to filter resources
+                    # to apply, when using onebox.
+                    labels(priority_tier_label(ctx, priority_tier)),
+                ), deployment)
 
         # If no grace period is set, use the default
         _apply_plugin(ctx, compose_plugins(grace_period(DEFAULT_GRACE_PERIOD_SECONDS, overwrite = False)), deployment)
@@ -528,7 +545,8 @@ def _validate_strategy_max_unavailable_warning(ctx, name, replicas, percent, lit
                 "Please reduce the MaxUnavailable percent below the threshold."
             ]))
 
-def _graviton_deployment(ctx, plugins, original_instance_type, kwargs, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False, graviton_replicas=0, graviton_migration_target_6g=False, set_require_zone_balance_with_skew=-1, set_require_node_balance_with_skew=-1):
+def _graviton_deployment(ctx, plugins, original_instance_type, kwargs, shared_msp=False, mount_ldap_volumes=True, disable_default_metrics_sidecar=False, graviton_replicas=0, graviton_migration_target_6g=False, set_require_zone_balance_with_skew=-1, set_require_node_balance_with_skew=-1,
+    onebox_original_replicas=None):
         graviton_deployment_def = {
             "render": _render_deployment,
             "type": "deployment",
@@ -568,4 +586,5 @@ def _graviton_deployment(ctx, plugins, original_instance_type, kwargs, shared_ms
             disable_default_metrics_sidecar=disable_default_metrics_sidecar,
             set_require_node_balance_with_skew=set_require_node_balance_with_skew,
             set_require_zone_balance_with_skew=set_require_zone_balance_with_skew,
+            onebox_original_replicas=onebox_original_replicas
             )

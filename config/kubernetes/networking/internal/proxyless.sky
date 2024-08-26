@@ -150,7 +150,7 @@ def _convert_to_grpc_proxyless_registration_inplace(consul_service, proxyless_re
     proxyless_registration = dict(consul_service)
     port = _proxyless_port(proxyless_reg_config)
     checks = _proxyless_checks(consul_service, port)
-    
+
     # copy the entire dictionary instead of mutating inplace
     # to avoid errors when inserting into a frozen hashtable.
     meta = dict(proxyless_registration["meta"])

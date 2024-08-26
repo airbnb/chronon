@@ -1,0 +1,72 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/helpers/context.sky", "get_cluster")
+
+def get_deployset_config_value(config, ctx, priority, deployset, key, fallback=True, required=True):
+    """Get config value from priority tier spec, allowing either top level keys of <key>_by_deployset or <key>_by_deployset_cluster.
+
+    # Allow overriding a config with a per-deployset version. A per-deployset
+    # config is keyed with `_by_deployset` suffix and must have a "default" entry
+    # in the value. If there exists an entry for the specific deployset requested,
+    # return that entry. Otherwise return the "default" entry.
+
+    Args:
+        config: Environment config
+        ctx: Context
+        priority: API Priority of k8s deployment.
+        key: Key
+        fallback: If true will fallback to "default" deployset
+        required: If true value must exist, otherwise raises error.
+
+    Returns: Value found in config
+    """
+    cluster = get_cluster(ctx)
+    priority_resources = config.get(priority, {})
+
+    by_deployset_key = key + "_by_deployset"
+    by_deployset_cluster_key = by_deployset_key + "_cluster"
+
+    # Search for deployset cluster config values
+    if by_deployset_cluster_key in priority_resources:
+        resources = priority_resources[by_deployset_cluster_key]
+        if resources.get(deployset, {}).get(cluster) != None:
+            # _deployset_by_cluster keys *must* contain all clusters
+            return resources[deployset][cluster]
+
+        if fallback and resources.get("default") != None:
+            # _deployset_by_cluster keys *must* contain all clusters
+            if resources["default"].get(cluster) != None:
+                return resources["default"][cluster]
+
+            return resources["default"]["default"]
+
+    # Search for priority level deployset config values
+    if by_deployset_key in priority_resources:
+        resources = priority_resources[by_deployset_key]
+
+        if resources.get(deployset) != None:
+            return resources[deployset]
+        if fallback and resources.get("default") != None:
+            return resources["default"]
+
+    if by_deployset_cluster_key in config.get("defaults", {}):
+        resources = config["defaults"][by_deployset_cluster_key]
+        if resources.get(deployset, {}).get(cluster) != None:
+            # _deployset_by_cluster keys *must* contain all clusters
+            return resources[deployset][cluster]
+
+        if fallback and resources.get("default") != None:
+            # _deployset_by_cluster keys *must* contain all clusters
+            return resources["default"][cluster]
+
+    # Look for defaults that apply to all priority tiers.
+    resources = config.get("defaults", {}).get(by_deployset_key, {})
+    if resources.get(deployset) != None:
+        return resources[deployset]
+
+    if fallback and resources.get("default") != None:
+        return resources["default"]
+
+    # Potentially throw exception if we want to require finding a value.
+    if required:
+        fail("key %s not found in config for priority %s and deployset %s" % (key, priority, deployset))
+    return None

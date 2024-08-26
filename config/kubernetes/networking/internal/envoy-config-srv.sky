@@ -75,6 +75,7 @@ ENVOY_CONFIG_SRV_DEBUG_SIDECAR_SERVICE_NAME = "envoy-config-srv-debug-sidecar"
 def envoy_config_srv_sidecar(ctx, namespace, config_target, user_overrides, consul_agent_services, host_network, consul_deprecated, k8s_workload_name):
     consul_agent_services = augment_with_proxyless_registrations(ctx, consul_agent_services, k8s_workload_name)
     local_consul_services = _consul_agent_services_to_sidecar_consul_config(consul_agent_services)
+    validate_registrations(local_consul_services)
     apply_user_config_ratchets(config_target, user_overrides)
     name = "envoy-config-srv"
     plugins = []
@@ -244,6 +245,9 @@ def envoy_config_srv_container(ctx, self, namespace, local_consul_services, conf
 
     if args["enable_inbound_websockets"]:
         command.append("--enable-websockets")
+
+    if args["enable_outbound_websockets"]:
+        command.append("--enable-outbound-websocket")
 
     if args["enable_grpc_web"]:
         command.append("--enable-grpc-web")
@@ -517,3 +521,16 @@ def _consul_agent_services_to_sidecar_consul_config(consul_agent_services):
         copy.pop("checks")
         sidecar_consul_config.append(copy)
     return sidecar_consul_config
+
+def validate_registrations(service_registrations):
+    for service_registration in service_registrations:
+        if (
+            "meta" in service_registration
+            and "proxyless" in service_registration["meta"]
+            and service_registration["meta"]["proxyless"] == "true"
+            and (
+                "tags" not in service_registration
+                or "grpc" not in service_registration["tags"]
+            )
+        ):
+            fail("Invalid service registration: Services with `proxyless:true` metadata must have 'grpc' tag")

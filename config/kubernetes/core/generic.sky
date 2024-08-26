@@ -1,6 +1,6 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/helpers/context.sky", "get_env", "is_bin_packing_enabled")
-
+load("config/kubernetes/helpers/context.sky", "get_env", "get_cluster", "is_bin_packing_enabled", "get_target_shard")
+load("config/kubernetes/helpers/shards_list.sky", "ENV_CLUSTER_SHARDS")
 
 """
 Functions that apply to generic k8s resources instead of any particular type
@@ -65,6 +65,14 @@ def get_shared_msp_label(ctx, resource):
     return bool(labels.get("stripe.io/shared-msp", "false"))
 
 
+def _get_account_for_shard(ctx, shard):
+    # We have to implement this here to avoid a circular dependency between msp_shard and generic.sky
+    local_shards = ENV_CLUSTER_SHARDS.get(get_env(ctx), {}).get(get_cluster(ctx), [])
+    for s in local_shards:
+        if s.name == shard:
+            return s.account
+    return "mainland"
+
 def is_security_group_policy_enabled(ctx, resource):
     """
     Get whether security group policy is enabled. We will only allow this in shared msp
@@ -75,4 +83,4 @@ def is_security_group_policy_enabled(ctx, resource):
     Returns:
         security group policy enabled or not
     """
-    return (get_shared_msp_label(ctx, resource) and ctx.vars.get("msp.use_sgp", False)) or is_bin_packing_enabled(ctx)
+    return (get_shared_msp_label(ctx, resource) and ctx.vars.get("msp.use_sgp", False)) or is_bin_packing_enabled(ctx) or (_get_account_for_shard(ctx, get_target_shard(ctx)) != "mainland")

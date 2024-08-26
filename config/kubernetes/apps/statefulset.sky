@@ -12,7 +12,7 @@ load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/types.sky", "statefulset_plugin")
 load("config/kubernetes/sidecars/metrics.sky", "metrics")
 load("config/kubernetes/sidecars/host_health_agent.sky", "host_health_agent")
-load("config/kubernetes/helpers/context.sky", "get_env", "is_isolated_deploy")
+load("config/kubernetes/helpers/context.sky", "get_env", "is_isolated_deploy", "is_onebox")
 load("config/kubernetes/core/volume.sky", "volume_mount_all_containers")
 load("config/kubernetes/helpers/ldap.sky", "mount_ldap_host_volumes", "LDAP_MOUNT_NAME")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "StatefulSet", "StatefulSetSpec")
@@ -62,6 +62,9 @@ def statefulset(ctx, *plugins, shared_msp=False, mount_ldap_volumes=True, **kwar
 
     if is_isolated_deploy(ctx):
         fail("statefulset(): Isolated deployment is not compatible with StatefulSet. Please talk to us about your use case in #proj-isolated-deployments")
+
+    if is_onebox(ctx):
+        fail("statefulset(): Onebox is not compatible with StatefulSet. Please talk to us about your use case in #deploy-help")
 
     all_plugins = []
     all_plugins.extend(plugins)

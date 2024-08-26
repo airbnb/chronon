@@ -1182,6 +1182,22 @@ _CRONS = [
         "name": "idps--lexisnexis-phonefinder-retention",
         "namespace": "kubeacronnoegress"
     },
+    # Job that deletes old profiles from mongo, and does not handle any financial data
+    {
+        "name": "production-profiler-delete-old-profiles",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # growth--modules-i18n-push does not handle any financial data
+        "name": "growth--modules-i18n-push",
+        "namespace": "kubeacronnoegress"
+    },
+    {
+        # growth--modules-i18n-pull does not handle any financial data
+        "name": "growth--modules-i18n-pull",
+        "namespace": "kubeacronnoegress"
+    },
+
 ]
 
 #########################################################
@@ -1956,6 +1972,21 @@ _LEGACY_YAML_ENTRIES = [
     {
       "name": "secret-monitor",
       "sox_control": "disabled"
+    },
+    # Job that makes RBA surcharge reports available to users
+    {
+      "name": "api-platform--au-fee-file-for-user-generator",
+      "namespace": "kubeacronnoegress"
+    },
+    # Job that makes custom legacy reports available to users
+    {
+      "name": "api-platform--file-for-user-generator",
+      "namespace": "kubeacronnoegress"
+    },
+    # this cron deletes old profiles from mongo, and does not handle any financial data
+    {
+        "name": "production-profiler-delete-old-profiles",
+        "sox_control": "disabled"
     }
 ]
 

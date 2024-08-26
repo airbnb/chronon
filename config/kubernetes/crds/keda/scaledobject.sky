@@ -1,5 +1,5 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/helpers/context.sky", "get_env", "get_cluster", "is_faas_managed")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_cluster", "is_faas_managed", "is_onebox")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "HorizontalPodAutoscalerBehavior", "HPAScalingPolicy", "HPAScalingRules")
 load("config/kubernetes/meta/metadata.sky", "render_metadata")
 load("config/kubernetes/plugins/types.sky", "deployment_plugin")
@@ -612,8 +612,8 @@ def _update_resource(ctx, args, resource_def):
     }
 
 def _render_scaledobject(ctx, so_mapping, default_replicas, shared_msp):
-    if not shared_msp:
-        # We don't support HPAs in dedicated MSP
+    if not shared_msp or is_onebox(ctx):
+        # We don't support HPAs in dedicated MSP or onebox
         return None
 
     so_mapping = struct(**so_mapping)

@@ -2,6 +2,7 @@ stripe-internal/cerebro-shell
 stripe-internal/corpeng
 stripe-internal/corpnet
 stripe-internal/gocode
+stripe-internal/gocode
 stripe-internal/gtm-ui-automation
 stripe-internal/it-chef
 stripe-internal/jss-shell
@@ -13,7 +14,6 @@ stripe-internal/payable
 stripe-internal/pos-js-v1
 stripe-internal/sources
 stripe-internal/stripe-extension
-stripe-internal/stripe-js-v3
 stripe-internal/third-party-containers
 stripe-internal/zoolander
 stripe-private-oss-forks/SudachiDict
@@ -24,6 +24,7 @@ stripe-private-oss-forks/boto
 stripe-private-oss-forks/chronon
 stripe-private-oss-forks/cruise-control
 stripe-private-oss-forks/datahub
+stripe-private-oss-forks/iceberg-py
 stripe-private-oss-forks/karpenter
 stripe-private-oss-forks/metro
 stripe-private-oss-forks/mnn

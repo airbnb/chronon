@@ -18,76 +18,92 @@ BINPACKING_STATE = struct(
     DISABLED="DISABLED",
 )
 
-def shard(name, *, shared_msp=True, cron=False, account="mainland", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.ENABLED):
-    return struct(name=name, shared_msp=shared_msp, cron=cron, account=account, shard_type=shard_type, shard_state=shard_state, binpacking_state=binpacking_state)
+def shard(name, *, shared_msp=True, cron=False, account="mainland", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers = ["A100", "A200", "A300", "A400"]):
+    return struct(name=name, shared_msp=shared_msp, cron=cron, account=account, shard_type=shard_type, shard_state=shard_state, binpacking_state=binpacking_state, preferred_availability_tiers=preferred_availability_tiers)
 
 ENV_CLUSTER_SHARDS = {
     "qa": {
         "bom": [
             shard("kubemaster", cron=True),
+            shard("mspaa", account="bom.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
+            shard("mspbb", account="bom.qa.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100", "A200"]),
         ],
         "cmh": [
             shard("kubemaster", cron=True),
             shard("kubeapiaa", cron=True,shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
+            shard("mspaa", account="cmh.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
+            shard("mspbb", account="cmh.qa.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100", "A200"]),
         ],
         "east": [
             shard("kubemaster", cron=True),
+            shard("mspaa", account="east.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
         ],
         "northwest": [
-            shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP, binpacking_state=BINPACKING_STATE.DISABLED),
+            shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
             shard("kubeapiaa"),
             shard("kubeapibb"),
             shard("kubeapicc"),
             shard("kubeapidd", cron=True),
-            shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
+            shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY, binpacking_state=BINPACKING_STATE.ENABLED),
             shard("msppink", account="msp-shared-all-pink", shard_type=SHARD_TYPE.TEST, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
             shard("mspyellow", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspaa", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspbb", account="northwest.qa.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspcc", account="northwest.qa.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
+            shard("mspaa", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.ENABLED, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
+            shard("mspbb", account="northwest.qa.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200"]),
+            shard("mspcc", account="northwest.qa.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100"]),
             shard("mspzz", account="northwest.qa.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
+            shard("msptest", account="northwest.qa.5.msp", shard_type=SHARD_TYPE.TEST, shard_state=SHARD_STATE.RELEASE_CANDIDATE, binpacking_state=BINPACKING_STATE.ENABLED,),
         ],
     },
     "preprod": {
         "cmh": [
             shard("kubemaster", cron=True),
-            shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
+            shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
             shard("mspteal", account="cmh.preprod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspaa", account="cmh.preprod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspbb", account="cmh.preprod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
+            shard("mspaa", account="cmh.preprod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.ENABLED, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
+            shard("mspbb", account="cmh.preprod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200", "A100"]),
+            shard("mspcc", account="cmh.preprod.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE, preferred_availability_tiers=["A200", "A100"]),
         ]
     },
     "prod": {
         "bom": [
             shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
             shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
+            shard("mspaa", account="bom.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers=["A400", "A300"]),
+            shard("mspbb", account="bom.prod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers=["A100", "A200"]),
         ],
         "cmh": [
             shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
             shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
             shard("kubeapibb", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
+            shard("mspaa", account="cmh.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers=["A300", "A400"]),
+            shard("mspbb", account="cmh.prod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers=["A200"]),
+            shard("mspcc", account="cmh.prod.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE, preferred_availability_tiers=["A100"]),
+            shard("mspdd", account="cmh.prod.4.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE, preferred_availability_tiers=["A100"]),
         ],
         "east": [
-            shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
+            shard("kubemaster", cron=True),
+            shard("mspaa", account="east.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
         ],
         "northwest": [
-            shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP, binpacking_state=BINPACKING_STATE.DISABLED),
+            shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
             shard("kubeapiaa"),
             shard("kubeapibb"),
             shard("kubeapicc"),
-            shard("kubeapidd", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
-            shard("kubeapiee", binpacking_state=BINPACKING_STATE.DISABLED),
-            shard("kubeapiff", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
-            shard("kubeapigg", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
-            shard("kubeapihh", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
+            shard("kubeapidd", cron=True),
+            shard("kubeapiee"),
+            shard("kubeapiff", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
+            shard("kubeapigg", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
+            shard("kubeapihh", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
             shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
-            shard("mspruby", account="northwest.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspaa", account="northwest.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspbb", account="northwest.prod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspcc", account="northwest.prod.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspdd", account="northwest.prod.4.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspee", account="northwest.prod.5.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspff", account="northwest.prod.6.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
+            shard("mspruby", account="northwest.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.ENABLED, shard_state=SHARD_STATE.GA),
+            shard("mspaa", account="northwest.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.ENABLED, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
+            shard("mspbb", account="northwest.prod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
+            shard("mspcc", account="northwest.prod.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200"]),
+            shard("mspdd", account="northwest.prod.4.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200"]),
+            shard("mspee", account="northwest.prod.5.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200"]),
+            shard("mspff", account="northwest.prod.6.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100"]),
+            shard("mspgg", account="northwest.prod.8.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100"]),
+            shard("msphh", account="northwest.prod.9.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100"]),
             shard("mspzz", account="northwest.prod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
         ],
     },
@@ -97,11 +113,11 @@ ENV_CLUSTER_SHARDS = {
 MOCK_SHARDS_MAP = {
     "qa": {
         "northwest": [
-            shard("shard1", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP, binpacking_state=BINPACKING_STATE.DISABLED),
-            shard("shard2"),
-            shard("shard3", cron=True, shard_type=SHARD_TYPE.CANARY),
-            shard("shard4", account="mainland2", shard_type=SHARD_TYPE.TEST, binpacking_state=BINPACKING_STATE.DISABLED),
-            shard("shard5", account="mainland3", shard_state=SHARD_STATE.PROVISIONING),
+            shard("shard1", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
+            shard("shard2", binpacking_state=BINPACKING_STATE.ENABLED),
+            shard("shard3", cron=True, shard_type=SHARD_TYPE.CANARY, binpacking_state=BINPACKING_STATE.ENABLED),
+            shard("shard4", account="mainland2", shard_type=SHARD_TYPE.TEST),
+            shard("shard5", account="mainland3", shard_state=SHARD_STATE.PROVISIONING, binpacking_state=BINPACKING_STATE.ENABLED),
         ],
     },
 }

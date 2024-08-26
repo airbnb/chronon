@@ -1,0 +1,34 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+load("config/kubernetes/plugins/types.sky", "deployment_plugin")
+load("config/kubernetes/helpers/tags.sky", "HENSON_ONEBOX_ORIGINAL_MAX_REPLICAS_LABEL")
+load("config/kubernetes/helpers/context.sky", "is_onebox")
+
+
+def add_onebox_original_max_replicas_label(onebox_original_replicas):
+    """
+    Adds a label to a onebox deployment. The label’s value is the number of max replicas that would have been used had
+    we not limited the deployment to a single pod. Note, if auto-scaling is not enabled, then the label’s value is just
+    the deployment's target number of replicas that we replaced with 1. We use the label's value for onebox traffic
+    shifting calculations.
+
+    Args:
+        onebox_original_replicas: The original replica count for the deployment.
+    """
+    return deployment_plugin(_add_onebox_original_max_replicas_label, onebox_original_replicas=onebox_original_replicas)
+
+
+def _add_onebox_original_max_replicas_label(ctx, args, deployment_def):
+    if not is_onebox(ctx):
+        return
+    max_replicas = max(
+        args.onebox_original_replicas,
+        # If the deployment has a horizontal pod autoscaler or a scaled object, use the max replicas value from it.
+        deployment_def.get("horizontalpodautoscaler", {}).get("max_replicas") or 0,
+        deployment_def.get("scaledobject", {}).get("max_replicas") or 0
+    )
+    if max_replicas <= 0:
+        fail("max_replicas (%d) must be greater than 0" % (max_replicas))
+
+    deployment_def["metadata"]["labels"].update({
+        HENSON_ONEBOX_ORIGINAL_MAX_REPLICAS_LABEL: str(max_replicas)
+    })

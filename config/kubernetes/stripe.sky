@@ -20,8 +20,7 @@ load("config/kubernetes/helpers/quantities.sky", "millicores", "mebibytes")
 load("config/kubernetes/helpers/security.sky", "run_as_unprivileged")
 load("config/kubernetes/meta/metadata.sky", "annotations", "labels", "metadata")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
-load("config/kubernetes/sidecars/confidant.sky", "secret_options")
-load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "get_name", "get_henson_config", "is_isolated_deploy", "get_service_variant")
+load("config/kubernetes/helpers/context.sky", "is_bin_packing_enabled", "get_env", "get_name", "get_henson_config", "is_isolated_deploy", "is_onebox", "get_service_variant")
 load("config/kubernetes/helpers/costs_attribution.sky", "add_costs_attribution_override_label")
 load("config/kubernetes/sidecars/consul_agent_init.sky", "consul_agent_init")
 load("config/kubernetes/helpers/tolerations.sky", "add_toleration")
@@ -105,6 +104,8 @@ def stripe_pod(
     """
 
     name = isolated_deploy_aware_resource_name(ctx, name)
+    if is_onebox(ctx):
+        name += "-onebox"
 
     # Check if command argument has been supplied only if allow_non_command set to false
     if command_required and (command == None or len(command) == 0):
@@ -272,11 +273,6 @@ def use_shared_msp(ctx, *, namespace, name, instance_type, availability_tier, re
         _with_consul_agent_enablement(ctx, requires_consul = requires_consul),
 
         # Plugins neccesary for credentials proxy.
-        # TODO(alecb): Find a way to move these into secret plugins. I *think*
-        # it might be safe to move the two mounts into `secret_options` when
-        # `use_credentials_proxy` is `True`, but I'm unsure if this'll change
-        # anything for Dedicated MSP users using credentials proxy.
-        secret_options(use_credentials_proxy = True),
         mount_host_volume(
             "/run/stripe/credentials-proxy",
             volume_args = {"type": "Directory"},

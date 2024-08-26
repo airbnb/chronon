@@ -1,18 +1,17 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 """
 Plugins to render secrets from Pandora inside pods.
-This file contains the same secret plugins as confidant.sky.
-It uses the pandora-init-image as the init container instead of confidant-init.
-The code path invokes the Pandora secret-bag for confidant-init.
-This loads secrets exclusively from Pandora.
-This file should only be used by a member of #secrets-infra during the confidant-init migration.
+It uses the pandora-init-image as the init container.
+The code path invokes the Pandora secret-bag for the confidant-init binary.
 """
 
 load("config/kubernetes/core/env_var.sky", "default_env_vars")
+load("config/kubernetes/core/generic.sky", "is_shared_msp")
 load("config/kubernetes/core/volume.sky", "host_volume", "pod_volume", "render_volume_mount", "volume_mount")
 load("config/kubernetes/helpers/images.sky", "image")
 load("config/kubernetes/helpers/quantities.sky", "mebibytes")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
+load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
 load("config/kubernetes/plugins/types.sky", "pod_plugin")
 load("config/kubernetes/helpers/security.sky", use_credentials_proxy_plugin = "use_credentials_proxy", "mount_credentials_proxy")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "Container")
@@ -22,21 +21,6 @@ load("config/kubernetes/core/container.sky", "resource_requirements")
 _ConfidantSecret = struct
 
 pandora_container_name = "pandora-init-image"
-def secret_options(use_credentials_proxy = None):
-    if use_credentials_proxy == True:
-        return compose_plugins(
-            use_credentials_proxy_plugin(),
-            host_volume("/etc/ssl/certs/stripe-cas", type = "Directory"),
-            pod_plugin(
-                _update_pod_options,
-                use_credentials_proxy = use_credentials_proxy,
-            ),
-        )
-    else:
-        return pod_plugin(
-            _update_pod_options,
-            use_credentials_proxy = use_credentials_proxy,
-        )
 
 def yaml_secret(*, prefix, filename = None, key_type = "symbol", key_types = {}, mode = 0o640, container_names = [None], allow_missing = False, secrets_dir='/pay/keys'):
     """
@@ -228,6 +212,10 @@ def _pandora_make_secret(type, template_spec, container_names, secrets_dir='/pay
     keys_mounts = [volume_mount(secrets_dir, container_name = name) for name in container_names]
 
     return compose_plugins(
+        conditional_plugin(
+            is_shared_msp,
+            use_credentials_proxy_plugin,
+        ),
         pod_plugin(
             _pandora_update_pod,
             secret = _ConfidantSecret(type = type, template_spec = template_spec, secrets_dir = secrets_dir),
@@ -240,62 +228,20 @@ def _pandora_update_pod(ctx, plugin, pod_def):
     config["secrets"].append(plugin.secret)
 
 def _update_pod_options(ctx, plugin, pod_def):
-    _setup_pandora(ctx, pod_def, use_credentials_proxy = plugin.use_credentials_proxy)
+    _setup_pandora(ctx, pod_def)
 
-def _setup_pandora(ctx, pod_def, use_credentials_proxy = None, secrets_dir='/pay/keys'):
+def _setup_pandora(ctx, pod_def, secrets_dir='/pay/keys'):
     if "confidant_config" in pod_def:
-        if use_credentials_proxy != None:
-            fail("Choosing whether to enable the credentials proxy for secrets must be done before adding any secrets.")
-
-        ## remove confidant-init image if present
-        ## This is needded since metrics.sky and stripe.sky files invoke this call and
-        ## add the confidant-init image. In case of pandora migration, we need the pandora-init-image.
-        new_init_containers = []
-        contains_pandora_container = False
-        confidant_container_index = -1
-        # Iterate over each init_container
-        for index, container in enumerate(pod_def["init_containers"]):
-            # Check if the name is not equal to "confidant-init"
-            if container.get("name") == "confidant-init":
-                # Store index of confidant-init container
-                confidant_container_index = index
-                continue
-            if container.get("name") == "pandora-init-image":
-                contains_pandora_container = True
-            # Append the container to the new list
-            new_init_containers.append(container)
-
-        # Replace the init_containers list with the new one
-        pod_def["init_containers"] = new_init_containers
-        # Add Pandora-init container at confidant-init container position if not present
-        if not contains_pandora_container and confidant_container_index >= 0:
-            pod_def["init_containers"].insert(confidant_container_index, {
-                "render": _render_pandora_container,
-                "name": pandora_container_name,
-                "config": pod_def["confidant_config"],
-            })
-
-        ## make sure all the volume mounts mentioned in the config are added
-        if secrets_dir != "/pay/keys":
-            volume = pod_volume(
-                path = secrets_dir,
-                reason = "Provides in-memory storage for the pod's secrets.",
-                medium = "Memory",
-                sizeLimit = mebibytes(ctx, 100),
-            )
-            volume.update_pod(ctx, volume, pod_def)
-
         return pod_def["confidant_config"]
 
     config = {
         "secrets": [],
-        "autoload": False,
-        "use_credentials_proxy": use_credentials_proxy == True,
+        "use_credentials_proxy": is_shared_msp(ctx, pod_def),
         "resource": pod_def["resource"],
     }
 
     pod_def["confidant_config"] = config
-    pod_def["init_containers"].append({
+    pod_def["init_containers"].insert(0, {
         "render": _render_pandora_container,
         "name": "pandora-init-image",
         "config": config,
@@ -371,23 +317,13 @@ def _render_pandora_container(ctx, container_def, pod):
 
     command = [
         "/bin/confidant-sidecar",
-        "--confidant-service-name=" + resource["iam_role"],
         "--secret-templates-json=" + json.marshal(secret_templates),
-        "--confidant-config-json=" + json.marshal(_confidant_mtls_config(ctx)),
         "--pandora-path=/pandora-encrypted-secret-bundles",
-        "--secret-bag-type=pandora",
     ]
     if container.config["use_credentials_proxy"]:
         command.extend([
-            "--experimental-use-service-ca",
             "--stripe.service-credentials.retry-interval=5s",
         ])
-
-    if container.config["autoload"]:
-        command.append("--autoload-path={}".format(container.config["autoload_dir"]))
-
-        if container.config["autoload_dir"] != "/pay/keys":
-            volume_mounts.append(volume_mount(container.config["autoload_dir"], read_only = False))
 
     if is_bin_packing_enabled(ctx) == True:
         command.append("--vsocket-connection=true")
@@ -401,15 +337,6 @@ def _render_pandora_container(ctx, container_def, pod):
         volumeMounts = [render_volume_mount(ctx, mount) for mount in volume_mounts],
         resources = resource_requirements(ctx),
     )
-
-def _confidant_mtls_config(ctx):
-    return {
-        # 500 is the port for the confidant-api-frontend, which lets us use only TLS certs for auth
-        "url": "https://confidant.{}.{}.stripe.io:500".format(
-            ctx.vars["stripe.cluster"],
-            ctx.vars["stripe.environment"],
-        ),
-    }
 
 def _pandora_image(ctx):
     return image(ctx, artifact=pandora_container_name)

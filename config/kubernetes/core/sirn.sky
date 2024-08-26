@@ -1,0 +1,24 @@
+# DO NOT EDIT: http://go/vendor-skycfg
+"""
+Plugins for adding rules to control how SIRNs are managed on MSP resources.
+"""
+
+load("config/kubernetes/meta/metadata.sky", "annotations")
+
+
+def add_sirn_annotation(sirn):
+    """
+    Annotates the MSP Resource with a SIRN. See http://go/sirn for more information on using SIRNs.
+
+    The SIRN used here indicates ownership, so that MSP resources can be tied back to the SIRN that manages the MSP resource.
+
+    Args:
+        sirn: A valid SIRN in the format
+
+    Returns:
+        A plugin that adds the SIRN as an annotation to the pod.
+    """
+    return annotations({
+        "stripe.io/sirn": sirn
+    })
+

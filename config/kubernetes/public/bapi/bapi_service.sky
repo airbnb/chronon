@@ -1,8 +1,9 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 load("config/kubernetes/apps/deployment.sky", "deployment_options")
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
-load("config/kubernetes/pay-server.sky", "pay_server_pod", "einhorn_service", "bapi_gc_config", "default_pay_server_image")
+load("config/kubernetes/pay-server.sky", "pay_server_pod", "einhorn_service", "bapi_gc_config", "default_pay_server_image", "default_gem_override_policy")
 load("config/kubernetes/core/env_var.sky", "container_env_vars")
+load("config/kubernetes/meta/metadata.sky", "labels")
 # ruleid: no-auto-secrets-usage
 load("config/kubernetes/sidecars/geoip.sky", "use_geoip_databases")
 load("config/kubernetes/sidecars/config_srv.sky", "config_srv_sidecar")
@@ -125,6 +126,7 @@ def bapi_service(ctx,
   override_name = None,
   name_suffix = None,
   env_vars_override = None,
+  gem_override_policy = default_gem_override_policy
 ):
   if image_artifact:
     image = image_defaults(
@@ -170,7 +172,11 @@ def bapi_service(ctx,
       availability_tier = priority.availability_tier,
       image = image,
       requires_consul = False,
+      gem_override_policy = gem_override_policy,
     ),
+    labels({
+        "api-platform.stripe.io/einhorn-workers-on-startup": str(workers)
+    }),
     container_env_vars(env_vars),
     add_blue_green_metrics_tagging(),
     use_offload_profiles(),

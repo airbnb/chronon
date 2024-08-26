@@ -593,14 +593,16 @@ def is_shard_binpacking_enabled(ctx, shard, _override_shards_map=None):
 
 def is_horizontal_pod_autoscaling_enabled(ctx):
     """
-    Gets whether hpa is set to true or not
+    Gets whether hpa should be enabled
 
         Args:
         ctx: The context containing Henson and the Centralized Service Configurations.
     Returns:
-        Bin packing enabled or not
+        True if horizontal pod autoscaling is enabled, otherwise False.
     """
-    return ctx.vars.get("msp.horizontal_pod_autoscaling", False) or ctx.vars.get("msp.horizonal_pod_autoscaling", False)
+    return bool(
+        (ctx.vars.get("msp.horizontal_pod_autoscaling", False) or ctx.vars.get("msp.horizonal_pod_autoscaling", False)) and not is_onebox(ctx)
+    )
 
 def is_vertical_pod_autoscaling_enabled(ctx):
     """
@@ -612,6 +614,17 @@ def is_vertical_pod_autoscaling_enabled(ctx):
         VPA enabled or not
     """
     return ctx.vars.get("msp.vertical_pod_autoscaling", False)
+
+def is_onebox(ctx):
+    """
+    Returns whether the skycfg evaluation is for a onebox deployment
+
+    Args:
+        ctx: The context containing Henson and Centralized Service Configurations.
+    Returns:
+        True if the skycfg evaluation is for a onebox deployment, otherwise False.
+    """
+    return bool(ctx.vars.get("henson.is_onebox", False))
 
 def get_sc_bundle_manifest(ctx):
     """

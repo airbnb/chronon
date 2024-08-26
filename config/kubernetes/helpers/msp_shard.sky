@@ -223,7 +223,7 @@ def get_account_for_shard(ctx, shard):
     for s in local_shards:
         if s.name == shard:
             return s.account
-    return None
+    return "mainland"
 
 
 def get_account_id(ctx, account_name):

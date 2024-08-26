@@ -91,6 +91,7 @@ def networking_config(
         mproxy_tier = NOT_PROVIDED,
         egress_proxy_tier = NOT_PROVIDED,
         enable_inbound_websockets = NOT_PROVIDED,
+        enable_outbound_websockets = NOT_PROVIDED,
         enable_global_ratelimit = NOT_PROVIDED,
         global_ratelimit = NOT_PROVIDED,
         inbound_ratelimit = NOT_PROVIDED,
@@ -122,6 +123,7 @@ def networking_config(
             for options. (Default: "", example: "p0")
         enable_inbound_websockets: configure Envoy to allow inbound websocket connections to
             this service.
+        enable_outbound_websockets: configure to allow websocket connections to Envoy outbound listener.
         enable_global_ratelimit: (Deprecated, use global_ratelimit instead)
             Boolean value indicating if outbound requests from
             your service should respect the global rate limits for upstream services
@@ -194,6 +196,7 @@ def networking_config(
             mproxy_tier = mproxy_tier,
             egress_proxy_tier = egress_proxy_tier,
             enable_inbound_websockets = enable_inbound_websockets,
+            enable_outbound_websockets = enable_outbound_websockets,
             enable_grpc_web = enable_grpc_web,
             allowed_machine_orgs = allowed_machine_orgs,
             envoy_rlimit_nofile = envoy_rlimit_nofile,

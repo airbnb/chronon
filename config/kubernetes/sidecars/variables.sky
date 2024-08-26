@@ -18,21 +18,6 @@ GEOIP_CONTAINER_ENV = DEFUALT_CONTAINER_ENV
 CONFIG_SRV_CONTAINER_DIGEST = "sha256:815c0ea9a4ca62201916f6cfc7ffa43eb993176703efe7e22dbbe3b544d2d653"
 CONFIG_SRV_CONTAINER_ENV = DEFUALT_CONTAINER_ENV
 
-# HEADS UP! Updating these values is no longer the right way to roll out a new version of the confidant sidecar.
-#
-# The confidant sidecar is now using our new support for sidecar deploys! You can rollout a new version of the
-# container image by deploying the `confidant-sidecar` service:
-#
-# QA: http://go/qa/deploy/confidant-sidecar
-# Prod: http://go/deploy/confidant-sidecar
-#
-# The constants below will only be used as a fallback in case Henson does not provide a version for this sidecar
-# for some reason.
-#
-# gocode commit: https://git.corp.stripe.com/stripe-internal/gocode/commit/ebf52fd1d2398b2912c3404ee98188876ad3929e
-CONFIDANT_CONTAINER_FALLBACK_DIGEST = "sha256:6a1017b5e140ad23da35fb8846cb77687948df1246551dabbb0f0359f8ffa57d"
-CONFIDANT_CONTAINER_FALLBACK_ENV = DEFUALT_CONTAINER_ENV
-
 # HEADS UP! Updating these values is no longer the right way to roll out a new version of the consul sidecar.
 #
 # The consul sidecar is now using our new support for sidecar deploys! You can rollout a new version of the

@@ -27,8 +27,6 @@ review_requirements:
   - codeowners-service-networking
 
 - files:
-  - sidecars/confidant.sky
-  - sidecars/confidant_test.sky
   - sidecars/pandora.sky
   - sidecars/pandora_test.sky
   assignees:

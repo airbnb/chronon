@@ -8,8 +8,7 @@ load(
     "config/kubernetes/helpers/aws_instance_sizes.sky",
     "m6g_16xlarge", "r6g_8xlarge", "r6g_xlarge", "r7g_xlarge", "r7g_8xlarge", "r6g_4xlarge"
 )
-load("config/kubernetes/async-processing/monster/util.sky", "dynamic_replicas")
-load("config/kubernetes/crds/keda/scaledobject.sky", "scaled_object", "prometheus_trigger", "cpu_trigger", "PROMETHEUS_METRIC_TYPE_VALUE", "scale_policy", "memory_trigger")
+load("config/kubernetes/crds/keda/scaledobject.sky", "scaled_object", "prometheus_trigger", "cpu_trigger", "PROMETHEUS_METRIC_TYPE_VALUE", "scale_policy", "memory_trigger", "schedule_trigger")
 
 WORKER_AVAILABILITY_PROMQL = '''
 1 -
@@ -42,6 +41,7 @@ def autoscaling_config(
     availability_threshold,
     cpu_threshold,
     min_replicas,
+    max_replicas,
     scale_up_policy = None,
     scale_up_stabilization_window_seconds = None,
     scale_down_policy = None,
@@ -64,6 +64,7 @@ def autoscaling_config(
 
     return scaled_object(
         min_replicas = min_replicas,
+        max_replicas = max_replicas,
         cpu_trigger = cpu,
         memory_trigger = memory,
         prometheus_triggers = [prom],
@@ -151,7 +152,7 @@ A100_HOST_SETS = struct(
                 preprod={
                     "northwest":    empty_worker_cluster(),
                     "bom":          empty_worker_cluster(),
-                    "cmh":          cluster(),
+                    "cmh":          empty_worker_cluster(),
                 },
                 prod={
                     "bom":          cluster(consume_replicas=2),
@@ -169,6 +170,11 @@ A100_HOST_SETS = struct(
                     "northwest":    cluster(),
                     "bom":          cluster(),
                     "cmh":          cluster(),
+                },
+                preprod={
+                    "northwest":    empty_worker_cluster(),
+                    "bom":          empty_worker_cluster(),
+                    "cmh":          empty_worker_cluster(),
                 },
                 prod={
                     "bom":          cluster(consume_replicas=10),
@@ -358,6 +364,11 @@ A200_HOST_SETS = struct(
                     "bom":          empty_worker_cluster(),
                     "cmh":          cluster(graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=True),
                 },
+                preprod={
+                    "northwest":    empty_worker_cluster(),
+                    "bom":          empty_worker_cluster(),
+                    "cmh":          empty_worker_cluster(),
+                },
                 prod={
                     "northwest":    cluster(consume_replicas=4,
                                             fanout_replicas=4,
@@ -514,9 +525,9 @@ A200_HOST_SETS = struct(
                     "cmh":          cluster(),
                 },
                 prod={
-                    "northwest":    cluster(consume_replicas=24),
+                    "northwest":    cluster(consume_replicas=12),
                     "bom":          cluster(),
-                    "cmh":          cluster(consume_replicas=24),
+                    "cmh":          cluster(consume_replicas=12),
                 }),
         hostset("latam",
                 suffix="low-cpu",
@@ -540,14 +551,14 @@ A200_HOST_SETS = struct(
                 suffix="low-cpu",
                 # pre-loading disabled for fanout workers through environment variables
                 prod={
-                    "northwest":    cluster(consume_replicas=dynamic_replicas(20, 70, 4),
+                    "northwest":    cluster(consume_replicas=70, # autoscaling below
                                             fanout_replicas=18,
                                             mb_per_worker=2900,
                                             instance_type=r6g_8xlarge),
-                    "bom":          cluster(consume_replicas=6,
+                    "bom":          cluster(consume_replicas=6,  # autoscaling below
                                             fanout_replicas=2,
                                             instance_type=r6g_xlarge),
-                    "cmh":          cluster(consume_replicas=dynamic_replicas(20, 70, 4),
+                    "cmh":          cluster(consume_replicas=70, # autoscaling below
                                             fanout_replicas=18,
                                             mb_per_worker=2900,
                                             instance_type=r6g_8xlarge),
@@ -556,6 +567,85 @@ A200_HOST_SETS = struct(
                     "northwest":    cluster(),
                     "bom":          cluster(),
                     "cmh":          cluster(),
+                },
+                autoscaling={
+                    "prod": {
+                        "northwest": {
+                            "consume": autoscaling_config(
+                                host_set = "model-ingestion",
+                                service = "workers",
+                                cluster = "northwest",
+                                availability_threshold = "0.65",
+                                cpu_threshold = 80,
+                                memory_threshold = 90,
+                                min_replicas= 20,
+                                max_replicas= 70,
+                                scale_up_stabilization_window_seconds = 0, # Make the decision to scale immediately, without waiting for a window
+                                scale_up_policy = scale_policy(
+                                    policy_type = "Percent", # Scale up at most by 100% of the current count of replicas, each period
+                                    value = 100,
+                                    period_seconds = 60, # Scale up at most every 60 seconds
+                                ),
+                                scale_down_stabilization_window_seconds = 300, # The highest desired state from the past previous 5 minute window will be the new scaling target
+                                scale_down_policy = scale_policy(
+                                    policy_type = "Pods", # Scale down at most by 2 replicas, each period
+                                    value = 2,
+                                    period_seconds = 300, # Scale down at most every 5 minutes
+                                ),
+                                enable_immediate_scaling = True,
+                            ),
+                        },
+                        "cmh": {
+                            "consume": autoscaling_config(
+                                host_set = "model-ingestion",
+                                service = "workers",
+                                cluster = "cmh",
+                                availability_threshold = "0.65",
+                                cpu_threshold = 80,
+                                memory_threshold = 90,
+                                min_replicas= 20,
+                                max_replicas= 70,
+                                scale_up_stabilization_window_seconds = 0,
+                                scale_up_policy = scale_policy(
+                                    policy_type = "Percent",
+                                    value = 100,
+                                    period_seconds = 60,
+                                ),
+                                scale_down_stabilization_window_seconds = 300,
+                                scale_down_policy = scale_policy(
+                                    policy_type = "Pods",
+                                    value = 2,
+                                    period_seconds = 300,
+                                ),
+                                enable_immediate_scaling = True,
+                            ),
+                        },
+                        "bom": {
+                            "consume": autoscaling_config(
+                                host_set = "model-ingestion",
+                                service = "workers",
+                                cluster = "bom",
+                                availability_threshold = "0.65",
+                                cpu_threshold = 80,
+                                memory_threshold = 90,
+                                min_replicas= 2,
+                                max_replicas= 30,
+                                scale_up_stabilization_window_seconds = 0,
+                                scale_up_policy = scale_policy(
+                                    policy_type = "Percent",
+                                    value = 100,
+                                    period_seconds = 60,
+                                ),
+                                scale_down_stabilization_window_seconds = 300,
+                                scale_down_policy = scale_policy(
+                                    policy_type = "Pods",
+                                    value = 2,
+                                    period_seconds = 300,
+                                ),
+                                enable_immediate_scaling = True,
+                            ),
+                        }
+                    }
                 }),
         hostset("payment-flows",
                 suffix="low-cpu",
@@ -581,7 +671,7 @@ A200_HOST_SETS = struct(
                 disable_preloading=True, # This allows a smaller mb_per_worker. If re-enabling preloading, make sure to bump mb_per_worker
                 default=            cluster(mb_per_worker=3100),
                 qa={
-                    "northwest":    cluster(consume_replicas=4,
+                    "northwest":    cluster(consume_replicas=12,
                                             fanout_replicas=4,
                                             mb_per_worker=2800),
                     "bom":          cluster(mb_per_worker=2800),
@@ -659,6 +749,9 @@ A200_HOST_SETS = struct(
                     "cmh":          cluster(consume_replicas=3),
                 },
                 prod={
+                    # Please reach out to #billing-infrastructure before changing this config!
+                    # We have large traffic spikes around end of month and we have carefully chosen config
+                    # to support this
                     "northwest":    cluster(consume_replicas=31,
                                             fanout_replicas=2,
                                             mb_per_worker=2000,
@@ -666,10 +759,28 @@ A200_HOST_SETS = struct(
                     "bom":    cluster(consume_replicas=10,
                                             fanout_replicas=2,
                                             instance_type=r6g_xlarge),
-                    "cmh":          cluster(consume_replicas=31,
+                    "cmh":          cluster(consume_replicas=29, # This is scaled on a scheduled basis, see autoscaling config below
                                             fanout_replicas=2,
                                             mb_per_worker=2000,
                                             instance_type=m6g_16xlarge),
+                },
+                autoscaling={
+                    "prod": {
+                        "cmh": {
+                            "consume": scaled_object(
+                                schedule_triggers= [
+                                    schedule_trigger(
+                                        start= "0 */2 * * *",    # Start scaling at the beginning of every even hour
+                                        end= "0 1-23/2 * * *",    # Scale down at the beginning of every odd hour
+                                        desired_replicas= 31,
+                                        timezone= "UTC"
+                                    )],
+                                min_replicas = 25,
+                                max_replicas = 31,
+                                enable_immediate_scaling = True,
+                            )
+                        }
+                    },
                 }),
         hostset("risk",
                 suffix="low-cpu",
@@ -833,7 +944,8 @@ A400_HOST_SETS = struct(
                 default=            cluster(mb_per_worker=4000),
                 qa={
                     "bom":          cluster(consume_replicas=2,
-                                            fanout_replicas=2),
+                                            fanout_replicas=2,
+                                            instance_type=r6g_8xlarge),
                     "cmh":          cluster(consume_replicas=2,
                                             fanout_replicas=2,
                                             instance_type=r6g_8xlarge),
@@ -863,6 +975,57 @@ A400_HOST_SETS = struct(
                                 cpu_threshold = 50, # Scale up when we cross 50% CPU Utilization
                                 memory_threshold = 80, # Scale up when we cross 80% Memory utilization
                                 min_replicas= 3,
+                                max_replicas= 6,
+                                scale_up_stabilization_window_seconds = 0, # Make the decision to scale immediately, without waiting for a window
+                                scale_up_policy = scale_policy(
+                                    policy_type = "Percent", # Scale up by 100% of the current count of replicas every 60 seconds
+                                    value = 100,
+                                    period_seconds = 60, # Add at most 2x current replica count every 60 seconds
+                                ),
+                                scale_down_stabilization_window_seconds = 300, # The highest desired state from the past previous 5 minute window will be the new scaling target
+                                scale_down_policy = scale_policy(
+                                    policy_type = "Percent", # Scale down by 25% of the current count of replicas every 60 seconds
+                                    value = 25,
+                                    period_seconds = 300, # Remove at most 25% of current pods every 5 minutes
+                                ),
+                                enable_immediate_scaling = True,
+                            ),
+                        },
+                        "bom": {
+                            "consume": autoscaling_config(
+                                host_set = "general",
+                                service = "workers",
+                                cluster = "bom",
+                                availability_threshold = "0.50", # Scale up when we cross 50% worker availability
+                                cpu_threshold = 50, # Scale up when we cross 50% CPU Utilization
+                                memory_threshold = 80, # Scale up when we cross 80% Memory utilization
+                                min_replicas= 2, # 100% of bom replicas
+                                max_replicas= 4,
+                                scale_up_stabilization_window_seconds = 0, # Make the decision to scale immediately, without waiting for a window
+                                scale_up_policy = scale_policy(
+                                    policy_type = "Percent", # Scale up by 100% of the current count of replicas every 60 seconds
+                                    value = 100,
+                                    period_seconds = 60, # Add at most 2x current replica count every 60 seconds
+                                ),
+                                scale_down_stabilization_window_seconds = 300, # The highest desired state from the past previous 5 minute window will be the new scaling target
+                                scale_down_policy = scale_policy(
+                                    policy_type = "Percent", # Scale down by 25% of the current count of replicas every 60 seconds
+                                    value = 25,
+                                    period_seconds = 300, # Remove at most 25% of current pods every 5 minutes
+                                ),
+                                enable_immediate_scaling = True,
+                            ),
+                        },
+                        "cmh": {
+                            "consume": autoscaling_config(
+                                host_set = "general",
+                                service = "workers",
+                                cluster = "cmh",
+                                availability_threshold = "0.50", # Scale up when we cross 50% worker availability
+                                cpu_threshold = 50, # Scale up when we cross 50% CPU Utilization
+                                memory_threshold = 80, # Scale up when we cross 80% Memory utilization
+                                min_replicas= 2,
+                                max_replicas= 4,
                                 scale_up_stabilization_window_seconds = 0, # Make the decision to scale immediately, without waiting for a window
                                 scale_up_policy = scale_policy(
                                     policy_type = "Percent", # Scale up by 100% of the current count of replicas every 60 seconds
@@ -887,8 +1050,9 @@ A400_HOST_SETS = struct(
                                 cluster = "northwest",
                                 availability_threshold = "0.50", # Scale up when we cross 50% worker availability
                                 cpu_threshold = 50, # Scale up when we cross 50% CPU Utilization
-                                memory_threshold = 80, # Scale up when we cross 80% Memory utilization
+                                memory_threshold = 90, # Scale up when we cross 90% Memory utilization
                                 min_replicas= 356, # 95% of northwest replicas
+                                max_replicas= 400,
                                 scale_up_stabilization_window_seconds = 0, # Make the decision to scale immediately, without waiting for a window
                                 scale_up_policy = scale_policy(
                                     policy_type = "Percent", # Scale up by 100% of the current count of replicas every 60 seconds
@@ -913,6 +1077,7 @@ A400_HOST_SETS = struct(
                                 cpu_threshold = 50, # Scale up when we cross 50% CPU Utilization
                                 memory_threshold = 80, # Scale up when we cross 80% Memory utilization
                                 min_replicas= 200, # 50% of cmh replicas
+                                max_replicas= 400,
                                 scale_up_stabilization_window_seconds = 0, # Make the decision to scale immediately, without waiting for a window
                                 scale_up_policy = scale_policy(
                                     policy_type = "Percent", # Scale up by 100% of the current count of replicas every 60 seconds
@@ -944,7 +1109,7 @@ A400_HOST_SETS = struct(
                 },
                 prod={
                     "cmh":          cluster(mb_per_worker=3800,
-                                            consume_replicas=8,
+                                            consume_replicas=0,
                                             fanout_replicas=40,
                                             instance_type=r6g_8xlarge),
                     "bom":          cluster(mb_per_worker=3600,
@@ -957,6 +1122,35 @@ A400_HOST_SETS = struct(
                     "northwest":    cluster(mb_per_worker=3800, # # Increasing since memory utilization is hovering > ~90% and worker utilizatio is still low.
                                             consume_replicas=0,
                                             fanout_replicas=40),
+                },
+                autoscaling={
+                    "prod": {
+                        "bom": {
+                            "consume": autoscaling_config(
+                                host_set = "general",
+                                service = "workers",
+                                cluster = "bom",
+                                availability_threshold = "0.50", # Scale up when we cross 50% worker availability
+                                cpu_threshold = 50, # Scale up when we cross 50% CPU Utilization
+                                memory_threshold = 80, # Scale up when we cross 80% Memory utilization
+                                min_replicas= 3,
+                                max_replicas= 8,
+                                scale_up_stabilization_window_seconds = 0, # Make the decision to scale immediately, without waiting for a window
+                                scale_up_policy = scale_policy(
+                                    policy_type = "Percent", # Scale up by 100% of the current count of replicas every 60 seconds
+                                    value = 100,
+                                    period_seconds = 60, # Add at most 2x current replica count every 60 seconds
+                                ),
+                                scale_down_stabilization_window_seconds = 300, # The highest desired state from the past previous 5 minute window will be the new scaling target
+                                scale_down_policy = scale_policy(
+                                    policy_type = "Percent", # Scale down by 25% of the current count of replicas every 60 seconds
+                                    value = 25,
+                                    period_seconds = 300, # Remove at most 25% of current pods every 5 minutes
+                                ),
+                                enable_immediate_scaling = True,
+                            ),
+                        },
+                    },
                 }),
     ]
 )
@@ -972,25 +1166,107 @@ SIGMA_HOST_SET = struct(
                 default=            cluster(mb_per_worker=2500),
                 qa={
                     "bom":    cluster(consume_replicas=2, fanout_replicas=2),
-                    "cmh":          cluster(consume_replicas=dynamic_replicas(0, 0, 0),
+                    "cmh":          cluster(consume_replicas=0,
                                             fanout_replicas=0),
                     "northwest":    cluster(mb_per_worker=2900,
-                                            consume_replicas=dynamic_replicas(2, 4, 1)),
+                                            consume_replicas=2), # autoscaling below
                 },
                 # pre-loading disabled for fanout workers through environment variables
                 prod={
                     "cmh":          cluster(consume_replicas=0,
                                             fanout_replicas=0),
-                    "northwest":    cluster(consume_replicas=dynamic_replicas(100, 300, 10),
+                    "northwest":    cluster(consume_replicas=300, # autoscaling below
                                             fanout_replicas=15,
                                             mb_per_worker=3100),
                     "bom":
                     # As part of the cutover for India DL, we expect BOM to see up to 20% of northwest's traffic
                     # Since we use the same spot instance mix in both regions, we can simply size to 20% of northwest
                     # At max, we'll have 50 consumer worker pods (1 per node) x 72 workers/pod = 3,600 workers
-                                    cluster(consume_replicas=dynamic_replicas(10, 30, 3),
-                                            fanout_replicas=dynamic_replicas(2, 4, 1)),
-                }),
+                                    cluster(consume_replicas=30, # autoscaling below
+                                            fanout_replicas=3),
+                },
+                autoscaling={
+                    "qa": {
+                        "northwest": {
+                            "consume": autoscaling_config(
+                                host_set = "sigma",
+                                service = "workers",
+                                cluster = "northwest",
+                                availability_threshold = "0.90",
+                                cpu_threshold = 90,
+                                memory_threshold = 90,
+                                min_replicas= 2,
+                                max_replicas = 4,
+                                scale_up_stabilization_window_seconds = 0, # Make the decision to scale immediately, without waiting for a window
+                                scale_up_policy = scale_policy(
+                                    policy_type = "Percent", # Scale up at most by 100% of the current count of replicas, each period
+                                    value = 100,
+                                    period_seconds = 60, # Scale up at most every 60 seconds
+                                ),
+                                scale_down_stabilization_window_seconds = 300, # The highest desired state from the past previous 5 minute window will be the new scaling target
+                                scale_down_policy = scale_policy(
+                                    policy_type = "Percent", # Scale down at most by 25% of the current count of replicas, each period
+                                    value = 25,
+                                    period_seconds = 300, # Scale down at most every 5 minutes
+                                ),
+                                enable_immediate_scaling = True,
+                            ),
+                        }
+                    },
+                    "prod": {
+                        "northwest": {
+                            "consume": autoscaling_config(
+                                host_set = "sigma",
+                                service = "workers",
+                                cluster = "northwest",
+                                availability_threshold = "0.60",
+                                cpu_threshold = 80,
+                                memory_threshold = 90,
+                                min_replicas= 100,
+                                max_replicas= 300,
+                                scale_up_stabilization_window_seconds = 0,
+                                scale_up_policy = scale_policy(
+                                    policy_type = "Percent",
+                                    value = 100,
+                                    period_seconds = 60,
+                                ),
+                                scale_down_stabilization_window_seconds = 300,
+                                scale_down_policy = scale_policy(
+                                    policy_type = "Pods", # scale down by at most 40 pods every period
+                                    value = 40,
+                                    period_seconds = 1800, # scale down at most every 30 minutes
+                                ),
+                                enable_immediate_scaling = True,
+                            ),
+                        },
+                        "bom": {
+                            "consume": autoscaling_config(
+                                host_set = "sigma",
+                                service = "workers",
+                                cluster = "bom",
+                                availability_threshold = "0.60",
+                                cpu_threshold = 80,
+                                memory_threshold = 90,
+                                min_replicas= 10,
+                                max_replicas= 30,
+                                scale_up_stabilization_window_seconds = 0,
+                                scale_up_policy = scale_policy(
+                                    policy_type = "Percent",
+                                    value = 100,
+                                    period_seconds = 60,
+                                ),
+                                scale_down_stabilization_window_seconds = 300,
+                                scale_down_policy = scale_policy(
+                                    policy_type = "Pods", # scale down by at most 4 pods every period
+                                    value = 4,
+                                    period_seconds = 1800, # scale down at most every 30 minutes
+                                ),
+                                enable_immediate_scaling = True,
+                            ),
+                        },
+                    }
+                }
+            ),
         hostset("sigma-staging",
                 default=            cluster(mb_per_worker=2500),
                 qa=all_regions_empty_worker_cluster(),

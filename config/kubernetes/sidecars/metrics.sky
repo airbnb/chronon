@@ -479,6 +479,10 @@ def _tag_send_only_to_tsdb(ctx):
 def _tag_henson_service_name(ctx):
     return struct(key=HENSON_SERVICE_NAME.tag_key, value="$(%s)" % HENSON_SERVICE_NAME.env_var)
 
+def _tag_availability_tier(ctx):
+    tier_name = get_availability_tier(ctx)
+    return struct(key="availability_tier", value=tier_name.lower())
+
 def _default_tags():
     return [getattr(tags, tagfn) for tagfn in dir(tags)]
 
@@ -493,6 +497,7 @@ def _default_tags():
 # - `namespace`: adds `namespace:$NAMESPACE`
 # - `service_name`: adds `service_name:$STRIPE_POD_NAME`
 # - `henson_service_name`: adds `henson_service:$HENSON_SERVICE_NAME`
+# - `availability_tier`: adds `availability_tier:$AVAILABILITY_TIER_NAME`
 #
 # `$FOO` in the above examples is not a literal environment variable, it's
 # just a placeholder for "the value of this thing". Most of the values
@@ -508,6 +513,7 @@ tags = struct(
     isolated_deploy_workspace_id = _tag_isolated_deploy_workspace_id,
     send_only_to_tsdb = _tag_send_only_to_tsdb,
     henson_service_name = _tag_henson_service_name,
+    availability_tier = _tag_availability_tier,
 )
 
 def _render_tags(ctx, tags=[]):

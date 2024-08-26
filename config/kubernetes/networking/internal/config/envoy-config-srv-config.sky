@@ -74,6 +74,7 @@ def _default_sidecar_cli_args(target):
         "mproxy_tier": "non-bapi",
         "egress_proxy_tier": "",
         "enable_inbound_websockets": False,
+        "enable_outbound_websockets": False,
         # The enable_grpc_web option is technically enabled 100% of the time today at the envoy-config-srv
         # level, because the envoy-config-srv binary sets the option as default true, and the value is only
         # set to false if the --no-enable-grpc-web flag is used. We will keep the skycfg option below as

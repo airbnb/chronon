@@ -59,6 +59,20 @@ def make_deployment_options_plugins(config):
     # And: https://unofficial-kubernetes.readthedocs.io/en/latest/concepts/workloads/controllers/deployment/#revision-history-limit
     return [deployment_options(replicas = config.replicas, revisionHistoryLimit = 3)]
 
+def yjit_rollout_env_var(ctx, group):
+    yjit_rollout_groups = ["general"]
+
+    if group in yjit_rollout_groups:
+        if get_env(ctx) == "preprod":
+            return {"STRIPE_BUNDLE_USE_YJIT_PCT_ENABLED": "100"}
+
+        if get_env(ctx) == "qa":
+            return {"STRIPE_BUNDLE_USE_YJIT_PCT_ENABLED": "100"}
+
+        if get_env(ctx) == "prod":
+            return {"STRIPE_BUNDLE_USE_YJIT_PCT_ENABLED": "0"}
+    return {}
+
 def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
     formatted_isolation_group = config.monster_isolation_group.replace("_", "-")
     name = generate_pod_name("smsp", config.monster_service, formatted_isolation_group, suffix)
@@ -177,6 +191,9 @@ def monster_deployment_shared_msp(ctx, config, port, suffix = ""):
             "RUBY_GC_HEAP_4_INIT_SLOTS": "100000",
 
         })
+
+
+    env_vars.update(yjit_rollout_env_var(ctx, config.monster_isolation_group))
 
     env_vars.update(config.extra_env or [])
 
