@@ -132,7 +132,7 @@ abstract class JoinBase(joinConf: api.Join,
                         joinPart: JoinPart,
                         leftRange: PartitionRange, // missing left partitions
                         leftTimeRangeOpt: Option[PartitionRange], // range of timestamps within missing left partitions
-                        joinLevelBloomMapOpt: Option[util.Map[String, BloomFilter]],
+                        bloomMapOpt: Option[util.Map[String, BloomFilter]],
                         smallMode: Boolean = false): Option[DataFrame] = {
 
     val partTable = joinConf.partOutputTable(joinPart)
@@ -188,13 +188,12 @@ abstract class JoinBase(joinConf: api.Join,
             val leftUnfilledRange = unfilledRange.shift(-shiftDays)
             val prunedLeft = leftDf.flatMap(_.prunePartitions(leftUnfilledRange))
             val filledDf =
-              computeJoinPart(prunedLeft, joinPart, joinLevelBloomMapOpt, smallMode)
+              computeJoinPart(prunedLeft, joinPart, bloomMapOpt, smallMode)
             // Cache join part data into intermediate table
             if (filledDf.isDefined) {
               logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
               filledDf.get.save(partTable,
                                 tableProps,
-                                stats = prunedLeft.map(_.stats),
                                 sortByCols = joinPart.groupBy.keyColumns.toScala)
             } else {
               logger.info(s"Skipping $partTable because no data in computed joinPart.")
@@ -221,7 +220,7 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeJoinPart(leftDfWithStats: Option[DfWithStats],
                       joinPart: JoinPart,
-                      joinLevelBloomMapOpt: Option[util.Map[String, BloomFilter]],
+                      bloomMapOpt: Option[util.Map[String, BloomFilter]],
                       skipBloom: Boolean = false): Option[DataFrame] = {
 
     if (leftDfWithStats.isEmpty) {
@@ -239,7 +238,7 @@ abstract class JoinBase(joinConf: api.Join,
     val rightBloomMap = if (skipBloom) {
       None
     } else {
-      JoinUtils.genBloomFilterIfNeeded(joinPart, joinConf, rowCount, unfilledRange, joinLevelBloomMapOpt)
+      JoinUtils.genBloomFilterIfNeeded(joinPart, joinConf, rowCount, unfilledRange, bloomMapOpt)
     }
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     def genGroupBy(partitionRange: PartitionRange) =
@@ -326,11 +325,7 @@ abstract class JoinBase(joinConf: api.Join,
     Some(rightDfWithDerivations)
   }
 
-  def computeRange(leftDf: DataFrame,
-                   leftRange: PartitionRange,
-                   bootstrapInfo: BootstrapInfo,
-                   runSmallMode: Boolean = false,
-                   usingBootstrappedLeft: Boolean = false): Option[DataFrame]
+  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo, usingBootstrappedLeft: Boolean = false): Option[DataFrame]
 
   def computeBootstrapTable(leftDf: DataFrame, range: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 
@@ -530,43 +525,16 @@ abstract class JoinBase(joinConf: api.Join,
       computeDependency = selectedJoinParts.isEmpty
     )
 
-    val wholeRange = PartitionRange(unfilledRanges.minBy(_.start).start, unfilledRanges.maxBy(_.end).end)(tableUtils)
-
-    val runSmallMode = {
-      if (tableUtils.smallModelEnabled) {
-        val thresholdCount: Int =
-          leftDf(joinConf, wholeRange, tableUtils, limit = Some(tableUtils.smallModeNumRowsCutoff + 1))
-            .map(_.count.toInt)
-            .getOrElse(0)
-        val result = thresholdCount <= tableUtils.smallModeNumRowsCutoff
-        if (result) {
-          logger.info(s"Counted $thresholdCount rows, running join in small mode.")
-        } else {
-          logger.info(
-            s"Counted greater than ${tableUtils.smallModeNumRowsCutoff} rows, proceeding with normal computation.")
-        }
-        result
-      } else {
-        false
-      }
-    }
-
-    val effectiveRanges = if (runSmallMode) {
-      Seq(wholeRange)
-    } else {
-      stepRanges
-    }
-
-    logger.info(s"Join ranges to compute: ${effectiveRanges.map { _.toString }.pretty}")
-    effectiveRanges.zipWithIndex.foreach {
+    logger.info(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+    stepRanges.zipWithIndex.foreach {
       case (range, index) =>
         val startMillis = System.currentTimeMillis()
-        val progress = s"| [${index + 1}/${effectiveRanges.size}]"
+        val progress = s"| [${index + 1}/${stepRanges.size}]"
         logger.info(s"Computing join for range: ${range.toString}  $progress")
         leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           if (showDf) leftDfInRange.prettyPrint()
           // set autoExpand = true to ensure backward compatibility due to column ordering changes
-          val finalDf = computeRange(leftDfInRange, range, bootstrapInfo, runSmallMode, useBootstrapForLeft)
+          val finalDf = computeRange(leftDfInRange, range, bootstrapInfo, useBootstrapForLeft)
           if (selectedJoinParts.isDefined) {
             assert(finalDf.isEmpty,
                    "The arg `selectedJoinParts` is defined, so no final join is required. `finalDf` should be empty")
