@@ -405,6 +405,7 @@ def Join(
     bootstrap_from_log: bool = False,
     label_part: api.LabelPart = None,
     derivations: List[api.Derivation] = None,
+    deprecationDate: str = None,
     tags: Dict[str, str] = None,
     **kwargs,
 ) -> api.Join:
@@ -502,6 +503,9 @@ def Join(
         Flag to indicate whether join backfill should backfill previous holes.
         Setting to false will only backfill latest single partition
     :type historical_backfill: bool
+    :param deprecationDate:
+        Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
+    :type deprecationDate: str
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -631,6 +635,7 @@ def Join(
         offlineSchedule=offline_schedule,
         consistencySamplePercent=consistency_sample_percent,
         historicalBackfill=historical_backfill,
+        deprecationDate=deprecationDate,
     )
 
     return api.Join(
