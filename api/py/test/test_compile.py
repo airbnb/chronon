@@ -37,6 +37,11 @@ def test_basic_compile():
         '--input_path=joins/sample_team/sample_join.py'
     ])
     assert result.exit_code == 0
+    result = runner.invoke(extract_and_convert, [
+        '--chronon_root=test/sample',
+        '--input_path=group_bys/sample_team/sample_deprecation_group_by.py'
+    ])
+    assert result.exit_code == 0
 
 
 def test_debug_compile():
