@@ -335,6 +335,10 @@ class ChrononRepoValidator(object):
                 errors.append("join {} is online but includes the following offline group_bys: {}".format(
                     join.metaData.name, ', '.join(offline_included_group_bys)))
         # Only validate the join derivation when the underlying groupBy is valid
+        # validate the expected deprecation date is in the correct format it is defined
+        if join.metaData.deprecationDate:
+            if not re.match(r"\d{4}-\d{2}-\d{2}", join.metaData.deprecationDate):
+                errors.append("Deprecation date is not in the correct format for join {}".format(join.metaData.name))
         group_by_correct = all(not errors for errors in group_by_errors)
         if join.derivations and group_by_correct:
             features = get_pre_derived_join_features(join)
