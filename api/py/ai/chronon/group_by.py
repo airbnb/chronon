@@ -367,6 +367,7 @@ def GroupBy(
     name: str = None,
     tags: Dict[str, str] = None,
     derivations: List[ttypes.Derivation] = None,
+    deprecationDate: str = None,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
@@ -478,6 +479,9 @@ def GroupBy(
         Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
         output schema. It is supported for offline computations for now.
     :type derivations: List[ai.chronon.api.ttypes.Drivation]
+    :param deprecationDate:
+        Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
+    :type deprecationDate: str
     :param kwargs:
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
@@ -568,6 +572,7 @@ def GroupBy(
         tableProperties=table_properties,
         team=team,
         offlineSchedule=offline_schedule,
+        deprecationDate=deprecationDate,
     )
 
     group_by = ttypes.GroupBy(

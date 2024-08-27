@@ -388,6 +388,11 @@ class ChrononRepoValidator(object):
                 columns = get_pre_derived_group_by_columns(group_by)
             errors.extend(self._validate_derivations(columns, group_by.derivations))
 
+        # validate the expected deprecation date is in the correct format it is defined
+        if group_by.metaData.deprecationDate:
+            if not re.match(r"\d{4}-\d{2}-\d{2}", group_by.metaData.deprecationDate):
+                errors.append("Deprecation date is not in the correct format for group_by {}".format(group_by.metaData.name))
+
         for source in group_by.sources:
             src: Source = source
             if src.events and src.events.isCumulative and (src.events.query.timeColumn is None):

@@ -135,3 +135,11 @@ def test_validate_join_with_derivations_on_external_parts(zvalidator):
     from sample.joins.sample_team.sample_join_with_derivations_on_external_parts import v1
     errors = zvalidator._validate_join(v1)
     assert(len(errors) == 0)
+
+
+def test_validate_group_by_deprecation_date(zvalidator):
+    from sample.group_bys.sample_team.sample_deprecation_group_by import v1, v1_incorrect_deprecation_format
+    errors = zvalidator._validate_group_by(v1)
+    assert(len(errors) == 0)
+    errors = zvalidator._validate_group_by(v1_incorrect_deprecation_format)
+    assert(len(errors) == 1)
