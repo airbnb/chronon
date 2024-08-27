@@ -192,9 +192,7 @@ abstract class JoinBase(joinConf: api.Join,
             // Cache join part data into intermediate table
             if (filledDf.isDefined) {
               logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
-              filledDf.get.save(partTable,
-                                tableProps,
-                                sortByCols = joinPart.groupBy.keyColumns.toScala)
+              filledDf.get.save(partTable, tableProps, sortByCols = joinPart.groupBy.keyColumns.toScala)
             } else {
               logger.info(s"Skipping $partTable because no data in computed joinPart.")
             }
@@ -325,7 +323,10 @@ abstract class JoinBase(joinConf: api.Join,
     Some(rightDfWithDerivations)
   }
 
-  def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo, usingBootstrappedLeft: Boolean = false): Option[DataFrame]
+  def computeRange(leftDf: DataFrame,
+                   leftRange: PartitionRange,
+                   bootstrapInfo: BootstrapInfo,
+                   usingBootstrappedLeft: Boolean = false): Option[DataFrame]
 
   def computeBootstrapTable(leftDf: DataFrame, range: PartitionRange, bootstrapInfo: BootstrapInfo): DataFrame
 

@@ -237,7 +237,10 @@ class Join(joinConf: api.Join,
     df.save(outputTable, tableProps, autoExpand = true)
   }
 
-  override def computeRange(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo, usingBootstrappedLeft: Boolean = false): Option[DataFrame] = {
+  override def computeRange(leftDf: DataFrame,
+                            leftRange: PartitionRange,
+                            bootstrapInfo: BootstrapInfo,
+                            usingBootstrappedLeft: Boolean = false): Option[DataFrame] = {
 
     val leftTaggedDf = leftDf.addTimebasedColIfExists()
 
@@ -324,7 +327,9 @@ class Join(joinConf: api.Join,
                     None
                   } else {
                     val leftBlooms = joinConf.leftKeyCols.iterator.map { key =>
-                      key -> unfilledLeftDf.map(_.df.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange)).getOrElse(null)
+                      key -> unfilledLeftDf
+                        .map(_.df.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange))
+                        .getOrElse(null)
                     }.toJMap
                     Some(leftBlooms)
                   }
