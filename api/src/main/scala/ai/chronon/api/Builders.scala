@@ -286,7 +286,7 @@ object Builders {
         result.setConsistencySamplePercent(consistencySamplePercent)
       if (tableProperties.nonEmpty)
         result.setTableProperties(tableProperties.toJava)
-      if (deprecationDate.nonEmpty)
+      if (deprecationDate != null)
         result.setDeprecationDate(deprecationDate)
       result
     }
