@@ -26,7 +26,9 @@ import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
+import org.apache.spark.util.sketch.BloomFilter
 
+import java.util
 import java.util.concurrent.Executors
 import scala.collection.compat._
 import scala.collection.{Seq, mutable}
@@ -278,6 +280,40 @@ class Join(joinConf: api.Join,
         // we do this by utilizing the per-record metadata computed during the bootstrap process.
         // then for each GB, we compute a join_part table that contains aggregated feature values for the required key space
         // the required key space is a slight superset of key space of the left, due to the nature of using bloom-filter.
+
+        def genKeyFilter(joinPart: JoinPart, unfilledLeftDf: Option[DfWithStats]) = {
+          val leftRowCount: Int = unfilledLeftDf.map(_.count.toInt).getOrElse(0)
+          if (tableUtils.smallModelEnabled && leftRowCount <= tableUtils.smallModeNumRowsCutoff) {
+            logger.info(s"Counted $leftRowCount rows, running join in small mode.")
+            // If left DF is small, hardcode the key filter into the joinPart's GroupBy's where clause.
+            injectKeyFilter(unfilledLeftDf.map(_.df).get, joinPart)
+            (true, None)
+          } else {
+            if (leftRowCount <= tableUtils.bloomFilterThreshold) {
+              logger.info(s"Counted $leftRowCount rows, running join in bloom filter mode.")
+              val leftBlooms = joinConf.leftKeyCols.iterator.map { key =>
+                key -> unfilledLeftDf
+                  .map(_.df.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange))
+                  .getOrElse(null)
+              }.toJMap
+
+              val rightBlooms = joinPart.rightToLeft.iterator.map { case (rightCol, leftCol) =>
+                  rightCol -> leftBlooms.get(leftCol)
+              }.toJMap
+
+              val bloomSizes = rightBlooms.asScala.map { case (rightCol, bloom) =>
+                  s"$rightCol -> ${bloom.bitSize()}"
+              }
+              logger.info(s"Bloom sizes: ${bloomSizes.mkString(", ")}")
+
+              (false, Some(rightBlooms))
+            } else {
+              logger.info(s"Counted $leftRowCount rows, running join without any key filter.")
+              (false, None)
+            }
+          }
+        }
+
         try {
           val rightResultsFuture = bootstrapCoveringSets.map {
             case (partMetadata, coveringSets) =>
@@ -300,40 +336,7 @@ class Join(joinConf: api.Join,
                     s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
                 }
 
-                val runSmallMode = {
-                  if (tableUtils.smallModelEnabled) {
-                    val thresholdCount: Int = unfilledLeftDf.map(_.count.toInt).getOrElse(0)
-                    val result = thresholdCount <= tableUtils.smallModeNumRowsCutoff
-                    if (result) {
-                      logger.info(s"Counted $thresholdCount rows, running join in small mode.")
-                    } else {
-                      logger.info(
-                        s"Counted greater than ${tableUtils.smallModeNumRowsCutoff} rows, proceeding with normal computation.")
-                    }
-                    result
-                  } else {
-                    false
-                  }
-                }
-
-                // create filter for leftDf
-                val bloomFilterOpt = if (runSmallMode) {
-                  // If left DF is small, hardcode the key filter into the joinPart's GroupBy's where clause.
-                  injectKeyFilter(unfilledLeftDf.map(_.df).get, joinPart)
-                  None
-                } else {
-                  val leftRowCount = bootStrapWithStats.count
-                  if (leftRowCount > tableUtils.bloomFilterThreshold) {
-                    None
-                  } else {
-                    val leftBlooms = joinConf.leftKeyCols.iterator.map { key =>
-                      key -> unfilledLeftDf
-                        .map(_.df.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange))
-                        .getOrElse(null)
-                    }.toJMap
-                    Some(leftBlooms)
-                  }
-                }
+                val (runSmallMode: Boolean, bloomFilterOpt: Option[util.Map[String, BloomFilter]]) = genKeyFilter(joinPart, unfilledLeftDf)
 
                 val df =
                   computeRightTable(unfilledLeftDf, joinPart, leftRange, leftTimeRangeOpt, bloomFilterOpt, runSmallMode)

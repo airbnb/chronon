@@ -297,34 +297,7 @@ object JoinUtils {
       unfilledRange: PartitionRange,
       bloomMapOpt: Option[util.Map[String, BloomFilter]]): Option[util.Map[String, BloomFilter]] = {
 
-    val rightBlooms = bloomMapOpt.map { joinBlooms =>
-      joinPart.rightToLeft.iterator.map {
-        case (rightCol, leftCol) =>
-          rightCol -> joinBlooms.get(leftCol)
-      }.toJMap
-    }
 
-    // print bloom sizes
-    val bloomSizes = rightBlooms.map { blooms =>
-      val sizes = blooms.asScala
-        .map {
-          case (rightCol, bloom) =>
-            s"$rightCol -> ${bloom.bitSize()}"
-        }
-      logger.info(s"Bloom sizes: ${sizes.mkString(", ")}")
-    }
-
-    logger.info(s"""
-           Generating bloom filter for joinPart:
-         |  part name : ${joinPart.groupBy.metaData.name},
-         |  left type : ${joinConf.left.dataModel},
-         |  right type: ${joinPart.groupBy.dataModel},
-         |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
-         |  part unfilled range: $unfilledRange,
-         |  left row count: $leftRowCount
-         |  bloom sizes: $bloomSizes
-         |  groupBy: ${joinPart.groupBy.toString}
-         |""".stripMargin)
     rightBlooms
   }
 
