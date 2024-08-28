@@ -297,7 +297,6 @@ object JoinUtils {
       unfilledRange: PartitionRange,
       bloomMapOpt: Option[util.Map[String, BloomFilter]]): Option[util.Map[String, BloomFilter]] = {
 
-
     rightBlooms
   }
 

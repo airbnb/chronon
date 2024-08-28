@@ -297,11 +297,13 @@ class Join(joinConf: api.Join,
                   .getOrElse(null)
               }.toJMap
 
-              val rightBlooms = joinPart.rightToLeft.iterator.map { case (rightCol, leftCol) =>
+              val rightBlooms = joinPart.rightToLeft.iterator.map {
+                case (rightCol, leftCol) =>
                   rightCol -> leftBlooms.get(leftCol)
               }.toJMap
 
-              val bloomSizes = rightBlooms.asScala.map { case (rightCol, bloom) =>
+              val bloomSizes = rightBlooms.asScala.map {
+                case (rightCol, bloom) =>
                   s"$rightCol -> ${bloom.bitSize()}"
               }
               logger.info(s"Bloom sizes: ${bloomSizes.mkString(", ")}")
@@ -336,7 +338,8 @@ class Join(joinConf: api.Join,
                     s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
                 }
 
-                val (runSmallMode: Boolean, bloomFilterOpt: Option[util.Map[String, BloomFilter]]) = genKeyFilter(joinPart, unfilledLeftDf)
+                val (runSmallMode: Boolean, bloomFilterOpt: Option[util.Map[String, BloomFilter]]) =
+                  genKeyFilter(joinPart, unfilledLeftDf)
 
                 val df =
                   computeRightTable(unfilledLeftDf, joinPart, leftRange, leftTimeRangeOpt, bloomFilterOpt, runSmallMode)
