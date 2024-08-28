@@ -17,38 +17,40 @@ Forcing validator to fail some tests
 #     limitations under the License.
 
 import pytest
-
 from ai.chronon.repo import validator
 
 
 @pytest.fixture
 def zvalidator():
-    return validator.ChrononRepoValidator(
-        chronon_root_path='test/sample',
-        output_root='production'
-    )
+    return validator.ChrononRepoValidator(chronon_root_path="test/sample", output_root="production")
 
 
 @pytest.fixture
 def valid_online_join(zvalidator):
-    return sorted([
-        join for join in zvalidator.old_joins if join.metaData.online is True
-    ], key=lambda x: x.metaData.name)[0]
+    return sorted(
+        [join for join in zvalidator.old_joins if join.metaData.online is True], key=lambda x: x.metaData.name
+    )[0]
 
 
 @pytest.fixture
 def valid_online_group_by(valid_online_join):
-    return sorted([
-        jp.groupBy for jp in valid_online_join.joinParts if jp.groupBy.metaData.online is True
-    ], key=lambda x: x.metaData.name)[0]
+    return sorted(
+        [jp.groupBy for jp in valid_online_join.joinParts if jp.groupBy.metaData.online is True],
+        key=lambda x: x.metaData.name,
+    )[0]
 
 
 @pytest.fixture
 def valid_events_group_by(zvalidator):
-    return sorted([
-        jp.groupBy for join in zvalidator.old_joins for jp in join.joinParts
-        if any([src.events is not None for src in jp.groupBy.sources])
-    ], key=lambda x: x.metaData.name)[0]
+    return sorted(
+        [
+            jp.groupBy
+            for join in zvalidator.old_joins
+            for jp in join.joinParts
+            if any([src.events is not None for src in jp.groupBy.sources])
+        ],
+        key=lambda x: x.metaData.name,
+    )[0]
 
 
 def test_validate_group_by_online(zvalidator, valid_online_group_by):
@@ -114,32 +116,44 @@ def test_validate_cumulative_source_no_timequery(zvalidator, valid_events_group_
 
 
 def test_validate_group_by_with_incorrect_derivations(zvalidator):
-    from sample.group_bys.sample_team.sample_group_by_with_incorrect_derivations import v1
+    from sample.group_bys.sample_team.sample_group_by_with_incorrect_derivations import (
+        v1,
+    )
+
     errors = zvalidator._validate_group_by(v1)
-    assert(len(errors) > 0)
+    assert len(errors) > 0
 
 
 def test_validate_group_by_with_derivations(zvalidator):
     from sample.group_bys.sample_team.sample_group_by_with_derivations import v1
+
     errors = zvalidator._validate_group_by(v1)
-    assert(len(errors) == 0)
+    assert len(errors) == 0
 
 
 def test_validate_join_with_derivations(zvalidator):
     from sample.joins.sample_team.sample_join_derivation import v1
+
     errors = zvalidator._validate_join(v1)
-    assert(len(errors) == 0)
+    assert len(errors) == 0
 
 
 def test_validate_join_with_derivations_on_external_parts(zvalidator):
-    from sample.joins.sample_team.sample_join_with_derivations_on_external_parts import v1
+    from sample.joins.sample_team.sample_join_with_derivations_on_external_parts import (
+        v1,
+    )
+
     errors = zvalidator._validate_join(v1)
-    assert(len(errors) == 0)
+    assert len(errors) == 0
 
 
 def test_validate_group_by_deprecation_date(zvalidator):
-    from sample.group_bys.sample_team.sample_deprecation_group_by import v1, v1_incorrect_deprecation_format
+    from sample.group_bys.sample_team.sample_deprecation_group_by import (
+        v1,
+        v1_incorrect_deprecation_format,
+    )
+
     errors = zvalidator._validate_group_by(v1)
-    assert(len(errors) == 0)
+    assert len(errors) == 0
     errors = zvalidator._validate_group_by(v1_incorrect_deprecation_format)
-    assert(len(errors) == 1)
+    assert len(errors) == 1
