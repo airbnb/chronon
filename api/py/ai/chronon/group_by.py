@@ -12,12 +12,13 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-import ai.chronon.api.ttypes as ttypes
-import ai.chronon.utils as utils
-import logging
 import inspect
 import json
-from typing import List, Optional, Union, Dict, Callable, Tuple
+import logging
+from typing import Callable, Dict, List, Optional, Tuple, Union
+
+import ai.chronon.api.ttypes as ttypes
+import ai.chronon.utils as utils
 
 OperationType = int  # type(zthrift.Operation.FIRST)
 
@@ -79,9 +80,7 @@ class Operation:
     LAST_K = collector(ttypes.Operation.LAST_K)
     TOP_K = collector(ttypes.Operation.TOP_K)
     BOTTOM_K = collector(ttypes.Operation.BOTTOM_K)
-    APPROX_PERCENTILE = generic_collector(
-        ttypes.Operation.APPROX_PERCENTILE, ["percentiles"], k=128
-    )
+    APPROX_PERCENTILE = generic_collector(ttypes.Operation.APPROX_PERCENTILE, ["percentiles"], k=128)
 
 
 def Aggregations(**agg_dict):
@@ -104,13 +103,8 @@ def DefaultAggregation(keys, sources, operation=Operation.LAST, tags=None):
             "ds",
             query.timeColumn,
         ]
-        aggregate_columns += [
-            column for column in columns if column not in non_aggregate_columns
-        ]
-    return [
-        Aggregation(operation=operation, input_column=column, tags=tags)
-        for column in aggregate_columns
-    ]
+        aggregate_columns += [column for column in columns if column not in non_aggregate_columns]
+    return [Aggregation(operation=operation, input_column=column, tags=tags) for column in aggregate_columns]
 
 
 class TimeUnit:
@@ -200,8 +194,7 @@ def validate_group_by(group_by: ttypes.GroupBy):
     first_source_columns = set(utils.get_columns(sources[0]))
     # TODO undo this check after ml_models CI passes
     assert "ts" not in first_source_columns, (
-        "'ts' is a reserved key word for Chronon,"
-        " please specify the expression in timeColumn"
+        "'ts' is a reserved key word for Chronon," " please specify the expression in timeColumn"
     )
     for src in sources:
         query = utils.get_query(src)
@@ -211,19 +204,15 @@ def validate_group_by(group_by: ttypes.GroupBy):
                 "event source as it should be the same with timeColumn"
             )
             assert query.reversalColumn is None, (
-                "reversalColumn should not be specified for event source "
-                "as it won't have mutations"
+                "reversalColumn should not be specified for event source " "as it won't have mutations"
             )
             if group_by.accuracy != Accuracy.SNAPSHOT:
                 assert query.timeColumn is not None, (
-                    "please specify query.timeColumn for non-snapshot accurate "
-                    "group by with event source"
+                    "please specify query.timeColumn for non-snapshot accurate " "group by with event source"
                 )
         else:
             if contains_windowed_aggregation(aggregations):
-                assert (
-                    query.timeColumn
-                ), "Please specify timeColumn for entity source with windowed aggregations"
+                assert query.timeColumn, "Please specify timeColumn for entity source with windowed aggregations"
 
     column_set = None
     # all sources should select the same columns
@@ -246,10 +235,7 @@ Keys {unselected_keys}, are unselected in source
         has_mutations = (
             any(
                 [
-                    (
-                        s.entities.mutationTable is not None
-                        or s.entities.mutationTopic is not None
-                    )
+                    (s.entities.mutationTable is not None or s.entities.mutationTopic is not None)
                     for s in sources
                     if s.entities is not None
                 ]
@@ -276,9 +262,7 @@ Keys {unselected_keys}, are unselected in source
                     try:
                         percentile_array = json.loads(agg.argMap["percentiles"])
                         assert isinstance(percentile_array, list)
-                        assert all(
-                            [float(p) >= 0 and float(p) <= 1 for p in percentile_array]
-                        )
+                        assert all([float(p) >= 0 and float(p) <= 1 for p in percentile_array])
                     except Exception as e:
                         LOGGER.exception(e)
                         raise ValueError(
@@ -294,10 +278,7 @@ Keys {unselected_keys}, are unselected in source
             if agg.windows:
                 assert not (
                     # Snapshot accuracy.
-                    (
-                        (group_by.accuracy and group_by.accuracy == Accuracy.SNAPSHOT)
-                        or group_by.backfillStartDate
-                    )
+                    ((group_by.accuracy and group_by.accuracy == Accuracy.SNAPSHOT) or group_by.backfillStartDate)
                     and
                     # Hourly aggregation.
                     any([window.timeUnit == TimeUnit.HOURS for window in agg.windows])
@@ -309,9 +290,7 @@ Keys {unselected_keys}, are unselected in source
                 )
 
 
-_ANY_SOURCE_TYPE = Union[
-    ttypes.Source, ttypes.EventSource, ttypes.EntitySource, ttypes.JoinSource
-]
+_ANY_SOURCE_TYPE = Union[ttypes.Source, ttypes.EventSource, ttypes.EntitySource, ttypes.JoinSource]
 
 
 def _get_op_suffix(operation, argmap):
@@ -367,7 +346,7 @@ def GroupBy(
     name: str = None,
     tags: Dict[str, str] = None,
     derivations: List[ttypes.Derivation] = None,
-    deprecationDate: str = None,
+    deprecation_date: str = None,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
@@ -479,9 +458,9 @@ def GroupBy(
         Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
         output schema. It is supported for offline computations for now.
     :type derivations: List[ai.chronon.api.ttypes.Drivation]
-    :param deprecationDate:
+    :param deprecation_date:
         Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
-    :type deprecationDate: str
+    :type deprecation_date: str
     :param kwargs:
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
@@ -501,11 +480,7 @@ def GroupBy(
         query = (
             source.entities.query
             if source.entities is not None
-            else (
-                source.events.query
-                if source.events is not None
-                else source.joinSource.query
-            )
+            else (source.events.query if source.events is not None else source.joinSource.query)
         )
 
         if query.selects is None:
@@ -542,11 +517,7 @@ def GroupBy(
         sources = [sources]
     sources = [_sanitize_columns(_normalize_source(source)) for source in sources]
 
-    deps = [
-        dep
-        for src in sources
-        for dep in utils.get_dependencies(src, dependencies, lag=lag)
-    ]
+    deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
 
     kwargs.update({"lag": lag})
     # get caller's filename to assign team
@@ -572,7 +543,7 @@ def GroupBy(
         tableProperties=table_properties,
         team=team,
         offlineSchedule=offline_schedule,
-        deprecationDate=deprecationDate,
+        deprecationDate=deprecation_date,
     )
 
     group_by = ttypes.GroupBy(
