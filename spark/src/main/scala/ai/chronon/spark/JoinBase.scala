@@ -188,7 +188,7 @@ abstract class JoinBase(joinConf: api.Join,
             val leftUnfilledRange = unfilledRange.shift(-shiftDays)
             val prunedLeft = leftDf.flatMap(_.prunePartitions(leftUnfilledRange))
             val filledDf =
-              computeJoinPart(prunedLeft, joinPart, bloomMapOpt, smallMode)
+              computeJoinPart(prunedLeft, joinPart, bloomMapOpt)
             // Cache join part data into intermediate table
             if (filledDf.isDefined) {
               logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
@@ -218,8 +218,7 @@ abstract class JoinBase(joinConf: api.Join,
 
   def computeJoinPart(leftDfWithStats: Option[DfWithStats],
                       joinPart: JoinPart,
-                      bloomMapOpt: Option[util.Map[String, BloomFilter]],
-                      skipBloom: Boolean = false): Option[DataFrame] = {
+                      rightBloomMap: Option[util.Map[String, BloomFilter]]): Option[DataFrame] = {
 
     if (leftDfWithStats.isEmpty) {
       // happens when all rows are already filled by bootstrap tables
@@ -233,11 +232,17 @@ abstract class JoinBase(joinConf: api.Join,
 
     logger.info(
       s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
-    val rightBloomMap = if (skipBloom) {
-      None
-    } else {
-      JoinUtils.genBloomFilterIfNeeded(joinPart, joinConf, rowCount, unfilledRange, bloomMapOpt)
-    }
+    logger.info(s"""
+           Generating bloom filter for joinPart:
+                   |  part name : ${joinPart.groupBy.metaData.name},
+                   |  left type : ${joinConf.left.dataModel},
+                   |  right type: ${joinPart.groupBy.dataModel},
+                   |  accuracy  : ${joinPart.groupBy.inferredAccuracy},
+                   |  part unfilled range: $unfilledRange,
+                   |  left row count: $rowCount
+                   |  bloom sizes: ${rightBloomMap.map(_.size()).getOrElse(0)}
+                   |  groupBy: ${joinPart.groupBy.toString}
+                   |""".stripMargin)
     val rightSkewFilter = joinConf.partSkewFilter(joinPart)
     def genGroupBy(partitionRange: PartitionRange) =
       GroupBy.from(
