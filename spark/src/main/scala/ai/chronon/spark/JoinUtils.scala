@@ -24,7 +24,6 @@ import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
-import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.LoggerFactory
 
 import java.util
@@ -281,23 +280,6 @@ object JoinUtils {
     })
 
     labelMap.groupBy(_._2).map { case (v, kvs) => (v, tableUtils.chunk(kvs.keySet.toSet)) }
-  }
-
-  /**
-    * Generate a Bloom filter for 'joinPart' when the row count to be backfilled falls below a specified threshold.
-    * This method anticipates that there will likely be a substantial number of rows on the right side that need to be filtered out.
-    *
-    * @return bloomfilter map option for right part
-    */
-
-  def genBloomFilterIfNeeded(
-      joinPart: ai.chronon.api.JoinPart,
-      joinConf: ai.chronon.api.Join,
-      leftRowCount: Long,
-      unfilledRange: PartitionRange,
-      bloomMapOpt: Option[util.Map[String, BloomFilter]]): Option[util.Map[String, BloomFilter]] = {
-
-    rightBlooms
   }
 
   def injectKeyFilter(leftDf: DataFrame, joinPart: api.JoinPart): Unit = {

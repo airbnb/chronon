@@ -291,6 +291,8 @@ class Join(joinConf: api.Join,
           } else {
             if (leftRowCount <= tableUtils.bloomFilterThreshold) {
               logger.info(s"Counted $leftRowCount rows, running join in bloom filter mode.")
+              // Generate a Bloom filter for 'joinPart' when the row count to be backfilled falls below a specified threshold.
+              // This method anticipates that there will likely be a substantial number of rows on the right side that need to be filtered out.
               val leftBlooms = joinConf.leftKeyCols.iterator.map { key =>
                 key -> unfilledLeftDf
                   .map(_.df.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange))
