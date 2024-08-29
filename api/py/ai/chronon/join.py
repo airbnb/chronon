@@ -389,6 +389,20 @@ def Join(
     derivations: List[api.Derivation] = None,
     deprecation_date: str = None,
     tags: Dict[str, str] = None,
+    data=api.MetaData(
+        online=online,
+        production=production,
+        customJson=json.dumps(custom_json),
+        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies + bootstrap_dependencies),
+        outputNamespace=output_namespace,
+        tableProperties=table_properties,
+        modeToEnvMap=env,
+        samplePercent=sample_percent,
+        offlineSchedule=offline_schedule,
+        consistencySamplePercent=consistency_sample_percent,
+        historicalBackfill=historical_backfill,
+        deprecationDate=deprecation_date,
+    ),
     **kwargs,
 ) -> api.Join:
     """
@@ -581,22 +595,9 @@ def Join(
             )
         ]
 
-    bootstrap_dependencies = [] if dependencies is not None else utils.get_bootstrap_dependencies(bootstrap_parts)
+    [] if dependencies is not None else utils.get_bootstrap_dependencies(bootstrap_parts)
 
-    metadata = api.MetaData(
-        online=online,
-        production=production,
-        customJson=json.dumps(custom_json),
-        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies + bootstrap_dependencies),
-        outputNamespace=output_namespace,
-        tableProperties=table_properties,
-        modeToEnvMap=env,
-        samplePercent=sample_percent,
-        offlineSchedule=offline_schedule,
-        consistencySamplePercent=consistency_sample_percent,
-        historicalBackfill=historical_backfill,
-        deprecationDate=deprecation_date,
-    )
+    metadata = data
 
     return api.Join(
         left=updated_left,

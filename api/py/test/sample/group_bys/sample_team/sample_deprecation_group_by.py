@@ -16,15 +16,8 @@ Sample group by
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+from ai.chronon.group_by import Aggregation, GroupBy, Operation, TimeUnit, Window
 from sources import test_sources
-from ai.chronon.group_by import (
-    GroupBy,
-    Aggregation,
-    Operation,
-    Window,
-    TimeUnit,
-)
-
 
 v1 = GroupBy(
     sources=[
@@ -39,7 +32,7 @@ v1 = GroupBy(
     ],
     additional_argument="To be placed in customJson",
     online=True,
-    deprecationDate="2023-01-01",
+    deprecation_date="2023-01-01",
 )
 
 v1_incorrect_deprecation_format = GroupBy(
@@ -55,5 +48,5 @@ v1_incorrect_deprecation_format = GroupBy(
     ],
     additional_argument="To be placed in customJson",
     online=True,
-    deprecationDate="2023-1-1",
+    deprecation_date="2023-1-1",
 )
