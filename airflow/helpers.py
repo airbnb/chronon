@@ -116,9 +116,9 @@ def should_schedule(conf, mode, conf_type):
             # online + (realtime or has topic)
             online = conf["metaData"].get("online", 0) == 1
             streaming = requires_streaming_task(conf, conf_type)
-            return conf["metaData"].get("online", 0) == 1 and (
+            return online and (
                 conf["metaData"].get("accuracy", 1) == 0 or
-                requires_streaming_task(conf, conf_type)
+                streaming
             )
     if conf_type == "joins":
         if mode == "metadata-upload":

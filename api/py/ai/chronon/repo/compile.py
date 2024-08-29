@@ -99,7 +99,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
     else:
         raise Exception(f"Input Path: {full_input_path}, isn't a file or a folder")
     validator = ChrononRepoValidator(chronon_root_path, output_root, log_level=log_level)
-    extra_online_group_bys = {}
+    extra_online_bsd_group_bys = {}
     num_written_objs = 0
     full_output_root = os.path.join(chronon_root_path, output_root)
     teams_path = os.path.join(chronon_root_path, TEAMS_FILE_PATH)
@@ -110,39 +110,63 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
             num_written_objs += 1
 
-            if obj_class is Join and feature_display:
-                _print_features_names("Output Join Features", get_join_output_columns(obj))
+            if feature_display:
+                _print_features(obj, obj_class)
 
-            if obj_class is GroupBy and feature_display:
-                _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
-
-            # In case of online join, we need to materialize the underlying online group_bys.
-            if obj_class is Join and obj.metaData.online:
+            # In case of join, we need to materialize the following underlying group_bys
+            # 1. group_bys whose online param is set
+            # 2. group_bys whose backfill_start_date (BSD) param is set.
+            if obj_class is Join:
                 online_group_bys = {}
+                bsd_group_bys = {}
                 offline_gbs = []  # gather list to report errors
                 for jp in obj.joinParts:
                     if jp.groupBy.metaData.online:
                         online_group_bys[jp.groupBy.metaData.name] = jp.groupBy
+                    elif jp.groupBy.backfillStartDate:
+                        bsd_group_bys[jp.groupBy.metaData.name] = jp.groupBy
                     else:
                         offline_gbs.append(jp.groupBy.metaData.name)
-                extra_online_group_bys.update(online_group_bys)
-                assert not offline_gbs, \
-                    "You must make all dependent GroupBys `online` if you want to make your join `online`." \
-                    " You can do this by passing the `online=True` argument to the GroupBy constructor." \
-                    " Fix the following: {}".format(offline_gbs)
-    if extra_online_group_bys:
-        num_written_group_bys = 0
-        # load materialized joins to validate the additional group_bys against.
-        validator.load_objs()
-        for name, obj in extra_online_group_bys.items():
-            team_name = name.split(".")[0]
-            _set_team_level_metadata(obj, teams_path, team_name)
-            if _write_obj(full_output_root, validator, name, obj, log_level,
-                          force_compile=True, force_overwrite=force_overwrite):
-                num_written_group_bys += 1
-        print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
+                logging.debug(f"Online GroupBys: {online_group_bys.keys()}, BSD GroupBys: {bsd_group_bys.keys()}, offline GroupBys: {offline_gbs}")
+                extra_online_bsd_group_bys.update({**online_group_bys, **bsd_group_bys})
+                if obj.metaData.online:
+                    group_bys_not_online = offline_gbs + list(bsd_group_bys.keys())
+                    assert not group_bys_not_online, \
+                        "You must make all dependent GroupBys `online` if you want to make your join [{}] `online`." \
+                        " You can do this by passing the `online=True` argument to the GroupBy constructor." \
+                        " Fix the following: {}".format(obj.metaData.name, group_bys_not_online)
+    if extra_online_bsd_group_bys:
+        _handle_extra_group_bys(
+            group_bys=extra_online_bsd_group_bys,
+            force_overwrite=force_overwrite,
+            full_output_root=full_output_root,
+            log_level=log_level,
+            teams_path=teams_path,
+            validator=validator)
     if num_written_objs > 0:
         print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
+
+
+def _print_features(obj, obj_class):
+    if obj_class is Join:
+        _print_features_names("Output Join Features", get_join_output_columns(obj))
+    if obj_class is GroupBy:
+        _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
+
+
+def _handle_extra_group_bys(group_bys, force_overwrite, full_output_root, log_level, teams_path,
+                            validator):
+    num_written_group_bys = 0
+    # load materialized joins to validate the additional group_bys against.
+    validator.load_objs()
+    for name, obj in group_bys.items():
+        team_name = name.split(".")[0]
+        _set_team_level_metadata(obj, teams_path, team_name)
+        if _write_obj(full_output_root, validator, name, obj, log_level,
+                      # online and BSD GBs referenced in join compiled here
+                      force_compile=True, force_overwrite=force_overwrite):
+            num_written_group_bys += 1
+    print(f"Successfully wrote {num_written_group_bys} online GroupBy objects to {full_output_root}")
 
 
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
@@ -213,7 +237,7 @@ def _write_obj(full_output_root: str,
     if force_overwrite:
         _print_warning(f"Force overwrite {class_name} {name}")
     elif not validator.safe_to_overwrite(obj):
-        _print_warning(f"Cannot overwrite {class_name} {name} with existing online conf")
+        _print_warning(f"Cannot overwrite {class_name} {name}  with existing online conf")
         return False
     _write_obj_as_json(name, obj, output_file, obj_class)
     return True
