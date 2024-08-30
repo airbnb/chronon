@@ -12,7 +12,6 @@ stripe-internal/oss-pypi-wheels
 stripe-internal/pages
 stripe-internal/payable
 stripe-internal/pos-js-v1
-stripe-internal/sources
 stripe-internal/stripe-extension
 stripe-internal/third-party-containers
 stripe-internal/zoolander
@@ -32,7 +31,6 @@ stripe-private-oss-forks/promlens
 stripe-private-oss-forks/prophet
 stripe-private-oss-forks/refinery
 stripe-private-oss-forks/schema-registry
-stripe-private-oss-forks/sloop
 stripe-private-oss-forks/snakebite-py3
 stripe-private-oss-forks/spacy-models
 stripe-private-oss-forks/spark

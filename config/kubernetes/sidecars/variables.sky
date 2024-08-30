@@ -142,21 +142,6 @@ VECTOR_CONTAINER_FALLBACK_ENV = DEFUALT_CONTAINER_ENV
 
 # HEADS UP! Updating these values is no longer the right way to roll out a new version of the consul-agent-init sidecar.
 #
-# The consul-agent-init sidecar is now using our new support for sidecar deploys! You can rollout a new version of the
-# container image by deploying the `consul-agent-init-image` service:
-#
-# QA: http://go/qa/deploy/consul-agent-init-image
-# Prod: http://go/deploy/consul-agent-init-image
-#
-# The constants below will only be used as a fallback in case Henson does not provide a version for this sidecar
-# for some reason.
-#
-# gocode commit: https://git.corp.stripe.com/stripe-internal/gocode/commit/ee5956fbc5bff52bed300e3cc1b218737e389978
-CONSUL_AGENT_INIT_CONTAINER_FALLBACK_DIGEST = "sha256:6fb28edc95bd2f61cbe0c831106c19d77af4df71b2181eb88a6df181a993ae00"
-CONSUL_AGENT_INIT_CONTAINER_FALLBACK_ENV = DEFUALT_CONTAINER_ENV
-
-# HEADS UP! Updating these values is no longer the right way to roll out a new version of the consul-agent-init sidecar.
-#
 # The host-health-agent-sidecar is now using our new support for sidecar deploys! You can rollout a new version of the
 # container image by deploying the `host-health-agent-sidecar` service:
 #

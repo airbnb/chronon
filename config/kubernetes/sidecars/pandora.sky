@@ -22,6 +22,21 @@ _ConfidantSecret = struct
 
 pandora_container_name = "pandora-init-image"
 
+def pandora_options(use_credentials_proxy=None):
+    """
+    Set options for Pandora secrets. This is only needed in exceptional cases.
+
+    Args:
+        use_credentials_proxy: Optional boolean to use or not credentials-proxy. Defaults to yes when the pod is running on Shared MSP and false otherwise.
+    """
+    if use_credentials_proxy == None:
+        fail("must specify whether or not to use credentials-proxy in pandora_options")
+
+    return pod_plugin(
+        _update_pod_options,
+        use_credentials_proxy = use_credentials_proxy,
+    )
+
 def yaml_secret(*, prefix, filename = None, key_type = "symbol", key_types = {}, mode = 0o640, container_names = [None], allow_missing = False, secrets_dir='/pay/keys'):
     """
     Add a secret to a pod in YAML format.
@@ -212,10 +227,6 @@ def _pandora_make_secret(type, template_spec, container_names, secrets_dir='/pay
     keys_mounts = [volume_mount(secrets_dir, container_name = name) for name in container_names]
 
     return compose_plugins(
-        conditional_plugin(
-            is_shared_msp,
-            use_credentials_proxy_plugin,
-        ),
         pod_plugin(
             _pandora_update_pod,
             secret = _ConfidantSecret(type = type, template_spec = template_spec, secrets_dir = secrets_dir),
@@ -228,15 +239,20 @@ def _pandora_update_pod(ctx, plugin, pod_def):
     config["secrets"].append(plugin.secret)
 
 def _update_pod_options(ctx, plugin, pod_def):
-    _setup_pandora(ctx, pod_def)
+    _setup_pandora(ctx, pod_def, use_credentials_proxy = plugin.use_credentials_proxy)
 
-def _setup_pandora(ctx, pod_def, secrets_dir='/pay/keys'):
+def _setup_pandora(ctx, pod_def, secrets_dir='/pay/keys', use_credentials_proxy=None):
     if "confidant_config" in pod_def:
+        if use_credentials_proxy != None:
+            fail("Choosing whether to enable the credentials proxy for secrets must be done before adding any secrets.")
         return pod_def["confidant_config"]
+
+    if use_credentials_proxy == None:
+        use_credentials_proxy = is_shared_msp(ctx, pod_def)
 
     config = {
         "secrets": [],
-        "use_credentials_proxy": is_shared_msp(ctx, pod_def),
+        "use_credentials_proxy": use_credentials_proxy,
         "resource": pod_def["resource"],
     }
 
@@ -258,6 +274,7 @@ def _setup_pandora(ctx, pod_def, secrets_dir='/pay/keys'):
 
     if config["use_credentials_proxy"]:
         volumes.extend([
+            use_credentials_proxy_plugin(),
             host_volume(
                 "/etc/ssl/certs/stripe-cas",
                 type = "Directory",

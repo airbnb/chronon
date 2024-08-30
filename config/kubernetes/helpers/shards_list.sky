@@ -1,9 +1,9 @@
 # DO NOT EDIT: http://go/vendor-skycfg
 SHARD_TYPE = struct(
-    TEST="test",
-    SHARED_MSP="shared_msp",
-    DEDICATED_MSP="dedicated_msp",
-    CANARY="canary",
+    TEST="TEST",
+    SHARED_MSP="SHARED_MSP",
+    DEDICATED_MSP="DEDICATED_MSP",
+    CANARY="CANARY",
 )
 
 SHARD_STATE = struct(
@@ -21,93 +21,32 @@ BINPACKING_STATE = struct(
 def shard(name, *, shared_msp=True, cron=False, account="mainland", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers = ["A100", "A200", "A300", "A400"]):
     return struct(name=name, shared_msp=shared_msp, cron=cron, account=account, shard_type=shard_type, shard_state=shard_state, binpacking_state=binpacking_state, preferred_availability_tiers=preferred_availability_tiers)
 
-ENV_CLUSTER_SHARDS = {
-    "qa": {
-        "bom": [
-            shard("kubemaster", cron=True),
-            shard("mspaa", account="bom.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
-            shard("mspbb", account="bom.qa.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100", "A200"]),
-        ],
-        "cmh": [
-            shard("kubemaster", cron=True),
-            shard("kubeapiaa", cron=True,shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspaa", account="cmh.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
-            shard("mspbb", account="cmh.qa.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100", "A200"]),
-        ],
-        "east": [
-            shard("kubemaster", cron=True),
-            shard("mspaa", account="east.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-        ],
-        "northwest": [
-            shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
-            shard("kubeapiaa"),
-            shard("kubeapibb"),
-            shard("kubeapicc"),
-            shard("kubeapidd", cron=True),
-            shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY, binpacking_state=BINPACKING_STATE.ENABLED),
-            shard("msppink", account="msp-shared-all-pink", shard_type=SHARD_TYPE.TEST, shard_state=SHARD_STATE.RELEASE_CANDIDATE),
-            shard("mspyellow", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspaa", account="northwest.qa.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.ENABLED, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
-            shard("mspbb", account="northwest.qa.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200"]),
-            shard("mspcc", account="northwest.qa.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100"]),
-            shard("mspzz", account="northwest.qa.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("msptest", account="northwest.qa.5.msp", shard_type=SHARD_TYPE.TEST, shard_state=SHARD_STATE.RELEASE_CANDIDATE, binpacking_state=BINPACKING_STATE.ENABLED,),
-        ],
-    },
-    "preprod": {
-        "cmh": [
-            shard("kubemaster", cron=True),
-            shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspteal", account="cmh.preprod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("mspaa", account="cmh.preprod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.ENABLED, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
-            shard("mspbb", account="cmh.preprod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200", "A100"]),
-            shard("mspcc", account="cmh.preprod.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE, preferred_availability_tiers=["A200", "A100"]),
-        ]
-    },
-    "prod": {
-        "bom": [
-            shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
-            shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
-            shard("mspaa", account="bom.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers=["A400", "A300"]),
-            shard("mspbb", account="bom.prod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers=["A100", "A200"]),
-        ],
-        "cmh": [
-            shard("kubemaster", cron=True, binpacking_state=BINPACKING_STATE.DISABLED),
-            shard("kubeapiaa", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
-            shard("kubeapibb", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.DISABLED, shard_state=SHARD_STATE.GA),
-            shard("mspaa", account="cmh.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers=["A300", "A400"]),
-            shard("mspbb", account="cmh.prod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, binpacking_state=BINPACKING_STATE.DISABLED, preferred_availability_tiers=["A200"]),
-            shard("mspcc", account="cmh.prod.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE, preferred_availability_tiers=["A100"]),
-            shard("mspdd", account="cmh.prod.4.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.RELEASE_CANDIDATE, preferred_availability_tiers=["A100"]),
-        ],
-        "east": [
-            shard("kubemaster", cron=True),
-            shard("mspaa", account="east.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-        ],
-        "northwest": [
-            shard("kubemaster", shared_msp=False, cron=True, shard_type=SHARD_TYPE.DEDICATED_MSP),
-            shard("kubeapiaa"),
-            shard("kubeapibb"),
-            shard("kubeapicc"),
-            shard("kubeapidd", cron=True),
-            shard("kubeapiee"),
-            shard("kubeapiff", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("kubeapigg", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("kubeapihh", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-            shard("kubeapitest", cron=True, shard_type=SHARD_TYPE.CANARY),
-            shard("mspruby", account="northwest.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.ENABLED, shard_state=SHARD_STATE.GA),
-            shard("mspaa", account="northwest.prod.1.msp", shard_type=SHARD_TYPE.SHARED_MSP, binpacking_state=BINPACKING_STATE.ENABLED, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
-            shard("mspbb", account="northwest.prod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A400", "A300"]),
-            shard("mspcc", account="northwest.prod.3.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200"]),
-            shard("mspdd", account="northwest.prod.4.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200"]),
-            shard("mspee", account="northwest.prod.5.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A200"]),
-            shard("mspff", account="northwest.prod.6.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100"]),
-            shard("mspgg", account="northwest.prod.8.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100"]),
-            shard("msphh", account="northwest.prod.9.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA, preferred_availability_tiers=["A100"]),
-            shard("mspzz", account="northwest.prod.2.msp", shard_type=SHARD_TYPE.SHARED_MSP, shard_state=SHARD_STATE.GA),
-        ],
-    },
-}
+def get_shards_from_context(ctx):
+    """
+    Returns the list of all available shards from the context.
+
+    Only the shards for the current environment and region are returned.
+
+    Args:
+        ctx: The Henson context.
+    Returns:
+        A list of `shard` objects.
+    """
+    ctx_shards = json.unmarshal(ctx.vars["msp.all_available_shards"])
+    shards = []
+    for name, shard_dict in ctx_shards.items():
+        # In config-srv "all tiers" is represented as None, but in skycfg we need the full tier list instead.
+        tiers = shard_dict['preferred_availability_tiers'] if shard_dict['preferred_availability_tiers'] else ["A100", "A200", "A300", "A400"]
+        shards.append(shard(
+            name,
+            account=shard_dict["account"],
+            cron=shard_dict["supports_cron"],
+            shard_type=shard_dict["shard_type"],
+            shard_state=shard_dict["shard_state"],
+            binpacking_state="ENABLED" if shard_dict["supports_binpacking"] == "true" else "DISABLED",
+            preferred_availability_tiers=tiers,
+        ))
+    return shards
 
 # Fake shards map to be used in tests. This allows us to decouple test cases from real shards
 MOCK_SHARDS_MAP = {

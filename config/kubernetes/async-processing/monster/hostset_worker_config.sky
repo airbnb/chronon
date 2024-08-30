@@ -547,6 +547,24 @@ A200_HOST_SETS = struct(
                     "cmh":          cluster(consume_replicas=4,
                                             fanout_replicas=3),
                 }),
+        hostset("link-preference",
+            suffix="low-cpu",
+            qa={
+                "northwest":    cluster(graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=True),
+                "bom":          empty_worker_cluster(),
+                "cmh":          empty_worker_cluster(),
+            },
+            preprod={
+                "northwest":    cluster(graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=True),
+                "bom":          empty_worker_cluster(),
+                "cmh":          empty_worker_cluster(),
+            },
+            prod={
+                "northwest":    cluster(graviton_migration_enabled=True, graviton_migration_size="100%", graviton_migration_target_6g=True),
+                "bom":          empty_worker_cluster(),
+                "cmh":          empty_worker_cluster(),
+            },
+        ),
         hostset("model-ingestion",
                 suffix="low-cpu",
                 # pre-loading disabled for fanout workers through environment variables
@@ -752,14 +770,14 @@ A200_HOST_SETS = struct(
                     # Please reach out to #billing-infrastructure before changing this config!
                     # We have large traffic spikes around end of month and we have carefully chosen config
                     # to support this
-                    "northwest":    cluster(consume_replicas=31,
+                    "northwest":    cluster(consume_replicas=20, # This is scaled on a scheduled basis, see autoscaling config below
                                             fanout_replicas=2,
                                             mb_per_worker=2000,
                                             instance_type=m6g_16xlarge),
                     "bom":    cluster(consume_replicas=10,
-                                            fanout_replicas=2,
+                                                fanout_replicas=2,
                                             instance_type=r6g_xlarge),
-                    "cmh":          cluster(consume_replicas=29, # This is scaled on a scheduled basis, see autoscaling config below
+                    "cmh":          cluster(consume_replicas=10, # This is scaled on a scheduled basis, see autoscaling config below
                                             fanout_replicas=2,
                                             mb_per_worker=2000,
                                             instance_type=m6g_16xlarge),
@@ -769,13 +787,65 @@ A200_HOST_SETS = struct(
                         "cmh": {
                             "consume": scaled_object(
                                 schedule_triggers= [
+                                    # Trigger for 31-day months (January, March, May, July, August, October, December)
                                     schedule_trigger(
-                                        start= "0 */2 * * *",    # Start scaling at the beginning of every even hour
-                                        end= "0 1-23/2 * * *",    # Scale down at the beginning of every odd hour
+                                        start= "0 23 24 1,3,5,7,8,10,12 *",  # Start scaling at 23:00 on the 24th for 31-day months
+                                        end= "0 12 2 * *",                   # Scale down at 12:00 on the 2nd of any next month
                                         desired_replicas= 31,
                                         timezone= "UTC"
-                                    )],
-                                min_replicas = 25,
+                                    ),
+
+                                    # Trigger for 30-day months (April, June, September, November)
+                                    schedule_trigger(
+                                        start= "0 23 23 4,6,9,11 *",  # Start scaling at 23:00 on the 23rd for 30-day months
+                                        end= "0 12 2 * *",            # Scale down at 12:00 on the 2nd of any next month
+                                        desired_replicas= 31,
+                                        timezone= "UTC"
+                                    ),
+
+                                    # Trigger for February (assumed to always be 28 days)
+                                    # Note: In leap years, February can have 29 days, but this configuration assumes a standard 28-day month.
+                                    schedule_trigger(
+                                        start= "0 23 22 2 *",       # Start scaling at 23:00 on the 22nd specifically for February
+                                        end= "0 12 2 * *",          # Scale down at 12:00 on the 2nd of any next month
+                                        desired_replicas= 31,
+                                        timezone= "UTC"
+                                    ),
+                                ],
+                                min_replicas = 10,
+                                max_replicas = 31,
+                                enable_immediate_scaling = True,
+                            )
+                        },
+                        "northwest": {
+                            "consume": scaled_object(
+                                schedule_triggers= [
+                                    # Trigger for 31-day months (January, March, May, July, August, October, December)
+                                    schedule_trigger(
+                                        start= "0 23 24 1,3,5,7,8,10,12 *",  # Start scaling at 23:00 on the 24th for 31-day months
+                                        end= "0 12 2 * *",                   # Scale down at 12:00 on the 2nd of any next month
+                                        desired_replicas= 31,
+                                        timezone= "UTC"
+                                    ),
+
+                                    # Trigger for 30-day months (April, June, September, November)
+                                    schedule_trigger(
+                                        start= "0 23 23 4,6,9,11 *",  # Start scaling at 23:00 on the 23rd for 30-day months
+                                        end= "0 12 2 * *",            # Scale down at 12:00 on the 2nd of any next month
+                                        desired_replicas= 31,
+                                        timezone= "UTC"
+                                    ),
+
+                                    # Trigger for February (assumed to always be 28 days)
+                                    # Note: In leap years, February can have 29 days, but this configuration assumes a standard 28-day month.
+                                    schedule_trigger(
+                                        start= "0 23 22 2 *",       # Start scaling at 23:00 on the 22nd specifically for February
+                                        end= "0 12 2 * *",          # Scale down at 12:00 on the 2nd of any next month
+                                        desired_replicas= 31,
+                                        timezone= "UTC"
+                                    ),
+                                ],
+                                min_replicas = 20,
                                 max_replicas = 31,
                                 enable_immediate_scaling = True,
                             )
@@ -1119,9 +1189,9 @@ A400_HOST_SETS = struct(
                     # pre-loading disabled for fanout workers through environment variables
                     # general workers need a little bit more cpu, so we're increasing the
                     # mb_per_worker to reduce the number of workers per pod
-                    "northwest":    cluster(mb_per_worker=3800, # # Increasing since memory utilization is hovering > ~90% and worker utilizatio is still low.
+                    "northwest":    cluster(mb_per_worker=4200, # # Increasing since memory utilization is hovering > ~90% and worker utilizatio is still low.
                                             consume_replicas=0,
-                                            fanout_replicas=40),
+                                            fanout_replicas=70),
                 },
                 autoscaling={
                     "prod": {

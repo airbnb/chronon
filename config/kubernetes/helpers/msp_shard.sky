@@ -8,7 +8,7 @@ load("config/kubernetes/helpers/context.sky", "get_target_shard", "get_env", "ge
 load("config/kubernetes/plugins/compose.sky", "compose_plugins")
 load("config/kubernetes/plugins/conditional.sky", "conditional_plugin")
 load("config/kubernetes/plugins/types.sky", "any_resource_plugin")
-load("config/kubernetes/helpers/shards_list.sky", "ENV_CLUSTER_SHARDS", "BINPACKING_STATE", "SHARD_TYPE", "SHARD_STATE")
+load("config/kubernetes/helpers/shards_list.sky", "get_shards_from_context", "BINPACKING_STATE", "SHARD_TYPE", "SHARD_STATE")
 
 # TODO(dfradette): remove this annotation once Amp has been changed to use `stripe.io/msp-shard`
 MSP_CLUSTER_ANNOTATION = "stripe.io/msp-cluster"
@@ -19,6 +19,7 @@ ACCOUNT_NAME_TO_ID = {
     "mainland": "030465607062",
     "mainland2": "108124432883",
     "msp-shared-all-pink": "213343938293",
+    "test.account.1": "213343938293",
 }
 
 def all_available_shards_info(ctx, shared_msp=None, shard_states=None, shard_types=None, binpacking_states=None, _override_shards_map=None):
@@ -33,12 +34,12 @@ def all_available_shards_info(ctx, shared_msp=None, shard_states=None, shard_typ
       binpacking_states: If specified, only return shards that have one of the specified binpacking state.
       _override_shards_map: Only used for tests, overrides the default shard map to allow testing for custom shard combinations
     """
-    clusters = ENV_CLUSTER_SHARDS.get(get_env(ctx), {})
+    shards = get_shards_from_context(ctx)
     # Only used in tests to provide a custom list of shards
     if _override_shards_map != None:
         clusters = _override_shards_map.get(get_env(ctx), {})
+        shards = clusters.get(get_cluster(ctx), [])
 
-    shards = clusters.get(get_cluster(ctx), [])
     if shared_msp != None:
         shards = [s for s in shards if s.shared_msp == shared_msp]
     if shard_states != None:
@@ -119,9 +120,7 @@ def account_for_shard(ctx, shard):
       ctx: The Henson context.
       shard: The name of the MSP shard.
     """
-    clusters = ENV_CLUSTER_SHARDS.get(get_env(ctx), {})
-    shards = clusters.get(get_cluster(ctx), [])
-    for s in shards:
+    for s in get_shards_from_context(ctx):
         if s.name == shard:
             return s.account
 
@@ -134,8 +133,7 @@ def all_available_shards_with_cron(ctx):
     Args:
       ctx: The Henson context.
     """
-    clusters = ENV_CLUSTER_SHARDS.get(get_env(ctx), {})
-    shards = clusters.get(get_cluster(ctx), [])
+    shards = get_shards_from_context(ctx)
     return [s.name for s in shards if s.cron == True]
 
 def msp_shard(shard):
@@ -149,15 +147,6 @@ def msp_shard(shard):
 
 def _set_msp_shard(ctx, plugin, resource_def):
     shard = getattr(plugin, "shard")
-
-    if shard not in all_available_shards(ctx):
-        fail(
-            "`{shard}` is not available in {env}-{cluster}".format(
-            shard = shard,
-            env = get_env(ctx),
-            cluster = get_cluster(ctx),
-        ))
-
     resource_def["metadata"]["annotations"].update(
             _shard_annotations(shard),
     )
@@ -219,7 +208,7 @@ def _shard_annotations(shard):
 
 
 def get_account_for_shard(ctx, shard):
-    local_shards = ENV_CLUSTER_SHARDS.get(get_env(ctx), {}).get(get_cluster(ctx), [])
+    local_shards = get_shards_from_context(ctx)
     for s in local_shards:
         if s.name == shard:
             return s.account
@@ -239,7 +228,7 @@ def maybe_enable_security_group_policy(ctx, shard_name):
     """
     new_ctx = struct(vars = dict(ctx.vars))
 
-    local_shards = ENV_CLUSTER_SHARDS.get(get_env(ctx), {}).get(get_cluster(ctx), [])
+    local_shards = get_shards_from_context(ctx)
     for s in local_shards:
         if s.name == shard_name:
             if s.account != "mainland":

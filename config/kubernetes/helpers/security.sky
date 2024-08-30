@@ -164,7 +164,11 @@ def add_security_groups(*secgroups):
 
     Args:
         *secgroups: the security groups to add
-     """
+    """
+    # Account local security groups are not supported by the VPC RC. Anyway this is a default SG,
+    # so it gets added to every pod anyway and there's no reason to add it explicitly.
+    if 'account-cluster' in secgroups:
+        fail("account-cluster is a default security group and should not be added explicitly")
 
     return compose_plugins(
         pod_plugin(

@@ -1,5 +1,5 @@
 # DO NOT EDIT: http://go/vendor-skycfg
-load("config/kubernetes/helpers/context.sky", "get_env", "get_cluster", "is_faas_managed", "is_onebox")
+load("config/kubernetes/helpers/context.sky", "get_env", "get_cluster", "is_faas_managed", "is_onebox", "get_blue_green_color")
 load("config/kubernetes/helpers/proto_or_yaml.sky", "HorizontalPodAutoscalerBehavior", "HPAScalingPolicy", "HPAScalingRules")
 load("config/kubernetes/meta/metadata.sky", "render_metadata")
 load("config/kubernetes/plugins/types.sky", "deployment_plugin")
@@ -577,13 +577,15 @@ def _update_resource(ctx, args, resource_def):
     if args.scale_down_stabilization_window_seconds != None:
         scale_down_behavior["stabilization_window_seconds"] = args.scale_down_stabilization_window_seconds
 
-    if args.enable_immediate_scaling == True:
-        # Apply the external-scaling-control annotation to the parent deployment to preserve replica counts between
+    if args.enable_immediate_scaling == True and get_blue_green_color(ctx) == None:
+        # Apply the external-scaling-control annotation to the parent non-bg deployment to preserve replica counts between
         # deployments until the HPA retakes control of replica count management. What this annotation does is tell Henson-Agent to use the replica count of the
         # old deployment in the new deployment object. This prevents the PUT of the updated deployment from temporarily overriding the replica
         # count set by the HPA on the previous deployment, thus averting situations where new deployments scale down deployments despite
         # the HPA desiring otherwise (i.e wants a higher replica count). Additonally, this annotation will preserve replica counts between old and new deployments
         # in presence of an autoscaling lock.
+
+        # For blue-green deployments, we will always start the deployment at the default replica count on the new color.
 
         # The preferred method in Kubernetes is to remove the replica count from the deployment all together and PATCH the live deployment, but we use
         # PUTS in henson-agent so we need to do this instead.

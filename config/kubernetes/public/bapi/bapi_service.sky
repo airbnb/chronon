@@ -139,7 +139,8 @@ def bapi_service(ctx,
       "STRIPE_BAPI_MSP_PRIORITY_TIER": priority.name,
       # Used for the standard tiers system in some code, setting it lets us reuse some of the GRPC metrics/Canonical line code
       # without having to sprinkle our overrides everywhere.
-      "SERVER_PRIORITY_TIER": priority.name
+      "SERVER_PRIORITY_TIER": priority.name,
+      "STRIPE_BUNDLE_USE_YJIT_PCT_ENABLED": "100"
   }
   env_vars.update(bapi_gc_config())
 

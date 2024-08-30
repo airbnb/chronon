@@ -61,6 +61,7 @@ review_requirements:
   - codeowners-orchestration
   reviewers_in_training:
   - qzsun
+  - ronaldso
 - files:
   - sidecars/memcontainer.sky
   assignees:

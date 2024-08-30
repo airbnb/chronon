@@ -541,7 +541,7 @@ def _pay_server_cronjob(
         annotations(cronjob_annotations),
         # default main container volumes
         _volume_plugins(ctx),
-        _confidant_volume_plugins(),
+        _pandora_volume_plugins(),
         _iam_volume_plugins(namespace),
         # mounting ca certs from host to ensure TLS to fleetrepo can be
         # verified
@@ -917,9 +917,9 @@ def _iam_volume_plugins(namespace):
         ])
     return compose_plugins(*plugins)
 
-def _confidant_volume_plugins():
+def _pandora_volume_plugins():
     """
-    Return a plugin to mount default confidant related volumes for pay-server cronjonbs
+    Return a plugin to mount default pandora related volumes for pay-server cronjonbs
     """
     plugins = [
         mount_pod_volume(
@@ -1026,32 +1026,11 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
     Return a plugin to setup init containers in pay-server cronjobs.
     """
 
-    # the confidant init container
+    # the pandora init container
+    computed_secrets = _calculate_pandora_secrets(ctx, namespace, secrets)
+    DEFAULT_PANDORA_INIT_CONTAINER_NAME = "secret-templater"
 
-    # use the namespace instead of iam_role_prefix for non-kubeacronnoegress jobs in the secrets init container.
-    # this ensures that cronops uses the `cronops.northwest.prod` role instead of `ops.kubecron.northwest.prod`
-    if namespace == DEFAULT_NAMESPACE:
-        _iam_role_prefix = iam_role_prefix
-    else:
-        _iam_role_prefix = namespace
-    aws_role_name = _pod_iam_role(ctx, _iam_role_prefix)
-
-
-    confidant_config = {
-        "url": "https://confidant.{}.{}.stripe.io:446".format(get_cluster(ctx), get_env(ctx)),
-        "auth_key": "alias/confidant-auth/{}/{}".format(get_cluster(ctx), get_env(ctx)),
-        "auth_context": {
-            "to": "ConfidantServer",
-            "from": aws_role_name,
-            "user_type": "service",
-        },
-        "region": get_aws_region(ctx),
-    }
-
-    computed_secrets = _calculate_confidant_secrets(ctx, namespace, secrets)
-    DEFAULT_CONFIDANT_INIT_CONTAINER_NAME = "secret-templater"
-
-    confidant_container_plugins = [
+    pandora_container_plugins = [
         volume_mount(
             "/etc/ssl",
             name="node-etc-ssl",
@@ -1062,57 +1041,46 @@ def _pay_server_cronjob_init_containers(ctx, namespace, iam_role_prefix, secrets
             name="pod-pay-keys",
             read_only = False
         ),
-        _customize_image_pull_policy_plugin(DEFAULT_CONFIDANT_INIT_CONTAINER_NAME, "IfNotPresent"),
+        _customize_image_pull_policy_plugin(DEFAULT_PANDORA_INIT_CONTAINER_NAME, "IfNotPresent"),
     ]
 
     # The default secrets system for pay-server-cron jobs is Pandora
-    confidant_container_command = [
+    # The current name (confidant-sidecar) is a misnomer and it exclusively relies on Pandora
+    pandora_container_command = [
         "/bin/confidant-sidecar",
-        "--confidant-config-json={}".format(json.encode(confidant_config)),
-        "--confidant-service-name={}".format(aws_role_name),
         "--secret-templates-json={}".format(json.encode(computed_secrets)),
-        "--pandora-path=/pandora-encrypted-secret-bundles",
-        "--secret-bag-type=pandora",
+        "--pandora-path=/pandora-encrypted-secret-bundles"
     ]
-    if pandora_migration == PANDORA_MIGRATION_INPROGRESS:
-        confidant_container_command = [
-            "/bin/confidant-sidecar",
-            "--confidant-config-json={}".format(json.encode(confidant_config)),
-            "--confidant-service-name={}".format(aws_role_name),
-            "--secret-templates-json={}".format(json.encode(computed_secrets)),
-            "--pandora-path=/pandora-encrypted-secret-bundles",
-            "--secret-bag-type=migration",
-            ]
 
     # A job that doesn't have a dedicated host type (namespace) that declares an IAM role will
     # need to use a custom AWS config that gets credentials from kube-iam on the worker.
+    # NOTE: This was previously added for confidant but confidant is deprecated. This could be safe to remove but I'm not touching this because I'm not certain!
     if namespace == DEFAULT_NAMESPACE:
-        confidant_container_plugins.append(
+        pandora_container_plugins.append(
             volume_mount(
                 "/run/kube-iam/kube-iam.sock",
                 name="node-run-kube-iam-kube-iam-sock",
                 read_only = False
             ),
         )
-        confidant_container_command.append("--kube-iam-server-socket=/run/kube-iam/kube-iam.sock")
 
     # Pandora-init container is the default container for pay-server-cron jobs
-    confidant_container = init_container(
+    pandora_container = init_container(
         name = PANDORA_CONTAINER_NAME,
         image = _pandora_image(ctx),
-        command = confidant_container_command,
-        plugins = confidant_container_plugins,
+        command = pandora_container_command,
+        plugins = pandora_container_plugins,
     )
 
     # there's only one init container for now.
-    return confidant_container
+    return pandora_container
 
-def _calculate_confidant_secrets(ctx, namespace, customized_secrets = None):
+def _calculate_pandora_secrets(ctx, namespace, customized_secrets = None):
     """
-    Generate the confidant secrets by combining the default secrets and the customized secrets.
+    Generate the pandora secrets by combining the default secrets and the customized secrets.
     Args:
         namespace: The `host_type` to run the cronjob on.
-        customized_secrets: A dictionary that describes the additional secrets for confidant.
+        customized_secrets: A dictionary that describes the additional secrets for pandora.
                 The optional keys in the `customized_secrets` dictionary can be one or more of
                 "yaml_secret", "json_secret", "raw_secret".
                 Generally, the format of the secrets dictionary should be similar to:
@@ -1147,7 +1115,7 @@ def _calculate_confidant_secrets(ctx, namespace, customized_secrets = None):
                                 "mode": "0640" # default to '0640',
                                 "base64": False # default to False
                             }
-    Returns: a json blob contains all confidant secrets configurations.
+    Returns: a json blob contains all pandora secrets configurations.
     """
     credential_files = {
         "base_credentials": {
