@@ -387,8 +387,6 @@ def requires_log_flattening_task(conf: ChrononJobTypes) -> bool:
 def applicable_mode_table_map(conf: ChrononJobTypes) -> dict:
     """A method to parse the config and return a map of applicable modes and the return hive tables from these modes"""
 
-    print("*" * 1000)
-    print(conf)
     # the main table for a given config
     if conf.metaData and conf.metaData.name:
         table_name = output_table_name(conf, full_name=True)

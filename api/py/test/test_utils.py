@@ -120,12 +120,14 @@ def test_dedupe_in_order():
     assert utils.dedupe_in_order([2, 1, 3, 1, 3, 2]) == [2, 1, 3]
 
 
-# def test_applicable_mode_table_map():
-#
-#     map = utils.applicable_mode_table_map(group_by_requiring_backfill)
-#     import pdb ; pdb.set_trace()
-#
-#     assert 1 == 1
+def test_applicable_mode_table_map():
+
+    with open("test/sample/production/joins/sample_team/sample_join_from_group_by_from_join.v1") as conf_file:
+        json = conf_file.read()
+        joinConf = json2thrift(json, api.Join)
+
+    map = utils.applicable_mode_table_map(joinConf)
+    assert list(map.keys()) == ["backfill", "stats-summary", "log-flattener"]
 
 
 def test_get_applicable_mode_for_group_bys(group_by_requiring_backfill, online_group_by_requiring_streaming):
