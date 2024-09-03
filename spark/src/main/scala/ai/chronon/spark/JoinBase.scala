@@ -347,19 +347,14 @@ abstract class JoinBase(joinConf: api.Join,
   }
 
   private def performArchive(tables: Seq[String], autoArchive: Boolean, mainTable: String): Unit = {
-    if (autoArchive) {
-      val archivedAtTs = Instant.now()
-      tables.foreach(tableUtils.archiveOrDropTableIfExists(_, Some(archivedAtTs)))
-    } else {
-      val errorMsg = s"""Auto archive is disabled due to semantic hash out of date.
+    val errorMsg = s"""Auto archive is disabled.
                         |Please verify if your config involves true semantic changes. If so, archive the following tables:
                         |${tables.map(t => s"- $t").mkString("\n")}
                         |If not, please retry this job with `--unset-semantic-hash` flag in your run.py args.
                         |OR run the spark SQL cmd:  ALTER TABLE $mainTable UNSET TBLPROPERTIES ('semantic_hash') and then retry this job.
                         |""".stripMargin
-      logger.error(errorMsg)
-      throw SemanticHashException(errorMsg)
-    }
+    logger.error(errorMsg)
+    throw SemanticHashException(errorMsg)
   }
 
   def computeLeft(overrideStartPartition: Option[String] = None): Unit = {
