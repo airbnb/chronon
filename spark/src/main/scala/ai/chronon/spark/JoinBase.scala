@@ -411,7 +411,8 @@ abstract class JoinBase(joinConf: api.Join,
       logger.info(s"No semantic change detected, leaving output table in place.")
     } else {
       logger.info(s"Semantic changes detected, archiving output table.")
-      performArchive(tablesChanged, autoArchive, outputTable)
+      // Only archive the output table when semantic_hash change is detected
+      performArchive(Seq(outputTable), autoArchive, outputTable)
     }
 
     val (rangeToFill, unfilledRanges) = getUnfilledRange(overrideStartPartition, outputTable)
@@ -478,12 +479,20 @@ abstract class JoinBase(joinConf: api.Join,
 
     // Run command to archive ALL tables that have changed semantically since the last run
     // TODO: We should not archive the output table or other JP's intermediate tables in the case of selected join parts mode
+    // TODO: maintain JP semantic_hash at tblproperties of each JP table
     val (tablesChanged, autoArchive) = tablesToRecompute(joinConf, outputTable, tableUtils, unsetSemanticHash)
     if (tablesChanged.isEmpty) {
       logger.info(s"No semantic change detected, leaving output table in place.")
     } else {
       logger.info(s"Semantic changes detected, archiving output table.")
-      performArchive(tablesChanged, autoArchive, outputTable)
+      // We should NOT archive the bootstrap_table because at this point it is already run and updated, but the
+      // semantic_hash of the output table may be out of date, and this may cause bootstrap_table to be archived table.
+      val tablesToArchive = if (selectedJoinParts.isDefined) {
+        tablesChanged.filterNot(_ == joinConf.metaData.bootstrapTable)
+      } else {
+        tablesChanged
+      }
+      performArchive(tablesToArchive, autoArchive, outputTable)
     }
 
     // Overwriting Join Left with bootstrap table to simplify later computation
@@ -506,7 +515,11 @@ abstract class JoinBase(joinConf: api.Join,
     def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
     if (unfilledRanges.isEmpty) {
       logger.info(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
-      return Some(finalResult)
+      if (selectedJoinParts.isDefined) {
+        return None
+      } else {
+        return Some(finalResult)
+      }
     }
 
     stepDays.foreach(metrics.gauge("step_days", _))
