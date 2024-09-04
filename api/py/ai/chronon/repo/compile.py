@@ -30,6 +30,7 @@ from ai.chronon.repo import (
     JOIN_FOLDER_NAME,
     STAGING_QUERY_FOLDER_NAME,
     TEAMS_FILE_PATH,
+    dependency_tracker,
     teams,
 )
 from ai.chronon.repo.serializer import thrift_simple_json_protected
@@ -98,9 +99,15 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         raise Exception(f"Input Path: {full_input_path}, isn't a file or a folder")
     validator = ChrononRepoValidator(chronon_root_path, output_root, log_level=log_level)
     extra_online_or_gb_backfill_enabled_group_bys = {}
+    extra_dependent_group_bys_to_materialize = {}
+    extra_dependent_joins_to_materialize = {}
     num_written_objs = 0
     full_output_root = os.path.join(chronon_root_path, output_root)
     teams_path = os.path.join(chronon_root_path, TEAMS_FILE_PATH)
+    entity_dependency_tracker = dependency_tracker.ChrononEntityDependencyTracker(
+        chronon_root_path=full_output_root,
+        log_level=log_level,
+    )
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
@@ -140,18 +147,87 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                         " You can do this by passing the `online=True` argument to the GroupBy constructor."
                         " Fix the following: {}".format(obj.metaData.name, group_bys_not_online)
                     )
-    if extra_online_or_gb_backfill_enabled_group_bys:
-        _handle_extra_group_bys(
-            group_bys=extra_online_or_gb_backfill_enabled_group_bys,
+
+            output_file_path = _get_materialized_file_path(name, obj, team_name)
+            downstreams = entity_dependency_tracker.check_downstream(output_file_path)
+            for downstream in downstreams:
+                if obj_class is Join:
+                    downstream_class = GroupBy
+                elif obj_class is GroupBy:
+                    downstream_class = Join
+                conf_result = _get_conf_file_path(downstream, downstream_class)
+                if conf_result is None:
+                    continue
+                conf_var, conf_file_path = conf_result
+                conf_obj = eo.from_file(
+                    chronon_root_path,
+                    os.path.join(chronon_root_path, conf_file_path),
+                    downstream_class,
+                    log_level=log_level,
+                )
+                obj_to_materialize = conf_obj[downstream]
+                if downstream_class is GroupBy:
+                    extra_dependent_group_bys_to_materialize[obj_to_materialize.metaData.name] = obj_to_materialize
+                elif downstream_class is Join:
+                    extra_dependent_joins_to_materialize[obj_to_materialize.metaData.name] = obj_to_materialize
+
+    if not force_overwrite:
+        dependencies = {}
+        dependencies.update({**extra_dependent_group_bys_to_materialize, **extra_dependent_joins_to_materialize})
+        assert not dependencies, (
+            "You must also materialize all dependent GroupBys or Joins."
+            " You can do this by passing the --force-overwrite flag to the compile.py command."
+            " Detected dependencies are as follows: {}".format(sorted(dependencies.keys()))
+        )
+
+    if extra_online_or_gb_backfill_enabled_group_bys or extra_dependent_group_bys_to_materialize:
+        extra_online_or_gb_backfill_enabled_group_bys.update(extra_dependent_group_bys_to_materialize)
+        _handle_extra_conf_objects_to_materialize(
+            conf_objs=extra_online_or_gb_backfill_enabled_group_bys,
             force_overwrite=force_overwrite,
             full_output_root=full_output_root,
             log_level=log_level,
             teams_path=teams_path,
             validator=validator,
         )
+    if extra_dependent_joins_to_materialize:
+        _handle_extra_conf_objects_to_materialize(
+            conf_objs=extra_dependent_joins_to_materialize,
+            force_overwrite=force_overwrite,
+            full_output_root=full_output_root,
+            log_level=log_level,
+            teams_path=teams_path,
+            validator=validator,
+            is_gb=False,
+        )
     if num_written_objs > 0:
         print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
 
+# downstream -> 'sample_team.sample_label_join.v1' for input 'group_bys/sample_team/event_sample_group_by.v1'
+# todos add type hints and param arguments to all functions and methods
+def _get_conf_file_path(downstream, downstream_class):
+    parts = downstream.split(".")
+    # This may happen for scenarios where group_by is defined within join file itself.
+    # So no separate group_by file is present. In such cases, compiling the join will handle the materialize
+    # for group_by.
+    if len(parts) != 3:
+        return None
+    team_name = parts[0]
+    conf_name = parts[1] + ".py"
+    conf_var = parts[2]
+    if downstream_class is Join:
+        return conf_var, os.path.join(JOIN_FOLDER_NAME, team_name, conf_name)
+    elif downstream_class is GroupBy:
+        return conf_var, os.path.join(GROUP_BY_FOLDER_NAME, team_name, conf_name)
+
+
+def _get_materialized_file_path(name, obj, team_name):
+    obj_class_to_materialize = type(obj)
+    class_name_to_materialize = obj_class_to_materialize.__name__
+    name_to_materialize = name.split(".", 1)[1]
+    obj_folder_name_to_materialize = get_folder_name_from_class_name(class_name_to_materialize)
+    output_file_path = os.path.join(obj_folder_name_to_materialize, team_name, name_to_materialize)
+    return output_file_path
 
 def _print_features(obj, obj_class):
     if obj_class is Join:
@@ -160,11 +236,13 @@ def _print_features(obj, obj_class):
         _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
 
 
-def _handle_extra_group_bys(group_bys, force_overwrite, full_output_root, log_level, teams_path, validator):
-    num_written_group_bys = 0
-    # load materialized joins to validate the additional group_bys against.
+def _handle_extra_conf_objects_to_materialize(
+    conf_objs, force_overwrite, full_output_root, log_level, teams_path, validator, is_gb=True
+):
+    num_written_objs = 0
+    # load materialized joins to validate the additional conf objects against.
     validator.load_objs()
-    for name, obj in group_bys.items():
+    for name, obj in conf_objs.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
         if _write_obj(
@@ -173,14 +251,12 @@ def _handle_extra_group_bys(group_bys, force_overwrite, full_output_root, log_le
             name,
             obj,
             log_level,
-            # online and offline GBs with backfill enabled referenced in join compiled here
             force_compile=True,
             force_overwrite=force_overwrite,
         ):
-            num_written_group_bys += 1
-    print(
-        f"Successfully wrote {num_written_group_bys} online or backfill enabled GroupBy objects to {full_output_root}"
-    )
+            num_written_objs += 1
+    print(f"Successfully wrote {num_written_objs} {'GroupBy' if is_gb else 'Join'} objects to {full_output_root}")
+
 
 
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
