@@ -12,17 +12,18 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from collections import Counter
-import ai.chronon.api.ttypes as api
-import ai.chronon.repo.extract_objects as eo
-import ai.chronon.utils as utils
-from ai.chronon.group_by import validate_group_by
 import copy
 import gc
 import importlib
 import json
 import logging
-from typing import List, Dict, Tuple
+from collections import Counter
+from typing import Dict, List, Tuple
+
+import ai.chronon.api.ttypes as api
+import ai.chronon.repo.extract_objects as eo
+import ai.chronon.utils as utils
+from ai.chronon.group_by import validate_group_by
 
 logging.basicConfig(level=logging.INFO)
 
@@ -66,15 +67,9 @@ def JoinPart(
             group_by_module_name = ref["__name__"]
             break
     if group_by_module_name:
-        logging.debug(
-            "group_by's module info from garbage collector {}".format(
-                group_by_module_name
-            )
-        )
+        logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
         group_by_module = importlib.import_module(group_by_module_name)
-        __builtins__["__import__"] = eo.import_module_set_name(
-            group_by_module, api.GroupBy
-        )
+        __builtins__["__import__"] = eo.import_module_set_name(group_by_module, api.GroupBy)
     else:
         if not group_by.metaData.name:
             logging.error("No group_by file or custom group_by name found")
@@ -83,9 +78,7 @@ def JoinPart(
                 "You may pass it in via GroupBy.name. \n"
             )
     if key_mapping:
-        utils.check_contains(
-            key_mapping.values(), group_by.keyColumns, "key", group_by.metaData.name
-        )
+        utils.check_contains(key_mapping.values(), group_by.keyColumns, "key", group_by.metaData.name)
 
     join_part = api.JoinPart(groupBy=group_by, keyMapping=key_mapping, prefix=prefix)
     join_part.tags = tags
@@ -119,9 +112,7 @@ class DataType:
     # TIMESTAMP = api.TDataType(api.DataKind.TIMESTAMP)
 
     def MAP(key_type: api.TDataType, value_type: api.TDataType) -> api.TDataType:
-        assert key_type == api.TDataType(
-            api.DataKind.STRING
-        ), "key_type has to STRING for MAP types"
+        assert key_type == api.TDataType(api.DataKind.STRING), "key_type has to STRING for MAP types"
 
         return api.TDataType(
             api.DataKind.MAP,
@@ -129,9 +120,7 @@ class DataType:
         )
 
     def LIST(elem_type: api.TDataType) -> api.TDataType:
-        return api.TDataType(
-            api.DataKind.LIST, params=[api.DataField("elem", elem_type)]
-        )
+        return api.TDataType(api.DataKind.LIST, params=[api.DataField("elem", elem_type)])
 
     def STRUCT(name: str, *fields: FieldsType) -> api.TDataType:
         return api.TDataType(
@@ -290,18 +279,13 @@ def LabelPart(
                 and len(label.groupBy.aggregations[0].windows) == 1
             )
             assert valid_agg, (
-                "Too many aggregations or invalid windows found. "
-                "Single aggregation with one window allowed."
+                "Too many aggregations or invalid windows found. " "Single aggregation with one window allowed."
             )
-            valid_time_unit = (
-                label.groupBy.aggregations[0].windows[0].timeUnit == api.TimeUnit.DAYS
-            )
+            valid_time_unit = label.groupBy.aggregations[0].windows[0].timeUnit == api.TimeUnit.DAYS
             assert valid_time_unit, "Label aggregation window unit must be DAYS"
             window_size = label.groupBy.aggregations[0].windows[0].length
             if left_start_offset != window_size or left_start_offset != left_end_offset:
-                assert (
-                    left_start_offset == window_size and left_end_offset == window_size
-                ), (
+                assert left_start_offset == window_size and left_end_offset == window_size, (
                     "left_start_offset and left_end_offset will be inferred to be same as aggregation"
                     "window {window_size} and the incorrect values will be ignored. "
                 )
@@ -341,9 +325,7 @@ def Derivation(name: str, expression: str) -> api.Derivation:
     return api.Derivation(name=name, expression=expression)
 
 
-def BootstrapPart(
-    table: str, key_columns: List[str] = None, query: api.Query = None
-) -> api.BootstrapPart:
+def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = None) -> api.BootstrapPart:
     """
     Bootstrap is the concept of using pre-computed feature values and skipping backfill computation during the
     training data generation phase. Bootstrap can be used for many purposes:
@@ -405,6 +387,7 @@ def Join(
     bootstrap_from_log: bool = False,
     label_part: api.LabelPart = None,
     derivations: List[api.Derivation] = None,
+    deprecation_date: str = None,
     tags: Dict[str, str] = None,
     **kwargs,
 ) -> api.Join:
@@ -502,6 +485,9 @@ def Join(
         Flag to indicate whether join backfill should backfill previous holes.
         Setting to false will only backfill latest single partition
     :type historical_backfill: bool
+    :param deprecation_date:
+        Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
+    :type deprecation_date: str
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -510,13 +496,10 @@ def Join(
     updated_left = copy.deepcopy(left)
     if left.events and left.events.query.selects:
         assert "ts" not in left.events.query.selects.keys(), (
-            "'ts' is a reserved key word for Chronon,"
-            " please specify the expression in timeColumn"
+            "'ts' is a reserved key word for Chronon," " please specify the expression in timeColumn"
         )
         # mapping ts to query.timeColumn to events only
-        updated_left.events.query.selects.update(
-            {"ts": updated_left.events.query.timeColumn}
-        )
+        updated_left.events.query.selects.update({"ts": updated_left.events.query.timeColumn})
     # name is set externally, cannot be set here.
     # root_keys = set(root_base_source.query.select.keys())
     # for join_part in right_parts:
@@ -534,13 +517,8 @@ def Join(
 
     left_dependencies = utils.get_dependencies(left, dependencies, lag=lag)
 
-    right_info = [
-        (join_part.groupBy.sources, join_part.groupBy.metaData)
-        for join_part in right_parts
-    ]
-    right_info = [
-        (source, meta_data) for (sources, meta_data) in right_info for source in sources
-    ]
+    right_info = [(join_part.groupBy.sources, join_part.groupBy.metaData) for join_part in right_parts]
+    right_info = [(source, meta_data) for (sources, meta_data) in right_info for source in sources]
     right_dependencies = [
         dep
         for (source, meta_data) in right_info
@@ -581,29 +559,21 @@ def Join(
         validate_group_by(join_part.groupBy)
     custom_json["join_part_tags"] = join_part_tags
 
-    consistency_sample_percent = (
-        consistency_sample_percent if check_consistency else None
-    )
+    consistency_sample_percent = consistency_sample_percent if check_consistency else None
 
     # external parts need to be unique on (prefix, part.source.metaData.name)
     if online_external_parts:
-        count_map = Counter(
-            [(part.prefix, part.source.metadata.name) for part in online_external_parts]
-        )
+        count_map = Counter([(part.prefix, part.source.metadata.name) for part in online_external_parts])
         has_duplicates = False
         for key, count in count_map.items():
             if count > 1:
                 has_duplicates = True
                 print(f"Found {count - 1} duplicate(s) for external part {key}")
-        assert (
-            has_duplicates is False
-        ), "Please address all the above mentioned duplicates."
+        assert has_duplicates is False, "Please address all the above mentioned duplicates."
 
     if bootstrap_from_log:
         has_logging = sample_percent > 0 and online
-        assert (
-            has_logging
-        ), "Join must be online with sample_percent set in order to use bootstrap_from_log option"
+        assert has_logging, "Join must be online with sample_percent set in order to use bootstrap_from_log option"
         bootstrap_parts = (bootstrap_parts or []) + [
             api.BootstrapPart(
                 # templated values will be replaced when metaData.name is set at the end
@@ -611,19 +581,13 @@ def Join(
             )
         ]
 
-    bootstrap_dependencies = (
-        []
-        if dependencies is not None
-        else utils.get_bootstrap_dependencies(bootstrap_parts)
-    )
+    bootstrap_dependencies = [] if dependencies is not None else utils.get_bootstrap_dependencies(bootstrap_parts)
 
     metadata = api.MetaData(
         online=online,
         production=production,
         customJson=json.dumps(custom_json),
-        dependencies=utils.dedupe_in_order(
-            left_dependencies + right_dependencies + bootstrap_dependencies
-        ),
+        dependencies=utils.dedupe_in_order(left_dependencies + right_dependencies + bootstrap_dependencies),
         outputNamespace=output_namespace,
         tableProperties=table_properties,
         modeToEnvMap=env,
@@ -631,6 +595,7 @@ def Join(
         offlineSchedule=offline_schedule,
         consistencySamplePercent=consistency_sample_percent,
         historicalBackfill=historical_backfill,
+        deprecationDate=deprecation_date,
     )
 
     return api.Join(

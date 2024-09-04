@@ -267,7 +267,8 @@ object Builders {
         samplePercent: Double = 100,
         consistencySamplePercent: Double = 5,
         tableProperties: Map[String, String] = Map.empty,
-        historicalBackill: Boolean = true
+        historicalBackill: Boolean = true,
+        deprecationDate: String = null
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)
@@ -285,6 +286,8 @@ object Builders {
         result.setConsistencySamplePercent(consistencySamplePercent)
       if (tableProperties.nonEmpty)
         result.setTableProperties(tableProperties.toJava)
+      if (deprecationDate != null)
+        result.setDeprecationDate(deprecationDate)
       result
     }
   }
