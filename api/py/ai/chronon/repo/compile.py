@@ -148,7 +148,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                         " Fix the following: {}".format(obj.metaData.name, group_bys_not_online)
                     )
 
-            output_file_path = _get_materialized_file_path(name, obj, team_name)
+            output_file_path = _get_relative_materialized_file_path(full_output_root, name, obj)
             downstreams = entity_dependency_tracker.check_downstream(output_file_path)
             for downstream in downstreams:
                 if obj_class is Join:
@@ -203,31 +203,40 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
     if num_written_objs > 0:
         print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
 
-# downstream -> 'sample_team.sample_label_join.v1' for input 'group_bys/sample_team/event_sample_group_by.v1'
-# todos add type hints and param arguments to all functions and methods
+
+def _get_relative_materialized_file_path(full_output_root, name, obj):
+    _, _, abs_output_file_path = _construct_output_file_name(full_output_root, name, obj)
+    output_file_path = abs_output_file_path.replace(full_output_root + os.sep, "")
+    return output_file_path
+
+
+# todo add type hints and param arguments to all functions and methods
 def _get_conf_file_path(downstream, downstream_class):
     parts = downstream.split(".")
+
     # This may happen for scenarios where group_by is defined within join file itself.
     # So no separate group_by file is present. In such cases, compiling the join will handle the materialize
     # for group_by.
-    if len(parts) != 3:
+    if len(parts) < 3:
         return None
+
     team_name = parts[0]
-    conf_name = parts[1] + ".py"
-    conf_var = parts[2]
+    conf_var = parts[-1]
+    conf_name = parts[-2] + ".py"
+
+    # Nested path between team_name and conf_name
+    nested_path = parts[1:-2] if len(parts) > 3 else []
+
+    # Construct the path for configuration file
+    conf_file_path = os.path.join(team_name, *nested_path, conf_name)
+
+    # Return the appropriate path based on downstream_class
     if downstream_class is Join:
-        return conf_var, os.path.join(JOIN_FOLDER_NAME, team_name, conf_name)
+        return conf_var, os.path.join(JOIN_FOLDER_NAME, conf_file_path)
     elif downstream_class is GroupBy:
-        return conf_var, os.path.join(GROUP_BY_FOLDER_NAME, team_name, conf_name)
-
-
-def _get_materialized_file_path(name, obj, team_name):
-    obj_class_to_materialize = type(obj)
-    class_name_to_materialize = obj_class_to_materialize.__name__
-    name_to_materialize = name.split(".", 1)[1]
-    obj_folder_name_to_materialize = get_folder_name_from_class_name(class_name_to_materialize)
-    output_file_path = os.path.join(obj_folder_name_to_materialize, team_name, name_to_materialize)
-    return output_file_path
+        return conf_var, os.path.join(GROUP_BY_FOLDER_NAME, conf_file_path)
+    else:
+        return None  # Handle other cases or errors if needed
 
 def _print_features(obj, obj_class):
     if obj_class is Join:
@@ -306,33 +315,40 @@ def _write_obj(
     """
     Returns True if the object is successfully written.
     """
-    team_name = name.split(".")[0]
-    obj_class = type(obj)
+    file_name, obj_class, output_file = _construct_output_file_name(full_output_root, name, obj)
     class_name = obj_class.__name__
-    name = name.split(".", 1)[1]
+    team_name = name.split(".")[0]
     _print_highlighted(f"{class_name} Team", team_name)
-    _print_highlighted(f"{class_name} Name", name)
-    obj_folder_name = get_folder_name_from_class_name(class_name)
-    output_path = os.path.join(full_output_root, obj_folder_name, team_name)
-    output_file = os.path.join(output_path, name)
+    _print_highlighted(f"{class_name} Name", file_name)
     skip_reasons = validator.can_skip_materialize(obj)
     if not force_compile and skip_reasons:
         reasons = ", ".join(skip_reasons)
-        _print_warning(f"Skipping {class_name} {name}: {reasons}")
+        _print_warning(f"Skipping {class_name} {file_name}: {reasons}")
         if os.path.exists(output_file):
             _print_warning(f"old file exists for skipped config: {output_file}")
         return False
     validation_errors = validator.validate_obj(obj)
     if validation_errors:
-        _print_error(f"Could not write {class_name} {name}", ", ".join(validation_errors))
+        _print_error(f"Could not write {class_name} {file_name}", ", ".join(validation_errors))
         return False
     if force_overwrite:
-        _print_warning(f"Force overwrite {class_name} {name}")
+        _print_warning(f"Force overwrite {class_name} {file_name}")
     elif not validator.safe_to_overwrite(obj):
-        _print_warning(f"Cannot overwrite {class_name} {name}  with existing online conf")
+        _print_warning(f"Cannot overwrite {class_name} {file_name} with existing online conf")
         return False
-    _write_obj_as_json(name, obj, output_file, obj_class)
+    _write_obj_as_json(file_name, obj, output_file, obj_class)
     return True
+
+
+def _construct_output_file_name(full_output_root, name, obj):
+    team_name = name.split(".")[0]
+    obj_class = type(obj)
+    class_name = obj_class.__name__
+    file_name = name.split(".", 1)[1]
+    obj_folder_name = get_folder_name_from_class_name(class_name)
+    output_path = os.path.join(full_output_root, obj_folder_name, team_name)
+    output_file = os.path.join(output_path, file_name)
+    return file_name, obj_class, output_file
 
 
 def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type):

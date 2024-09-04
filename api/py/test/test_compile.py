@@ -250,7 +250,7 @@ def test_detected_dependent_group_bys_materialized():
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
 
 
-def test_detected_dependent_inline_group_bys():
+def test_detected_dependent_nested_joins():
     """
     Should raise errors as we are trying to create aggregations without input column.
     """
@@ -259,10 +259,11 @@ def test_detected_dependent_inline_group_bys():
         extract_and_convert,
         [
             "--chronon_root=test/sample",
-            "--input_path=joins/sample_team/sample_chaining_join.py",
+            "--input_path=group_bys/unit_test/user/sample_nested_group_by.py",
+            "--force-overwrite",
         ],
     )
     assert result.exit_code == 0
-    # expected_message = "Successfully wrote 2 GroupBy objects to test/sample/production".strip().lower()
-    # actual_message = str(result.output).strip().lower()
-    # assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
+    expected_message = "Successfully wrote 1 Join objects to test/sample/production".strip().lower()
+    actual_message = str(result.output).strip().lower()
+    assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
