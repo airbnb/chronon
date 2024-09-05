@@ -16,20 +16,14 @@ Sample Join with GBs that are online and requires backfill
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
-from group_bys.unit_test import (
-    sample_group_by,
-)
-
 from ai.chronon.join import Join, JoinPart
-
+from group_bys.unit_test import entity_sample_group_by
+from sources import test_sources
 
 v1 = Join(
     left=test_sources.event_source,
     right_parts=[
-        JoinPart(
-            group_by=sample_group_by.v1
-        ),
+        JoinPart(group_by=entity_sample_group_by.v1),
     ],
     online=True,
 )
