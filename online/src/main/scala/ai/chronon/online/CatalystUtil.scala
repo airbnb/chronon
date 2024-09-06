@@ -136,11 +136,11 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
     }
 
   private val (transformFunc: (InternalRow => Option[InternalRow]), outputSparkSchema: types.StructType) = initialize()
-  @transient lazy val outputChrononSchema = SparkConversions.toChrononSchema(outputSparkSchema)
-  private val outputDecoder = SparkInternalRowConversions.from(outputSparkSchema)
   @transient lazy val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
   private val inputEncoder = SparkInternalRowConversions.to(inputSparkSchema, true)
   private val inputArrEncoder = SparkInternalRowConversions.to(inputSparkSchema, false)
+  @transient lazy val outputChrononSchema = SparkConversions.toChrononSchema(outputSparkSchema)
+  private val outputDecoder = SparkInternalRowConversions.from(outputSparkSchema)
   private lazy val outputArrDecoder = SparkInternalRowConversions.from(outputSparkSchema, false)
 
   def toInternalRow(values: Array[Any]): InternalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
