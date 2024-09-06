@@ -116,7 +116,7 @@ class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSch
     poolMap.performWithValue(poolKey, cuPool) { util =>
       {
         val valuesArr = mapToArr(values)
-        util.internalRowToMap(util.toInternalRow(valuesArr))
+        util.sqlTransformRowToMap(util.toInternalRow(valuesArr))
       }
     }
   def outputChrononSchema: Array[(String, DataType)] =
@@ -146,15 +146,15 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
 
   def toInternalRow(values: Array[Any]): InternalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
   private def toInternalRow(values: Map[String, Any]): InternalRow = inputEncoder(values).asInstanceOf[InternalRow]
-  def performSql(values: Array[Any]): Option[Array[Any]] = internalRowToArray(toInternalRow(values))
-  def performSql(values: Map[String, Any]): Option[Map[String, Any]] = internalRowToMap(toInternalRow(values))
+  def sqlTransform(values: Array[Any]): Option[Array[Any]] = sqlTransformInternalRowToArray(toInternalRow(values))
+  def sqlTransform(values: Map[String, Any]): Option[Map[String, Any]] = sqlTransformRowToMap(toInternalRow(values))
 
-  def internalRowToMap(row: InternalRow): Option[Map[String, Any]] = {
+  def sqlTransformRowToMap(row: InternalRow): Option[Map[String, Any]] = {
     val resultRowMaybe = transformFunc(row)
     val outputVal = resultRowMaybe.map(resultRow => outputDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Map[String, Any]])
   }
-  def internalRowToArray(row: InternalRow): Option[Array[Any]] = {
+  private def sqlTransformInternalRowToArray(row: InternalRow): Option[Array[Any]] = {
     val resultRowMaybe = transformFunc(row)
     val outputVal = resultRowMaybe.map(resultRow => outputArrDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Array[Any]])
