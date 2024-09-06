@@ -17,12 +17,13 @@
 package ai.chronon.online.test
 
 import ai.chronon.api._
-import ai.chronon.online.CatalystUtil
+import ai.chronon.online.{CatalystUtil, PooledCatalystUtil}
 import junit.framework.TestCase
-import org.junit.Assert.{assertEquals, assertTrue, assertArrayEquals}
+import org.junit.Assert.{assertArrayEquals, assertEquals, assertTrue}
 import org.junit.Test
 
 import java.util
+import scala.collection.JavaConverters._
 
 trait CatalystUtilTestSparkSQLStructs {
 
@@ -178,7 +179,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "bytes_x" -> "bytes_x"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 6)
     assertEquals(res.get("bool_x"), true)
     assertEquals(res.get("int32_x"), Int.MaxValue)
@@ -198,7 +199,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "e" -> "1 / 2 + 1"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 5)
     assertEquals(res.get("a"), 162)
     assertEquals(res.get("b"), 1073741824.0)
@@ -223,7 +224,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "k" -> "COALESCE(NULL, NULL, int32_x, NULL)"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 11)
     assertEquals(res.get("a"), 2147483645L)
     assertEquals(res.get("b"), "U3BhcmsgU1FM")
@@ -249,7 +250,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "e" -> "DAYOFWEEK('2009-07-30')"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 5)
     assertEquals(res.get("a"), "2038-01-19 03:14:07")
     assertTrue(res.get("b").isInstanceOf[java.lang.Long])
@@ -275,7 +276,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "bytes_x" -> "bytes_udf(bytes_x)"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 6)
     assertEquals(res.get("bool_x"), false)
     assertEquals(res.get("int32_x"), Int.MaxValue - 1)
@@ -299,7 +300,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "recursive_udf" -> "recursive_udf(8)"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 3)
     assertEquals(res.get("two_param_udf"), Long.MaxValue - Int.MaxValue)
     assertEquals(res.get("add_two_udf"), 3)
@@ -312,7 +313,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val selects = Seq("a" -> "int32_x")
     val wheres = Seq("FALSE AND int64_x > `int32_x`")
     val cu = new CatalystUtil(selects, CommonScalarsStruct, wheres)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertTrue(res.isEmpty)
   }
 
@@ -321,7 +322,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val selects = Seq("a" -> "int32_x")
     val wheres = Seq("FALSE OR int64_x > `int32_x`")
     val cu = new CatalystUtil(selects, CommonScalarsStruct, wheres)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 1)
     assertEquals(res.get("a"), Int.MaxValue)
   }
@@ -331,7 +332,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val selects = Seq("a" -> "int32_x")
     val wheres = Seq("FALSE OR int64_x < `int32_x`")
     val cu = new CatalystUtil(selects, CommonScalarsStruct, wheres)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertTrue(res.isEmpty)
   }
 
@@ -340,7 +341,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val selects = Seq("a" -> "int32_x")
     val wheres = Seq("int64_x > `int32_x`", "FALSE OR int64_x > `int32_x`")
     val cu = new CatalystUtil(selects, CommonScalarsStruct, wheres)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 1)
     assertEquals(res.get("a"), Int.MaxValue)
   }
@@ -350,7 +351,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val selects = Seq("a" -> "int32_x")
     val wheres = Seq("int64_x > `int32_x`", "FALSE OR int64_x < `int32_x`")
     val cu = new CatalystUtil(selects, CommonScalarsStruct, wheres)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertTrue(res.isEmpty)
   }
 
@@ -359,7 +360,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val selects = Seq("a" -> "int32_x")
     val wheres = Seq()
     val cu = new CatalystUtil(selects, CommonScalarsStruct, wheres)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 1)
     assertEquals(res.get("a"), Int.MaxValue)
   }
@@ -370,7 +371,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val selects = Seq("a" -> "int32_x")
     val wheres = Seq("COALESCE(NULL, NULL, int32_x, int64_x, NULL) = `int32_x`")
     val cu = new CatalystUtil(selects, CommonScalarsStruct, wheres)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 1)
     assertEquals(res.get("a"), Int.MaxValue)
   }
@@ -381,7 +382,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     val selects = Seq("a" -> "int32_x")
     val wheres = Seq("int32_x - 1 = SUB_ONE(int32_x)")
     val cu = new CatalystUtil(selects, CommonScalarsStruct, wheres)
-    val res = cu.performSql(CommonScalarsRow)
+    val res = cu.sqlTransform(CommonScalarsRow)
     assertEquals(res.get.size, 1)
     assertEquals(res.get("a"), Int.MaxValue)
   }
@@ -397,7 +398,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "bytes_x" -> "bytes_x"
     )
     val cu = new CatalystUtil(selects, CommonScalarsStruct)
-    val res = cu.performSql(CommonScalarsNullRow)
+    val res = cu.sqlTransform(CommonScalarsNullRow)
     assertEquals(res.get.size, 6)
     assertEquals(res.get("bool_x"), null)
     assertEquals(res.get("int32_x"), null)
@@ -418,7 +419,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "inner_opt_int32_opt" -> "inner_opt.int32_opt"
     )
     val cu = new CatalystUtil(selects, NestedOuterStruct)
-    val res = cu.performSql(NestedRow)
+    val res = cu.sqlTransform(NestedRow)
     assertEquals(res.get.size, 6)
     assertEquals(res.get("inner_req"), Map("int32_req" -> 12, "int32_opt" -> 34))
     assertEquals(res.get("inner_opt"), Map("int32_req" -> 56, "int32_opt" -> 78))
@@ -437,7 +438,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "inner_req_int32_opt" -> "inner_req.int32_opt"
     )
     val cu = new CatalystUtil(selects, NestedOuterStruct)
-    val res = cu.performSql(NestedNullRow)
+    val res = cu.sqlTransform(NestedNullRow)
     assertEquals(res.get.size, 4)
     assertEquals(res.get("inner_req"), Map("int32_req" -> 12, "int32_opt" -> null))
     assertEquals(res.get("inner_opt"), null)
@@ -456,7 +457,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "bytess" -> "bytess"
     )
     val cu = new CatalystUtil(selects, ListContainersStruct)
-    val res = cu.performSql(ListContainersRow)
+    val res = cu.sqlTransform(ListContainersRow)
     assertEquals(res.get.size, 6)
     assertEquals(res.get("bools"), makeArrayList(false, true, false))
     assertEquals(res.get("int32s"), makeArrayList(1, 2, 3))
@@ -484,7 +485,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "bytess" -> "bytess"
     )
     val cu = new CatalystUtil(selects, ListContainersStruct)
-    val res = cu.performSql(ArrayContainersRow)
+    val res = cu.sqlTransform(ArrayContainersRow)
     assertEquals(res.get.size, 6)
     assertEquals(res.get("bools"), makeArrayList(false, true, false))
     assertEquals(res.get("int32s"), makeArrayList(1, 2, 3))
@@ -503,7 +504,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "a" -> "int64s[1] + int32s[2]"
     )
     val cu = new CatalystUtil(selects, ListContainersStruct)
-    val res = cu.performSql(ListContainersRow)
+    val res = cu.sqlTransform(ListContainersRow)
     assertEquals(res.get.size, 1)
     assertEquals(res.get("a"), 8L)
   }
@@ -518,7 +519,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "e" -> "CARDINALITY(int32s)"
     )
     val cu = new CatalystUtil(selects, ListContainersStruct)
-    val res = cu.performSql(ListContainersRow)
+    val res = cu.sqlTransform(ListContainersRow)
     assertEquals(res.get.size, 5)
     assertEquals(res.get("a"), makeArrayList(2, 4, 6))
     assertEquals(res.get("b"), makeArrayList("123", "123"))
@@ -538,7 +539,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "bytess" -> "bytess"
     )
     val cu = new CatalystUtil(selects, MapContainersStruct)
-    val res = cu.performSql(MapContainersRow)
+    val res = cu.sqlTransform(MapContainersRow)
     assertEquals(res.get.size, 6)
     assertEquals(res.get("bools"), makeHashMap(1 -> false, 2 -> true, 3 -> false))
     assertEquals(res.get("int32s"), makeHashMap(1 -> 1, 2 -> 2, 3 -> 3))
@@ -558,7 +559,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "b" -> "strings['a']"
     )
     val cu = new CatalystUtil(selects, MapContainersStruct)
-    val res = cu.performSql(MapContainersRow)
+    val res = cu.sqlTransform(MapContainersRow)
     assertEquals(res.get.size, 2)
     assertEquals(res.get("a"), 2)
     assertEquals(res.get("b"), "hello")
@@ -572,7 +573,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
       "c" -> "MAP_VALUES(strings)"
     )
     val cu = new CatalystUtil(selects, MapContainersStruct)
-    val res = cu.performSql(MapContainersRow)
+    val res = cu.sqlTransform(MapContainersRow)
     assertEquals(res.get.size, 3)
     assertEquals(res.get("a"), makeHashMap(1 -> "2", 3 -> "4"))
     assertEquals(res.get("b").asInstanceOf[util.ArrayList[Any]].size, 3)
@@ -608,7 +609,7 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     ).toSeq
     val wheres = Seq("tag = 'inexistent'")
     val cu = new CatalystUtil(selects, inputEventStruct, wheres)
-    val res = cu.performSql(inputEventRow)
+    val res = cu.sqlTransform(inputEventRow)
     assertTrue(res.isEmpty)
   }
 
@@ -620,10 +621,46 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     ).toSeq
     val wheres = Seq("tag = 'v1.0'")
     val cu = new CatalystUtil(selects, inputEventStruct, wheres)
-    val res = cu.performSql(inputEventRow)
+    val res = cu.sqlTransform(inputEventRow)
     assertTrue(res.get.size == 3)
     assertTrue(res.get("id") == "unique_key")
     assertTrue(res.get("created") == 1000L)
     assertTrue(res.get("score") == 0.5)
+  }
+
+  val structListType: StructType = StructType.from(
+    "InputEventStruct",
+    Array(
+      ("ts", LongType),
+      ("key", StringType),
+      ("value",
+       ListType(
+         StructType.from(
+           "struct",
+           Array(
+             ("id", LongType),
+             ("data", StringType)
+           )
+         )))
+    )
+  )
+  val structListData: Map[String, Any] = Map(
+    "ts" -> 1000L,
+    "key" -> "test_key_1",
+    "value" -> Array(Array(1L, "data1"), Array(2L, "data2"))
+  )
+
+  def testPooledCatalystUtil(): Unit = {
+    val selects = Seq(
+      "ts" -> "ts",
+      "key" -> "key",
+      "ids" -> "transform(value, v -> v.id)"
+    )
+    val pooledCatalystUtil = new PooledCatalystUtil(selects, structListType)
+    val result = pooledCatalystUtil.applyDerivations(structListData)
+    assertEquals(3, result.get.size)
+    assertEquals(1000L, result.get("ts"))
+    assertEquals("test_key_1", result.get("key"))
+    assertArrayEquals(Array(1L, 2L), result.get("ids").asInstanceOf[java.util.List[Long]].asScala.toArray)
   }
 }
