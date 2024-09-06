@@ -347,12 +347,8 @@ class ChrononRepoValidator(object):
         # Only validate the join derivation when the underlying groupBy is valid
         if join.derivations and group_by_correct:
             features = get_pre_derived_join_features(join)
-            # For online joins keys are not included in output schema
-            if join.metaData.online:
-                columns = features
-            else:
-                keys = get_pre_derived_source_keys(join.left)
-                columns = features + keys
+            keys = get_pre_derived_source_keys(join.left)
+            columns = features + keys
             errors.extend(self._validate_derivations(columns, join.derivations))
         return errors
 
@@ -390,11 +386,7 @@ class ChrononRepoValidator(object):
 
         # validate the derivations are defined correctly
         if group_by.derivations:
-            # For online group_by keys are not included in output schema
-            if group_by.metaData.online:
-                columns = get_pre_derived_group_by_features(group_by)
-            else:
-                columns = get_pre_derived_group_by_columns(group_by)
+            columns = get_pre_derived_group_by_columns(group_by)
             errors.extend(self._validate_derivations(columns, group_by.derivations))
 
         # validate the expected deprecation date is in the correct format it is defined
