@@ -17,12 +17,13 @@
 package ai.chronon.online.test
 
 import ai.chronon.api._
-import ai.chronon.online.CatalystUtil
+import ai.chronon.online.{CatalystUtil, PooledCatalystUtil}
 import junit.framework.TestCase
-import org.junit.Assert.{assertEquals, assertTrue, assertArrayEquals}
+import org.junit.Assert.{assertArrayEquals, assertEquals, assertTrue}
 import org.junit.Test
 
 import java.util
+import scala.collection.JavaConverters._
 
 trait CatalystUtilTestSparkSQLStructs {
 
@@ -625,5 +626,41 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertTrue(res.get("id") == "unique_key")
     assertTrue(res.get("created") == 1000L)
     assertTrue(res.get("score") == 0.5)
+  }
+
+  val structListType: StructType = StructType.from(
+    "InputEventStruct",
+    Array(
+      ("ts", LongType),
+      ("key", StringType),
+      ("value",
+       ListType(
+         StructType.from(
+           "struct",
+           Array(
+             ("id", LongType),
+             ("data", StringType)
+           )
+         )))
+    )
+  )
+  val structListData: Map[String, Any] = Map(
+    "ts" -> 1000L,
+    "key" -> "test_key_1",
+    "value" -> Array(Array(1L, "data1"), Array(2L, "data2"))
+  )
+
+  def testPooledCatalystUtil(): Unit = {
+    val selects = Seq(
+      "ts" -> "ts",
+      "key" -> "key",
+      "ids" -> "transform(value, v -> v.id)"
+    )
+    val pooledCatalystUtil = new PooledCatalystUtil(selects, structListType)
+    val result = pooledCatalystUtil.applyDerivations(structListData)
+    assertEquals(3, result.get.size)
+    assertEquals(1000L, result.get("ts"))
+    assertEquals("test_key_1", result.get("key"))
+    assertArrayEquals(Array(1L, 2L), result.get("ids").asInstanceOf[java.util.List[Long]].asScala.toArray)
   }
 }

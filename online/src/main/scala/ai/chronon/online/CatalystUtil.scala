@@ -109,11 +109,12 @@ class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSch
     }
     arr
   }
-  def performSql(values: Map[String, Any]): Option[Map[String, Any]] =
+
+  // In fetching join derivations, Structs are Array-encoded in inputs but Map-encoded in outputs.
+  // TODO: Generalize this beyond fetching join derivations.
+  def applyDerivations(values: Map[String, Any]): Option[Map[String, Any]] =
     poolMap.performWithValue(poolKey, cuPool) { util =>
       {
-        // In fetching join derivations, Structs are Array-encoded in inputs and Map-encoded in outputs.
-        // TODO: Generalize this beyond fetching join derivations.
         val valuesArr = mapToArr(values)
         util.internalRowToMap(util.toInternalRow(valuesArr))
       }
