@@ -115,7 +115,7 @@ class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSch
         // In fetching join derivations, Structs are Array-encoded in inputs and Map-encoded in outputs.
         // TODO: Generalize this beyond fetching join derivations.
         val valuesArr = mapToArr(values)
-        util.performSql(util.toInternalRow(valuesArr))
+        util.internalRowToMap(util.toInternalRow(valuesArr))
       }
     }
   def outputChrononSchema: Array[(String, DataType)] =
@@ -139,28 +139,24 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
   @transient lazy val outputChrononSchema = SparkConversions.toChrononSchema(outputSparkSchema)
   private val outputDecoder = SparkInternalRowConversions.from(outputSparkSchema)
   @transient lazy val inputSparkSchema = SparkConversions.fromChrononSchema(inputSchema)
-  private val inputEncoder = SparkInternalRowConversions.to(inputSparkSchema)
+  private val inputEncoder = SparkInternalRowConversions.to(inputSparkSchema, true)
   private val inputArrEncoder = SparkInternalRowConversions.to(inputSparkSchema, false)
   private lazy val outputArrDecoder = SparkInternalRowConversions.from(outputSparkSchema, false)
 
   def toInternalRow(values: Array[Any]): InternalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
+  private def toInternalRow(values: Map[String, Any]): InternalRow = inputEncoder(values).asInstanceOf[InternalRow]
+  def performSql(values: Array[Any]): Option[Array[Any]] = internalRowToArray(toInternalRow(values))
+  def performSql(values: Map[String, Any]): Option[Map[String, Any]] = internalRowToMap(toInternalRow(values))
 
-  def performSql(values: Array[Any]): Option[Array[Any]] = {
-    val internalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
-    val resultRowOpt = transformFunc(internalRow)
-    val outputVal = resultRowOpt.map(resultRow => outputArrDecoder(resultRow))
-    outputVal.map(_.asInstanceOf[Array[Any]])
-  }
-
-  def performSql(values: Map[String, Any]): Option[Map[String, Any]] = {
-    val internalRow = inputEncoder(values).asInstanceOf[InternalRow]
-    performSql(internalRow)
-  }
-
-  def performSql(row: InternalRow): Option[Map[String, Any]] = {
+  def internalRowToMap(row: InternalRow): Option[Map[String, Any]] = {
     val resultRowMaybe = transformFunc(row)
     val outputVal = resultRowMaybe.map(resultRow => outputDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Map[String, Any]])
+  }
+  def internalRowToArray(row: InternalRow): Option[Array[Any]] = {
+    val resultRowMaybe = transformFunc(row)
+    val outputVal = resultRowMaybe.map(resultRow => outputArrDecoder(resultRow))
+    outputVal.map(_.asInstanceOf[Array[Any]])
   }
 
   def getOutputSparkSchema: types.StructType = outputSparkSchema
