@@ -282,7 +282,9 @@ object JoinUtils {
     labelMap.groupBy(_._2).map { case (v, kvs) => (v, tableUtils.chunk(kvs.keySet.toSet)) }
   }
 
-  def injectKeyFilter(leftDf: DataFrame, joinPart: api.JoinPart): Unit = {
+  def injectKeyFilter(leftDf: DataFrame, originalJoinPart: api.JoinPart): api.JoinPart = {
+    // make a copy of the original joinPart to avoid accumulating the key filters into the same object
+    val joinPart = originalJoinPart.deepCopy()
     // Modifies the joinPart to inject the key filter into the where Clause of GroupBys by hardcoding the keyset
     val groupByKeyNames = joinPart.groupBy.getKeyColumns.asScala
 
@@ -329,6 +331,7 @@ object JoinUtils {
           }
         }
     }
+    joinPart
   }
 
   def filterColumns(df: DataFrame, filter: Seq[String]): DataFrame = {

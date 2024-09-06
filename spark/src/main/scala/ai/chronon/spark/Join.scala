@@ -286,10 +286,10 @@ class Join(joinConf: api.Join,
           if (tableUtils.smallModelEnabled && leftRowCount > 0 && leftRowCount <= tableUtils.smallModeNumRowsCutoff) {
             logger.info(s"Counted $leftRowCount rows, running join in small mode.")
             // If left DF is small, hardcode the key filter into the joinPart's GroupBy's where clause.
-            injectKeyFilter(unfilledLeftDf.map(_.df).get, joinPart)
-            (true, None)
+            val filteredJoinPart = injectKeyFilter(unfilledLeftDf.map(_.df).get, joinPart)
+            (true, None, filteredJoinPart)
           } else {
-            if (leftRowCount <= tableUtils.bloomFilterThreshold) {
+            if (leftRowCount > 0 && leftRowCount <= tableUtils.bloomFilterThreshold) {
               logger.info(s"Counted $leftRowCount rows, running join in bloom filter mode.")
               // Generate a Bloom filter for 'joinPart' when the row count to be backfilled falls below a specified threshold.
               // This method anticipates that there will likely be a substantial number of rows on the right side that need to be filtered out.
@@ -310,10 +310,10 @@ class Join(joinConf: api.Join,
               }
               logger.info(s"Bloom sizes: ${bloomSizes.mkString(", ")}")
 
-              (false, Some(rightBlooms))
+              (false, Some(rightBlooms), joinPart)
             } else {
               logger.info(s"Counted $leftRowCount rows, running join without any key filter.")
-              (false, None)
+              (false, None, joinPart)
             }
           }
         }
@@ -340,12 +340,12 @@ class Join(joinConf: api.Join,
                     s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
                 }
 
-                val (runSmallMode: Boolean, bloomFilterOpt: Option[util.Map[String, BloomFilter]]) =
+                val (runSmallMode: Boolean, bloomFilterOpt: Option[util.Map[String, BloomFilter]], filteredJoinPart: api.JoinPart) =
                   genKeyFilter(joinPart, unfilledLeftDf)
 
                 val df =
-                  computeRightTable(unfilledLeftDf, joinPart, leftRange, leftTimeRangeOpt, bloomFilterOpt, runSmallMode)
-                    .map(df => joinPart -> df)
+                  computeRightTable(unfilledLeftDf, filteredJoinPart, leftRange, leftTimeRangeOpt, bloomFilterOpt, runSmallMode)
+                    .map(df => filteredJoinPart -> df)
                 Thread.currentThread().setName(s"done-$threadName")
                 df
               }
