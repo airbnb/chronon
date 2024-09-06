@@ -101,8 +101,23 @@ class PoolMap[Key, Value](createFunc: Key => Value, maxSize: Int = 100, initialS
 class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
   private val poolKey = PoolKey(expressions, inputSchema)
   private val cuPool = poolMap.getPool(PoolKey(expressions, inputSchema))
+  private def mapToArr(values: Map[String, Any]): Array[Any] = {
+    val arr = new Array[Any](inputSchema.size)
+    inputSchema.fields.zipWithIndex.foreach {
+      case (field, idx) =>
+        arr(idx) = values.get(field.name).orNull
+    }
+    arr
+  }
   def performSql(values: Map[String, Any]): Option[Map[String, Any]] =
-    poolMap.performWithValue(poolKey, cuPool) { _.performSql(values) }
+    poolMap.performWithValue(poolKey, cuPool) { util =>
+      {
+        // In fetching join derivations, Structs are Array-encoded in inputs and Map-encoded in outputs.
+        // TODO: Generalize this beyond fetching join derivations.
+        val valuesArr = mapToArr(values)
+        util.performSql(util.toInternalRow(valuesArr))
+      }
+    }
   def outputChrononSchema: Array[(String, DataType)] =
     poolMap.performWithValue(poolKey, cuPool) { _.outputChrononSchema }
 }
@@ -127,6 +142,8 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
   private val inputEncoder = SparkInternalRowConversions.to(inputSparkSchema)
   private val inputArrEncoder = SparkInternalRowConversions.to(inputSparkSchema, false)
   private lazy val outputArrDecoder = SparkInternalRowConversions.from(outputSparkSchema, false)
+
+  def toInternalRow(values: Array[Any]): InternalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
 
   def performSql(values: Array[Any]): Option[Array[Any]] = {
     val internalRow = inputArrEncoder(values).asInstanceOf[InternalRow]
