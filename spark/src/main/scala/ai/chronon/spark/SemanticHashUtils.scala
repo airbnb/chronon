@@ -50,18 +50,16 @@ object SemanticHashUtils {
                              computeDiffFunc: (Map[String, String], Map[String, String], ai.chronon.api.Join) => T,
                              emptyFunc: => T): (T, Boolean) = {
     val semanticHashHiveMetadata = if (unsetSemanticHash) {
-      logger.info(s"Semantic hash has been unset for table ${outputTable}. Proceed to computation and table creation.")
-      return (emptyFunc, true)
+      None
     } else {
       getSemanticHashFromHive(outputTable, tableUtils)
     }
-
+    def prettyPrintMap(map: Map[String, String]): String = {
+      map.toSeq.sorted.map { case (key, value) => s"- $key: $value" }.mkString("\n")
+    }
     if (semanticHashHiveMetadata.isDefined) {
       val oldSemanticHash = semanticHashHiveMetadata.get.semanticHash
       val newSemanticHash = joinConf.semanticHash(excludeTopic = semanticHashHiveMetadata.get.excludeTopic)
-      def prettyPrintMap(map: Map[String, String]): String = {
-        map.toSeq.sorted.map { case (key, value) => s"- $key: $value" }.mkString("\n")
-      }
       logger.info(
         s"""Comparing Hashes:
            |Hive Flag:
@@ -74,15 +72,24 @@ object SemanticHashUtils {
       )
       val diff = computeDiffFunc(oldSemanticHash, newSemanticHash, joinConf)
       val autoArchive = canAutoArchive(semanticHashHiveMetadata.get)
-      (diff, autoArchive)
+      return (diff, autoArchive)
+    }
+    if (unsetSemanticHash) {
+      logger.info(s"Semantic hash has been unset for table ${outputTable}. Proceed to computation and table creation.")
     } else {
       logger.info(s"No semantic hash found in table ${outputTable}. Proceed to computation and table creation.")
-      (emptyFunc, true)
     }
+    logger.info(s"""New Hashes:
+         |${prettyPrintMap(joinConf.semanticHash(excludeTopic = true))}
+         |""".stripMargin)
+    (emptyFunc, true)
   }
 
   private def getSemanticHashFromHive(outputTable: String, tableUtils: TableUtils): Option[SemanticHashHiveMetadata] = {
     val gson = new Gson()
+    if (!tableUtils.tableExists(outputTable)) {
+      logger.info(s"Getting semantic hash from table $outputTable which does not exist. Proceed to computation.")
+    }
     val tablePropsOpt = tableUtils.getTableProperties(outputTable)
     val oldSemanticJsonOpt = tablePropsOpt.flatMap(_.get(Constants.SemanticHashKey))
     val oldSemanticHash =
