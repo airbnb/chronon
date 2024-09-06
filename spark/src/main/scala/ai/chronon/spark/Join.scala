@@ -283,7 +283,7 @@ class Join(joinConf: api.Join,
 
         def genKeyFilter(joinPart: JoinPart, unfilledLeftDf: Option[DfWithStats]) = {
           val leftRowCount: Int = unfilledLeftDf.map(_.count.toInt).getOrElse(0)
-          if (tableUtils.smallModelEnabled && leftRowCount <= tableUtils.smallModeNumRowsCutoff) {
+          if (tableUtils.smallModelEnabled && leftRowCount > 0 && leftRowCount <= tableUtils.smallModeNumRowsCutoff) {
             logger.info(s"Counted $leftRowCount rows, running join in small mode.")
             // If left DF is small, hardcode the key filter into the joinPart's GroupBy's where clause.
             injectKeyFilter(unfilledLeftDf.map(_.df).get, joinPart)
