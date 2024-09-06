@@ -79,7 +79,7 @@ HIGHLIGHT = BOLD + ITALIC + RED
 
 # walks the json nodes recursively collecting all values that match the path
 # a trailing `[]` in a field in the path indicates that there is an array of
-# object in the correspoding node value.
+# object in the corresponding node value.
 def extract_json(json_path, conf_json):
     if json_path is None:
         return conf_json
