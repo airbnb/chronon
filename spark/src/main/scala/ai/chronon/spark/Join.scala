@@ -340,11 +340,18 @@ class Join(joinConf: api.Join,
                     s"Macro ${Constants.ChrononRunDs} is only supported for single day join, current range is ${leftRange}")
                 }
 
-                val (runSmallMode: Boolean, bloomFilterOpt: Option[util.Map[String, BloomFilter]], filteredJoinPart: api.JoinPart) =
+                val (runSmallMode: Boolean,
+                     bloomFilterOpt: Option[util.Map[String, BloomFilter]],
+                     filteredJoinPart: api.JoinPart) =
                   genKeyFilter(joinPart, unfilledLeftDf)
 
                 val df =
-                  computeRightTable(unfilledLeftDf, filteredJoinPart, leftRange, leftTimeRangeOpt, bloomFilterOpt, runSmallMode)
+                  computeRightTable(unfilledLeftDf,
+                                    filteredJoinPart,
+                                    leftRange,
+                                    leftTimeRangeOpt,
+                                    bloomFilterOpt,
+                                    runSmallMode)
                     .map(df => filteredJoinPart -> df)
                 Thread.currentThread().setName(s"done-$threadName")
                 df
