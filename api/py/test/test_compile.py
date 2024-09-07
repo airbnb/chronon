@@ -17,7 +17,6 @@ Run the flow for materialize.
 #     limitations under the License.
 
 import os
-import shutil
 
 import pytest
 from ai.chronon.repo.compile import extract_and_convert
@@ -56,12 +55,18 @@ def specific_setup():
     yield  # This is where the testing happens
     # Teardown phase: Cleanup after tests
     current_file_dir = os.path.dirname(os.path.abspath(__file__))
-    directories_to_clean = ["sample/production/joins/unit_test/", "sample/production/group_bys/unit_test/"]
+    files_to_clean = [
+        "sample/production/group_bys/unit_test/event_sample_group_by.v1",
+        "sample/production/group_bys/unit_test/entity_sample_group_by.require_backfill",
+        "sample/production/joins/unit_test/sample_online_join.v1",
+        "sample/production/joins/unit_test/sample_join.v1",
+        "sample/production/joins/unit_test/sample_online_join_with_gb_not_online.v1",
+    ]
 
-    for relative_path in directories_to_clean:
+    for relative_path in files_to_clean:
         full_path = os.path.join(current_file_dir, relative_path)
         if os.path.exists(full_path):
-            shutil.rmtree(full_path)
+            os.remove(full_path)
 
 
 def test_basic_compile():
