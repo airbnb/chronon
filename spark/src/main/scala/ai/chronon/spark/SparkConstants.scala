@@ -6,4 +6,5 @@ object SparkConstants {
   val ChrononRowCountPerPartition: String = "spark.chronon.rowCountPerPartition"
   val ChrononJsonSamplingPercent: String = "spark.chronon.json.sampling_percent"
   val ChrononGroupByUploadSplits: String = "spark.chronon.groupByUpload.numSplits"
+  val ChrononMaxScanParallelism: String = "spark.chronon.maxScanParallelism"
 }

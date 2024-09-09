@@ -263,7 +263,12 @@ trait BaseTableUtils {
   }
 
   def sql(query: String): DataFrame = {
-    val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
+    val conf = sparkSession.sparkContext.getConf
+    val partitionCount = conf
+      .getOption(SparkConstants.ChrononMaxScanParallelism)
+      .orElse(conf.getOption("spark.default.parallelism"))
+      .map(_.toInt)
+      .getOrElse(1000)
     println(
       s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n")
     val df = sparkSession.sql(query).coalesce(partitionCount)

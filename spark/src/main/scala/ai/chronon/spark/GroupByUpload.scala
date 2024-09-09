@@ -154,7 +154,7 @@ object GroupByUpload {
         Constants.GroupByServingInfoKey,
         ThriftJsonCodec.toJsonStr(groupByServingInfo)
       ))
-    val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows.toSeq)
+    val metaRdd = tableUtils.sparkSession.sparkContext.parallelize(metaRows.toSeq, 1)
     val metaDf = tableUtils.sparkSession.createDataFrame(metaRdd, kvDf.schema)
     kvDf
       .union(metaDf)
