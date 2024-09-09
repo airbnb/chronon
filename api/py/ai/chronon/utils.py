@@ -48,7 +48,6 @@ class Modes:
 class SubStage:
     bootstrap = "bootstrap"
     join_parts = "join_parts"
-    backfill_left = "backfill-left"
 
 
 def edit_distance(str1, str2):
