@@ -22,7 +22,9 @@ compile.py --conf=path/to/your/chronon_file.py
 
 The path that you pass should either commence with `group_by/`, `join/`, or `staging_query/`
 
-This will produce one 
+This will produce JSON configs for each config in the given paths under the `production/` folder.
+
+There are also options to display generated features `--feature-display` or the `--table-display` to show related modes and tables that might be generated.
 
 ## Analyze
 
