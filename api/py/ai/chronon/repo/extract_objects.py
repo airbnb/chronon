@@ -5,6 +5,7 @@ import logging
 import os
 
 from ai.chronon.logger import get_logger
+from ai.chronon.api import ttypes
 
 
 def from_folder(root_path: str,
@@ -46,6 +47,12 @@ def import_module_set_name(module, cls):
             # obj.metaData.team=user
             obj.metaData.name = module_name.partition(".")[2] + "." + name
             obj.metaData.team = module_name.split(".")[1]
+            
+            # Additional handling is required here for model transformations since they are nested within the Join object
+            if cls == ttypes.Join and obj.modelTransformation:
+                obj.modelTransformation.metaData.name = obj.metaData.name + ".model_transformation"
+                obj.modelTransformation.metaData.team = obj.metaData.team
+
     return module
 
 

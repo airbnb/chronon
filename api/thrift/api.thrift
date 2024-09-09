@@ -433,19 +433,15 @@ struct InferenceSpec {
     2: optional map<string, string> modelBackendParams
 }
 
-struct InferenceExecutionSchemaItem{
-    1: optional string name
-    2: optional DataField dataField
-}
-
 struct Model {
     1: optional InferenceSpec inferenceSpec
-    2: optional list<InferenceExecutionSchemaItem> inputSchema
-    3: optional list<InferenceExecutionSchemaItem> outputSchema
+    2: optional list<DataField> inputSchema
+    3: optional list<DataField> outputSchema
 }
 
 struct ModelTransformation {
     1: optional Model model
     2: optional map<string,string> outputMappings
     3: optional list<string> passThroughFields
+    4: optional MetaData metaData
 }

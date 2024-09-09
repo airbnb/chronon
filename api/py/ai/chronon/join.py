@@ -595,7 +595,7 @@ def Join(left: api.Source,
         assert name is not None, "Please provide a name for the Join when defining it in a notebook cell."
         metadata.name = name
 
-    return api.Join(
+    join_result = api.Join(
         left=updated_left,
         joinParts=right_parts,
         metaData=metadata,
@@ -608,10 +608,16 @@ def Join(left: api.Source,
         modelTransformation=model_transformation,
     )
 
+    if model_transformation and not utils.is_feature_being_created_in_a_databricks_notebook_cell(sys._getframe().f_back.f_code.co_filename, repo.JOIN_FOLDER_NAME):
+        join_result.modelTransformation.metaData = api.MetaData(
+            dependencies=utils.get_model_transformation_dependencies(join_result)
+        )
+
+    return join_result
 
 def InferenceSpec(
         model_backend: str,
-        model_backend_params: Dict[str, str] = {}
+        model_backend_params: Dict[str, str] = {},
 ) -> api.InferenceSpec: 
     assert model_backend is not None, "Model backend must be set to create an inference spec"
     return api.InferenceSpec(
@@ -621,20 +627,23 @@ def InferenceSpec(
 
 def Model(
         inference_spec: api.InferenceSpec,
-        input_schema: List[api.InferenceExecutionSchemaItem],
-        output_schema: List[api.InferenceExecutionSchemaItem]
+        input_schema: List[api.DataField],
+        output_schema: List[api.DataField],
 ) -> api.Model:
     assert inference_spec is not None, "Inference spec must be set to create a model"
+    assert input_schema is not None, "Input schema must be set to create a model"
+    assert output_schema is not None, "Output schema must be set to create a model"
+
     return api.Model(
         inferenceSpec = inference_spec,
         inputSchema = input_schema,
-        outputSchema = output_schema
+        outputSchema = output_schema,
     )
 
 
 def ModelTransformation(
         model: api.Model,
-        output_mappings: Dict[str, str],
+        output_mappings: Dict[str, str] = {},
         pass_through_fields: List[str] = []
 ) -> api.ModelTransformation:
     assert model is not None, "Model must be set to create a model transformation"

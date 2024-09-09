@@ -163,6 +163,11 @@ def get_join_output_table_name(join: api.Join, full_name: bool):
     set_name(join, api.Join, "joins")
     return output_table_name(join, full_name=full_name)
 
+def get_model_transformation_output_table_name(join: api.Join, full_name: bool):
+    assert join.modelTransformation is not None, "Model transformation is not defined. Unable to get model transformation output table name."
+    set_name(join, api.Join, "joins")
+    return output_table_name(join.modelTransformation, full_name=full_name)
+
 
 def get_dependencies(
         src: api.Source,
@@ -224,6 +229,16 @@ def get_label_table_dependencies(label_part) -> List[str]:
         })
     )
     return label_dependencies
+
+def get_model_transformation_dependencies(join: api.Join) -> List[str]:        
+    join_output_table_name = get_join_output_table_name(join, full_name=True)
+    return [
+        json.dumps(json.dumps({
+            "name": f"wait_for_{join_output_table_name}",
+            "spec": f"{join_output_table_name}/ds=" + "{{ ds }}"
+        }))
+    ]
+
 
 
 def wait_for_simple_schema(table, lag, start, end, is_hourly_partitioned=False):
