@@ -1145,7 +1145,8 @@ class JoinTest {
       viewsGroupByCumulative.inferredAccuracy
     )
     // Only checking that the date logic is correct in the query
-    assert(renderedCumulative.contains(s"(ds >= '${today}') AND (ds <= '${today}')"))
+    val expectedTodayDs = s"(ds >= '${today}') AND (ds <= '${today}')"
+    assert(renderedCumulative.contains(expectedTodayDs), s"[testSourceQueryRender][renderedCumulative] expected: ${expectedTodayDs} actual: ${renderedCumulative}")
 
     // Test incremental
     val viewsGroupByIncremental = getGroupByForIncrementalSourceTest()
@@ -1159,7 +1160,7 @@ class JoinTest {
       viewsGroupByCumulative.inferredAccuracy
     )
     println(renderedIncremental)
-    assert(renderedIncremental.contains(s"(ds >= '2021-01-01') AND (ds <= '2021-01-03')"))
+    assert(renderedIncremental.contains(s"(ds >= '2021-01-01') AND (ds <= '2021-01-03')"), s"[testSourceQueryRender][renderedIncremental] ${renderedIncremental}")
 
     // Test cumulative
     val viewsGroupByUnpartitioned = getViewsGroupBy(suffix = "render", makeCumulative = true, makeUnpartitioned = true)
@@ -1170,7 +1171,7 @@ class JoinTest {
       false
     )
     // Only checking that the date logic is correct in the query
-    assertFalse(renderedUnpartitioned.contains("ds"))
+    assertFalse(s"[testSourceQueryRender][renderedUnpartitioned] ${renderedUnpartitioned}", renderedUnpartitioned.contains("ds"))
   }
 
   @Test
@@ -1373,9 +1374,9 @@ class JoinTest {
     } else { df }
 
     val dfToWrite = if (makeUnpartitioned) {
-      df.drop("ds")
+      dfTemp.drop("ds")
     } else {
-      df
+      dfTemp
     }
 
     spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
