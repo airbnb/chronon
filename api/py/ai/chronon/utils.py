@@ -22,7 +22,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, fields
-from typing import List, Optional, Union, cast
+from typing import Dict, List, Optional, Union, cast
 
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
@@ -402,7 +402,7 @@ def requires_log_flattening_task(conf: ChrononJobTypes) -> bool:
     return (conf.metaData.samplePercent or 0) > 0
 
 
-def get_modes_tables(conf: ChrononJobTypes) -> List[str]:
+def get_modes_tables(conf: ChrononJobTypes) -> Dict[str, List[str]]:
     """Based on a conf get all the applicable modes and tables"""
 
     if conf.metaData.name:
