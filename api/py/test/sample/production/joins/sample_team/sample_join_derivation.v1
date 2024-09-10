@@ -167,8 +167,12 @@
       "expression": "sample_team_event_sample_group_by_v1_event_sum_7d / sample_team_entity_sample_group_by_from_module_v1_entity_last"
     },
     {
-      "name": "*",
-      "expression": "*"
+      "name": "group_by_subject",
+      "expression": "group_by_subject"
+    },
+    {
+      "name": "ds",
+      "expression": "ds"
     }
   ]
 }
