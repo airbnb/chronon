@@ -51,11 +51,19 @@
         }
     },
     "kaggle": {
-        "description": "Workspace for kaggle compeitions",
+        "description": "Workspace for kaggle competitions",
         "namespace": "default"
     },
     "quickstart": {
         "description": "Used for the quickstart example",
+        "namespace": "default"
+    },
+      "unit_test": {
+        "description": "Used for the unit test cases",
+        "namespace": "default"
+    },
+  "cs_ds": {
+        "description": "Used for unit testing purposes",
         "namespace": "default"
     }
 }

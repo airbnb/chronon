@@ -116,7 +116,7 @@ object SparkInternalRowConversions {
   // The purpose of this class is to be used on fetcher output in a fetching context
   // we take a data type and build a function that operates on actual value
   // we want to build functions where we only branch at construction time, but not at function execution time.
-  def to(dataType: types.DataType, structToMap: Boolean = true): Any => Any = {
+  def to(dataType: types.DataType, structToMap: Boolean): Any => Any = {
     val unguardedFunc: Any => Any = dataType match {
       case types.MapType(keyType, valueType, _) =>
         val keyConverter = to(keyType, structToMap)

@@ -399,11 +399,11 @@ def GroupBy(
         system yourself.
     :type production: bool
     :param backfill_start_date:
-        Start date from which GroupBy data should be computed. This will determine how back of a time that Chronon would
-        goto to compute the resultant table and its aggregations.
+        Start date from which GroupBy data should be computed. This will determine how far back in time
+        that Chronon would go to compute the resultant table and its aggregations.
     :type backfill_start_date: str
     :param dependencies:
-        This goes into MetaData.dependencies - which is a list of string representing which table partitions to wait for
+        This goes into MetaData.dependencies - which is a list of strings representing the table partitions to wait for.
         Typically used by engines like airflow to create partition sensors.
     :type dependencies: List[str]
     :param env:
@@ -419,7 +419,7 @@ def GroupBy(
         These vars can be set in other places as well. The priority order (descending) is as below
 
         1. env vars set while using run.py "VAR=VAL run.py --mode=backfill <name>"
-        2. env vars set here in Join's env param
+        2. env vars set here in GroupBy's env param
         3. env vars set in `team.json['team.production.<MODE NAME>']`
         4. env vars set in `team.json['default.production.<MODE NAME>']`
 
@@ -457,7 +457,7 @@ def GroupBy(
     :param derivations:
         Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
         output schema. It is supported for offline computations for now.
-    :type derivations: List[ai.chronon.api.ttypes.Drivation]
+    :type derivations: List[ai.chronon.api.ttypes.Derivation]
     :param deprecation_date:
         Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
     :type deprecation_date: str

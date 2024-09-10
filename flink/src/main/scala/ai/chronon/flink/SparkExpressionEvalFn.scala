@@ -94,7 +94,7 @@ class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends Ri
       val serFinish = System.currentTimeMillis()
       rowSerTimeHistogram.update(serFinish - start)
 
-      val maybeRow = catalystUtil.performSql(row)
+      val maybeRow = catalystUtil.sqlTransformRowToMap(row)
       exprEvalTimeHistogram.update(System.currentTimeMillis() - serFinish)
       maybeRow.foreach(out.collect)
       exprEvalSuccessCounter.inc()

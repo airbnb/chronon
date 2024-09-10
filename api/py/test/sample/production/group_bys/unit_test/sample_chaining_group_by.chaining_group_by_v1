@@ -1,0 +1,125 @@
+{
+  "metaData": {
+    "name": "unit_test.sample_chaining_group_by.chaining_group_by_v1",
+    "online": 1,
+    "production": 1,
+    "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_default.unit_test_sample_parent_join_parent_join_ds\", \"spec\": \"default.unit_test_sample_parent_join_parent_join/ds={{ ds }}\", \"start\": \"2023-04-15\", \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "default",
+    "team": "unit_test",
+    "offlineSchedule": "@daily"
+  },
+  "sources": [
+    {
+      "joinSource": {
+        "join": {
+          "metaData": {
+            "name": "unit_test.sample_parent_join.parent_join",
+            "online": 1,
+            "production": 0,
+            "customJson": "{\"check_consistency\": false, \"lag\": 0, \"join_tags\": null, \"join_part_tags\": {}}",
+            "dependencies": [
+              "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
+            ],
+            "tableProperties": {
+              "source": "chronon"
+            },
+            "outputNamespace": "default",
+            "team": "unit_test",
+            "samplePercent": 100.0,
+            "offlineSchedule": "@daily"
+          },
+          "left": {
+            "events": {
+              "table": "sample_namespace.sample_table_group_by",
+              "query": {
+                "selects": {
+                  "event": "event_expr",
+                  "group_by_subject": "group_by_expr",
+                  "ts": "ts"
+                },
+                "startPartition": "2021-04-09",
+                "timeColumn": "ts",
+                "setups": []
+              }
+            }
+          },
+          "joinParts": [
+            {
+              "groupBy": {
+                "metaData": {
+                  "name": "unit_test.sample_group_by.v1",
+                  "online": 1,
+                  "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+                  "dependencies": [
+                    "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
+                  ],
+                  "tableProperties": {
+                    "source": "chronon"
+                  },
+                  "outputNamespace": "default",
+                  "team": "unit_test",
+                  "offlineSchedule": "@daily"
+                },
+                "sources": [
+                  {
+                    "events": {
+                      "table": "sample_namespace.sample_table_group_by",
+                      "query": {
+                        "selects": {
+                          "event": "event_expr",
+                          "group_by_subject": "group_by_expr"
+                        },
+                        "startPartition": "2021-04-09",
+                        "timeColumn": "ts",
+                        "setups": []
+                      }
+                    }
+                  }
+                ],
+                "keyColumns": [
+                  "group_by_subject"
+                ],
+                "aggregations": [
+                  {
+                    "inputColumn": "event",
+                    "operation": 7,
+                    "argMap": {}
+                  }
+                ]
+              },
+              "keyMapping": {
+                "subject": "group_by_subject"
+              }
+            }
+          ]
+        },
+        "query": {
+          "selects": {
+            "event": "event_expr",
+            "group_by_subject": "group_by_expr",
+            "user_id": "user_id"
+          },
+          "startPartition": "2023-04-15",
+          "timeColumn": "ts",
+          "setups": []
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "user_id"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "event",
+      "operation": 3,
+      "argMap": {}
+    }
+  ]
+}
