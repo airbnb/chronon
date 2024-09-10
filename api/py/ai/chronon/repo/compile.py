@@ -287,7 +287,7 @@ def _print_features(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, Group
 
 
 def _print_tables(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]]) -> None:
-    _, tables = utils.get_modes_tables(obj)
+    tables = utils.get_modes_tables(obj)
     if obj_class is Join:
         _print_modes_tables("Output Join Tables", tables)
     if obj_class is GroupBy:

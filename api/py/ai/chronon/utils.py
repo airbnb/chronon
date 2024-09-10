@@ -21,7 +21,7 @@ import shutil
 import subprocess
 import tempfile
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from typing import List, Optional, Union, cast
 
 import ai.chronon.api.ttypes as api
@@ -410,44 +410,37 @@ def get_modes_tables(conf: ChrononJobTypes) -> List[str]:
     else:
         table_name = output_table_name(conf, full_name=False)
 
-    modes = []
     tables = {}
 
     # from GroupBy
     if isinstance(conf, api.GroupBy):
         group_by = cast(api.GroupBy, conf)
         if group_by.backfillStartDate is not None:
-            modes.append(Modes.backfill)
             tables[Modes.backfill] = [f"{table_name}"]
 
         online = group_by.metaData.online or False
         if online:
-            modes.append(Modes.upload)
             tables[Modes.upload] = [f"{table_name}_upload"]
 
             temporal_accuracy = group_by.accuracy or False
             streaming = has_topic(group_by)
             if temporal_accuracy or streaming:
-                modes.append(Modes.streaming)
+                # streaming is a mode that doesn't have a table
+                tables[Modes.streaming] = None
     # from Join
     elif isinstance(conf, api.Join):
         join = cast(api.Join, conf)
         if get_offline_schedule(conf) is not None:
-            modes.append(Modes.backfill)
-            modes.append(Modes.stats_summary)
             tables[Modes.backfill] = [f"{table_name}"]
             tables[Modes.stats_summary] = [f"{table_name}_daily_stats"]
         if (
             join.metaData.customJson is not None
             and json.loads(join.metaData.customJson).get("check_consistency") is True
         ):
-            modes.append(Modes.consistency_metrics_compute)
             tables[Modes.consistency_metrics_compute] = [f"{table_name}_consistency"]
         if requires_log_flattening_task(join):
-            modes.append(Modes.log_flattener)
             tables[Modes.log_flattener] = [f"{table_name}_logged"]
         if join.labelPart is not None:
-            modes.append(Modes.label_join)
             tables[Modes.label_join] = [f"{table_name}_labels", f"{table_name}_labeled", f"{table_name}_labeled_latest"]
 
         if conf.bootstrapParts:
@@ -457,31 +450,33 @@ def get_modes_tables(conf: ChrononJobTypes) -> List[str]:
             tables[SubStage.join_parts] = [join_part_output_table_name(conf, jp) for jp in conf.joinParts]
     # from StagingQuery
     elif isinstance(conf, api.StagingQuery):
-        modes.append(Modes.backfill)
         tables[Modes.backfill] = [f"{table_name}"]
     else:
         raise ValueError(f"Unsupported job type {type(conf).__name__}")
 
-    return modes, tables
+    return tables
 
 
 def get_applicable_modes(conf: ChrononJobTypes) -> List[str]:
     """Based on a conf and mode determine if a conf should define a task."""
-    modes, _ = get_modes_tables(conf)  # type: List[str]
+    table_map = get_modes_tables(conf)
+    modes = [x for x in table_map.keys() if x not in [getattr(SubStage, field.name) for field in fields(SubStage)]]
     return modes
 
 
 def get_related_table_names(conf: ChrononJobTypes, skip_join_parts=True) -> List[str]:
     """Based on a conf get all the related tables"""
 
-    _, tables = get_modes_tables(conf)
+    tables = get_modes_tables(conf)
     related_tables = []  # type: List[str]
 
     for m in tables:
         if skip_join_parts and m == SubStage.join_parts:
             continue
 
-        related_tables.extend(tables[m])
+        # only add modes that have tables (e.g. skips streaming)
+        if tables[m]:
+            related_tables.extend(tables[m])
 
     return related_tables
 
