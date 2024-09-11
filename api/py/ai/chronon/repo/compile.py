@@ -153,13 +153,16 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                 chronon_root_path, entity_dependency_tracker, full_output_root, name, obj, obj_class, log_level
             )
 
+            _handle_deprecation_warning(obj, obj_class, new_group_bys, new_joins)
+
             # Update the accumulated dictionaries with the new entries
             extra_dependent_group_bys_to_materialize.update(new_group_bys)
             extra_dependent_joins_to_materialize.update(new_joins)
 
+    dependencies = {}
+    dependencies.update({**extra_dependent_group_bys_to_materialize, **extra_dependent_joins_to_materialize})
+
     if not force_overwrite:
-        dependencies = {}
-        dependencies.update({**extra_dependent_group_bys_to_materialize, **extra_dependent_joins_to_materialize})
         assert not dependencies, (
             "You must also materialize all dependent GroupBys or Joins."
             " You can do this by passing the --force-overwrite flag to the compile.py command."
@@ -274,6 +277,45 @@ def _print_features(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, Group
         _print_features_names("Output Join Features", get_join_output_columns(obj))
     if obj_class is GroupBy:
         _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
+
+
+def _handle_deprecation_warning(
+    obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]], downstream_group_bys: dict, downstream_joins: dict
+) -> None:
+    if obj.metaData.deprecationDate:
+        downstream_group_by_with_incorrect_deprecation_date = []
+        for gb_name, gb in downstream_group_bys.items():
+            if not gb.metaData.deprecationDate or gb.metaData.deprecationDate > obj.metaData.deprecationDate:
+                downstream_group_by_with_incorrect_deprecation_date.append(gb_name)
+        if downstream_group_by_with_incorrect_deprecation_date:
+            _print_error(
+                "Deprecation Warning:",
+                f"Downstream group_bys {downstream_group_by_with_incorrect_deprecation_date} are missing deprecationDate or has a later deprecationDate than upstream {obj.metaData.name}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate.",
+            )
+        downstream_join_with_incorrect_deprecation_date = []
+        for join_name, join in downstream_joins.items():
+            if not join.metaData.deprecationDate or join.metaData.deprecationDate > obj.metaData.deprecationDate:
+                downstream_join_with_incorrect_deprecation_date.append(join_name)
+            if downstream_join_with_incorrect_deprecation_date:
+                _print_error(
+                    "Deprecation Warning:",
+                    f"Downstream joins {downstream_join_with_incorrect_deprecation_date} are missing deprecationDate or has a later deprecationDate than upstream {obj.metaData.name}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate.",
+                )
+    else:
+        if obj_class is Join:
+            for jp in obj.joinParts:
+                if jp.groupBy.metaData.deprecationDate:
+                    _print_error(
+                        "Deprecation Warning:",
+                        f"Join part {jp.groupBy.metaData.name} is going to be deprecated by {jp.groupBy.metaData.deprecationDate}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate for {obj.metaData.name}.",
+                    )
+        else:
+            for source in obj.sources:
+                if source.joinSource and source.joinSource.join.metaData.deprecationDate:
+                    _print_error(
+                        "Deprecation Warning:",
+                        f"Join source {source.joinSource.join.metaData.name} is going to be deprecated by {source.joinSource.join.metaData.deprecationDate}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate for {obj.metaData.name}.",
+                    )
 
 
 def _handle_extra_conf_objects_to_materialize(
