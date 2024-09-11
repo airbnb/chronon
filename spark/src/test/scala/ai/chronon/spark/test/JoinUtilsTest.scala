@@ -359,6 +359,25 @@ class JoinUtilsTest {
     assertEquals(range, PartitionRange(startPartitionOverride, endPartition)(tableUtils))
   }
 
+  @Test
+  def testGetRangesToFillWithEndPartition(): Unit = {
+
+    // left table
+    val itemQueries = List(Column("item", api.StringType, 100))
+    val itemQueriesTable = s"${namespace}.queries_table"
+    DataFrameGen
+      .events(spark, itemQueries, 1000, partitions = 50)
+      .save(itemQueriesTable)
+
+    val startQueryDs = "2023-04-15"
+    val startBackfillDs = "2023-08-01"
+    val endBackfillDs = "2023-08-08"
+    val endQueryDs = "2023-08-15"
+    val leftSource = Builders.Source.events(Builders.Query(startPartition = startQueryDs, endPartition = endQueryDs), table = itemQueriesTable)
+    val range = JoinUtils.getRangesToFill(leftSource, tableUtils, endBackfillDs, Some(startBackfillDs))
+    assertEquals(range, PartitionRange(startBackfillDs, endBackfillDs)(tableUtils))
+  }
+
   import ai.chronon.api.{LongType, StringType, StructField, StructType}
 
   def createSampleTable(tableName: String = "testSampleTable"): DataFrame = {
