@@ -349,7 +349,7 @@ class Join(joinConf: api.Join, endPartition: String, tableUtils: BaseTableUtils,
             } else {
 
               val partitionColumnOverride: String = {
-                if (part.query != null && part.query.selects != null) part.query.selects.getOrDefault(Constants.Partition, Constants.PartitionColumn)
+                if (part.query != null && part.query.selects != null) part.query.selects.getOrDefault(Constants.PartitionColumn, Constants.PartitionColumn)
                 else Constants.PartitionColumn
               }
 
