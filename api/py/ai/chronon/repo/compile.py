@@ -327,7 +327,7 @@ def _handle_deprecation_warning(
                         f"Join source {source.joinSource.join.metaData.name} is going to be deprecated by {source.joinSource.join.metaData.deprecationDate}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate for {obj.metaData.name}.",
                     )
 
-                    
+
 def _print_tables(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]]) -> None:
     tables = utils.get_modes_tables(obj)
     if obj_class is Join:
