@@ -300,7 +300,9 @@ def _handle_deprecation_warning(
         if downstream_group_by_with_incorrect_deprecation_date:
             _print_error(
                 "Deprecation Warning:",
-                f"Downstream group_bys {downstream_group_by_with_incorrect_deprecation_date} are missing deprecationDate or has a later deprecationDate than upstream {obj.metaData.name}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate.",
+                f"Downstream group_bys {downstream_group_by_with_incorrect_deprecation_date}"
+                f" are missing deprecationDate or has a later deprecationDate than upstream {obj.metaData.name}."
+                f" Please ensure either to remove/migrate the dependency or set up correct deprecationDate.",
             )
         downstream_join_with_incorrect_deprecation_date = []
         for join_name, join in downstream_joins.items():
@@ -309,7 +311,10 @@ def _handle_deprecation_warning(
             if downstream_join_with_incorrect_deprecation_date:
                 _print_error(
                     "Deprecation Warning:",
-                    f"Downstream joins {downstream_join_with_incorrect_deprecation_date} are missing deprecationDate or has a later deprecationDate than upstream {obj.metaData.name}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate.",
+                    f"Downstream joins {downstream_join_with_incorrect_deprecation_date}"
+                    f" are missing deprecationDate or has a later deprecationDate than upstream"
+                    f" {obj.metaData.name}. Please ensure either to remove/migrate the dependency"
+                    f" or set up correct deprecationDate.",
                 )
     else:
         if obj_class is Join:
@@ -317,14 +322,19 @@ def _handle_deprecation_warning(
                 if jp.groupBy.metaData.deprecationDate:
                     _print_error(
                         "Deprecation Warning:",
-                        f"Join part {jp.groupBy.metaData.name} is going to be deprecated by {jp.groupBy.metaData.deprecationDate}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate for {obj.metaData.name}.",
+                        f"Join part {jp.groupBy.metaData.name} is going to be deprecated by"
+                        f" {jp.groupBy.metaData.deprecationDate}. Please ensure either to remove/migrate"
+                        f" the dependency or set up correct deprecationDate for {obj.metaData.name}.",
                     )
         else:
             for source in obj.sources:
                 if source.joinSource and source.joinSource.join.metaData.deprecationDate:
                     _print_error(
                         "Deprecation Warning:",
-                        f"Join source {source.joinSource.join.metaData.name} is going to be deprecated by {source.joinSource.join.metaData.deprecationDate}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate for {obj.metaData.name}.",
+                        f"Join source {source.joinSource.join.metaData.name} is going to be"
+                        f" deprecated by {source.joinSource.join.metaData.deprecationDate}. Please"
+                        f" ensure either to remove/migrate the dependency or set up correct deprecationDate"
+                        f" for {obj.metaData.name}.",
                     )
 
 
