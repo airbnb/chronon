@@ -81,9 +81,9 @@ def test_basic_compile():
     assert result.exit_code == 0
 
 
-def test_compile_deprecation():
+# Test deprecation warning when a to-be-deprecated group_by is used in an active join
+def test_compile_group_by_deprecation():
     runner = CliRunner()
-    # Test deprecation warning when a to-be-deprecated group_by is used in an active join
     result = runner.invoke(
         extract_and_convert,
         [
@@ -97,7 +97,10 @@ def test_compile_deprecation():
     actual_message = str(result.output).strip().lower()
     assert warning_message_title in actual_message, f"Deprecation warning message not seen in {actual_message}"
 
-    # Test deprecation warning when an active join is having a to-be-deprecated join part
+
+# Test deprecation warning when an active join is having a to-be-deprecated join part
+def test_compile_join_deprecation():
+    runner = CliRunner()
     result = runner.invoke(
         extract_and_convert,
         [

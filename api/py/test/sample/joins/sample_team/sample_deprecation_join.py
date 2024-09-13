@@ -18,11 +18,6 @@ from sources import test_sources
 
 v1 = Join(
     left=test_sources.staging_entities,
-    right_parts=[JoinPart(group_by=sample_deprecation_group_by.v1, tags={"experimental": True})],
-    table_properties={"config_json": """{"sample_key": "sample_value"}"""},
+    right_parts=[JoinPart(group_by=sample_deprecation_group_by.v1)],
     output_namespace="sample_namespace",
-    tags={"business_relevance": "personalization"},
-    env={
-        "backfill": {"EXECUTOR_MEMORY": "9G"},
-    },
 )

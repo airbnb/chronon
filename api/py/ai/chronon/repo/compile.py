@@ -169,10 +169,9 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
             extra_dependent_group_bys_to_materialize.update(new_group_bys)
             extra_dependent_joins_to_materialize.update(new_joins)
 
-    dependencies = {}
-    dependencies.update({**extra_dependent_group_bys_to_materialize, **extra_dependent_joins_to_materialize})
-
     if not force_overwrite:
+        dependencies = {}
+        dependencies.update({**extra_dependent_group_bys_to_materialize, **extra_dependent_joins_to_materialize})
         assert not dependencies, (
             "You must also materialize all dependent GroupBys or Joins."
             " You can do this by passing the --force-overwrite flag to the compile.py command."
