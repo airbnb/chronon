@@ -111,7 +111,7 @@ object JoinUtils {
     lazy val defaultLeftStart = Option(leftSource.query.startPartition)
       .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters).get)
     val leftStart = overrideStart.getOrElse(defaultLeftStart)
-    val leftEnd = Option(leftSource.query.endPartition).getOrElse(endPartition)
+    val leftEnd = Seq(Option(leftSource.query.endPartition), Some(endPartition)).flatten.min
     PartitionRange(leftStart, leftEnd)(tableUtils)
   }
 

@@ -298,3 +298,41 @@ def test_detected_dependent_nested_joins():
     expected_message = "Successfully wrote 1 Join objects to test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
+
+
+def test_compile_table_display():
+    """
+    Test that compiling an online join correctly materializes all online group_bys.
+    """
+    runner = CliRunner()
+    input_path = f"joins/sample_team/sample_join_with_derivations_on_external_parts.py"
+    result = runner.invoke(
+        extract_and_convert,
+        [
+            "--chronon_root=test/sample",
+            f"--input_path={input_path}",
+            "--table-display",
+        ],
+    )
+
+    assert "Output Join Tables" in result.output
+    assert result.exit_code == 0
+
+
+def test_compile_feature_display():
+    """
+    Test that compiling an online join correctly materializes all online group_bys.
+    """
+    runner = CliRunner()
+    input_path = f"joins/sample_team/sample_join_with_derivations_on_external_parts.py"
+    result = runner.invoke(
+        extract_and_convert,
+        [
+            "--chronon_root=test/sample",
+            f"--input_path={input_path}",
+            "--feature-display",
+        ],
+    )
+
+    assert "Output Join Features" in result.output
+    assert result.exit_code == 0

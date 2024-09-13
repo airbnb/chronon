@@ -17,8 +17,10 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+import json
 import logging
 import os
+import textwrap
 from typing import Optional, Tuple, Type, Union
 
 import ai.chronon.api.ttypes as api
@@ -73,7 +75,12 @@ def get_folder_name_from_class_name(class_name):
 @click.option("--debug", help="debug mode", is_flag=True)
 @click.option("--force-overwrite", help="Force overwriting existing materialized conf.", is_flag=True)
 @click.option("--feature-display", help="Print out the features list created by the conf.", is_flag=True)
-def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite, feature_display):
+@click.option(
+    "--table-display",
+    help="Print out the list of tables that are materialized per job modes in this conf.",
+    is_flag=True,
+)
+def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite, feature_display, table_display):
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
     The materialized objects are what will be submitted to spark jobs - driven by airflow, or by manual user testing.
@@ -118,6 +125,9 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
 
             if feature_display:
                 _print_features(obj, obj_class)
+
+            if table_display:
+                _print_tables(obj, obj_class)
 
             # In case of join, we need to materialize the following underlying group_bys
             # 1. group_bys whose online param is set
@@ -317,6 +327,14 @@ def _handle_deprecation_warning(
                         f"Join source {source.joinSource.join.metaData.name} is going to be deprecated by {source.joinSource.join.metaData.deprecationDate}. Please ensure either to remove/migrate the dependency or set up correct deprecationDate for {obj.metaData.name}.",
                     )
 
+                    
+def _print_tables(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]]) -> None:
+    tables = utils.get_modes_tables(obj)
+    if obj_class is Join:
+        _print_modes_tables("Output Join Tables", tables)
+    if obj_class is GroupBy:
+        _print_modes_tables("Output GroupBy Tables", tables)
+
 
 def _handle_extra_conf_objects_to_materialize(
     conf_objs,
@@ -451,6 +469,11 @@ def _print_highlighted(left, right):
 def _print_features_names(left, right):
     # Print in green and separate lines.
     print(f"{left:>25} - \u001b[32m{right}\u001b[0m")
+
+
+def _print_modes_tables(left, right):
+    text = textwrap.indent(json.dumps(right, indent=2), " " * 27)
+    print(f"{left:>25} - \u001b[32m\n{text}\u001b[0m")
 
 
 def _print_error(left, right):
