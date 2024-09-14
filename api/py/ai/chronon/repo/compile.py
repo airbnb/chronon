@@ -288,6 +288,9 @@ def _print_features(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, Group
         _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
 
 
+# For object with deprecation date set, check if downstream objects have correct deprecation date set.
+# For object without deprecation date set, check if any upstream objects have deprecation date.
+# Print out warning message if any of the above conditions are met.
 def _handle_deprecation_warning(
     obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]], downstream_group_bys: dict, downstream_joins: dict
 ) -> None:
