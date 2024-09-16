@@ -38,6 +38,18 @@ The process for reporting bugs and requesting smaller features is also outlined 
 
 Pull Requests (PRs) should follow these guidelines as much as possible:
 
+### Creating a pull request from a fork
+Below is a general workflow to create a PR from a forked repository. By following these steps, we can avoid granting write permissions to the main repository.
+- [Fork the repository](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/fork-a-repo)
+- Clone the forked repository 
+- [Configuring a remote repository for a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/configuring-a-remote-repository-for-a-fork)
+- Sync the forked repository with the main repository
+- [Syncing a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork)
+- Create a new branch for your changes
+- Make your changes
+- Push the branch to your fork
+- [Create a PR from your branch to the main repository](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/proposing-changes-to-your-work-with-pull-requests/creating-a-pull-request-from-a-fork)
+
 ### Code Guidelines
 
 - Follow our [code style guidelines](docs/source/Code_Guidelines.md)
