@@ -17,6 +17,8 @@ import scala.util.{ScalaVersionSpecificCollectionsConverter, Try}
 
 class TableUtilsTest {
   lazy val spark: SparkSession = SparkSessionBuilder.build("TableUtilsTest", local = true)
+  lazy val sparkWithOutputParallelismOverride: SparkSession = SparkSessionBuilder.build("TableUtilsTest", local = true, additionalConfig = Some(Map("spark.chronon.outputParallelismOverride" -> "1")))
+  lazy val sparkWithInvalidOutputParallelismOverride: SparkSession = SparkSessionBuilder.build("TableUtilsTest", local = true, additionalConfig = Some(Map("spark.chronon.outputParallelismOverride" -> "None")))
   private val tableUtils = TableUtils(spark)
 
   @Test
@@ -126,6 +128,88 @@ class TableUtilsTest {
     )
 
     testInsertPartitions(tableName, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
+  }
+
+  @Test
+  def testInsertPartitionsAddColumnsWithOutputParallelismOverride(): Unit = {
+    val tableName = "db.test_table_output_parallelism_1"
+    sparkWithOutputParallelismOverride.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType),
+      StructField("string_field", StringType)
+    )
+    val df1 = makeDf(
+      sparkWithOutputParallelismOverride,
+      StructType(
+        tableName,
+        columns1 :+ StructField("ds", StringType)
+      ),
+      List(
+        Row(1L, 2, "3", "2022-10-01"),
+        Row(4L, 4, "4", "2022-10-02")
+      )
+    )
+
+    val df2 = makeDf(
+      sparkWithOutputParallelismOverride,
+      StructType(
+        tableName,
+        columns1
+          :+ StructField("double_field", DoubleType)
+          :+ StructField("ds", StringType)
+      ),
+      List(
+        Row(4L, 5, "6", 7.0, "2022-10-02")
+      )
+    )
+
+    testInsertPartitions(tableName, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
+  }
+
+  @Test
+  def testInsertPartitionsWithEmptyDF(): Unit = {
+    val tableName = "db.test_table_output_parallelism_1_empty_df"
+    sparkWithOutputParallelismOverride.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType),
+      StructField("string_field", StringType)
+    )
+    val df1 = makeDf(
+      sparkWithOutputParallelismOverride,
+      StructType(
+        tableName,
+        columns1 :+ StructField("ds", StringType)
+      ),
+      List()
+    )
+
+    tableUtils.insertPartitions(df1, tableName, autoExpand = true)
+  }
+
+  @Test
+  def testInsertPartitionsWhenOutputParallelismOverrideInvalid(): Unit = {
+    val tableName = "db.test_table_output_parallelism_none"
+    sparkWithInvalidOutputParallelismOverride.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType),
+      StructField("string_field", StringType)
+    )
+    val df1 = makeDf(
+      sparkWithInvalidOutputParallelismOverride,
+      StructType(
+        tableName,
+        columns1 :+ StructField("date", StringType)
+      ),
+      List(
+        Row(1L, 2, "3", "2022-10-01"),
+        Row(4L, 4, "4", "2022-10-02")
+      )
+    )
+
+    tableUtils.insertPartitions(df1, tableName, partitionColumns = Seq("date"), autoExpand = true)
   }
 
   @Test

@@ -304,48 +304,12 @@ trait BaseTableUtils {
 
   private def repartitionAndWrite(df: DataFrame, tableName: String, saveMode: SaveMode, partition: Boolean = true,
                                   tableProperties: Map[String, String] = null, allowEmpty: Boolean = false): Unit = {
-    // get row count and table partition count statistics
-    val (rowCount: Long, tablePartitionCount: Int) =
-      if (df.schema.fieldNames.contains(partitionColumn)) {
-        val result = df.select(count(lit(1)), approx_count_distinct(col(partitionColumn))).head()
-        (result.getAs[Long](0), result.getAs[Long](1).toInt)
-      } else {
-        (df.count(), 1)
-      }
-
-    println(s"$rowCount rows requested to be written into table $tableName")
-    if (rowCount == 0 && allowEmpty) {
+    println(s"[repartitionAndWrite] starting")
+    if (allowEmpty && df.isEmpty) {
       writeDf(df, tableName, saveMode, partition, tableProperties) // side-effecting- this actually writes the table
-      println(s"Finished writing to $tableName")
-    } else if (rowCount > 0) {
-      val columnSizeEstimate = columnSizeEstimator(df.schema)
-
-      // check if spark is running in local mode or cluster mode
-      val isLocal = sparkSession.conf.get("spark.master").startsWith("local")
-
-      // roughly 1 partition count per 1m rows x 100 columns
-      val rowCountPerPartition = df.sparkSession.conf
-        .getOption(SparkConstants.ChrononRowCountPerPartition)
-        .map(_.toDouble)
-        .flatMap(value => if (value > 0) Some(value) else None)
-        .getOrElse(1e8)
-
-      val totalFileCountEstimate = math.ceil(rowCount * columnSizeEstimate / rowCountPerPartition).toInt
-      val dailyFileCountUpperBound = 2000
-      val dailyFileCountLowerBound = if (isLocal) 1 else 10
-      val dailyFileCountEstimate = totalFileCountEstimate / tablePartitionCount + 1
-      val dailyFileCountBounded =
-        math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
-
-      val outputParallelism = df.sparkSession.conf
-        .getOption(SparkConstants.ChrononOutputParallelismOverride)
-        .map(_.toInt)
-        .flatMap(value => if (value > 0) Some(value) else None)
-
-      if (outputParallelism.isDefined) {
-        println(s"Using custom outputParallelism ${outputParallelism.get}")
-      }
-      val dailyFileCount = outputParallelism.getOrElse(dailyFileCountBounded)
+      println(s"[repartitionAndWrite] Finished writing empty DF to $tableName")
+    } else if (!df.isEmpty) {
+      val (dailyFileCount, tablePartitionCount) = getDailyFileCountAndTablePartitionCount(df, tableName)
 
       // finalized shuffle parallelism
       val shuffleParallelism = dailyFileCount * tablePartitionCount
@@ -362,7 +326,57 @@ trait BaseTableUtils {
         .repartition(shuffleParallelism, repartitionCols.map(saltedDf.col).toSeq: _*)
         .drop(saltCol)
       writeDf(partitionedDf, tableName, saveMode, partition, tableProperties) // side-effecting- this actually writes the table
-      println(s"Finished writing to $tableName")
+      println(s"[repartitionAndWrite] Finished writing non-empty DF to $tableName")
+    }
+  }
+
+  private def getDailyFileCountAndTablePartitionCount(df: DataFrame, tableName: String): (Int, Int) = {
+    val outputParallelism = df.sparkSession.conf
+      .getOption(SparkConstants.ChrononOutputParallelismOverride)
+      .flatMap { s => Try(s.toInt).toOption.filter(_ > 0) }
+
+    import df.sparkSession.implicits._
+    outputParallelism match {
+      case Some(dailyFileCount) =>
+        val tablePartitionCount = if (df.schema.fieldNames.contains(partitionColumn)) {
+          df.agg(approx_count_distinct(col(partitionColumn)))
+            .as[Long]
+            .head
+            .toInt
+        } else {
+          1
+        }
+        println(s"outputParallelism is defined. dailyFileCount= ${dailyFileCount}, tablePartitionCount= ${tablePartitionCount}")
+        (dailyFileCount, tablePartitionCount)
+      case None =>
+        // get row count and table partition count statistics
+
+        val (rowCount: Long, tablePartitionCount: Long) =
+          if (df.schema.fieldNames.contains(partitionColumn)) {
+            df.select(count(lit(1)), approx_count_distinct(col(partitionColumn))).as[(Long, Long)].head()
+          } else {
+            (df.count(), 1L)
+          }
+        println(s"$rowCount rows requested to be written into table $tableName")
+        val columnSizeEstimate = columnSizeEstimator(df.schema)
+
+        // check if spark is running in local mode or cluster mode
+        val isLocal = sparkSession.conf.get("spark.master").startsWith("local")
+
+        // roughly 1 partition count per 1m rows x 100 columns
+        val rowCountPerPartition = df.sparkSession.conf
+          .getOption(SparkConstants.ChrononRowCountPerPartition)
+          .map(_.toDouble)
+          .filter(_ > 0)
+          .getOrElse(1e8)
+
+        val totalFileCountEstimate = math.ceil(rowCount * columnSizeEstimate / rowCountPerPartition).toInt
+        val dailyFileCountUpperBound = 2000
+        val dailyFileCountLowerBound = if (isLocal) 1 else 10
+        val dailyFileCountEstimate = totalFileCountEstimate / tablePartitionCount + 1
+        val dailyFileCountBounded =
+          math.max(math.min(dailyFileCountEstimate, dailyFileCountUpperBound), dailyFileCountLowerBound)
+        (dailyFileCountBounded.toInt, tablePartitionCount.toInt)
     }
   }
 
