@@ -288,77 +288,31 @@ def _print_features(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, Group
         _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
 
 
-def _print_deprecation_warning(
-    obj_name: Str,
-    deprecation_date: Str,
-    is_deprecation_entity: bool,
-    downstreams_without_deprecation_date: List[Str],
-    upstream_with_deprecation_date: Str,
-) -> None:
-    if is_deprecation_entity:
-        warning_message = f"Downstream entities {downstreams_without_deprecation_date}"
-        f" are missing deprecationDate or has a later deprecationDate than {obj_name}."
-        f" Please ensure either to remove/migrate the dependency or set up the correct deprecationDate."
-    else:
-        warning_message = f"Upstream entity {upstream_with_deprecation_date} is going to be deprecated by"
-        f" {deprecation_date}. Please ensure either to remove/migrate"
-        f" the dependency or set up correct deprecationDate for {obj_name}."
+def check_deprecation_date_setup_for_downstream(collection, entity_type, obj_name, obj_deprecation_date):
+    incorrect_deprecation_date = [
+        name
+        for name, item in collection.items()
+        if not item.metaData.deprecationDate or item.metaData.deprecationDate > obj_deprecation_date
+    ]
 
-    _print_error("Deprecation Warning:", warning_message)
-
-
-# For object with deprecation date set, check if downstream objects have correct deprecation date set.
-# The downstream can be groupBys or joins.
-def _handle_warning_for_deprecation_entity(
-    obj: Union[Join, GroupBy], downstream_group_bys: dict, downstream_joins: dict
-) -> None:
-    downstream_group_by_with_incorrect_deprecation_date = []
-    for gb_name, gb in downstream_group_bys.items():
-        if not gb.metaData.deprecationDate or gb.metaData.deprecationDate > obj.metaData.deprecationDate:
-            downstream_group_by_with_incorrect_deprecation_date.append(gb_name)
-    if downstream_group_by_with_incorrect_deprecation_date:
-        _print_deprecation_warning(
-            obj.metaData.name,
-            obj.metaData.deprecationDate,
-            True,
-            downstream_group_by_with_incorrect_deprecation_date,
-            None,
+    if incorrect_deprecation_date:
+        _print_error(
+            "Deprecation Warning:",
+            f"Downstream {entity_type} {incorrect_deprecation_date}"
+            f" are missing deprecationDate or has a later deprecationDate than upstream {obj_name}."
+            f" Please ensure either to remove/migrate the dependency or set up correct deprecationDate.",
         )
-    downstream_join_with_incorrect_deprecation_date = []
-    for join_name, join in downstream_joins.items():
-        if not join.metaData.deprecationDate or join.metaData.deprecationDate > obj.metaData.deprecationDate:
-            downstream_join_with_incorrect_deprecation_date.append(join_name)
-        if downstream_join_with_incorrect_deprecation_date:
-            _print_deprecation_warning(
-                obj.metaData.name,
-                obj.metaData.deprecationDate,
-                True,
-                downstream_join_with_incorrect_deprecation_date,
-                None,
+
+
+def check_deprecation_existence_in_upstream(collection, entity_type, obj_name):
+    for name, item in collection.items():
+        if item.metaData.deprecationDate:
+            _print_error(
+                "Deprecation Warning:",
+                f"{entity_type} {name} is going to be deprecated by"
+                f" {item.metaData.deprecationDate}. Please ensure either to remove/migrate"
+                f" the dependency or set up correct deprecationDate for {obj_name}.",
             )
-
-
-# For object without deprecation date, check if it is using any to-be-deprecated entity as upstream.
-# There are two possible upstream entities: groupBys or joins.
-# For active groupBys, check if it is using any deprecated join as joinSource.
-# For active joins, check if it is using any deprecated groupBy as joinPart.
-def _handle_warning_for_active_entity(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]]) -> None:
-    if obj_class is Join:
-        for jp in obj.joinParts:
-            if jp.groupBy.metaData.deprecationDate:
-                _print_deprecation_warning(
-                    obj.metaData.name, jp.groupBy.metaData.deprecationDate, False, None, jp.groupBy.metaData.name
-                )
-    else:
-        for source in obj.sources:
-            if source.joinSource and source.joinSource.join.metaData.deprecationDate:
-                _print_deprecation_warning(
-                    obj.metaData.name,
-                    source.joinSource.join.metaData.deprecationDate,
-                    False,
-                    None,
-                    source.joinSource.join.metaData.name,
-                )
 
 
 # For object with deprecation date set, check if downstream objects have correct deprecation date set.
@@ -368,9 +322,27 @@ def _handle_deprecation_warning(
     obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]], downstream_group_bys: dict, downstream_joins: dict
 ) -> None:
     if obj.metaData.deprecationDate:
-        _handle_warning_for_deprecation_entity(obj, downstream_group_bys, downstream_joins)
+        check_deprecation_date_setup_for_downstream(
+            downstream_group_bys, "group_bys", obj.metaData.name, obj.metaData.deprecationDate
+        )
+        check_deprecation_date_setup_for_downstream(
+            downstream_joins, "joins", obj.metaData.name, obj.metaData.deprecationDate
+        )
     else:
-        _handle_warning_for_active_entity(obj, obj_class)
+        if obj_class is Join:
+            check_deprecation_existence_in_upstream(
+                {jp.groupBy.metaData.name: jp.groupBy for jp in obj.joinParts}, "Join part", obj.metaData.name
+            )
+        else:
+            check_deprecation_existence_in_upstream(
+                {
+                    source.joinSource.join.metaData.name: source.joinSource.join
+                    for source in obj.sources
+                    if source.joinSource
+                },
+                "Join source",
+                obj.metaData.name,
+            )
 
 
 def _print_tables(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]]) -> None:
