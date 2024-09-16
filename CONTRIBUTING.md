@@ -44,7 +44,7 @@ Below is a general workflow to create a PR from a forked repository. By followin
 - Clone the forked repository 
 - [Configuring a remote repository for a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/configuring-a-remote-repository-for-a-fork)
 - Sync the forked repository with the main repository
-  - [Syncing a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork)
+- [Syncing a fork](https://docs.github.com/en/pull-requests/collaborating-with-pull-requests/working-with-forks/syncing-a-fork)
 - Create a new branch for your changes
 - Make your changes
 - Push the branch to your fork
