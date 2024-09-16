@@ -79,11 +79,40 @@ def test_basic_compile():
         extract_and_convert, ["--chronon_root=test/sample", "--input_path=joins/sample_team/sample_join.py"]
     )
     assert result.exit_code == 0
+
+
+# Test deprecation warning when a to-be-deprecated group_by is used in an active join
+def test_compile_group_by_deprecation():
+    runner = CliRunner()
     result = runner.invoke(
         extract_and_convert,
-        ["--chronon_root=test/sample", "--input_path=group_bys/sample_team/sample_deprecation_group_by.py"],
+        [
+            "--chronon_root=test/sample",
+            "--input_path=group_bys/sample_team/sample_deprecation_group_by.py",
+            "--force-overwrite",
+        ],
     )
     assert result.exit_code == 0
+    warning_message_title = "deprecation warning"
+    actual_message = str(result.output).strip().lower()
+    assert warning_message_title in actual_message, f"Deprecation warning message not seen in {actual_message}"
+
+
+# Test deprecation warning when an active join is having a to-be-deprecated join part
+def test_compile_join_deprecation():
+    runner = CliRunner()
+    result = runner.invoke(
+        extract_and_convert,
+        [
+            "--chronon_root=test/sample",
+            "--input_path=joins/sample_team/sample_deprecation_join.py",
+            "--force-overwrite",
+        ],
+    )
+    assert result.exit_code == 0
+    warning_message_title = "deprecation warning"
+    actual_message = str(result.output).strip().lower()
+    assert warning_message_title in actual_message, f"Deprecation warning message not seen in {actual_message}"
 
 
 def test_debug_compile():
