@@ -16,13 +16,14 @@
 #     limitations under the License.
 import logging
 import os
-from ai.chronon.logger import get_logger
 from typing import Set
-from ai.chronon.api.ttypes import \
-    GroupBy, Join
-from ai.chronon.repo import JOIN_FOLDER_NAME, \
-    GROUP_BY_FOLDER_NAME
+
+from ai.chronon.api.ttypes import GroupBy, Join
+from ai.chronon.logger import get_logger
+from ai.chronon.repo import GROUP_BY_FOLDER_NAME, JOIN_FOLDER_NAME
 from ai.chronon.repo.validator import extract_json_confs
+
+SUPPORTED_TYPES = [GroupBy, Join]
 
 
 class ChrononEntityDependencyTracker(object):
@@ -30,12 +31,8 @@ class ChrononEntityDependencyTracker(object):
         self.logger = get_logger(log_level)
         self.chronon_root_path = chronon_root_path
 
-    def extract_conf(
-        self, obj_class: type, path: str
-    ) -> object:
-        obj = extract_json_confs(
-            obj_class,
-            os.path.join(self.chronon_root_path, path))
+    def extract_conf(self, obj_class: type, path: str) -> object:
+        obj = extract_json_confs(obj_class, os.path.join(self.chronon_root_path, path))
         if len(obj) == 0:
             raise Exception(f"No {obj_class} found in {path}")
         elif len(obj) > 1:
@@ -46,9 +43,7 @@ class ChrononEntityDependencyTracker(object):
         join = self.extract_conf(Join, conf_path)
         join_name = join.metaData.name
         downstreams = set()
-        group_bys = extract_json_confs(
-            GroupBy,
-            os.path.join(self.chronon_root_path, GROUP_BY_FOLDER_NAME))
+        group_bys = extract_json_confs(GroupBy, os.path.join(self.chronon_root_path, GROUP_BY_FOLDER_NAME))
         for group_by in group_bys:
             for source in group_by.sources:
                 if source.joinSource and source.joinSource.join.metaData.name == join_name:
@@ -59,9 +54,7 @@ class ChrononEntityDependencyTracker(object):
         group_by = self.extract_conf(GroupBy, conf_path)
         group_by_name = group_by.metaData.name
         downstreams = set()
-        joins = extract_json_confs(
-            Join,
-            os.path.join(self.chronon_root_path, JOIN_FOLDER_NAME))
+        joins = extract_json_confs(Join, os.path.join(self.chronon_root_path, JOIN_FOLDER_NAME))
         for join in joins:
             for join_part in join.joinParts:
                 if join_part.groupBy.metaData.name == group_by_name:

@@ -215,6 +215,9 @@ def _handle_dependent_configurations(
     new_group_bys_to_materialize = {}
     new_joins_to_materialize = {}
 
+    if obj_class not in dependency_tracker.SUPPORTED_TYPES:
+        return new_group_bys_to_materialize, new_joins_to_materialize
+
     output_file_path = _get_relative_materialized_file_path(full_output_root, name, obj)
     downstreams = entity_dependency_tracker.check_downstream(output_file_path)
 
@@ -333,7 +336,7 @@ def _handle_deprecation_warning(
             check_deprecation_existence_in_upstream(
                 {jp.groupBy.metaData.name: jp.groupBy for jp in obj.joinParts}, "Join part", obj.metaData.name
             )
-        else:
+        else:  # handle StagingQuery here
             check_deprecation_existence_in_upstream(
                 {
                     source.joinSource.join.metaData.name: source.joinSource.join
