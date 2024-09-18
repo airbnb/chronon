@@ -18,6 +18,24 @@ object S3Utils {
   private val DS_NODASH = "{{ds_nodash}}"
   private val DS_NODASH_YESTERDAY = "{{yesterday_ds_nodash}}"
 
+  // With Chronon we write to partition ds - 1 and this is what gets passed to endDate.
+  // The most common convention in Dataland is for datasources to write to version ds.
+  // To be consistent with this the date substitution logic uses (endDate + 1) = ds for ds_nodash
+  // and endDate = (ds - 1) for yesterday_ds_nodash.
+  def updateS3Prefix(originalS3Prefix: String, endDate: String): String =
+    if (originalS3Prefix.contains(DS_NODASH)) {
+      val endDatePlusOneDay =
+        PartitionSpec(format = "yyyyMMdd", spanMillis = WindowUtils.Day.millis)
+          .shift(endDate, 1)
+      logger.info(s"Replacing $DS_NODASH in $originalS3Prefix with $endDatePlusOneDay")
+      originalS3Prefix.replace(DS_NODASH, endDatePlusOneDay)
+    } else if (originalS3Prefix.contains(DS_NODASH_YESTERDAY)) {
+      logger.info(
+        s"Replacing $DS_NODASH_YESTERDAY in $originalS3Prefix with $endDate"
+      )
+      originalS3Prefix.replace(DS_NODASH_YESTERDAY, endDate)
+    } else originalS3Prefix
+
 
   // Chronon doesn't natively support reading S3 prefix inputs so for each s3 prefix input we create
   // a temp view over the s3 prefix and then refer to the temp view in the Chronon config.
@@ -28,18 +46,7 @@ object S3Utils {
   ): api.Source = {
     if (source.isSetEvents && source.getEvents.table.startsWith(S3)) {
       logger.info(s"Converting the following S3 Source to a temp table: ${source.getEvents.table}")
-      val s3Prefix = {
-        if(source.getEvents.table.contains(DS_NODASH)) {
-          logger.info(s"Replacing $DS_NODASH in ${source.getEvents.table} with $endDate")
-          source.getEvents.table.replace(DS_NODASH, endDate)
-        }
-        else if (source.getEvents.table.contains(DS_NODASH_YESTERDAY)){
-          val endDateMinusOneDay = PartitionSpec(format = "yyyyMMdd", spanMillis = WindowUtils.Day.millis).shift(endDate, -1)
-          logger.info(s"Replacing $DS_NODASH_YESTERDAY in ${source.getEvents.table} with $endDateMinusOneDay")
-          source.getEvents.table.replace(DS_NODASH_YESTERDAY, endDateMinusOneDay)
-        }
-        else source.getEvents.table
-      }
+      val s3Prefix = updateS3Prefix(source.getEvents.table, endDate)
       logger.info(s"Creating a temp table from the following S3 prefix: ${s3Prefix}")
       val updatedTableName = tableNameFromS3Prefix(s3Prefix)
       spark.read.parquet(s3Prefix).createTempView(updatedTableName)
@@ -47,18 +54,7 @@ object S3Utils {
     }
     if (source.isSetEntities && source.getEntities.snapshotTable.startsWith(S3)) {
       logger.info(s"Converting the following S3 Source to a temp table: ${source.getEntities.snapshotTable}")
-      val s3Prefix = {
-        if(source.getEntities.snapshotTable.contains(DS_NODASH)) {
-          logger.info(s"Replacing $DS_NODASH in ${source.getEntities.snapshotTable} with $endDate")
-          source.getEntities.snapshotTable.replace(DS_NODASH, endDate)
-        }
-        else if (source.getEntities.snapshotTable.contains(DS_NODASH_YESTERDAY)){
-          val endDateMinusOneDay = PartitionSpec(format = "yyyyMMdd", spanMillis = WindowUtils.Day.millis).shift(endDate, -1)
-          logger.info(s"Replacing $DS_NODASH_YESTERDAY in ${source.getEntities.snapshotTable} with $endDateMinusOneDay")
-          source.getEntities.snapshotTable.replace(DS_NODASH_YESTERDAY, endDateMinusOneDay)
-        }
-        else source.getEntities.snapshotTable
-      }
+      val s3Prefix = updateS3Prefix(source.getEvents.table, endDate)
       logger.info(s"Creating a temp table from the following S3 prefix: ${s3Prefix}")
       val updatedTableName = tableNameFromS3Prefix(s3Prefix)
       val df = spark.read.parquet(s3Prefix)
