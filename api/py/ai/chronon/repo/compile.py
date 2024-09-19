@@ -333,7 +333,7 @@ def _handle_deprecation_warning(
             check_deprecation_existence_in_upstream(
                 {jp.groupBy.metaData.name: jp.groupBy for jp in obj.joinParts}, "Join part", obj.metaData.name
             )
-        else:
+        elif obj_class is GroupBy:
             check_deprecation_existence_in_upstream(
                 {
                     source.joinSource.join.metaData.name: source.joinSource.join

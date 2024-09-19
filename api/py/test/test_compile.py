@@ -339,3 +339,17 @@ def test_compile_feature_display():
 
     assert "Output Join Features" in result.output
     assert result.exit_code == 0
+
+
+def test_compile_dependency_staging_query():
+    """
+    Test that compiling a staging query does not error out
+    """
+    runner = CliRunner()
+    input_path = f"staging_queries/sample_team/sample_staging_query.py"
+    result = runner.invoke(
+        extract_and_convert,
+        ["--chronon_root=test/sample", f"--input_path={input_path}"],
+    )
+
+    assert result.exit_code == 0
