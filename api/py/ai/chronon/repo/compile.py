@@ -321,7 +321,7 @@ def check_deprecation_existence_in_upstream(collection, entity_type, obj_name):
 def _handle_deprecation_warning(
     obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]], downstream_group_bys: dict, downstream_joins: dict
 ) -> None:
-    if obj.metaData.deprecationDate and obj_class in [Join, GroupBy]:
+    if obj.metaData.deprecationDate:
         check_deprecation_date_setup_for_downstream(
             downstream_group_bys, "group_bys", obj.metaData.name, obj.metaData.deprecationDate
         )
