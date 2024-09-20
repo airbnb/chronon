@@ -16,7 +16,6 @@
 #     limitations under the License.
 import logging
 import os
-from typing import Set
 
 from ai.chronon.api.ttypes import GroupBy, Join
 from ai.chronon.logger import get_logger
@@ -37,11 +36,11 @@ class ChrononEntityDependencyTracker(object):
             raise Exception(f"Multiple {obj_class} found in {path}")
         return obj[0]
 
-    def get_join_downstream(self, conf_path) -> Set[object]:
+    def get_join_downstream(self, conf_path) -> list[object]:
         join = self.extract_conf(Join, conf_path)
         join_name = join.metaData.name
         names_set = set()
-        downstreams = set()
+        downstreams = list()
         group_bys = extract_json_confs(GroupBy, os.path.join(self.chronon_root_path, GROUP_BY_FOLDER_NAME))
         for group_by in group_bys:
             for source in group_by.sources:
@@ -51,23 +50,23 @@ class ChrononEntityDependencyTracker(object):
                     and group_by.metaData.name not in names_set
                 ):
                     names_set.add(group_by.metaData.name)
-                    downstreams.add(group_by)
+                    downstreams.append(group_by)
         return downstreams
 
-    def get_group_by_downstream(self, conf_path) -> Set[object]:
+    def get_group_by_downstream(self, conf_path) -> list[object]:
         group_by = self.extract_conf(GroupBy, conf_path)
         group_by_name = group_by.metaData.name
         names_set = set()
-        downstreams = set()
+        downstreams = list()
         joins = extract_json_confs(Join, os.path.join(self.chronon_root_path, JOIN_FOLDER_NAME))
         for join in joins:
             for join_part in join.joinParts:
                 if join_part.groupBy.metaData.name == group_by_name and join.metaData.name not in names_set:
                     names_set.add(join.metaData.name)
-                    downstreams.add(join)
+                    downstreams.append(join)
         return downstreams
 
-    def get_downstream(self, conf_path: str) -> Set[object]:
+    def get_downstream(self, conf_path: str) -> list[object]:
         if "joins" in conf_path:
             downstream = self.get_join_downstream(conf_path)
         elif "group_bys" in conf_path:
@@ -80,9 +79,9 @@ class ChrononEntityDependencyTracker(object):
             raise Exception(f"Invalid conf path: {conf_path}")
         return downstream
 
-    def get_downstream_names(self, conf_path: str) -> Set[str]:
+    def get_downstream_names(self, conf_path: str) -> list[str]:
         downstream = self.get_downstream(conf_path)
-        downstream_name = set()
+        downstream_name = list()
         for obj in downstream:
-            downstream_name.add(obj.metaData.name)
+            downstream_name.append(obj.metaData.name)
         return downstream_name
