@@ -443,7 +443,7 @@ def get_modes_tables(conf: ChrononJobTypes) -> Dict[str, List[str]]:
         if join.labelPart is not None:
             tables[Modes.label_join] = [f"{table_name}_labels", f"{table_name}_labeled", f"{table_name}_labeled_latest"]
 
-        if conf.bootstrapParts:
+        if conf.bootstrapParts or get_offline_schedule(conf) is not None:
             tables[SubStage.bootstrap] = [f"{table_name}_bootstrap"]
 
         if conf.joinParts:
