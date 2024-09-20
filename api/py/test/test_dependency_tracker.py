@@ -25,14 +25,28 @@ def test_dependency_tracker():
     return dependency_tracker.ChrononEntityDependencyTracker(chronon_root_path="test/sample/production")
 
 
-def test_group_by_dependency(test_dependency_tracker):
+def test_get_group_by_dependency(test_dependency_tracker):
     conf_path = "group_bys/sample_team/event_sample_group_by.v1"
-    downstream = test_dependency_tracker.get_downstream_names(conf_path)
+    downstream = test_dependency_tracker.get_downstream(conf_path)
     assert len(downstream) == 8
     assert "sample_team.sample_join_derivation.v1" in downstream
 
 
-def test_join_dependency(test_dependency_tracker):
+def test_get_group_by_dependency_names(test_dependency_tracker):
+    conf_path = "group_bys/sample_team/event_sample_group_by.v1"
+    downstream = test_dependency_tracker.get_downstream(conf_path)
+    assert len(downstream) == 8
+    assert "sample_team.sample_join_derivation.v1" in downstream
+
+
+def test_get_join_dependency(test_dependency_tracker):
+    conf_path = "joins/sample_team/sample_chaining_join.parent_join"
+    downstream = test_dependency_tracker.get_downstream_names(conf_path)
+    assert len(downstream) == 1
+    assert "sample_team.sample_chaining_group_by" in downstream
+
+
+def test_get_join_dependency_names(test_dependency_tracker):
     conf_path = "joins/sample_team/sample_chaining_join.parent_join"
     downstream = test_dependency_tracker.get_downstream_names(conf_path)
     assert len(downstream) == 1
