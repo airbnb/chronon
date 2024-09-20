@@ -617,9 +617,12 @@ def Join(left: api.Source,
 
 def InferenceSpec(
         model_backend: str,
-        model_backend_params: Dict[str, str] = {},
+        model_backend_params: Dict[str, str],
 ) -> api.InferenceSpec: 
     assert model_backend is not None, "Model backend must be set to create an inference spec"
+    assert model_backend_params is not None, "Model backend params must be set and must include 'model_sha' to create an inference spec"
+    assert 'model_sha' in model_backend_params, "Model backend params must include 'model_sha' to create an inference spec"
+    
     return api.InferenceSpec(
         modelBackend = model_backend,
         modelBackendParams = model_backend_params
@@ -647,6 +650,13 @@ def ModelTransformation(
         pass_through_fields: List[str] = []
 ) -> api.ModelTransformation:
     assert model is not None, "Model must be set to create a model transformation"
+
+    if pass_through_fields:
+        if 'day' not in pass_through_fields:
+            pass_through_fields.append('day')
+        if '_internal_time_column' not in pass_through_fields:
+            pass_through_fields.append('_internal_time_column')
+
     return api.ModelTransformation(
         model = model,
         outputMappings = output_mappings,
