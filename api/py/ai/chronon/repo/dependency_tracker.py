@@ -16,7 +16,7 @@
 #     limitations under the License.
 import logging
 import os
-from types import list, set
+from typing import List
 
 from ai.chronon.api.ttypes import GroupBy, Join
 from ai.chronon.logger import get_logger
@@ -37,7 +37,7 @@ class ChrononEntityDependencyTracker(object):
             raise Exception(f"Multiple {obj_class} found in {path}")
         return obj[0]
 
-    def get_join_downstream(self, conf_path) -> list[object]:
+    def get_join_downstream(self, conf_path) -> List[object]:
         join = self.extract_conf(Join, conf_path)
         join_name = join.metaData.name
         names_set = set()
@@ -54,7 +54,7 @@ class ChrononEntityDependencyTracker(object):
                     downstream.append(group_by)
         return downstream
 
-    def get_group_by_downstream(self, conf_path) -> list[object]:
+    def get_group_by_downstream(self, conf_path) -> List[object]:
         group_by = self.extract_conf(GroupBy, conf_path)
         group_by_name = group_by.metaData.name
         names_set = set()
@@ -67,7 +67,7 @@ class ChrononEntityDependencyTracker(object):
                     downstream.append(join)
         return downstream
 
-    def get_downstream(self, conf_path: str) -> list[object]:
+    def get_downstream(self, conf_path: str) -> List[object]:
         if "joins" in conf_path:
             downstream = self.get_join_downstream(conf_path)
         elif "group_bys" in conf_path:
