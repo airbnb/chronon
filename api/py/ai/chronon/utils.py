@@ -13,6 +13,24 @@ from typing import List, Union, cast, Optional
 from ai.chronon.repo import NOTEBOOKS_LOG_FILE
 import functools
 
+from pyspark.sql.types import (
+    DataType,
+    BooleanType, 
+    StringType,
+    IntegerType,
+    LongType,
+    FloatType,
+    DoubleType,
+    BinaryType,
+    DateType,
+    TimestampType,
+    MapType,
+    ArrayType,
+    StructType,
+    ByteType,
+    ShortType,
+    StructField
+)
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
@@ -388,3 +406,38 @@ def print_logs_in_cell(func):
     
     return wrapper
         
+def data_type_to_spark_type(data_type: api.TDataType) -> DataType:
+    if data_type.kind == api.DataKind.BOOLEAN:
+        return BooleanType()
+    elif data_type.kind == api.DataKind.BYTE:
+        return ByteType()
+    elif data_type.kind == api.DataKind.SHORT:
+        return ShortType()
+    elif data_type.kind == api.DataKind.INT:
+        return IntegerType()
+    elif data_type.kind == api.DataKind.LONG:
+        return LongType()
+    elif data_type.kind == api.DataKind.FLOAT:
+        return FloatType()
+    elif data_type.kind == api.DataKind.DOUBLE:
+        return DoubleType()
+    elif data_type.kind == api.DataKind.STRING:
+        return StringType()
+    elif data_type.kind == api.DataKind.BINARY:
+        return BinaryType()
+    elif data_type.kind == api.DataKind.DATE:
+        return DateType()
+    elif data_type.kind == api.DataKind.TIMESTAMP:
+        return TimestampType()
+    elif data_type.kind == api.DataKind.MAP:
+        key_type = data_type_to_spark_type(data_type.params[0].dataType)
+        value_type = data_type_to_spark_type(data_type.params[1].dataType)
+        return MapType(key_type, value_type)
+    elif data_type.kind == api.DataKind.LIST:
+        element_type = data_type_to_spark_type(data_type.params[0].dataType)
+        return ArrayType(element_type)
+    elif data_type.kind == api.DataKind.STRUCT:
+        fields = [StructField(field.name, data_type_to_spark_type(field.dataType)) for field in data_type.params]
+        return StructType(fields)
+    else:
+        raise ValueError(f"Unsupported DataKind: {data_type.kind}")
