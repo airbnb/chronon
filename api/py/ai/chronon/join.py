@@ -595,7 +595,7 @@ def Join(left: api.Source,
         assert name is not None, "Please provide a name for the Join when defining it in a notebook cell."
         metadata.name = name
 
-    join_result = api.Join(
+    return api.Join(
         left=updated_left,
         joinParts=right_parts,
         metaData=metadata,
@@ -608,12 +608,6 @@ def Join(left: api.Source,
         modelTransformation=model_transformation,
     )
 
-    if model_transformation and not utils.is_feature_being_created_in_a_databricks_notebook_cell(sys._getframe().f_back.f_code.co_filename, repo.JOIN_FOLDER_NAME):
-        join_result.modelTransformation.metaData = api.MetaData(
-            dependencies=utils.get_model_transformation_dependencies(join_result)
-        )
-
-    return join_result
 
 def InferenceSpec(
         model_backend: str,
