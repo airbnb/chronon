@@ -80,7 +80,7 @@ class ChrononEntityDependencyTracker(object):
             raise Exception(f"Invalid conf path: {conf_path}")
         return downstream
 
-    def get_downstream_names(self, conf_path: str) -> list[str]:
+    def get_downstream_names(self, conf_path: str) -> List[str]:
         downstream = self.get_downstream(conf_path)
         downstream_name = list()
         for obj in downstream:
