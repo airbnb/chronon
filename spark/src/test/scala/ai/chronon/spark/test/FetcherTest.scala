@@ -143,7 +143,8 @@ class FetcherTest extends TestCase {
     val endPartition = "2021-04-10"
     val rightSource = Builders.Source.entities(
       query = Builders.Query(
-        selects = Map("listing_id" -> "listing", "ts" -> "ts", "rating" -> "rating"),
+        // selects = Map("listing_id" -> "listing", "ts" -> "ts", "rating" -> "rating"),
+        selects = Builders.Selects.exprs("listing_id" -> "listing_id", "ts" -> "ts", "rating" -> "CAST(rating/100.0 AS FLOAT)"),
         startPartition = startPartition,
         endPartition = endPartition,
         mutationTimeColumn = "mutation_time",
