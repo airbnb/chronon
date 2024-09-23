@@ -326,7 +326,8 @@ class FetcherTest extends TestCase {
     val rightSource =
       Builders.Source.events(
         query = Builders.Query(
-          selects = Builders.Selects("listing_id", "ts", "rating"),
+//          selects = Builders.Selects("listing_id", "ts", "rating"),
+          selects = Builders.Selects.exprs("listing_id" -> "listing_id", "ts" -> "ts", "rating" -> "CAST(rating/1.0 AS FLOAT)"),
           startPartition = startPartition
         ),
         table = s"$namespace.${ratingsSchema.name}",
