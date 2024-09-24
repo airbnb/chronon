@@ -230,12 +230,19 @@ def _handle_dependent_configurations(
             continue
 
         conf_var, conf_file_path = conf_result
-        conf_obj = eo.from_file(
-            chronon_root_path,
-            os.path.join(chronon_root_path, conf_file_path),
-            downstream_class,
-            log_level=log_level,
-        )
+        try:
+            conf_obj = eo.from_file(
+                chronon_root_path,
+                os.path.join(chronon_root_path, conf_file_path),
+                downstream_class,
+                log_level=log_level,
+            )
+        except Exception as e:
+            _print_error(
+                f"Failed to parse {downstream} dependency of type {downstream_class} for {name} at {conf_file_path}",
+                str(e),
+            )
+            raise e
 
         obj_to_materialize = conf_obj[downstream]
         if downstream_class is GroupBy:
