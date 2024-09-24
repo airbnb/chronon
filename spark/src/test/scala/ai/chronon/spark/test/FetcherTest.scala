@@ -614,9 +614,9 @@ class FetcherTest extends TestCase {
     if (endDs != today) {
       responseDf = responseDf.drop("ds").withColumn("ds", lit(endDs))
     }
-    logger.info("expected:")
+    logger.info(s"expected schema: \n ${endDsExpected.schema.pretty} \n expected data frame:")
     endDsExpected.show()
-    logger.info("response:")
+    logger.info(s"response schema: \n ${endDsExpected.schema.pretty} \n response data frame:")
     responseDf.show()
 
     val diff = Comparison.sideBySide(responseDf, endDsExpected, keyishColumns, aName = "online", bName = "offline")
