@@ -109,6 +109,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.StringType$",
       "org.apache.spark.sql.types.IntegerType$",
       "org.apache.spark.sql.types.BinaryType",
+      "org.apache.spark.sql.types.FloatType$",
       "org.apache.spark.sql.types.DataType",
       "org.apache.spark.sql.types.NullType$",
       "org.apache.spark.sql.types.DoubleType$",
