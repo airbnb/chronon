@@ -123,14 +123,15 @@ class GroupByUploadTest {
       Column("user", StringType, 10),
       Column("list_event", StringType, 100),
       Column("views", IntType, 10),
-      Column("rating", IntType, 10)
+      Column("rating", FloatType, 10)
     )
     val eventDf = DataFrameGen.events(spark, eventSchema, count = 1000, partitions = 18)
     eventDf.save(s"$namespace.$eventsTable")
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(Operation.LAST_K, "list_event", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30")),
-      Builders.Aggregation(Operation.AVERAGE, "views", Seq(WindowUtils.Unbounded, new Window(1, TimeUnit.DAYS)))
+      Builders.Aggregation(Operation.AVERAGE, "views", Seq(WindowUtils.Unbounded, new Window(1, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.SUM, "rating", Seq(new Window(1, TimeUnit.DAYS)))
     )
     val keys = Seq("user").toArray
     val groupByConf =
@@ -141,7 +142,7 @@ class GroupByUploadTest {
         metaData = Builders.MetaData(namespace = namespace, name = "test_multiple_avg_upload"),
         accuracy = Accuracy.TEMPORAL
       )
-    GroupByUpload.run(groupByConf, endDs = yesterday)
+    GroupByUpload.run(groupByConf, endDs = yesterday, showDf = true)
   }
 
   //  joinLeft = (review, category, rating)  [ratings]
