@@ -236,7 +236,7 @@ class JoinUtilsTest {
   def testCreateJoinView(): Unit = {
     val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
-    val finalViewName = "testCreateView"
+    val finalViewName = s"${namespace}.testCreateView"
     val leftTableName = s"${namespace}.testFeatureTable"
     val rightTableName = s"${namespace}.testLabelTable"
     TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
