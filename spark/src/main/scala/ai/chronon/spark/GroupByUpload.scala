@@ -215,7 +215,9 @@ object GroupByUpload {
 
     val kvDf = kvRdd.toAvroDf(jsonPercent = jsonPercent)
     if (showDf) {
-      kvRdd.toFlatDf.prettyPrint()
+      val uploadDf = kvRdd.toFlatDf
+      logger.info(s"schema for uploadDf: \n${uploadDf.schema.pretty}")
+      uploadDf.prettyPrint()
     }
 
     val groupByServingInfo = buildServingInfo(groupByConf, session = tableUtils.sparkSession, endDs).groupByServingInfo

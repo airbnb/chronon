@@ -278,7 +278,7 @@ object ColumnAggregator {
           case ShortType   => simple(new Sum[Long](LongType), toLong[Short])
           case BooleanType => simple(new Sum[Long](LongType), boolToLong)
           case DoubleType  => simple(new Sum[Double](inputType))
-          case FloatType   => simple(new Sum[Double](inputType), toDouble[Float])
+          case FloatType   => simple(new Sum[Double](DoubleType), toDouble[Float])
           case _           => mismatchException
         }
       case Operation.UNIQUE_COUNT =>

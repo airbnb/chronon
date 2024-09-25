@@ -44,7 +44,7 @@ class TileCodecTest {
     Builders.Aggregation(Operation.AVERAGE, "rating", Seq(new Window(1, TimeUnit.DAYS))) -> Seq(4.0),
     Builders.Aggregation(Operation.SUM,
                          "rating",
-                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(12.0f, 12.0f),
+                         Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(12.0, 12.0),
     Builders.Aggregation(Operation.UNIQUE_COUNT,
                          "title",
                          Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq(3L, 3L),
