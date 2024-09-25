@@ -6,7 +6,7 @@
     "customJson": "{\"check_consistency\": false, \"lag\": 0, \"join_tags\": null, \"join_part_tags\": {}}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_team_sample_staging_query_v1_ds\", \"spec\": \"sample_namespace.sample_team_sample_staging_query_v1/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
-      "{\"name\": \"wait_for_sample_namespace.sample_team_sample_group_by_require_backfill_ds\", \"spec\": \"sample_namespace.sample_team_sample_group_by_require_backfill/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
+      "{\"name\": \"wait_for_sample_namespace.sample_team_sample_group_by_group_by_require_backfill_ds\", \"spec\": \"sample_namespace.sample_team_sample_group_by_group_by_require_backfill/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
     ],
     "tableProperties": {
       "source": "chronon"
@@ -39,7 +39,7 @@
           "production": 0,
           "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
           "dependencies": [
-            "{\"name\": \"wait_for_sample_namespace.sample_team_sample_group_by_require_backfill_ds\", \"spec\": \"sample_namespace.sample_team_sample_group_by_require_backfill/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
+            "{\"name\": \"wait_for_sample_namespace.sample_team_sample_group_by_group_by_require_backfill_ds\", \"spec\": \"sample_namespace.sample_team_sample_group_by_group_by_require_backfill/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
           ],
           "tableProperties": {
             "sample_config_json": "{\"sample_key\": \"sample_value\"}",
@@ -52,7 +52,7 @@
         "sources": [
           {
             "events": {
-              "table": "sample_namespace.sample_team_sample_group_by_require_backfill",
+              "table": "sample_namespace.sample_team_sample_group_by_group_by_require_backfill",
               "query": {
                 "selects": {
                   "event": "event_expr",

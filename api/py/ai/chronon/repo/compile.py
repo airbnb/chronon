@@ -216,7 +216,7 @@ def _handle_dependent_configurations(
     new_joins_to_materialize = {}
 
     output_file_path = _get_relative_materialized_file_path(full_output_root, name, obj)
-    downstreams = entity_dependency_tracker.check_downstream(output_file_path)
+    downstreams = entity_dependency_tracker.get_downstream_names(output_file_path)
 
     for downstream in downstreams:
         if obj_class is Join:
