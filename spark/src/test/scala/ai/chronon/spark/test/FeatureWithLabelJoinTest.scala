@@ -30,23 +30,21 @@ import scala.util.Random
 class FeatureWithLabelJoinTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val spark: SparkSession = SparkSessionBuilder.build("FeatureWithLabelJoinTest", local = true)
-
-  private val namespace = "final_join" + "_" + Random.alphanumeric.take(6).mkString
   private val tableName = "test_feature_label_join"
   private val tableUtils = TableUtils(spark)
-  tableUtils.createDatabase(namespace)
-
   private val labelDS = "2022-10-30"
-  private val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
-  private val left = viewsGroupBy.groupByConf.sources.get(0)
 
   @Test
   def testFinalViews(): Unit = {
+    val namespace = "final_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
+    val left = viewsGroupBy.groupByConf.sources.get(0)
     // create test feature join table
     val featureTable = s"${namespace}.${tableName}"
     createTestFeatureTable().write.saveAsTable(featureTable)
 
-    val labelJoinConf = createTestLabelJoin(50, 20)
+    val labelJoinConf = createTestLabelJoin(50, 20,namespace=namespace)
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       left,
@@ -105,6 +103,8 @@ class FeatureWithLabelJoinTest {
 
   @Test
   def testFinalViewsWithAggLabel(): Unit = {
+    val namespace = "final_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // create test feature join table
     val tableName = "label_agg_table"
     val featureTable = s"${namespace}.${tableName}"
@@ -131,7 +131,7 @@ class FeatureWithLabelJoinTest {
       .groupByConf
       .sources
       .get(0)
-    val labelJoinConf = createTestAggLabelJoin(5, "listing_labels_agg")
+    val labelJoinConf = createTestAggLabelJoin(5, "listing_labels_agg", namespace=namespace)
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       leftSource,
@@ -217,7 +217,8 @@ class FeatureWithLabelJoinTest {
 
   def createTestLabelJoin(startOffset: Int,
                           endOffset: Int,
-                          groupByTableName: String = "listing_labels"): ai.chronon.api.LabelPart = {
+                          groupByTableName: String = "listing_labels",
+                          namespace: String): ai.chronon.api.LabelPart = {
     val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, groupByTableName)
     Builders.LabelPart(
       labels = Seq(
@@ -229,7 +230,8 @@ class FeatureWithLabelJoinTest {
   }
 
   def createTestAggLabelJoin(windowSize: Int,
-                             groupByTableName: String = "listing_labels_agg"): ai.chronon.api.LabelPart = {
+                             groupByTableName: String = "listing_labels_agg",
+                             namespace: String): ai.chronon.api.LabelPart = {
     val labelGroupBy = TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, windowSize, groupByTableName)
     Builders.LabelPart(
       labels = Seq(
