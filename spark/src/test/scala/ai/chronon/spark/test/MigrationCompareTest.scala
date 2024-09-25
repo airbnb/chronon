@@ -34,12 +34,10 @@ class MigrationCompareTest {
   private val tableUtils = TableUtils(spark)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val ninetyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
-  private val namespace = "migration_compare_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
   private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
   private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
-  tableUtils.createDatabase(namespace)
 
-  def setupTestData(): (api.Join, api.StagingQuery) = {
+  def setupTestData(namespace: String): (api.Join, api.StagingQuery) = {
     // ------------------------------------------JOIN------------------------------------------
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
@@ -95,7 +93,9 @@ class MigrationCompareTest {
 
   @Test
   def testMigrateCompare(): Unit = {
-    val (joinConf, stagingQueryConf) = setupTestData()
+    val namespace = "migration_compare_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val (joinConf, stagingQueryConf) = setupTestData(namespace)
 
     val (compareDf, metricsDf, metrics: DataMetrics) =
       new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
@@ -105,7 +105,9 @@ class MigrationCompareTest {
 
   @Test
   def testMigrateCompareWithLessColumns(): Unit = {
-    val (joinConf, _) = setupTestData()
+    val namespace = "migration_compare_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val (joinConf, _) = setupTestData(namespace)
 
     // Run the staging query to generate the corresponding table for comparison
     val stagingQueryConf = Builders.StagingQuery(
@@ -124,7 +126,9 @@ class MigrationCompareTest {
 
   @Test
   def testMigrateCompareWithWindows(): Unit = {
-    val (joinConf, stagingQueryConf) = setupTestData()
+    val namespace = "migration_compare_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val (joinConf, stagingQueryConf) = setupTestData(namespace )
 
     val (compareDf, metricsDf, metrics: DataMetrics) =
       new CompareJob(tableUtils, joinConf, stagingQueryConf, ninetyDaysAgo, today).run()
@@ -134,7 +138,9 @@ class MigrationCompareTest {
 
   @Test
   def testMigrateCompareWithLessData(): Unit = {
-    val (joinConf, _) = setupTestData()
+    val namespace = "migration_compare_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val (joinConf, _) = setupTestData(namespace)
 
     val stagingQueryConf = Builders.StagingQuery(
       query = s"select * from ${joinConf.metaData.outputTable} where ds BETWEEN '${monthAgo}' AND '${today}'",

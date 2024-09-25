@@ -36,8 +36,6 @@ class JoinUtilsTest {
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("JoinUtilsTest", local = true)
   private val tableUtils = TableUtils(spark)
-  private val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
-  tableUtils.createDatabase(namespace)
   @Test
   def testUDFSetAdd(): Unit = {
     val data = Seq(
@@ -236,6 +234,8 @@ class JoinUtilsTest {
 
   @Test
   def testCreateJoinView(): Unit = {
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val finalViewName = "testCreateView"
     val leftTableName = s"${namespace}.testFeatureTable"
     val rightTableName = s"${namespace}.testLabelTable"
@@ -274,6 +274,8 @@ class JoinUtilsTest {
 
   @Test
   def testCreateLatestLabelView(): Unit = {
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val finalViewName = s"${namespace}.testFinalView"
     val leftTableName = s"${namespace}.testFeatureTable2"
     val rightTableName = s"${namespace}.testLabelTable2"
@@ -327,6 +329,8 @@ class JoinUtilsTest {
 
   @Test
   def testGetRangesToFill(): Unit = {
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"${namespace}.item_queries_table"
@@ -343,7 +347,8 @@ class JoinUtilsTest {
 
   @Test
   def testGetRangesToFillWithOverride(): Unit = {
-
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"${namespace}.queries_table"
@@ -361,7 +366,8 @@ class JoinUtilsTest {
 
   @Test
   def testGetRangesToFillWithEndPartition(): Unit = {
-
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"${namespace}.queries_table"

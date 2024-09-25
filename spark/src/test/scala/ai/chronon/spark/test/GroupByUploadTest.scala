@@ -38,11 +38,11 @@ class GroupByUploadTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest", local = true)
-  private val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
   private val tableUtils = TableUtils(spark)
 
   @Test
   def temporalEventsLastKTest(): Unit = {
+    val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     tableUtils.createDatabase(namespace)
@@ -72,6 +72,7 @@ class GroupByUploadTest {
 
   @Test
   def structSupportTest(): Unit = {
+    val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     tableUtils.createDatabase(namespace)
@@ -114,6 +115,7 @@ class GroupByUploadTest {
 
   @Test
   def multipleAvgCountersTest(): Unit = {
+    val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     tableUtils.createDatabase(namespace)
@@ -149,6 +151,7 @@ class GroupByUploadTest {
   // groupBy = keys:[listing, category], aggs:[avg(rating)]
   @Test
   def listingRatingCategoryJoinSourceTest(): Unit = {
+    val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
 

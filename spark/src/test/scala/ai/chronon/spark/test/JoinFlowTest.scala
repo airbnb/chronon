@@ -18,11 +18,11 @@ class JoinFlowTest {
   val spark: SparkSession = SparkSessionBuilder.build("JoinFlowTest", local = true)
   private val tableUtils = TableUtils(spark)
 
-  private val namespace = "test_namespace_joinflowtest" + "_" + Random.alphanumeric.take(6).mkString
-  tableUtils.createDatabase(namespace)
-
   @Test
   def testBootstrapAndDerivation(): Unit = {
+    val namespace = "test_namespace_joinflowtest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
     // in JoinBackfill Flow mode, left, rights and final steps are triggered by separate Driver mode
 
     val prefix = "test_bootstrap_and_derivation"

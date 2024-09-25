@@ -272,7 +272,6 @@ class GroupByTest {
   @Test
   def testStepDaysConsistency(): Unit = {
     val (source, endPartition) = createTestSource()
-
     val tableUtils = TableUtils(spark)
     val testSteps = Option(30)
     val namespace = "test_steps"
@@ -292,9 +291,8 @@ class GroupByTest {
   @Test
   def testGroupByAnalyzer(): Unit = {
     val (source, endPartition) = createTestSource(30)
-
     val tableUtils = TableUtils(spark)
-    val namespace = "test_analyzer"
+    val namespace = "test_analyzer_testGroupByAnalyzer"
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val (aggregationsMetadata, _) =
@@ -324,7 +322,7 @@ class GroupByTest {
     val testName = "unit_analyze_test_item_no_agg"
 
     val tableUtils = TableUtils(spark)
-    val namespace = "test_analyzer"
+    val namespace = "test_analyzer_testGroupByNoAggregationAnalyzer"
     val groupByConf = Builders.GroupBy(
       sources = Seq(source),
       keyColumns = Seq("item"),
