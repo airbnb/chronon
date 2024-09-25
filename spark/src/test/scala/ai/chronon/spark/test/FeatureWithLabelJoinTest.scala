@@ -36,10 +36,10 @@ class FeatureWithLabelJoinTest {
 
   @Test
   def testFinalViews(): Unit = {
-       val namespace = "final_join" + "_" + Random.alphanumeric.take(6).mkString
-      tableUtils.createDatabase(namespace)
-       val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
-       val left = viewsGroupBy.groupByConf.sources.get(0)
+    val namespace = "final_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
+    val left = viewsGroupBy.groupByConf.sources.get(0)
     // create test feature join table
     val featureTable = s"${namespace}.${tableName}"
     createTestFeatureTable().write.saveAsTable(featureTable)
