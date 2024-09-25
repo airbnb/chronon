@@ -35,11 +35,11 @@ class StagingQueryTest {
 
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val ninetyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
-  private val namespace = "staging_query_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
-  tableUtils.createDatabase(namespace)
 
   @Test
   def testStagingQuery(): Unit = {
+    val namespace = "staging_query_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val schema = List(
       Column("user", StringType, 10),
       Column("session_length", IntType, 1000)
@@ -107,6 +107,8 @@ class StagingQueryTest {
     */
   @Test
   def testStagingQueryAutoExpand(): Unit = {
+    val namespace = "staging_query_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val schema = List(
       Column("user", StringType, 10),
       Column("session_length", IntType, 50),
@@ -183,6 +185,8 @@ class StagingQueryTest {
     */
   @Test
   def testStagingQueryLatestDate(): Unit = {
+    val namespace = "staging_query_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val schema = List(
       Column("user", StringType, 10),
       Column("session_length", IntType, 1000)
@@ -235,6 +239,8 @@ class StagingQueryTest {
 
   @Test
   def testStagingQueryMaxDate(): Unit = {
+    val namespace = "staging_query_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val schema = List(
       Column("user", StringType, 10),
       Column("session_length", IntType, 1000)

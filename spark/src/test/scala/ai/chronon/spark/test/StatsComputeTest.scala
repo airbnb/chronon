@@ -31,7 +31,6 @@ class StatsComputeTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = SparkSessionBuilder.build("StatsComputeTest", local = true)
   implicit val tableUtils = TableUtils(spark)
-  val namespace: String = "stats_compute_test"
 
   @Test
   def summaryTest(): Unit = {
@@ -53,6 +52,7 @@ class StatsComputeTest {
 
   @Test
   def snapshotSummaryTest(): Unit = {
+    val namespace: String = "stats_compute_test"
     tableUtils.createDatabase(namespace)
     val data = Seq(
       ("1", Some(1L), Some(1.0), Some("a")),

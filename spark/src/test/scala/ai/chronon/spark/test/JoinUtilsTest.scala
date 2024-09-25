@@ -33,13 +33,10 @@ import scala.collection.mutable
 import scala.util.{Random, Try}
 
 class JoinUtilsTest {
-
-  lazy val spark: SparkSession = SparkSessionBuilder.build("JoinUtilsTest", local = true)
-  private val tableUtils = TableUtils(spark)
-  private val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
-  tableUtils.createDatabase(namespace)
   @Test
   def testUDFSetAdd(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val data = Seq(
       Row(Seq("a", "b", "c"), "a"),
       Row(Seq("a", "b", "c"), "d"),
@@ -74,6 +71,8 @@ class JoinUtilsTest {
 
   @Test
   def testUDFContainsAny(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val data = Seq(
       Row(Seq("a", "b", "c"), Seq("a")),
       Row(Seq("a", "b", "c"), Seq("a", "b")),
@@ -107,6 +106,8 @@ class JoinUtilsTest {
                                rightSchema: StructType,
                                keys: Seq[String],
                                isFailure: Boolean): Try[DataFrame] = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val df = Try(
       JoinUtils.coalescedJoin(
         // using empty dataframe is sufficient to test spark query planning
@@ -236,7 +237,12 @@ class JoinUtilsTest {
 
   @Test
   def testCreateJoinView(): Unit = {
-    val finalViewName = "testCreateView"
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val finalViewName = s"${namespace}.testCreateView"
     val leftTableName = s"${namespace}.testFeatureTable"
     val rightTableName = s"${namespace}.testLabelTable"
     TestUtils.createSampleFeatureTableDf(spark).write.saveAsTable(leftTableName)
@@ -274,6 +280,11 @@ class JoinUtilsTest {
 
   @Test
   def testCreateLatestLabelView(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val finalViewName = s"${namespace}.testFinalView"
     val leftTableName = s"${namespace}.testFeatureTable2"
     val rightTableName = s"${namespace}.testLabelTable2"
@@ -319,7 +330,10 @@ class JoinUtilsTest {
 
   @Test
   def testFilterColumns(): Unit = {
-    val testDf = createSampleTable()
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val testDf = createSampleTable(spark = spark, tableUtils = tableUtils)
     val filter = Array("listing", "ds", "feature_review")
     val filteredDf = JoinUtils.filterColumns(testDf, filter)
     assertTrue(filteredDf.schema.fieldNames.sorted sameElements filter.sorted)
@@ -327,6 +341,11 @@ class JoinUtilsTest {
 
   @Test
   def testGetRangesToFill(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"${namespace}.item_queries_table"
@@ -343,7 +362,11 @@ class JoinUtilsTest {
 
   @Test
   def testGetRangesToFillWithOverride(): Unit = {
-
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"${namespace}.queries_table"
@@ -361,7 +384,11 @@ class JoinUtilsTest {
 
   @Test
   def testGetRangesToFillWithEndPartition(): Unit = {
-
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "joinUtil" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // left table
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"${namespace}.queries_table"
@@ -373,14 +400,17 @@ class JoinUtilsTest {
     val startBackfillDs = "2023-08-01"
     val endBackfillDs = "2023-08-08"
     val endQueryDs = "2023-08-15"
-    val leftSource = Builders.Source.events(Builders.Query(startPartition = startQueryDs, endPartition = endQueryDs), table = itemQueriesTable)
+    val leftSource = Builders.Source
+      .events(Builders.Query(startPartition = startQueryDs, endPartition = endQueryDs), table = itemQueriesTable)
     val range = JoinUtils.getRangesToFill(leftSource, tableUtils, endBackfillDs, Some(startBackfillDs))
     assertEquals(range, PartitionRange(startBackfillDs, endBackfillDs)(tableUtils))
   }
 
   import ai.chronon.api.{LongType, StringType, StructField, StructType}
 
-  def createSampleTable(tableName: String = "testSampleTable"): DataFrame = {
+  def createSampleTable(tableName: String = "testSampleTable",
+                        spark: SparkSession,
+                        tableUtils: TableUtils): DataFrame = {
     val schema = StructType(
       tableName,
       Array(

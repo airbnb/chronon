@@ -196,13 +196,13 @@ def test_get_related_table_names_for_simple_joins():
         # Joins will have the stats-summary & log (because of default sample = 100%)
         assert any(table.endswith("_daily_stats") for table in tables)
         assert any(table.endswith("_logged") for table in tables)
+        assert any(table.endswith("_bootstrap") for table in tables)  # always generated in backfill mode
 
         assert not any(table.endswith("_upload") for table in tables)
         assert not any(table.endswith("_consistency") for table in tables)
         assert not any(table.endswith("_labels") for table in tables)
         assert not any(table.endswith("_labeled") for table in tables)
         assert not any(table.endswith("_labeled_latest") for table in tables)
-        assert not any(table.endswith("_bootstrap") for table in tables)
 
 
 def test_get_related_table_names_for_label_joins():
@@ -214,6 +214,8 @@ def test_get_related_table_names_for_label_joins():
         # Joins will have the stats-summary & log (because of default sample = 100%)
         assert any(table.endswith("_daily_stats") for table in tables)
         assert any(table.endswith("_logged") for table in tables)
+        assert any(table.endswith("_bootstrap") for table in tables)  # always generated in backfill mode
+
         # label tables should be available
         assert any(table.endswith("_labels") for table in tables)
         assert any(table.endswith("_labeled") for table in tables)
@@ -221,7 +223,6 @@ def test_get_related_table_names_for_label_joins():
 
         assert not any(table.endswith("_upload") for table in tables)
         assert not any(table.endswith("_consistency") for table in tables)
-        assert not any(table.endswith("_bootstrap") for table in tables)
 
 
 def test_get_related_table_names_for_consistency_joins():
@@ -233,6 +234,7 @@ def test_get_related_table_names_for_consistency_joins():
         # Joins will have the stats-summary & log (because of default sample = 100%)
         assert any(table.endswith("_daily_stats") for table in tables)
         assert any(table.endswith("_logged") for table in tables)
+        assert any(table.endswith("_bootstrap") for table in tables)  # always generated in backfill mode
         # consistency tables should be available
         assert any(table.endswith("_consistency") for table in tables)
 
@@ -240,7 +242,6 @@ def test_get_related_table_names_for_consistency_joins():
         assert not any(table.endswith("_labeled") for table in tables)
         assert not any(table.endswith("_labeled_latest") for table in tables)
         assert not any(table.endswith("_upload") for table in tables)
-        assert not any(table.endswith("_bootstrap") for table in tables)
 
 
 def test_get_related_table_names_for_bootstrap_joins():

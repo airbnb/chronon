@@ -53,20 +53,19 @@ import scala.util.ScalaJavaConversions.ListOps
 import scala.util.Try
 
 class JoinTest {
-
-  val spark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
-  private val tableUtils = TableUtils(spark)
-
-  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-  private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
-  private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
-  private val dayAndMonthBefore = tableUtils.partitionSpec.before(monthAgo)
-
-  private val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
-  tableUtils.createDatabase(namespace)
+  val dummySpark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
+  private val dummyTableUtils = TableUtils(dummySpark)
+  private val today = dummyTableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val monthAgo = dummyTableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
+  private val yearAgo = dummyTableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
+  private val dayAndMonthBefore = dummyTableUtils.partitionSpec.before(monthAgo)
 
   @Test
   def testEventsEntitiesSnapshot(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val dollarTransactions = List(
       Column("user", StringType, 100),
       Column("user_name", api.StringType, 100),
@@ -271,6 +270,10 @@ class JoinTest {
 
   @Test
   def testEntitiesEntities(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // untimed/unwindowed entities on right
     // right side
     val weightSchema = List(
@@ -392,6 +395,10 @@ class JoinTest {
 
   @Test
   def testEntitiesEntitiesNoHistoricalBackfill(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // Only backfill latest partition if historical_backfill is turned off
     val weightSchema = List(
       Column("user", api.StringType, 1000),
@@ -446,6 +453,10 @@ class JoinTest {
 
   @Test
   def testEventsEventsSnapshot(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
@@ -516,8 +527,11 @@ class JoinTest {
 
   @Test
   def testEventsEventsTemporal(): Unit = {
-
-    val joinConf = getEventsEventsTemporal("temporal")
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val joinConf = getEventsEventsTemporal("temporal", namespace)
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
@@ -594,11 +608,15 @@ class JoinTest {
 
   @Test
   def testEventsEventsCumulative(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // Create a cumulative source GroupBy
     val viewsTable = s"$namespace.view_cumulative"
-    val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true)
+    val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true, namespace)
     // Copy and modify existing events/events case to use cumulative GroupBy
-    val joinConf = getEventsEventsTemporal("cumulative")
+    val joinConf = getEventsEventsTemporal("cumulative", namespace)
     joinConf.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
 
     // Run job
@@ -652,6 +670,10 @@ class JoinTest {
   }
 
   def getGroupByForIncrementalSourceTest() = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val messageData = Seq(
       Row("Hello", "a", "2021-01-01"),
       Row("World", "a", "2021-01-02"),
@@ -694,8 +716,12 @@ class JoinTest {
 
   @Test
   def testSourceQueryRender(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // Test cumulative
-    val viewsGroupByCumulative = getViewsGroupBy(suffix = "render", makeCumulative = true)
+    val viewsGroupByCumulative = getViewsGroupBy(suffix = "render", makeCumulative = true, namespace)
     val renderedCumulative = renderDataSourceQuery(
       viewsGroupByCumulative,
       viewsGroupByCumulative.sources.asScala.head,
@@ -725,6 +751,10 @@ class JoinTest {
 
   @Test
   def testNoAgg(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // Left side entities, right side entities no agg
     // Also testing specific select statement (rather than select *)
     val namesSchema = List(
@@ -806,7 +836,11 @@ class JoinTest {
 
   @Test
   def testVersioning(): Unit = {
-    val joinConf = getEventsEventsTemporal("versioning")
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val joinConf = getEventsEventsTemporal("versioning", namespace)
 
     // Run the old join to ensure that tables exist
     val oldJoin = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
@@ -832,7 +866,7 @@ class JoinTest {
     // Test adding a joinPart
     val addPartJoinConf = joinConf.deepCopy()
     val existingJoinPart = addPartJoinConf.getJoinParts.get(0)
-    val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(suffix = "versioning"), prefix = "user_2")
+    val newJoinPart = Builders.JoinPart(groupBy = getViewsGroupBy(suffix = "versioning", namespace=namespace), prefix = "user_2")
     addPartJoinConf.setJoinParts(Seq(existingJoinPart, newJoinPart).asJava)
     val addPartJoin = new Join(joinConf = addPartJoinConf, endPartition = dayAndMonthBefore, tableUtils)
     val addPartRecompute = tablesToRecompute(addPartJoinConf, addPartJoinConf.metaData.outputTable, tableUtils, false)
@@ -902,13 +936,14 @@ class JoinTest {
     assertEquals(0, diff.count())
   }
 
-  private def getViewsGroupBy(suffix: String, makeCumulative: Boolean = false) = {
+  private def getViewsGroupBy(suffix: String, makeCumulative: Boolean = false, namespace: String) = {
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item", api.StringType, 100),
       Column("time_spent_ms", api.LongType, 5000)
     )
-
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     val viewsTable = s"$namespace.view_$suffix"
     val df = DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200)
 
@@ -941,7 +976,9 @@ class JoinTest {
     )
   }
 
-  private def getEventsEventsTemporal(nameSuffix: String = "") = {
+  private def getEventsEventsTemporal(nameSuffix: String = "", namespace: String) = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     // left side
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries"
@@ -954,7 +991,7 @@ class JoinTest {
     val suffix = if (nameSuffix.isEmpty) "" else s"_$nameSuffix"
     Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
-      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(nameSuffix), prefix = "user")),
+      joinParts = Seq(Builders.JoinPart(groupBy = getViewsGroupBy(nameSuffix, namespace = namespace), prefix = "user")),
       metaData =
         Builders.MetaData(name = s"test.item_temporal_features${suffix}", namespace = namespace, team = "item_team")
     )
@@ -963,7 +1000,11 @@ class JoinTest {
 
   @Test
   def testEndPartitionJoin(): Unit = {
-    val join = getEventsEventsTemporal("end_partition_test")
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val join = getEventsEventsTemporal("end_partition_test", namespace)
     val start = join.getLeft.query.startPartition
     val end = tableUtils.partitionSpec.after(start)
     val limitedJoin = Builders.Join(
@@ -981,6 +1022,10 @@ class JoinTest {
 
   @Test
   def testSkipBloomFilterJoinBackfill(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val testSpark: SparkSession = SparkSessionBuilder.build(
       "JoinTest",
       local = true,
@@ -1031,6 +1076,10 @@ class JoinTest {
 
   @Test
   def testStructJoin(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     val nameSuffix = "_struct_test"
     val itemQueries = List(Column("item", api.StringType, 100))
     val itemQueriesTable = s"$namespace.item_queries_$nameSuffix"
@@ -1090,6 +1139,8 @@ class JoinTest {
 
   @Test
   def testMigrationForBootstrap(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     val namespaceMigration = "test_namespace_jointest"
     tableUtils.createDatabase(namespaceMigration)
 
@@ -1142,6 +1193,10 @@ class JoinTest {
   }
 
   private def prepareTopicTestConfs(prefix: String): (api.Join, String) = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // left part
     val querySchema = Seq(Column("user", api.LongType, 100))
     val queryTable = s"$namespace.${prefix}_left_table"
@@ -1205,8 +1260,8 @@ class JoinTest {
           Constants.SemanticHashExcludeTopic -> "false"
         ).asJava)
     )
-    tableUtils.alterTableProperties(join.metaData.outputTable, oldTableProperties)
-    tableUtils.alterTableProperties(join.metaData.bootstrapTable, oldTableProperties)
+    dummyTableUtils.alterTableProperties(join.metaData.outputTable, oldTableProperties)
+    dummyTableUtils.alterTableProperties(join.metaData.bootstrapTable, oldTableProperties)
   }
 
   private def hasExcludeTopicFlag(tableProps: Map[String, String], gson: Gson): Boolean = {
@@ -1217,6 +1272,8 @@ class JoinTest {
 
   @Test
   def testMigrationForTopicSuccess(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     val (join, endDs) = prepareTopicTestConfs("test_migration_for_topic_success")
     def runJob(join: api.Join, shiftDays: Int): Unit = {
       val deepCopy = join.deepCopy()
@@ -1265,6 +1322,8 @@ class JoinTest {
 
   @Test
   def testMigrationForTopicManualArchive(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     val (join, endDs) = prepareTopicTestConfs("test_migration_for_topic_manual_archive")
     def runJob(join: api.Join, shiftDays: Int, unsetSemanticHash: Boolean = false): Unit = {
       val deepCopy = join.deepCopy()
@@ -1306,6 +1365,10 @@ class JoinTest {
 
   @Test
   def testKeyMappingOverlappingFields(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // test the scenario when a key_mapping is a -> b, (right key b is mapped to left key a) and
     // a happens to be another field in the same group by
 
@@ -1365,6 +1428,10 @@ class JoinTest {
     */
   @Test
   def testSelectedJoinParts(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // Left
     val itemQueries = List(
       Column("item", api.StringType, 100),
