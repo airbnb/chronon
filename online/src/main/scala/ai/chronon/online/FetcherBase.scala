@@ -308,8 +308,14 @@ class FetcherBase(kvStore: KVStore,
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
-      val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
-        .map { groupByServingInfo =>
+      val groupByServingInfo: Try[GroupByServingInfoParsed] = getGroupByServingInfo(request.name)
+      val groupByRequestMetaTry: Try[GroupByRequestMeta] = if (groupByServingInfo.isFailure) {
+        val context =
+          request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, request.name))
+        context.increment("group_by_serving_info_failure.count")
+        Failure(groupByServingInfo.failed.get)
+      } else {
+        groupByServingInfo.map { groupByServingInfo =>
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
           context.increment("group_by_request.count")
@@ -318,7 +324,7 @@ class FetcherBase(kvStore: KVStore,
           try {
             if (
               !isEntityValidityCheckEnabled || validateGroupByExist(groupByServingInfo.groupBy.metaData.owningTeam,
-                                                                    request.name)
+                request.name)
             ) {
               // The formats of key bytes for batch requests and key bytes for streaming requests may differ based
               // on the KVStore implementation, so we encode each distinctly.
@@ -329,7 +335,10 @@ class FetcherBase(kvStore: KVStore,
             } else throw InvalidEntityException(request.name)
           } catch {
             // If the group_by is inactive, throw the exception
-            case ex: InvalidEntityException => throw ex
+            case ex: InvalidEntityException => {
+              context.increment("fetch_invalid_group_by_failure.count")
+              throw ex
+            }
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
             case ex: Exception =>
@@ -344,6 +353,7 @@ class FetcherBase(kvStore: KVStore,
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)
+                  context.increment("encode_group_by_key_failure.count")
                   throw EncodeKeyException(request.name, "Couldn't encode request keys or casted keys")
               }
           }
@@ -353,20 +363,12 @@ class FetcherBase(kvStore: KVStore,
             case Accuracy.TEMPORAL =>
               Some(
                 GetRequest(streamingKeyBytes,
-                           groupByServingInfo.groupByOps.streamingDataset,
-                           Some(groupByServingInfo.batchEndTsMillis)))
+                  groupByServingInfo.groupByOps.streamingDataset,
+                  Some(groupByServingInfo.batchEndTsMillis)))
             // no further aggregation is required - the value in KvStore is good as is
             case Accuracy.SNAPSHOT => None
           }
           GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis, context)
-        }
-      if (groupByRequestMetaTry.isFailure) {
-        groupByRequestMetaTry match {
-          case Failure(ex: InvalidEntityException) =>
-            request.context.foreach(_.increment("fetch_invalid_group_by_failure.count"))
-          case Failure(ex: EncodeKeyException) =>
-            request.context.foreach(_.increment("encode_group_by_key_failure.count"))
-          case Failure(ex: Exception) => request.context.foreach(_.increment("group_by_serving_info_failure.count"))
         }
       }
       request -> groupByRequestMetaTry
