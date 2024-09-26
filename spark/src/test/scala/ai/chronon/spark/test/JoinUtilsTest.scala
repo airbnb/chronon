@@ -308,7 +308,7 @@ class JoinUtilsTest {
     assertEquals(6, view.count())
 
     //verity latest label view
-    val latestLabelView = "testLatestLabel"
+    val latestLabelView = s"${namespace}.testLatestLabel"
     JoinUtils.createLatestLabelView(latestLabelView,
                                     finalViewName,
                                     tableUtils,
