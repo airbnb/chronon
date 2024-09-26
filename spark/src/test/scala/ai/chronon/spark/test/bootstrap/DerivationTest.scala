@@ -194,7 +194,8 @@ class DerivationTest {
         (rand() * 30000)
           .cast(org.apache.spark.sql.types.LongType)
           .as("ext_payments_service_user_txn_count_15d"),
-        col("ds")
+        col("ds"),
+        col("user")
       )
       .sample(0.8)
     val externalBootstrapTable = s"$namespace.bootstrap_external"
@@ -202,7 +203,7 @@ class DerivationTest {
     val externalBootstrapRange = externalBootstrapDf.partitionRange
     val externalBootstrapPart = Builders.BootstrapPart(
       query = Builders.Query(
-        selects = Builders.Selects("request_id", "ext_payments_service_user_txn_count_15d"),
+        selects = Builders.Selects("request_id", "ext_payments_service_user_txn_count_15d", "user"),
         startPartition = externalBootstrapRange.start,
         endPartition = externalBootstrapRange.end
       ),
