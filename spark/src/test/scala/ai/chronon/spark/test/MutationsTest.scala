@@ -283,10 +283,10 @@ class MutationsTest {
          |     mutations.ds AS mutation_ds,
          |     COALESCE(snapshot.rating_std, 0)      AS rating_std,
          |     COALESCE(snapshot.rating_ctd, 0)      AS rating_ctd,
-         |     SUM(IF($includeCondition, mutations.rating, 0)) AS rating_add_sum,
-         |     SUM(IF($excludeCondition, mutations.rating, 0)) AS rating_sub_sum,
-         |     COUNT(IF($includeCondition, mutations.rating, NULL)) AS rating_add_cnt,
-         |     COUNT(IF($excludeCondition, mutations.rating, NULL)) AS rating_sub_cnt
+         |     COALESCE(SUM(IF($includeCondition, mutations.rating, 0)), 0) AS rating_add_sum,
+         |     COALESCE(SUM(IF($excludeCondition, mutations.rating, 0)), 0) AS rating_sub_sum,
+         |     COALESCE(COUNT(IF($includeCondition, mutations.rating, NULL)), 0) AS rating_add_cnt,
+         |     COALESCE(COUNT(IF($excludeCondition, mutations.rating, NULL)), 0) AS rating_sub_cnt
          |   FROM queries
          |   LEFT OUTER JOIN snapshot
          |     ON queries.listing_id = snapshot.listing_id
@@ -989,7 +989,7 @@ class MutationsTest {
       "MutationsTest" + "_" + Random.alphanumeric.take(6).mkString,
       local = true,
       additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
-    implicit val tableUtils: TableUtils = TableUtils(spark)
+    val tableUtils: TableUtils = TableUtils(spark)
     val suffix = "generated" + "_" + Random.alphanumeric.take(6).mkString
     val reviews = List(
       Column("listing_id", api.StringType, 100),
