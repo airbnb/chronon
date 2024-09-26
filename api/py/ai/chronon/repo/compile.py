@@ -21,13 +21,14 @@ import json
 import logging
 import os
 import textwrap
-from typing import Optional, Tuple, Type, Union
+from typing import List, Optional, Tuple, Type, Union
 
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
 import click
 from ai.chronon.api.ttypes import GroupBy, Join, StagingQuery
+from ai.chronon.logger import get_logger
 from ai.chronon.repo import (
     GROUP_BY_FOLDER_NAME,
     JOIN_FOLDER_NAME,
@@ -116,6 +117,9 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         chronon_root_path=full_output_root,
         log_level=log_level,
     )
+
+    _print_debug_info(results.keys(), f"Extracted Entities Of Type {obj_class.__name__}", log_level)
+
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
@@ -143,11 +147,12 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                         offline_backfill_enabled_group_bys[jp.groupBy.metaData.name] = jp.groupBy
                     else:
                         offline_gbs.append(jp.groupBy.metaData.name)
-                logging.debug(
-                    f"Online GroupBys: {online_group_bys.keys()}, "
-                    f"Offline GroupBys with backfill enabled: {offline_backfill_enabled_group_bys.keys()}, "
-                    f"Offline GroupBys: {offline_gbs}"
+
+                _print_debug_info(online_group_bys.keys(), "Online Groupbys", log_level)
+                _print_debug_info(
+                    offline_backfill_enabled_group_bys.keys(), "Offline Groupbys With Backfill Enabled", log_level
                 )
+                _print_debug_info(offline_gbs, "Offline Groupbys", log_level)
                 extra_online_or_gb_backfill_enabled_group_bys.update(
                     {**online_group_bys, **offline_backfill_enabled_group_bys}
                 )
@@ -214,9 +219,12 @@ def _handle_dependent_configurations(
     # Initialize local dictionaries to store new entries to be added
     new_group_bys_to_materialize = {}
     new_joins_to_materialize = {}
+    logger = get_logger(log_level)
 
     output_file_path = _get_relative_materialized_file_path(full_output_root, name, obj)
     downstreams = entity_dependency_tracker.get_downstream_names(output_file_path)
+
+    _print_debug_info(downstreams, f"Downstreams For {output_file_path}", log_level)
 
     for downstream in downstreams:
         if obj_class is Join:
@@ -227,6 +235,7 @@ def _handle_dependent_configurations(
             continue
         conf_result = _get_conf_file_path(downstream, downstream_class)
         if conf_result is None:
+            logger.debug(f"No {downstream} dependency of type {downstream_class} for {name}")
             continue
 
         conf_var, conf_file_path = conf_result
@@ -236,6 +245,11 @@ def _handle_dependent_configurations(
                 os.path.join(chronon_root_path, conf_file_path),
                 downstream_class,
                 log_level=log_level,
+            )
+            _print_debug_info(
+                [key for key, _ in conf_obj.items()],
+                f"Entities Within Dependent Configuration To Compile {conf_file_path}",
+                log_level,
             )
         except Exception as e:
             _print_error(
@@ -285,7 +299,7 @@ def _get_conf_file_path(downstream: str, downstream_class: Type[Union[Join, Grou
     elif downstream_class is GroupBy:
         return conf_var, os.path.join(GROUP_BY_FOLDER_NAME, conf_file_path)
     else:
-        return None  # Handle other cases or errors if needed
+        raise ValueError(f"Invalid downstream class: {downstream_class}")
 
 
 def _print_features(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]]) -> None:
@@ -508,6 +522,14 @@ def _print_error(left, right):
 def _print_warning(string):
     # print in yellow - \u001b[33m
     print(f"\u001b[33m{string}\u001b[0m")
+
+
+def _print_debug_info(keys: List[str], header: str, log_level=logging.DEBUG):
+    logger = get_logger(log_level)
+    logger.debug(f"\u001b[34m{header}\u001b[0m")
+    for key in keys:
+        logger.debug(f"\t{key}")
+    logger.debug("\n")
 
 
 if __name__ == "__main__":
