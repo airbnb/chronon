@@ -37,7 +37,7 @@ import scala.util.Random
 class MutationsTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
-  private def namespace(suffix: String) = s"test_mutations_$suffix"
+  private def namespace(suffix: String) = s"test_mutations_${suffix}"
   private val groupByName = s"group_by_test.v0"
   private val joinName = s"join_test.v0"
 
@@ -150,7 +150,6 @@ class MutationsTest {
       "MutationsTest" + "_" + Random.alphanumeric.take(6).mkString,
       local = true,
       additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
-    implicit val tableUtils: TableUtils = TableUtils(spark)
     val testNamespace = namespace(suffix)
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $testNamespace")
     spark.createDataFrame(spark.sparkContext.parallelize(eventData), leftSchema).save(s"$testNamespace.$eventTable")
@@ -451,7 +450,7 @@ class MutationsTest {
     */
   @Test
   def testSimplestCase(): Unit = {
-    val suffix = "simple"
+    val suffix = "simple" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 02:30:00"), "2021-04-10"),
@@ -524,7 +523,7 @@ class MutationsTest {
     */
   @Test
   def testUpdateValueCase(): Unit = {
-    val suffix = "update_value"
+    val suffix = "update_value" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       // {listing_id, ts, event, ds}
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
@@ -596,7 +595,7 @@ class MutationsTest {
     */
   @Test
   def testUpdateKeyCase(): Unit = {
-    val suffix = "update_key"
+    val suffix = "update_key" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 02:30:00"), "2021-04-10"),
@@ -674,7 +673,7 @@ class MutationsTest {
     */
   @Test
   def testInconsistentTsLeftCase(): Unit = {
-    val suffix = "inconsistent_ts"
+    val suffix = "inconsistent_ts" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-09 04:30:00"), "2021-04-10"),
@@ -774,7 +773,7 @@ class MutationsTest {
     */
   @Test
   def testDecayedWindowCase(): Unit = {
-    val suffix = "decayed"
+    val suffix = "decayed" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(2, 1, TsUtils.datetimeToTs("2021-04-09 01:30:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-09 04:30:00"), "2021-04-10"),
@@ -871,7 +870,7 @@ class MutationsTest {
     */
   @Test
   def testDecayedWindowCaseNoMutation(): Unit = {
-    val suffix = "decayed_v2"
+    val suffix = "decayed_v2" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 23:00:00"), "2021-04-10")
@@ -925,7 +924,7 @@ class MutationsTest {
     */
   @Test
   def testNoSnapshotJustMutation(): Unit = {
-    val suffix = "no_mutation"
+    val suffix = "no_mutation" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 00:07:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 01:07:00"), "2021-04-10"),
@@ -991,7 +990,7 @@ class MutationsTest {
       local = true,
       additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
     implicit val tableUtils: TableUtils = TableUtils(spark)
-    val suffix = "generated"
+    val suffix = "generated" + "_" + Random.alphanumeric.take(6).mkString
     val reviews = List(
       Column("listing_id", api.StringType, 100),
       Column("rating", api.LongType, 100)
