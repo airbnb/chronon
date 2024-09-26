@@ -340,10 +340,10 @@ lazy val online_unshaded = (project in file("online"))
 
 
 def cleanSparkMeta(): Unit = {
-  Folder.clean(file(".") / "spark" / "spark-warehouse",
-               file(tmp_warehouse) / "spark-warehouse",
-               file(".") / "spark" / "metastore_db",
-               file(tmp_warehouse) / "metastore_db")
+  Folder.clean(file(".") / "spark" / "spark-warehouse*",
+               file(tmp_warehouse) / "spark-warehouse*",
+               file(".") / "spark" / "metastore_db*",
+               file(tmp_warehouse) / "metastore_db*")
 }
 
 val sparkBaseSettings: Seq[Setting[_]] = Seq(

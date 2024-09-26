@@ -27,10 +27,6 @@ import scala.util.Properties
 
 object SparkSessionBuilder {
   @transient private lazy val logger = LoggerFactory.getLogger(getClass)
-
-  private val warehouseId = java.util.UUID.randomUUID().toString.takeRight(6)
-  private val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse_" + warehouseId)
-
   def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
   // we would want to share locally generated warehouse during CI testing
   def build(name: String,
@@ -42,6 +38,8 @@ object SparkSessionBuilder {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
     }
+    val warehouseId = java.util.UUID.randomUUID().toString.takeRight(6)
+    val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse_" + warehouseId)
     val userName = Properties.userName
     val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
     var baseBuilder = SparkSession
