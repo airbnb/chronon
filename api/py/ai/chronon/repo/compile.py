@@ -20,6 +20,7 @@
 import json
 import logging
 import os
+import pprint
 import textwrap
 from typing import List, Optional, Tuple, Type, Union
 
@@ -28,7 +29,6 @@ import ai.chronon.repo.extract_objects as eo
 import ai.chronon.utils as utils
 import click
 from ai.chronon.api.ttypes import GroupBy, Join, StagingQuery
-from ai.chronon.logger import get_logger
 from ai.chronon.repo import (
     GROUP_BY_FOLDER_NAME,
     JOIN_FOLDER_NAME,
@@ -148,9 +148,9 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                     else:
                         offline_gbs.append(jp.groupBy.metaData.name)
 
-                _print_debug_info(online_group_bys.keys(), "Online Groupbys", log_level)
+                _print_debug_info(list(online_group_bys.keys()), "Online Groupbys", log_level)
                 _print_debug_info(
-                    offline_backfill_enabled_group_bys.keys(), "Offline Groupbys With Backfill Enabled", log_level
+                    list(offline_backfill_enabled_group_bys.keys()), "Offline Groupbys With Backfill Enabled", log_level
                 )
                 _print_debug_info(offline_gbs, "Offline Groupbys", log_level)
                 extra_online_or_gb_backfill_enabled_group_bys.update(
@@ -219,7 +219,6 @@ def _handle_dependent_configurations(
     # Initialize local dictionaries to store new entries to be added
     new_group_bys_to_materialize = {}
     new_joins_to_materialize = {}
-    logger = get_logger(log_level)
 
     output_file_path = _get_relative_materialized_file_path(full_output_root, name, obj)
     downstreams = entity_dependency_tracker.get_downstream_names(output_file_path)
@@ -235,7 +234,8 @@ def _handle_dependent_configurations(
             continue
         conf_result = _get_conf_file_path(downstream, downstream_class)
         if conf_result is None:
-            logger.debug(f"No {downstream} dependency of type {downstream_class} for {name}")
+            if log_level == logging.DEBUG:
+                print(f"No {downstream} dependency of type {downstream_class} for {name}")
             continue
 
         conf_var, conf_file_path = conf_result
@@ -304,7 +304,11 @@ def _get_conf_file_path(downstream: str, downstream_class: Type[Union[Join, Grou
 
 def _print_features(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]]) -> None:
     if obj_class is Join:
-        _print_features_names("Output Join Features", get_join_output_columns(obj))
+        features = get_join_output_columns(obj)
+        for key, value in features.items():
+            left = key.value.replace("_", " ").title()
+            right = pprint.pformat(value, width=80, compact=True)
+            _print_features_names(left, f"\n{right}")
     if obj_class is GroupBy:
         _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
 
@@ -525,11 +529,12 @@ def _print_warning(string):
 
 
 def _print_debug_info(keys: List[str], header: str, log_level=logging.DEBUG):
-    logger = get_logger(log_level)
-    logger.debug(f"\u001b[34m{header}\u001b[0m")
-    for key in keys:
-        logger.debug(f"\t{key}")
-    logger.debug("\n")
+    if log_level != logging.DEBUG:
+        return
+
+    print(f"{header}")
+    right = pprint.pformat(list(keys)) if keys else "None"
+    print(f"\t\u001b[34m{right}\u001b[0m")
 
 
 if __name__ == "__main__":

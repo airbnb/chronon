@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, fields
+from enum import Enum
 from typing import Dict, List, Optional, Union, cast
 
 import ai.chronon.api.ttypes as api
@@ -48,6 +49,13 @@ class Modes:
 class SubStage:
     bootstrap = "bootstrap"
     join_parts = "join_parts"
+
+
+class FeatureDisplayKeys(Enum):
+    SOURCE_KEYS = "source_keys"
+    INTERNAL_COLUMNS = "internal_columns"
+    EXTERNAL_COLUMNS = "external_columns"
+    DERIVED_COLUMNS = "derived_columns"
 
 
 def edit_distance(str1, str2):
