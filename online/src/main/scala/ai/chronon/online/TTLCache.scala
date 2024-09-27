@@ -61,7 +61,8 @@ class TTLCache[I, O](f: I => O,
         contextBuilder(i).increment("cache.insert")
         entry.value
       } catch {
-        case ex: Exception => contextBuilder(i).incrementException(ex);
+        case ex: Exception =>
+          contextBuilder(i).incrementException(ex);
           throw ex
       }
     } else {
