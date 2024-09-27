@@ -308,8 +308,8 @@ class FetcherBase(kvStore: KVStore,
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
-      val groupByServingInfo: Try[GroupByServingInfoParsed] = getGroupByServingInfo(request.name)
-      val groupByRequestMetaTry: Try[GroupByRequestMeta] = groupByServingInfo.map { groupByServingInfo =>
+      val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
+        .map { groupByServingInfo =>
         val context =
           request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
         context.increment("group_by_request.count")
