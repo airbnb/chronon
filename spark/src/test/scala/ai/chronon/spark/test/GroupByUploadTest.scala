@@ -36,13 +36,11 @@ import scala.util.ScalaJavaConversions.{JMapOps, ListOps, MapOps}
 
 class GroupByUploadTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
-
-  lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest", local = true)
-  private val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
-  private val tableUtils = TableUtils(spark)
-
   @Test
   def temporalEventsLastKTest(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "group_by_upload_test" + "_" + Random.alphanumeric.take(6).mkString
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     tableUtils.createDatabase(namespace)
@@ -72,6 +70,9 @@ class GroupByUploadTest {
 
   @Test
   def structSupportTest(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     tableUtils.createDatabase(namespace)
@@ -114,6 +115,9 @@ class GroupByUploadTest {
 
   @Test
   def multipleAvgCountersTest(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val yesterday = tableUtils.partitionSpec.before(today)
     tableUtils.createDatabase(namespace)
@@ -123,14 +127,15 @@ class GroupByUploadTest {
       Column("user", StringType, 10),
       Column("list_event", StringType, 100),
       Column("views", IntType, 10),
-      Column("rating", IntType, 10)
+      Column("rating", FloatType, 10)
     )
     val eventDf = DataFrameGen.events(spark, eventSchema, count = 1000, partitions = 18)
     eventDf.save(s"$namespace.$eventsTable")
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(Operation.LAST_K, "list_event", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30")),
-      Builders.Aggregation(Operation.AVERAGE, "views", Seq(WindowUtils.Unbounded, new Window(1, TimeUnit.DAYS)))
+      Builders.Aggregation(Operation.AVERAGE, "views", Seq(WindowUtils.Unbounded, new Window(1, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.SUM, "rating", Seq(new Window(1, TimeUnit.DAYS)))
     )
     val keys = Seq("user").toArray
     val groupByConf =
@@ -141,7 +146,7 @@ class GroupByUploadTest {
         metaData = Builders.MetaData(namespace = namespace, name = "test_multiple_avg_upload"),
         accuracy = Accuracy.TEMPORAL
       )
-    GroupByUpload.run(groupByConf, endDs = yesterday)
+    GroupByUpload.run(groupByConf, endDs = yesterday, showDf = true)
   }
 
   //  joinLeft = (review, category, rating)  [ratings]
@@ -149,6 +154,9 @@ class GroupByUploadTest {
   // groupBy = keys:[listing, category], aggs:[avg(rating)]
   @Test
   def listingRatingCategoryJoinSourceTest(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByUploadTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "group_by_upload_test"  + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     tableUtils.sql(s"USE $namespace")
 

@@ -35,6 +35,14 @@ abstract class CStream[+T: ClassTag] {
     else min + ((max - min) * math.random)
   }
 
+  protected def rollFloat(max: Double, min: Double = 0.0, nullRate: Double = 0.1): JFloat = {
+    val dice: Double = math.random
+    if (dice < nullRate)
+      return null
+
+    (min + ((max - min) * math.random)).toFloat
+  }
+
   // roll a dice that gives max to min uniformly, with nulls interspersed as per null rate
   protected def roll(max: JLong, min: JLong = 0, nullRate: Double = 0.1): JLong = {
     val roll = rollDouble(max.toDouble, min.toDouble, nullRate)
@@ -63,6 +71,7 @@ abstract class CStream[+T: ClassTag] {
 object CStream {
   private type JLong = java.lang.Long
   private type JDouble = java.lang.Double
+  private type JFloat = java.lang.Float
 
   def genTimestamps(window: Window,
                     count: Int,
@@ -121,6 +130,12 @@ object CStream {
       Option(rollDouble(max, 1, nullRate = nullRate)).map(java.lang.Double.valueOf(_)).orNull
   }
 
+  class FloatStream(max: Double = 10000, nullRate: Double = 0.1) extends CStream[JFloat] {
+    override def next(): JFloat =
+      Option(rollFloat(max, 1, nullRate = nullRate)).map(java.lang.Float.valueOf(_)).orNull
+  }
+
+
   class ZippedStream(streams: CStream[Any]*)(tsIndex: Int) extends CStream[TestRow] {
     override def next(): TestRow =
       new TestRow(streams.map(_.next()).toArray: _*)(tsIndex)
@@ -148,6 +163,7 @@ case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: I
         }
       case IntType    => new IntStream(cardinality, nullRate)
       case DoubleType => new DoubleStream(cardinality, nullRate)
+      case FloatType => new FloatStream(cardinality, nullRate)
       case LongType =>
         name match {
           case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.DAYS))
