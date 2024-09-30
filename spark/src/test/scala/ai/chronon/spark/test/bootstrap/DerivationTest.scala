@@ -33,17 +33,20 @@ import org.junit.Test
 
 import scala.concurrent.Await
 import scala.concurrent.duration.Duration
+import scala.util.Random
 import scala.util.ScalaJavaConversions.JListOps
 
 class DerivationTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
-  val spark: SparkSession = SparkSessionBuilder.build("DerivationTest", local = true)
-  private val tableUtils = TableUtils(spark)
-  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  val dummySpark: SparkSession = SparkSessionBuilder.build("DerivationTest", local = true)
+  private val dummyTableUtils = TableUtils(dummySpark)
+  private val today = dummyTableUtils.partitionSpec.at(System.currentTimeMillis())
 
   @Test
   def testBootstrapToDerivations(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest"+ "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     val namespace = "test_derivations"
     tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
@@ -191,7 +194,8 @@ class DerivationTest {
         (rand() * 30000)
           .cast(org.apache.spark.sql.types.LongType)
           .as("ext_payments_service_user_txn_count_15d"),
-        col("ds")
+        col("ds"),
+        col("user")
       )
       .sample(0.8)
     val externalBootstrapTable = s"$namespace.bootstrap_external"
@@ -199,7 +203,7 @@ class DerivationTest {
     val externalBootstrapRange = externalBootstrapDf.partitionRange
     val externalBootstrapPart = Builders.BootstrapPart(
       query = Builders.Query(
-        selects = Builders.Selects("request_id", "ext_payments_service_user_txn_count_15d"),
+        selects = Builders.Selects("request_id", "ext_payments_service_user_txn_count_15d", "user"),
         startPartition = externalBootstrapRange.start,
         endPartition = externalBootstrapRange.end
       ),
@@ -291,6 +295,8 @@ class DerivationTest {
 
   @Test
   def testBootstrapToDerivationsNoStar(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     val namespace = "test_derivations_no_star"
     tableUtils.createDatabase(namespace)
 
@@ -374,6 +380,8 @@ class DerivationTest {
   }
 
   private def runLoggingTest(namespace: String, wildcardSelection: Boolean): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     tableUtils.createDatabase(namespace)
 
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
@@ -499,6 +507,8 @@ class DerivationTest {
 
   @Test
   def testContextual(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     val namespace = "test_contextual"
     tableUtils.createDatabase(namespace)
     val queryTable = BootstrapUtils.buildQuery(namespace, spark)
@@ -628,6 +638,8 @@ class DerivationTest {
 
   @Test
   def testGroupByDerivations(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     val namespace = "test_group_by_derivations"
     tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
