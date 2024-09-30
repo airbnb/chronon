@@ -200,7 +200,31 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     None,
     None,
     Some("4.1.68.Final")
-  )
+  ),
+  "jetty-io" -> VersionDependency(
+    Seq(
+      "org.eclipse.jetty" % "jetty-io"
+    ),
+    None,
+    Some("9.4.18.v20190429"),
+    None
+  ),
+  "jetty-http" -> VersionDependency(
+    Seq(
+      "org.eclipse.jetty" % "jetty-http"
+    ),
+    None,
+    Some("9.4.18.v20190429"),
+    None
+  ),
+  "jetty-client" -> VersionDependency(
+    Seq(
+      "org.eclipse.jetty" % "jetty-client"
+    ),
+    None,
+    Some("9.4.18.v20190429"),
+    None
+  ),
 )
 
 def fromMatrix(scalaVersion: String, modules: String*): Seq[ModuleID] =
@@ -228,7 +252,7 @@ lazy val api = project
     sourceGenerators in Compile += python_api_build.taskValue,
     crossScalaVersions := supportedVersions,
     libraryDependencies ++=
-      fromMatrix(scalaVersion.value, "spark-sql/provided") ++
+      fromMatrix(scalaVersion.value, "spark-sql/provided", "jetty-io", "jetty-http", "jetty-client") ++
         Seq(
           "org.apache.thrift" % "libthrift" % "0.13.0",
           "org.scala-lang" % "scala-reflect" % scalaVersion.value,
