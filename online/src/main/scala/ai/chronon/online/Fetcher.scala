@@ -36,7 +36,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Random, Success, Try}
 
 object Fetcher {
   case class Request(name: String,
@@ -87,7 +87,6 @@ class Fetcher(val kvStore: KVStore,
               flagStore: FlagStore = null,
               disableErrorThrows: Boolean = false)
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug, flagStore, disableErrorThrows) {
-
   private def reportCallerNameFetcherVersion(): Unit = {
     val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
     val ctx = Metrics.Context(Environment.Fetcher)
@@ -363,7 +362,28 @@ class Fetcher(val kvStore: KVStore,
     })
     loggingTry.failed.map { exception =>
       // to handle GroupByServingInfo staleness that results in encoding failure
-      getJoinCodecs.refresh(resp.request.name)
+      val refreshedJoinCodec = getJoinCodecs.refresh(resp.request.name)
+      if (debug) {
+        val rand = new Random
+        val number = rand.nextDouble
+        val defaultSamplePercent = 0.001
+        val logSamplePercent = refreshedJoinCodec
+          .map(codec =>
+            if (codec.conf.join.metaData.isSetSamplePercent) codec.conf.join.metaData.getSamplePercent
+            else defaultSamplePercent)
+          .getOrElse(defaultSamplePercent)
+        if (number < logSamplePercent) {
+          logger.error(s"Logging failed due to: ${exception.traceString}, join codec status: ${joinCodecTry.isSuccess}")
+          if (joinCodecTry.isFailure) {
+            joinCodecTry.failed.foreach { exception =>
+              logger.error(s"Logging failed due to failed join codec: ${exception.traceString}")
+            }
+          } else {
+            logger.error(s"Join codec status is Success but logging failed due to: ${exception.traceString}")
+          }
+        }
+      }
+
       joinContext.foreach(
         _.withSuffix("logging_request")
           .incrementException(new Exception(s"Logging failed due to: ${exception.traceString}", exception)))
