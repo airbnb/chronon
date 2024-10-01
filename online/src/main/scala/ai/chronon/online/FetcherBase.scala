@@ -329,7 +329,10 @@ class FetcherBase(kvStore: KVStore,
             } else throw InvalidEntityException(request.name)
           } catch {
             // If the group_by is inactive, throw the exception
-            case ex: InvalidEntityException => throw ex
+            case ex: InvalidEntityException => {
+              context.increment("fetch_invalid_group_by_failure.count")
+              throw ex
+            }
             // TODO: only gets hit in cli path - make this code path just use avro schema to decode keys directly in cli
             // TODO: Remove this code block
             case ex: Exception =>
@@ -344,6 +347,7 @@ class FetcherBase(kvStore: KVStore,
               } catch {
                 case exInner: Exception =>
                   exInner.addSuppressed(ex)
+                  context.increment("encode_group_by_key_failure.count")
                   throw EncodeKeyException(request.name, "Couldn't encode request keys or casted keys")
               }
           }
@@ -360,15 +364,6 @@ class FetcherBase(kvStore: KVStore,
           }
           GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis, context)
         }
-      if (groupByRequestMetaTry.isFailure) {
-        groupByRequestMetaTry match {
-          case Failure(ex: InvalidEntityException) =>
-            request.context.foreach(_.increment("fetch_invalid_group_by_failure.count"))
-          case Failure(ex: EncodeKeyException) =>
-            request.context.foreach(_.increment("encode_group_by_key_failure.count"))
-          case Failure(ex: Exception) => request.context.foreach(_.increment("group_by_serving_info_failure.count"))
-        }
-      }
       request -> groupByRequestMetaTry
     }.toSeq
 
