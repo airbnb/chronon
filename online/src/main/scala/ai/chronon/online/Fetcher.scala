@@ -362,18 +362,25 @@ class Fetcher(val kvStore: KVStore,
     })
     loggingTry.failed.map { exception =>
       // to handle GroupByServingInfo staleness that results in encoding failure
-      getJoinCodecs.refresh(resp.request.name)
-      val rand = new Random
-      val number = rand.nextDouble
-
-      if (number < 0.001) {
-        logger.error(s"Logging failed due to: ${exception.traceString}, join codec status: ${joinCodecTry.isSuccess}")
-        if (joinCodecTry.isFailure) {
-          joinCodecTry.failed.foreach { exception =>
-            logger.error(s"Logging failed due to failed join codec: ${exception.traceString}")
+      val refreshedJoinCodec = getJoinCodecs.refresh(resp.request.name)
+      if (debug) {
+        val rand = new Random
+        val number = rand.nextDouble
+        val defaultSamplePercent = 0.001
+        val logSamplePercent = refreshedJoinCodec
+          .map(codec =>
+            if (codec.conf.join.metaData.isSetSamplePercent) codec.conf.join.metaData.getSamplePercent
+            else defaultSamplePercent)
+          .getOrElse(defaultSamplePercent)
+        if (number < logSamplePercent) {
+          logger.error(s"Logging failed due to: ${exception.traceString}, join codec status: ${joinCodecTry.isSuccess}")
+          if (joinCodecTry.isFailure) {
+            joinCodecTry.failed.foreach { exception =>
+              logger.error(s"Logging failed due to failed join codec: ${exception.traceString}")
+            }
+          } else {
+            logger.error(s"Join codec status is Success but logging failed due to: ${exception.traceString}")
           }
-        } else {
-          logger.info(s"Join codec status is Success but logging failed due to: ${exception.traceString}")
         }
       }
 

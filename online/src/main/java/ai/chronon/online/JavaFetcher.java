@@ -46,6 +46,57 @@ public class JavaFetcher {
     this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows);
   }
 
+  // user builder pattern to create JavaFetcher
+  private JavaFetcher(Builder builder) {
+    this.fetcher = new Fetcher(builder.kvStore, builder.metaDataSet, builder.timeoutMillis, builder.logFunc,
+            builder.debug, builder.registry, builder.callerName, builder.flagStore, builder.disableErrorThrows);
+  }
+
+  public static class Builder {
+    private KVStore kvStore;
+    private String metaDataSet;
+    private Long timeoutMillis;
+    private Consumer<LoggableResponse> logFunc;
+    private ExternalSourceRegistry registry;
+    private String callerName;
+    private Boolean debug;
+    private FlagStore flagStore;
+    private Boolean disableErrorThrows;
+
+    public Builder(KVStore kvStore, String metaDataSet, Long timeoutMillis,
+                   Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
+      this.kvStore = kvStore;
+      this.metaDataSet = metaDataSet;
+      this.timeoutMillis = timeoutMillis;
+      this.logFunc = logFunc;
+      this.registry = registry;
+    }
+
+    public Builder callerName(String callerName) {
+      this.callerName = callerName;
+      return this;
+    }
+
+    public Builder flagStore(FlagStore flagStore) {
+      this.flagStore = flagStore;
+      return this;
+    }
+
+    public Builder disableErrorThrows(Boolean disableErrorThrows) {
+      this.disableErrorThrows = disableErrorThrows;
+      return this;
+    }
+
+    public Builder debug(Boolean debug) {
+      this.debug = debug;
+      return this;
+    }
+
+    public JavaFetcher build() {
+      return new JavaFetcher(this);
+    }
+  }
+
 
   public static List<JavaResponse> toJavaResponses(Seq<Response> responseSeq) {
     List<JavaResponse> result = new ArrayList<>(responseSeq.size());
