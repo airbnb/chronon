@@ -30,7 +30,6 @@ import com.timgroup.statsd.Event
 import com.timgroup.statsd.Event.AlertType
 import org.apache.avro.generic.GenericRecord
 import org.json4s.BuildInfo
-import org.slf4j.LoggerFactory
 
 import java.util.function.Consumer
 import scala.collection.JavaConverters._
