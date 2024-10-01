@@ -30,6 +30,7 @@ import com.timgroup.statsd.Event
 import com.timgroup.statsd.Event.AlertType
 import org.apache.avro.generic.GenericRecord
 import org.json4s.BuildInfo
+import org.slf4j.LoggerFactory
 
 import java.util.function.Consumer
 import scala.collection.JavaConverters._
@@ -87,7 +88,6 @@ class Fetcher(val kvStore: KVStore,
               flagStore: FlagStore = null,
               disableErrorThrows: Boolean = false)
     extends FetcherBase(kvStore, metaDataSet, timeoutMillis, debug, flagStore, disableErrorThrows) {
-
   private def reportCallerNameFetcherVersion(): Unit = {
     val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
     val ctx = Metrics.Context(Environment.Fetcher)
@@ -364,6 +364,7 @@ class Fetcher(val kvStore: KVStore,
     loggingTry.failed.map { exception =>
       // to handle GroupByServingInfo staleness that results in encoding failure
       getJoinCodecs.refresh(resp.request.name)
+      logger.error(s"Logging failed due to: ${exception.traceString}")
       joinContext.foreach(
         _.withSuffix("logging_request")
           .incrementException(new Exception(s"Logging failed due to: ${exception.traceString}", exception)))
