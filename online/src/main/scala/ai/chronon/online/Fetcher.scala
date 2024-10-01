@@ -36,7 +36,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.Future
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Random, Success, Try}
 
 object Fetcher {
   case class Request(name: String,
@@ -363,7 +363,20 @@ class Fetcher(val kvStore: KVStore,
     loggingTry.failed.map { exception =>
       // to handle GroupByServingInfo staleness that results in encoding failure
       getJoinCodecs.refresh(resp.request.name)
-      logger.error(s"Logging failed due to: ${exception.traceString}")
+      val rand = new Random
+      val number = rand.nextDouble
+
+      if (number < 0.001) {
+        logger.error(s"Logging failed due to: ${exception.traceString}, join codec status: ${joinCodecTry.isSuccess}")
+        if (joinCodecTry.isFailure) {
+          joinCodecTry.failed.foreach { exception =>
+            logger.error(s"Logging failed due to failed join codec: ${exception.traceString}")
+          }
+        } else {
+          logger.info(s"Join codec status is Success but logging failed due to: ${exception.traceString}")
+        }
+      }
+
       joinContext.foreach(
         _.withSuffix("logging_request")
           .incrementException(new Exception(s"Logging failed due to: ${exception.traceString}", exception)))
