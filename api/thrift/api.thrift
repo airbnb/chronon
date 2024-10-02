@@ -259,6 +259,8 @@ struct MetaData {
     14: optional bool historicalBackfill
     // Optional expected deprecation date
     15: optional string deprecationDate
+    // Optional error sample percent for logging
+    16: optional double logErrorSamplePercent
 }
 
 // Equivalent to a FeatureSet in chronon terms

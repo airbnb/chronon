@@ -366,13 +366,14 @@ class Fetcher(val kvStore: KVStore,
       if (debug) {
         val rand = new Random
         val number = rand.nextDouble
-        val defaultSamplePercent = 0.001
+        // 0.1% default sample rate for logging failed requests
+        val defaultSamplePercent = 0.1
         val logSamplePercent = refreshedJoinCodec
           .map(codec =>
-            if (codec.conf.join.metaData.isSetSamplePercent) codec.conf.join.metaData.getSamplePercent
+            if (codec.conf.join.metaData.isSetLogErrorSamplePercent) codec.conf.join.metaData.logErrorSamplePercent
             else defaultSamplePercent)
           .getOrElse(defaultSamplePercent)
-        if (number < logSamplePercent) {
+        if (number * (100 * 1000) < logSamplePercent * 1000) {
           logger.error(s"Logging failed due to: ${exception.traceString}, join codec status: ${joinCodecTry.isSuccess}")
           if (joinCodecTry.isFailure) {
             joinCodecTry.failed.foreach { exception =>
