@@ -307,7 +307,7 @@ object JoinUtils {
             // Check for null keys, warn if found
             val (notNullValues, nullValues) = values.partition(_ != null)
             if (notNullValues.isEmpty) {
-              logger.warn(s"No not-null keys found for key: $keyName. Check source table or where clauses.")
+              logger.warn(s"No not-null keys found for key: $keyName.")
             } else if (!nullValues.isEmpty) {
               logger.warn(s"Found ${nullValues.length} null keys for key: $keyName.")
             }
