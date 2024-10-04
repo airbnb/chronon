@@ -299,6 +299,7 @@ def test_compile_feature_display():
             FeatureDisplayKeys.INTERNAL_COLUMNS,
             FeatureDisplayKeys.EXTERNAL_COLUMNS,
             FeatureDisplayKeys.DERIVED_COLUMNS,
+            FeatureDisplayKeys.OUTPUT_COLUMNS,
         ],
     )
     for key in expected:
