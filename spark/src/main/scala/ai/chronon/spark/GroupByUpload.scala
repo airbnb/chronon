@@ -242,9 +242,17 @@ object GroupByUpload {
 
     val metricRow =
       kvDfReloaded.selectExpr("sum(bit_length(key_bytes))/8", "sum(bit_length(value_bytes))/8", "count(*)").collect()
-    context.gauge(Metrics.Name.KeyBytes, metricRow(0).getDouble(0).toLong)
-    context.gauge(Metrics.Name.ValueBytes, metricRow(0).getDouble(1).toLong)
-    context.gauge(Metrics.Name.RowCount, metricRow(0).getLong(2))
+
+    val rowCount = metricRow(0).getLong(2)
+    context.gauge(Metrics.Name.RowCount, rowCount)
+    // Allow for upload data to be empty so that we can still update the GroupByServingInfo
+    // TODO: in the long run, consider separating GroupByServingInfo into a separate job
+    if (rowCount > 0) {
+      context.gauge(Metrics.Name.KeyBytes, metricRow(0).getDouble(0).toLong)
+      context.gauge(Metrics.Name.ValueBytes, metricRow(0).getDouble(1).toLong)
+    } else {
+      logger.warn(s"Empty upload for ${groupByConf.metaData.name} at $endDs")
+    }
     context.gauge(Metrics.Name.LatencyMinutes, (System.currentTimeMillis() - startTs) / (60 * 1000))
   }
 }
