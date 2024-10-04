@@ -361,6 +361,9 @@ class Fetcher(val kvStore: KVStore,
       }
     })
     loggingTry.failed.map { exception =>
+      // Publish logging failure metrics before codec refresh in case of another exception
+      joinContext.foreach(_.withSuffix("logging_request").incrementException(exception)(logger))
+
       // to handle GroupByServingInfo staleness that results in encoding failure
       val refreshedJoinCodec = getJoinCodecs.refresh(resp.request.name)
       if (debug) {
@@ -383,10 +386,6 @@ class Fetcher(val kvStore: KVStore,
           }
         }
       }
-
-      joinContext.foreach(
-        _.withSuffix("logging_request")
-          .incrementException(new Exception(s"Logging failed due to: ${exception.traceString}", exception)))
     }
     Response(resp.request, Success(resp.derivedValues))
   }
