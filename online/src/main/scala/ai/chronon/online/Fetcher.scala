@@ -159,10 +159,8 @@ class Fetcher(val kvStore: KVStore,
 
     val joinName = joinConf.metaData.nameToFilePath
     val keySchema = StructType(s"${joinName.sanitize}_key", keyFields.toArray)
-    val keyCodec = AvroCodec.of(AvroConversions.fromChrononSchema(keySchema).toString)
     val baseValueSchema = StructType(s"${joinName.sanitize}_value", valueFields.toArray)
-    val baseValueCodec = AvroCodec.of(AvroConversions.fromChrononSchema(baseValueSchema).toString)
-    val joinCodec = JoinCodec(joinConf, keySchema, baseValueSchema, keyCodec, baseValueCodec)
+    val joinCodec = JoinCodec(joinConf, keySchema, baseValueSchema)
     logControlEvent(joinCodec)
     joinCodec
   }
@@ -315,10 +313,12 @@ class Fetcher(val kvStore: KVStore,
 
     val loggingTry: Try[Unit] = joinCodecTry.map(codec => {
       val metaData = codec.conf.join.metaData
+      val keyCodec = AvroCodec.of(codec.keySchemaStr)
+      val valueCodec = AvroCodec.of(codec.valueSchemaStr)
       val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
       val keyBytesTry: Try[Array[Byte]] = encode(loggingContext.map(_.withSuffix("encode_key")),
                                                  codec.keySchema,
-                                                 codec.keyCodec,
+                                                 keyCodec,
                                                  resp.request.keys,
                                                  cast = true)
       if (keyBytesTry.isFailure) {
@@ -350,7 +350,7 @@ class Fetcher(val kvStore: KVStore,
         }
 
         val valueBytesTry: Try[Array[Byte]] =
-          encode(loggingContext.map(_.withSuffix("encode_value")), codec.valueSchema, codec.valueCodec, values)
+          encode(loggingContext.map(_.withSuffix("encode_value")), codec.valueSchema, valueCodec, values)
         if (valueBytesTry.isFailure) {
           loggingContext.foreach(_.withSuffix("encode_value").incrementException(valueBytesTry.failed.get))
           throw valueBytesTry.failed.get
