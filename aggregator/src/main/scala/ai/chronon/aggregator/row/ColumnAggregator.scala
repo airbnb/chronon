@@ -160,6 +160,7 @@ object ColumnAggregator {
       // TODO this might need more type handling
       case LongType   => castToLong(value)
       case DoubleType => castToDouble(value)
+      case StringType => value.toString
       case _          => value
     }
 

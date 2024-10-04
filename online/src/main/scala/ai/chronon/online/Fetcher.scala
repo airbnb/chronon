@@ -349,7 +349,7 @@ class Fetcher(val kvStore: KVStore,
                |""".stripMargin)
         }
 
-        val valueBytesTry =
+        val valueBytesTry: Try[Array[Byte]] =
           encode(loggingContext.map(_.withSuffix("encode_value")), codec.valueSchema, codec.valueCodec, values)
         if (valueBytesTry.isFailure) {
           loggingContext.foreach(_.withSuffix("encode_value").incrementException(valueBytesTry.failed.get))
