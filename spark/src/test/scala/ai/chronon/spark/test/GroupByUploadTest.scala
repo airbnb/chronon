@@ -36,8 +36,8 @@ import scala.util.ScalaJavaConversions.{JMapOps, ListOps, MapOps}
 
 class GroupByUploadTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
-  @Test
-  def temporalEventsLastKTest(): Unit = {
+
+  private def testSimpleGroupByUpload(createEmptyData: Boolean): Unit = {
     lazy val spark: SparkSession =
       SparkSessionBuilder.build("GroupByUploadTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
@@ -58,9 +58,14 @@ class GroupByUploadTest {
       Builders.Aggregation(Operation.LAST_K, "list_event", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30"))
     )
     val keys = Seq("user").toArray
+    val query = if (createEmptyData) {
+      Builders.Query(wheres = Seq("false"))
+    } else {
+      Builders.Query()
+    }
     val groupByConf =
       Builders.GroupBy(
-        sources = Seq(Builders.Source.events(Builders.Query(), table = eventsTable)),
+        sources = Seq(Builders.Source.events(query, table = eventsTable)),
         keyColumns = keys,
         aggregations = aggregations,
         metaData = Builders.MetaData(namespace = namespace, name = "test_last_k_upload"),
@@ -68,40 +73,11 @@ class GroupByUploadTest {
       )
     GroupByUpload.run(groupByConf, endDs = yesterday)
   }
+  @Test
+  def temporalEventsLastKTest(): Unit = testSimpleGroupByUpload(false)
 
   @Test
-  def handleEmptyTable(): Unit = {
-    lazy val spark: SparkSession =
-      SparkSessionBuilder.build("GroupByUploadTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
-    val tableUtils = TableUtils(spark)
-    val namespace = "group_by_upload_test" + "_" + Random.alphanumeric.take(6).mkString
-    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val yesterday = tableUtils.partitionSpec.before(today)
-    tableUtils.createDatabase(namespace)
-    tableUtils.sql(s"USE $namespace")
-    val eventsTable = "events_last_k_dup" // occurs in groupByTest
-    val eventSchema = List(
-      Column("user", StringType, 10),
-      Column("list_event", StringType, 100)
-    )
-    val eventDf = DataFrameGen.events(spark, eventSchema, count = 1000, partitions = 18)
-    eventDf.save(s"$namespace.$eventsTable")
-
-    val aggregations: Seq[Aggregation] = Seq(
-      Builders.Aggregation(Operation.LAST_K, "list_event", Seq(WindowUtils.Unbounded), argMap = Map("k" -> "30"))
-    )
-    val keys = Seq("user").toArray
-    val groupByConf =
-      Builders.GroupBy(
-        // where false will produce empty result during upload computation
-        sources = Seq(Builders.Source.events(Builders.Query(wheres = Seq("false")), table = eventsTable)),
-        keyColumns = keys,
-        aggregations = aggregations,
-        metaData = Builders.MetaData(namespace = namespace, name = "test_last_k_upload"),
-        accuracy = Accuracy.TEMPORAL
-      )
-    GroupByUpload.run(groupByConf, endDs = yesterday)
-  }
+  def handleEmptyTable(): Unit = testSimpleGroupByUpload(true)
 
   @Test
   def structSupportTest(): Unit = {
