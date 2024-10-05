@@ -61,6 +61,8 @@ case class JoinCodec(conf: JoinOps, keySchema: StructType, baseValueSchema: Stru
 
   @transient lazy val keySchemaStr: String = AvroConversions.fromChrononSchema(keySchema).toString
   @transient lazy val valueSchemaStr: String = AvroConversions.fromChrononSchema(valueSchema).toString
+  def keyCodec: AvroCodec = AvroCodec.of(keySchemaStr)
+  def valueCodec: AvroCodec = AvroCodec.of(valueSchemaStr)
 
   /*
    * Get the serialized string repr. of the logging schema.

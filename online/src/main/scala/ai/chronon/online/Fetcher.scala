@@ -313,12 +313,16 @@ class Fetcher(val kvStore: KVStore,
 
     val loggingTry: Try[Unit] = joinCodecTry.map(codec => {
       val metaData = codec.conf.join.metaData
-      val keyCodec = AvroCodec.of(codec.keySchemaStr)
-      val valueCodec = AvroCodec.of(codec.valueSchemaStr)
       val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
+
+      // Exit early if sample percent is 0
+      if (samplePercent == 0) {
+        return Response(resp.request, Success(resp.derivedValues))
+      }
+
       val keyBytesTry: Try[Array[Byte]] = encode(loggingContext.map(_.withSuffix("encode_key")),
                                                  codec.keySchema,
-                                                 keyCodec,
+                                                 codec.keyCodec,
                                                  resp.request.keys,
                                                  cast = true)
       if (keyBytesTry.isFailure) {
@@ -350,7 +354,7 @@ class Fetcher(val kvStore: KVStore,
         }
 
         val valueBytesTry: Try[Array[Byte]] =
-          encode(loggingContext.map(_.withSuffix("encode_value")), codec.valueSchema, valueCodec, values)
+          encode(loggingContext.map(_.withSuffix("encode_value")), codec.valueSchema, codec.valueCodec, values)
         if (valueBytesTry.isFailure) {
           loggingContext.foreach(_.withSuffix("encode_value").incrementException(valueBytesTry.failed.get))
           throw valueBytesTry.failed.get
