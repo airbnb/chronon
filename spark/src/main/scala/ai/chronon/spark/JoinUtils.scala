@@ -319,7 +319,7 @@ object JoinUtils {
             }.toSet
 
             // Form the final WHERE clause for injection
-            s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
+            s"$groupByKeyExpression in (array(${valueSet.mkString(sep = ",")}))"
         }
         .foreach { whereClause =>
           // Skip adding the filter if it is a join source
