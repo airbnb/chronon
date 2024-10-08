@@ -188,11 +188,14 @@ def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
     for value_list in pre_derived_columns.values():
         pre_derived_columns_list.extend(value_list)
 
-    output_columns = set(pre_derived_columns_list + keys)
     if join.derivations:
-        columns[FeatureDisplayKeys.DERIVED_COLUMNS] = build_derived_columns(output_columns, join.derivations)
+        columns[FeatureDisplayKeys.DERIVED_COLUMNS] = build_derived_columns(
+            set(pre_derived_columns_list), join.derivations
+        )
+        columns[FeatureDisplayKeys.OUTPUT_COLUMNS] = columns[FeatureDisplayKeys.DERIVED_COLUMNS]
         return columns
     else:
+        columns[FeatureDisplayKeys.OUTPUT_COLUMNS] = pre_derived_columns_list
         return columns
 
 

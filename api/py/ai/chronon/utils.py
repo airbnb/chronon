@@ -56,6 +56,7 @@ class FeatureDisplayKeys(Enum):
     INTERNAL_COLUMNS = "internal_columns"
     EXTERNAL_COLUMNS = "external_columns"
     DERIVED_COLUMNS = "derived_columns"
+    OUTPUT_COLUMNS = "output_columns"
 
 
 def edit_distance(str1, str2):

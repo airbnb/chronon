@@ -31,7 +31,8 @@ case class LoggingSchema(keyCodec: AvroCodec, valueCodec: AvroCodec) {
   lazy val keyIndices: Map[StructField, Int] = keyFields.zipWithIndex.toMap
   lazy val valueIndices: Map[StructField, Int] = valueFields.zipWithIndex.toMap
 
-  def hash(joinName: String): String = HashUtils.md5Base64(JoinCodec.buildLoggingSchema(joinName, keyCodec, valueCodec))
+  def hash(joinName: String): String =
+    HashUtils.md5Base64(JoinCodec.buildLoggingSchema(joinName, keyCodec.schemaStr, valueCodec.schemaStr))
 }
 
 object LoggingSchema {
