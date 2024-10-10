@@ -155,7 +155,8 @@ object ColumnAggregator {
       case _                    => value
     }
 
-  def castTo(value: AnyRef, typ: DataType): AnyRef =
+  def castTo(value: AnyRef, typ: DataType): AnyRef = {
+    if (value == null) return null
     typ match {
       // TODO this might need more type handling
       case LongType   => castToLong(value)
@@ -163,6 +164,7 @@ object ColumnAggregator {
       case StringType => value.toString
       case _          => value
     }
+  }
 
   private def cast[T](any: Any): T = any.asInstanceOf[T]
 
