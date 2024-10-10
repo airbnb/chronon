@@ -318,8 +318,11 @@ object JoinUtils {
               case other     => other.toString // Keep other types (like Int) as they are
             }.toSet
 
-            // Form the final WHERE clause for injection
-            s"$groupByKeyExpression in (array(${valueSet.mkString(sep = ",")}))"
+            if (valueSet.isEmpty) {
+              s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
+            } else {
+              "false"
+            }
         }
         .foreach { whereClause =>
           // Skip adding the filter if it is a join source
