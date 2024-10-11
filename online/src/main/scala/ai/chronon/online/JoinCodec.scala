@@ -16,7 +16,7 @@
 
 package ai.chronon.online
 
-import ai.chronon.api.Extensions.{DerivationOps, JoinOps, MetadataOps}
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api.{DataType, HashUtils, StructField, StructType}
 import com.google.gson.Gson
 import scala.collection.Seq
@@ -26,16 +26,10 @@ import ai.chronon.online.OnlineDerivationUtil.{
   DerivationFunc,
   buildDerivationFunction,
   buildDerivedFields,
-  buildRenameOnlyDerivationFunction,
-  timeFields
+  buildRenameOnlyDerivationFunction
 }
 
-case class JoinCodec(conf: JoinOps,
-                     keySchema: StructType,
-                     baseValueSchema: StructType,
-                     keyCodec: AvroCodec,
-                     baseValueCodec: AvroCodec)
-    extends Serializable {
+case class JoinCodec(conf: JoinOps, keySchema: StructType, baseValueSchema: StructType) extends Serializable {
 
   @transient lazy val valueSchema: StructType = {
     val fields = if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
@@ -65,7 +59,10 @@ case class JoinCodec(conf: JoinOps,
   @transient lazy val renameOnlyDeriveFunc: (Map[String, Any], Map[String, Any]) => Map[String, Any] =
     buildRenameOnlyDerivationFunction(conf.derivationsScala)
 
-  @transient lazy val valueCodec: AvroCodec = AvroCodec.of(AvroConversions.fromChrononSchema(valueSchema).toString)
+  @transient lazy val keySchemaStr: String = AvroConversions.fromChrononSchema(keySchema).toString
+  @transient lazy val valueSchemaStr: String = AvroConversions.fromChrononSchema(valueSchema).toString
+  def keyCodec: AvroCodec = AvroCodec.of(keySchemaStr)
+  def valueCodec: AvroCodec = AvroCodec.of(valueSchemaStr)
 
   /*
    * Get the serialized string repr. of the logging schema.
@@ -74,7 +71,7 @@ case class JoinCodec(conf: JoinOps,
    * Example:
    * {"join_name":"unit_test/test_join","key_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_key\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"listing\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}","value_schema":"{\"type\":\"record\",\"name\":\"unit_test_test_join_value\",\"namespace\":\"ai.chronon.data\",\"doc\":\"\",\"fields\":[{\"name\":\"unit_test_listing_views_v1_m_guests_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"},{\"name\":\"unit_test_listing_views_v1_m_views_sum\",\"type\":[\"null\",\"long\"],\"doc\":\"\"}]}"}
    */
-  lazy val loggingSchema: String = JoinCodec.buildLoggingSchema(conf.join.metaData.name, keyCodec, valueCodec)
+  lazy val loggingSchema: String = JoinCodec.buildLoggingSchema(conf.join.metaData.name, keySchemaStr, valueSchemaStr)
   lazy val loggingSchemaHash: String = HashUtils.md5Base64(loggingSchema)
 
   val keys: Array[String] = keySchema.fields.iterator.map(_.name).toArray
@@ -88,11 +85,11 @@ case class JoinCodec(conf: JoinOps,
 
 object JoinCodec {
 
-  def buildLoggingSchema(joinName: String, keyCodec: AvroCodec, valueCodec: AvroCodec): String = {
+  def buildLoggingSchema(joinName: String, keySchemaStr: String, valueSchemaStr: String): String = {
     val schemaMap = Map(
       "join_name" -> joinName,
-      "key_schema" -> keyCodec.schemaStr,
-      "value_schema" -> valueCodec.schemaStr
+      "key_schema" -> keySchemaStr,
+      "value_schema" -> valueSchemaStr
     )
     new Gson().toJson(schemaMap.toJava)
   }

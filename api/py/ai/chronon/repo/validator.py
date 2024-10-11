@@ -27,6 +27,7 @@ from ai.chronon.group_by import get_output_col_names
 from ai.chronon.logger import get_logger
 from ai.chronon.repo import GROUP_BY_FOLDER_NAME, JOIN_FOLDER_NAME
 from ai.chronon.repo.serializer import file2thrift, thrift_simple_json
+from ai.chronon.utils import FeatureDisplayKeys
 
 # Fields that indicate stutus of the entities.
 SKIPPED_FIELDS = frozenset(["metaData"])
@@ -145,8 +146,14 @@ def get_pre_derived_external_features(join: Join) -> List[str]:
     return external_cols
 
 
-def get_pre_derived_join_features(join: Join) -> List[str]:
-    return get_pre_derived_join_internal_features(join) + get_pre_derived_external_features(join)
+def get_pre_derived_join_features(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
+    internal = get_pre_derived_join_internal_features(join)
+    external = get_pre_derived_external_features(join)
+    columns = {
+        FeatureDisplayKeys.INTERNAL_COLUMNS: internal,
+        FeatureDisplayKeys.EXTERNAL_COLUMNS: external,
+    }
+    return columns
 
 
 def build_derived_columns(pre_derived_columns: Set[str], derivations: List[Derivation]) -> List[str]:
@@ -167,15 +174,29 @@ def build_derived_columns(pre_derived_columns: Set[str], derivations: List[Deriv
     return list(output_columns)
 
 
-def get_join_output_columns(join: Join) -> List[str]:
+def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
     """
     From the join object, get the final output columns after derivations.
     """
-    output_columns = set(get_pre_derived_join_features(join) + get_pre_derived_source_keys(join.left))
+    columns = {}
+    keys = get_pre_derived_source_keys(join.left)
+    columns[FeatureDisplayKeys.SOURCE_KEYS] = keys
+    pre_derived_columns = get_pre_derived_join_features(join)
+    columns.update({**pre_derived_columns})
+
+    pre_derived_columns_list = []
+    for value_list in pre_derived_columns.values():
+        pre_derived_columns_list.extend(value_list)
+
     if join.derivations:
-        return build_derived_columns(output_columns, join.derivations)
+        columns[FeatureDisplayKeys.DERIVED_COLUMNS] = build_derived_columns(
+            set(pre_derived_columns_list), join.derivations
+        )
+        columns[FeatureDisplayKeys.OUTPUT_COLUMNS] = columns[FeatureDisplayKeys.DERIVED_COLUMNS]
+        return columns
     else:
-        return list(output_columns)
+        columns[FeatureDisplayKeys.OUTPUT_COLUMNS] = pre_derived_columns_list
+        return columns
 
 
 class ChrononRepoValidator(object):
@@ -347,8 +368,13 @@ class ChrononRepoValidator(object):
         # Only validate the join derivation when the underlying groupBy is valid
         if join.derivations and group_by_correct:
             features = get_pre_derived_join_features(join)
+
+            pre_derived_columns_list = []
+            for value_list in features.values():
+                pre_derived_columns_list.extend(value_list)
+
             keys = get_pre_derived_source_keys(join.left)
-            columns = features + keys
+            columns = pre_derived_columns_list + keys
             errors.extend(self._validate_derivations(columns, join.derivations))
         return errors
 

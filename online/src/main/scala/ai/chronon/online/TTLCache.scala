@@ -55,10 +55,16 @@ class TTLCache[I, O](f: I => O,
   private def asyncUpdateOnExpiry(i: I, intervalMillis: Long): O = {
     val entry = cMap.get(i)
     if (entry == null) {
-      // block all concurrent callers of this key only on the very first read
-      val entry = cMap.compute(i, updateWhenNull)
-      contextBuilder(i).increment("cache.insert")
-      entry.value
+      try {
+        // block all concurrent callers of this key only on the very first read
+        val entry = cMap.compute(i, updateWhenNull)
+        contextBuilder(i).increment("cache.insert")
+        entry.value
+      } catch {
+        case ex: Exception =>
+          contextBuilder(i).incrementException(ex);
+          throw ex
+      }
     } else {
       if (
         (nowFunc() - entry.updatedAtMillis > intervalMillis) &&

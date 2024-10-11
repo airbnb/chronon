@@ -27,6 +27,8 @@ import org.apache.spark.sql.types.{BooleanType, DoubleType, IntegerType, LongTyp
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Test
 
+import scala.util.Random
+
 /** Tests for the temporal join of entities.
   * Left is an event source with definite ts.
   * Right is an entity with snapshots and mutation values through the day.
@@ -35,16 +37,9 @@ import org.junit.Test
 class MutationsTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
-  lazy val spark: SparkSession = SparkSessionBuilder.build(
-    "MutationsTest",
-    local = true,
-    additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
-
-  private def namespace(suffix: String) = s"test_mutations_$suffix"
+  private def namespace(suffix: String) = s"test_mutations_${suffix}"
   private val groupByName = s"group_by_test.v0"
   private val joinName = s"join_test.v0"
-
-  private implicit val tableUtils: TableUtils = TableUtils(spark)
 
   // {listing_id (key), ts (timestamp of property), rating (property: rated value), ds (partition ds)}
   private val snapshotSchema = StructType(
@@ -97,6 +92,10 @@ class MutationsTest {
     * @return If the expected rows are in the dataframe.
     */
   def compareResult(computed: DataFrame, expectedRows: Seq[Row]): Boolean = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build(
+      "MutationsTest" + "_" + Random.alphanumeric.take(6).mkString,
+      local = true,
+      additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
     val df = spark.createDataFrame(spark.sparkContext.parallelize(expectedRows), expectedSchema)
     val totalExpectedRows = df.count()
     if (computed.count() != totalExpectedRows) return false
@@ -147,6 +146,10 @@ class MutationsTest {
                               startPartition: String,
                               windows: Seq[Window] = null,
                               operation: Operation = Operation.AVERAGE): DataFrame = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build(
+      "MutationsTest" + "_" + Random.alphanumeric.take(6).mkString,
+      local = true,
+      additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
     val testNamespace = namespace(suffix)
     spark.sql(s"CREATE DATABASE IF NOT EXISTS $testNamespace")
     spark.createDataFrame(spark.sparkContext.parallelize(eventData), leftSchema).save(s"$testNamespace.$eventTable")
@@ -164,6 +167,12 @@ class MutationsTest {
                             endPartition: String,
                             windows: Seq[Window],
                             operation: Operation): DataFrame = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build(
+      "MutationsTest" + "_" + Random.alphanumeric.take(6).mkString,
+      local = true,
+      additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
+    implicit val tableUtils: TableUtils = TableUtils(spark)
+
     val testNamespace = namespace(suffix)
     val rightSource = Builders.Source.entities(
       query = Builders.Query(
@@ -215,6 +224,11 @@ class MutationsTest {
     * @return Expected Dataframe that should be returned by Chronon.
     */
   def computeSimpleAverageThroughSql(testNamespace: String): DataFrame = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build(
+      "MutationsTest" + "_" + Random.alphanumeric.take(6).mkString,
+      local = true,
+      additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
+
     val excludeCondition = "mutations.is_before AND mutations.ts <= queries.ts AND mutations.mutation_ts < queries.ts"
     val includeCondition = s"NOT $excludeCondition"
     val expected = spark.sql(s"""
@@ -269,10 +283,10 @@ class MutationsTest {
          |     mutations.ds AS mutation_ds,
          |     COALESCE(snapshot.rating_std, 0)      AS rating_std,
          |     COALESCE(snapshot.rating_ctd, 0)      AS rating_ctd,
-         |     SUM(IF($includeCondition, mutations.rating, 0)) AS rating_add_sum,
-         |     SUM(IF($excludeCondition, mutations.rating, 0)) AS rating_sub_sum,
-         |     COUNT(IF($includeCondition, mutations.rating, NULL)) AS rating_add_cnt,
-         |     COUNT(IF($excludeCondition, mutations.rating, NULL)) AS rating_sub_cnt
+         |     COALESCE(SUM(IF($includeCondition, mutations.rating, 0)), 0) AS rating_add_sum,
+         |     COALESCE(SUM(IF($excludeCondition, mutations.rating, 0)), 0) AS rating_sub_sum,
+         |     COALESCE(COUNT(IF($includeCondition, mutations.rating, NULL)), 0) AS rating_add_cnt,
+         |     COALESCE(COUNT(IF($excludeCondition, mutations.rating, NULL)), 0) AS rating_sub_cnt
          |   FROM queries
          |   LEFT OUTER JOIN snapshot
          |     ON queries.listing_id = snapshot.listing_id
@@ -301,6 +315,10 @@ class MutationsTest {
     * @return Expected Dataframe that should be returned by Chronon.
     */
   def computeLastThroughSql(testNamespace: String): DataFrame = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build(
+      "MutationsTest" + "_" + Random.alphanumeric.take(6).mkString,
+      local = true,
+      additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
     val excludeCondition = "mutations.is_before AND mutations.ts <= queries.ts AND mutations.mutation_ts < queries.ts"
     val includeCondition = s"NOT $excludeCondition"
     val expected = spark.sql(s"""
@@ -432,7 +450,7 @@ class MutationsTest {
     */
   @Test
   def testSimplestCase(): Unit = {
-    val suffix = "simple"
+    val suffix = "simple" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 02:30:00"), "2021-04-10"),
@@ -505,7 +523,7 @@ class MutationsTest {
     */
   @Test
   def testUpdateValueCase(): Unit = {
-    val suffix = "update_value"
+    val suffix = "update_value" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       // {listing_id, ts, event, ds}
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
@@ -577,7 +595,7 @@ class MutationsTest {
     */
   @Test
   def testUpdateKeyCase(): Unit = {
-    val suffix = "update_key"
+    val suffix = "update_key" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 02:30:00"), "2021-04-10"),
@@ -655,7 +673,7 @@ class MutationsTest {
     */
   @Test
   def testInconsistentTsLeftCase(): Unit = {
-    val suffix = "inconsistent_ts"
+    val suffix = "inconsistent_ts" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(1, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-09 04:30:00"), "2021-04-10"),
@@ -755,7 +773,7 @@ class MutationsTest {
     */
   @Test
   def testDecayedWindowCase(): Unit = {
-    val suffix = "decayed"
+    val suffix = "decayed" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(2, 1, TsUtils.datetimeToTs("2021-04-09 01:30:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-09 04:30:00"), "2021-04-10"),
@@ -852,7 +870,7 @@ class MutationsTest {
     */
   @Test
   def testDecayedWindowCaseNoMutation(): Unit = {
-    val suffix = "decayed_v2"
+    val suffix = "decayed_v2" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 01:00:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 23:00:00"), "2021-04-10")
@@ -906,7 +924,7 @@ class MutationsTest {
     */
   @Test
   def testNoSnapshotJustMutation(): Unit = {
-    val suffix = "no_mutation"
+    val suffix = "no_mutation" + "_" + Random.alphanumeric.take(6).mkString
     val eventData = Seq(
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 00:07:00"), "2021-04-10"),
       Row(2, 1, TsUtils.datetimeToTs("2021-04-10 01:07:00"), "2021-04-10"),
@@ -967,7 +985,12 @@ class MutationsTest {
 
   @Test
   def testWithGeneratedData(): Unit = {
-    val suffix = "generated"
+    lazy val spark: SparkSession = SparkSessionBuilder.build(
+      "MutationsTest" + "_" + Random.alphanumeric.take(6).mkString,
+      local = true,
+      additionalConfig = Some(Map("spark.chronon.backfill.validation.enabled" -> "false")))
+    val tableUtils: TableUtils = TableUtils(spark)
+    val suffix = "generated" + "_" + Random.alphanumeric.take(6).mkString
     val reviews = List(
       Column("listing_id", api.StringType, 100),
       Column("rating", api.LongType, 100)

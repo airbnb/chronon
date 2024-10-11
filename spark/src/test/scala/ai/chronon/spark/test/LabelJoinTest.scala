@@ -29,19 +29,19 @@ class LabelJoinTest {
   @transient private lazy val logger = LoggerFactory.getLogger(getClass)
 
   val spark: SparkSession = SparkSessionBuilder.build("LabelJoinTest", local = true)
-
-  private val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
   private val tableName = "test_label_join"
   private val labelDS = "2022-10-30"
   private val tableUtils = TableUtils(spark)
-  tableUtils.createDatabase(namespace)
 
-  private val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
-  private val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark)
-  private val left = viewsGroupBy.groupByConf.sources.get(0)
-
+  def createViewsGroupBy(namespace: String): GroupByTestSuite = {
+    TestUtils.createViewsGroupBy(namespace, spark)
+  }
   @Test
   def testLabelJoin(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+      tableUtils.createDatabase(namespace)
+       val viewsGroupBy = createViewsGroupBy(namespace)
+       val left = viewsGroupBy.groupByConf.sources.get(0)
     val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, "listing_attributes").groupByConf
     val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy))
     val joinConf = Builders.Join(
@@ -79,6 +79,10 @@ class LabelJoinTest {
 
   @Test
   def testLabelJoinMultiLabels(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = createViewsGroupBy(namespace)
+    val left = viewsGroupBy.groupByConf.sources.get(0)
     val labelGroupBy1 = TestUtils.createRoomTypeGroupBy(namespace, spark).groupByConf
     val labelGroupBy2 = TestUtils.createReservationGroupBy(namespace, spark).groupByConf
     val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy1, labelGroupBy2))
@@ -132,6 +136,10 @@ class LabelJoinTest {
 
   @Test
   def testLabelDsDoesNotExist(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = createViewsGroupBy(namespace)
+    val left = viewsGroupBy.groupByConf.sources.get(0)
     val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, "listing_label_not_exist").groupByConf
     val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy))
     val joinConf = Builders.Join(
@@ -155,6 +163,10 @@ class LabelJoinTest {
 
   @Test
   def testLabelRefresh(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = createViewsGroupBy(namespace)
+    val left = viewsGroupBy.groupByConf.sources.get(0)
     val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, "listing_attributes_refresh").groupByConf
     val labelJoinConf = createTestLabelJoin(60, 20, Seq(labelGroupBy))
     val joinConf = Builders.Join(
@@ -186,6 +198,10 @@ class LabelJoinTest {
 
   @Test
   def testLabelEvolution(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = createViewsGroupBy(namespace)
+    val left = viewsGroupBy.groupByConf.sources.get(0)
     val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, "listing_labels").groupByConf
     val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy))
     val tableName = "label_evolution"
@@ -234,6 +250,9 @@ class LabelJoinTest {
 
   @Test(expected = classOf[AssertionError])
   def testLabelJoinInvalidSource(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark)
     // Invalid left data model entities
     val labelJoin = Builders.LabelPart(
       labels = Seq(
@@ -254,6 +273,11 @@ class LabelJoinTest {
 
   @Test(expected = classOf[AssertionError])
   def testLabelJoinInvalidLabelGroupByDataModal(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = createViewsGroupBy(namespace)
+    val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark)
+    val left = viewsGroupBy.groupByConf.sources.get(0)
     // Invalid data model entities with aggregations, expected Events
     val agg_label_conf = Builders.GroupBy(
       sources = Seq(labelGroupBy.groupByConf.sources.get(0)),
@@ -287,6 +311,10 @@ class LabelJoinTest {
 
   @Test(expected = classOf[AssertionError])
   def testLabelJoinInvalidAggregations(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = createViewsGroupBy(namespace)
+    val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark)
     // multi window aggregations
     val agg_label_conf = Builders.GroupBy(
       sources = Seq(labelGroupBy.groupByConf.sources.get(0)),
@@ -320,6 +348,8 @@ class LabelJoinTest {
 
   @Test
   def testLabelAggregations(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
     // left : listing_id, _, _, ts, ds
     val rows = List(
       Row(1L, 20L, "2022-10-02 11:00:00", "2022-10-02"),
@@ -336,7 +366,7 @@ class LabelJoinTest {
       .get(0)
 
     // 5 day window
-    val labelJoinConf = createTestLabelJoinWithAgg(5)
+    val labelJoinConf = createTestLabelJoinWithAgg(5, namespace=namespace)
     val joinConf = Builders.Join(
       Builders.MetaData(name = "test_label_agg", namespace = namespace, team = "chronon"),
       leftSource,
@@ -378,6 +408,9 @@ class LabelJoinTest {
 
   @Test
   def testLabelAggregationsWithLargerDataset(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = createViewsGroupBy(namespace)
     val labelTableName = s"$namespace.listing_status"
     val listingTableName = s"$namespace.listing_views_agg_left"
     val listingTable = TestUtils.buildListingTable(spark, listingTableName)
@@ -445,7 +478,8 @@ class LabelJoinTest {
   }
 
   def createTestLabelJoinWithAgg(windowSize: Int,
-                                 groupByTableName: String = "listing_label_group_by"): ai.chronon.api.LabelPart = {
+                                 groupByTableName: String = "listing_label_group_by",
+                                 namespace: String): ai.chronon.api.LabelPart = {
     val labelGroupBy = TestUtils.createOrUpdateLabelGroupByWithAgg(namespace, spark, windowSize, groupByTableName)
     Builders.LabelPart(
       labels = Seq(

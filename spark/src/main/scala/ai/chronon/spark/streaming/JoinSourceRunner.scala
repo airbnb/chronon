@@ -16,7 +16,6 @@
 
 package ai.chronon.spark.streaming
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api._
@@ -30,6 +29,7 @@ import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.streaming.{DataStreamWriter, Trigger}
 import org.apache.spark.sql.types.{BooleanType, LongType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSession}
+import org.slf4j.LoggerFactory
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
@@ -105,6 +105,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
   // Micro batch interval - users can tune for lowering latency - or maximizing batch size
   private val microBatchIntervalMillis: Int = getProp("batch_interval_millis", "1000").toInt
+
+  // Micro batch repartition size - when set to 0, we won't do the repartition
+  private val microBatchRepartition: Int = getProp("batch_repartition", "0").toInt
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
@@ -284,13 +287,23 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     Some(sorted(k))
   }
 
+  def repartition(stream: DataStream): DataStream = {
+    if (microBatchRepartition <= 0) {
+      stream
+    } else {
+      logger.info(s"Repartitioning stream to $microBatchRepartition partitions")
+      val repartitioned = stream.df.repartition(microBatchRepartition)
+      stream.copy(df = repartitioned)
+    }
+  }
+
   def chainedStreamingQuery: DataStreamWriter[Row] = {
     val joinSource = groupByConf.streamingSource.get.getJoinSource
     val left = joinSource.join.left
     val topic = TopicInfo.parse(left.topic)
 
     val stream = buildStream(topic)
-    val decoded = decode(stream)
+    val decoded = decode(repartition(stream))
 
     val leftStreamingQuery = groupByConf.buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
 

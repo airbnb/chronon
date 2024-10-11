@@ -22,6 +22,7 @@ import subprocess
 import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, fields
+from enum import Enum
 from typing import Dict, List, Optional, Union, cast
 
 import ai.chronon.api.ttypes as api
@@ -48,6 +49,14 @@ class Modes:
 class SubStage:
     bootstrap = "bootstrap"
     join_parts = "join_parts"
+
+
+class FeatureDisplayKeys(Enum):
+    SOURCE_KEYS = "source_keys"
+    INTERNAL_COLUMNS = "internal_columns"
+    EXTERNAL_COLUMNS = "external_columns"
+    DERIVED_COLUMNS = "derived_columns"
+    OUTPUT_COLUMNS = "output_columns"
 
 
 def edit_distance(str1, str2):
@@ -443,7 +452,7 @@ def get_modes_tables(conf: ChrononJobTypes) -> Dict[str, List[str]]:
         if join.labelPart is not None:
             tables[Modes.label_join] = [f"{table_name}_labels", f"{table_name}_labeled", f"{table_name}_labeled_latest"]
 
-        if conf.bootstrapParts:
+        if conf.bootstrapParts or get_offline_schedule(conf) is not None:
             tables[SubStage.bootstrap] = [f"{table_name}_bootstrap"]
 
         if conf.joinParts:

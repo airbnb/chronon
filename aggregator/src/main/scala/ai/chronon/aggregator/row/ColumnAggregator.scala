@@ -155,13 +155,16 @@ object ColumnAggregator {
       case _                    => value
     }
 
-  def castTo(value: AnyRef, typ: DataType): AnyRef =
+  def castTo(value: AnyRef, typ: DataType): AnyRef = {
+    if (value == null) return null
     typ match {
       // TODO this might need more type handling
       case LongType   => castToLong(value)
       case DoubleType => castToDouble(value)
+      case StringType => value.toString
       case _          => value
     }
+  }
 
   private def cast[T](any: Any): T = any.asInstanceOf[T]
 
@@ -278,7 +281,7 @@ object ColumnAggregator {
           case ShortType   => simple(new Sum[Long](LongType), toLong[Short])
           case BooleanType => simple(new Sum[Long](LongType), boolToLong)
           case DoubleType  => simple(new Sum[Double](inputType))
-          case FloatType   => simple(new Sum[Double](inputType), toDouble[Float])
+          case FloatType   => simple(new Sum[Double](DoubleType), toDouble[Float])
           case _           => mismatchException
         }
       case Operation.UNIQUE_COUNT =>

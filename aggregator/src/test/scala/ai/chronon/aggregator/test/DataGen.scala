@@ -29,14 +29,22 @@ abstract class CStream[+T: ClassTag] {
   def next(): T
 
   // roll a dice that gives max to min uniformly, with nulls interspersed as per null rate
-  protected def rollDouble(max: JDouble, min: JDouble = 0, nullRate: Double = 0.1): JDouble = {
+  protected def rollDouble(max: JDouble, min: JDouble = 0, nullRate: Double = 0.01): JDouble = {
     val dice: Double = math.random
     if (dice < nullRate) null
     else min + ((max - min) * math.random)
   }
 
+  protected def rollFloat(max: Double, min: Double = 0.0, nullRate: Double = 0.01): JFloat = {
+    val dice: Double = math.random
+    if (dice < nullRate)
+      return null
+
+    (min + ((max - min) * math.random)).toFloat
+  }
+
   // roll a dice that gives max to min uniformly, with nulls interspersed as per null rate
-  protected def roll(max: JLong, min: JLong = 0, nullRate: Double = 0.1): JLong = {
+  protected def roll(max: JLong, min: JLong = 0, nullRate: Double = 0.01): JLong = {
     val roll = rollDouble(max.toDouble, min.toDouble, nullRate)
     if (roll == null) null else roll.toLong
   }
@@ -45,7 +53,7 @@ abstract class CStream[+T: ClassTag] {
     Stream.fill(count)(next())
   }
 
-  def chunk(minSize: Long = 0, maxSize: Long = 10, nullRate: Double = 0.1): CStream[Seq[T]] = {
+  def chunk(minSize: Long = 0, maxSize: Long = 10, nullRate: Double = 0.01): CStream[Seq[T]] = {
     def innerNext(): T = next()
     new CStream[Seq[T]] {
       override def next(): Seq[T] = {
@@ -63,6 +71,7 @@ abstract class CStream[+T: ClassTag] {
 object CStream {
   private type JLong = java.lang.Long
   private type JDouble = java.lang.Double
+  private type JFloat = java.lang.Float
 
   def genTimestamps(window: Window,
                     count: Int,
@@ -85,7 +94,7 @@ object CStream {
     override def next(): String = Option(roll(keys.length, nullRate = 0)).map(dice => keys(dice.toInt)).get
   }
 
-  class StringStream(count: Int, prefix: String, nullRate: Double = 0.2) extends CStream[String] {
+  class StringStream(count: Int, prefix: String, nullRate: Double = 0.01) extends CStream[String] {
     val keyCount: Int = (count * (1 - nullRate)).ceil.toInt
     val keys: Array[String] = {
       val fullKeySet = (1 until (count + 1)).map(i => s"$prefix$i")
@@ -106,20 +115,26 @@ object CStream {
     }
   }
 
-  class IntStream(max: Int = 10000, nullRate: Double = 0.1) extends CStream[Integer] {
+  class IntStream(max: Int = 10000, nullRate: Double = 0.01) extends CStream[Integer] {
     override def next(): Integer =
       Option(roll(max, 1, nullRate = nullRate)).map(dice => Integer.valueOf(dice.toInt)).orNull
   }
 
-  class LongStream(max: Int = 10000, nullRate: Double = 0.1) extends CStream[JLong] {
+  class LongStream(max: Int = 10000, nullRate: Double = 0.01) extends CStream[JLong] {
     override def next(): JLong =
       Option(roll(max, 1, nullRate = nullRate)).map(java.lang.Long.valueOf(_)).orNull
   }
 
-  class DoubleStream(max: Double = 10000, nullRate: Double = 0.1) extends CStream[JDouble] {
+  class DoubleStream(max: Double = 10000, nullRate: Double = 0.01) extends CStream[JDouble] {
     override def next(): JDouble =
       Option(rollDouble(max, 1, nullRate = nullRate)).map(java.lang.Double.valueOf(_)).orNull
   }
+
+  class FloatStream(max: Double = 10000, nullRate: Double = 0.01) extends CStream[JFloat] {
+    override def next(): JFloat =
+      Option(rollFloat(max, 1, nullRate = nullRate)).map(java.lang.Float.valueOf(_)).orNull
+  }
+
 
   class ZippedStream(streams: CStream[Any]*)(tsIndex: Int) extends CStream[TestRow] {
     override def next(): TestRow =
@@ -138,7 +153,7 @@ object CStream {
   }
 }
 
-case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: Int = 10, nullRate: Double = 0.1) {
+case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: Int = 10, nullRate: Double = 0.01) {
   def genImpl(dtype: DataType, partitionColumn: String, partitionSpec: PartitionSpec): CStream[Any] =
     dtype match {
       case StringType =>
@@ -148,6 +163,7 @@ case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: I
         }
       case IntType    => new IntStream(cardinality, nullRate)
       case DoubleType => new DoubleStream(cardinality, nullRate)
+      case FloatType => new FloatStream(cardinality, nullRate)
       case LongType =>
         name match {
           case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.DAYS))

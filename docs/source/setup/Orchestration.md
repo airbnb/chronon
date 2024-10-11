@@ -31,4 +31,4 @@ To deploy this to your airflow environment, first copy everything in this direct
 
 While Airflow is currently the most well-supported integration, there is no reason why you couldn't choose a different orchestration engine to power the above flows. If you're interested in such an integration and you think that the community might benefit from your work, please consider [contributing](https://github.com/airbnb/chronon/blob/main/CONTRIBUTING.md) back to the project.
 
-If you have questions about how to approach a different integration, feel free to ask for help in the [community Discord channel](https://discord.gg/GbmGATNqqP).
+If you have questions about how to approach a different integration, feel free to ask for help in the [community Slack workspace](https://join.slack.com/t/chrononworkspace/shared_invite/zt-2r621b6hw-pm552u71Y257Vtpt4RTiyg).

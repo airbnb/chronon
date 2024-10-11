@@ -20,6 +20,7 @@ import os
 
 import pytest
 from ai.chronon.repo.compile import extract_and_convert
+from ai.chronon.utils import FeatureDisplayKeys
 from click.testing import CliRunner
 
 CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -31,15 +32,18 @@ def _get_full_file_path(relative_path):
     return os.path.join(CURRENT_FILE_DIR, relative_path)
 
 
-def _invoke_cli_with_params(runner, input_path):
+def _invoke_cli_with_params(runner, input_path, flags=None):
     """Invoke the CLI command with consistent options and specified input_path."""
+    command = [
+        "--chronon_root=test/sample",
+        f"--input_path={input_path}",
+        "--debug",
+    ]
+    if flags:
+        command.extend(flags)
     result = runner.invoke(
         extract_and_convert,
-        [
-            "--chronon_root=test/sample",
-            f"--input_path={input_path}",
-            "--debug",
-        ],
+        command,
     )
     return result
 
@@ -188,14 +192,7 @@ def test_failed_compile_missing_input_column():
     Should raise errors as we are trying to create aggregations without input column.
     """
     runner = CliRunner()
-    result = runner.invoke(
-        extract_and_convert,
-        [
-            "--chronon_root=test/sample",
-            "--input_path=group_bys/sample_team/sample_group_by_missing_input_column.py",
-            "--debug",
-        ],
-    )
+    result = _invoke_cli_with_params(runner, "group_bys/sample_team/sample_group_by_missing_input_column.py")
     assert result.exit_code != 0
 
 
@@ -204,10 +201,7 @@ def test_failed_compile_when_dependent_join_detected():
     Should raise errors as we are trying to create aggregations without input column.
     """
     runner = CliRunner()
-    result = runner.invoke(
-        extract_and_convert,
-        ["--chronon_root=test/sample", "--input_path=group_bys/sample_team/event_sample_group_by.py"],
-    )
+    result = _invoke_cli_with_params(runner, "group_bys/sample_team/event_sample_group_by.py")
     assert result.exit_code != 0
     error_message_expected = "Detected dependencies are as follows: ['sample_team.sample_chaining_join.parent_join', 'sample_team.sample_join_bootstrap.v1', 'sample_team.sample_join_bootstrap.v2', 'sample_team.sample_join_derivation.v1', 'sample_team.sample_join_with_derivations_on_external_parts.v1', 'sample_team.sample_label_join.v1', 'sample_team.sample_label_join_with_agg.v1', 'sample_team.sample_online_join.v1']"
     actual_exception_message = str(result.exception).strip().lower()
@@ -225,14 +219,7 @@ def test_detected_dependent_joins_materialized():
     Should raise errors as we are trying to create aggregations without input column.
     """
     runner = CliRunner()
-    result = runner.invoke(
-        extract_and_convert,
-        [
-            "--chronon_root=test/sample",
-            "--input_path=group_bys/sample_team/event_sample_group_by.py",
-            "--force-overwrite",
-        ],
-    )
+    result = _invoke_cli_with_params(runner, "group_bys/sample_team/event_sample_group_by.py", ["--force-overwrite"])
     assert result.exit_code == 0
     expected_message = "Successfully wrote 8 Join objects to test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
@@ -244,13 +231,7 @@ def test_failed_compile_when_dependent_groupby_detected():
     Should raise errors as we are trying to create aggregations without input column.
     """
     runner = CliRunner()
-    result = runner.invoke(
-        extract_and_convert,
-        [
-            "--chronon_root=test/sample",
-            "--input_path=joins/unit_test/sample_parent_join.py",
-        ],
-    )
+    result = _invoke_cli_with_params(runner, "joins/unit_test/sample_parent_join.py")
     assert result.exit_code != 0
     error_message_expected = (
         "Detected dependencies are as follows: ['unit_test.sample_chaining_group_by.chaining_group_by_v1']"
@@ -270,14 +251,7 @@ def test_detected_dependent_group_bys_materialized():
     Should raise errors as we are trying to create aggregations without input column.
     """
     runner = CliRunner()
-    result = runner.invoke(
-        extract_and_convert,
-        [
-            "--chronon_root=test/sample",
-            "--input_path=joins/unit_test/sample_parent_join.py",
-            "--force-overwrite",
-        ],
-    )
+    result = _invoke_cli_with_params(runner, "joins/unit_test/sample_parent_join.py", ["--force-overwrite"])
     assert result.exit_code == 0
     expected_message = "Successfully wrote 2 GroupBy objects to test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
@@ -289,13 +263,8 @@ def test_detected_dependent_nested_joins():
     Should raise errors as we are trying to create aggregations without input column.
     """
     runner = CliRunner()
-    result = runner.invoke(
-        extract_and_convert,
-        [
-            "--chronon_root=test/sample",
-            "--input_path=group_bys/unit_test/user/sample_nested_group_by.py",
-            "--force-overwrite",
-        ],
+    result = _invoke_cli_with_params(
+        runner, "group_bys/unit_test/user/sample_nested_group_by.py", ["--force-overwrite"]
     )
     assert result.exit_code == 0
     expected_message = "Successfully wrote 1 Join objects to test/sample/production".strip().lower()
@@ -309,14 +278,7 @@ def test_compile_table_display():
     """
     runner = CliRunner()
     input_path = f"joins/sample_team/sample_join_with_derivations_on_external_parts.py"
-    result = runner.invoke(
-        extract_and_convert,
-        [
-            "--chronon_root=test/sample",
-            f"--input_path={input_path}",
-            "--table-display",
-        ],
-    )
+    result = _invoke_cli_with_params(runner, input_path, ["--table-display"])
 
     assert "Output Join Tables" in result.output
     assert result.exit_code == 0
@@ -328,16 +290,20 @@ def test_compile_feature_display():
     """
     runner = CliRunner()
     input_path = f"joins/sample_team/sample_join_with_derivations_on_external_parts.py"
-    result = runner.invoke(
-        extract_and_convert,
+    result = _invoke_cli_with_params(runner, input_path, ["--feature-display"])
+
+    expected = map(
+        lambda x: x.value.replace("_", " ").title(),
         [
-            "--chronon_root=test/sample",
-            f"--input_path={input_path}",
-            "--feature-display",
+            FeatureDisplayKeys.SOURCE_KEYS,
+            FeatureDisplayKeys.INTERNAL_COLUMNS,
+            FeatureDisplayKeys.EXTERNAL_COLUMNS,
+            FeatureDisplayKeys.DERIVED_COLUMNS,
+            FeatureDisplayKeys.OUTPUT_COLUMNS,
         ],
     )
-
-    assert "Output Join Features" in result.output
+    for key in expected:
+        assert key in result.output
     assert result.exit_code == 0
 
 

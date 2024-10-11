@@ -42,23 +42,26 @@ import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
+import scala.util.Random
 import scala.util.ScalaJavaConversions._
 
 class FetcherTest extends TestCase {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val sessionName = "FetcherTest"
-  val spark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
-  private val tableUtils = TableUtils(spark)
+  val dummySpark: SparkSession = SparkSessionBuilder.build(sessionName, local = true)
+  private val dummyTableUtils = TableUtils(dummySpark)
   private val topic = "test_topic"
   TimeZone.setDefault(TimeZone.getTimeZone("UTC"))
-  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-  private val yesterday = tableUtils.partitionSpec.before(today)
+  private val today = dummyTableUtils.partitionSpec.at(System.currentTimeMillis())
+  private val yesterday = dummyTableUtils.partitionSpec.before(today)
 
 
   /**
     * Generate deterministic data for testing and checkpointing IRs and streaming data.
     */
   def generateMutationData(namespace: String): api.Join = {
+    val spark: SparkSession = SparkSessionBuilder.build(sessionName + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     tableUtils.createDatabase(namespace)
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
     val eventData = Seq(
@@ -143,7 +146,7 @@ class FetcherTest extends TestCase {
     val endPartition = "2021-04-10"
     val rightSource = Builders.Source.entities(
       query = Builders.Query(
-        selects = Map("listing_id" -> "listing", "ts" -> "ts", "rating" -> "rating"),
+        selects = Map("listing_id" -> "listing", "ts" -> "ts", "rating" -> "CAST(rating/1.0 AS FLOAT)"),
         startPartition = startPartition,
         endPartition = endPartition,
         mutationTimeColumn = "mutation_time",
@@ -196,6 +199,8 @@ class FetcherTest extends TestCase {
   }
 
   def generateRandomData(namespace: String, keyCount: Int = 10, cardinality: Int = 100): api.Join = {
+    val spark: SparkSession = SparkSessionBuilder.build(sessionName + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     tableUtils.createDatabase(namespace)
     val rowCount = cardinality * keyCount
     val userCol = Column("user", StringType, keyCount)
@@ -381,8 +386,9 @@ class FetcherTest extends TestCase {
   }
 
   def generateEventOnlyData(namespace: String, groupByCustomJson: Option[String] = None): api.Join = {
+    val spark: SparkSession = SparkSessionBuilder.build(sessionName + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     tableUtils.createDatabase(namespace)
-
     def toTs(arg: String): Long = TsUtils.datetimeToTs(arg)
 
     val listingEventData = Seq(
@@ -508,7 +514,8 @@ class FetcherTest extends TestCase {
                            consistencyCheck: Boolean,
                            dropDsOnWrite: Boolean): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-    implicit val tableUtils: TableUtils = TableUtils(spark)
+    val spark: SparkSession = SparkSessionBuilder.build(sessionName + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
@@ -614,9 +621,9 @@ class FetcherTest extends TestCase {
     if (endDs != today) {
       responseDf = responseDf.drop("ds").withColumn("ds", lit(endDs))
     }
-    logger.info("expected:")
+    logger.info(s"expected schema: \n ${endDsExpected.schema.pretty} \n expected data frame:")
     endDsExpected.show()
-    logger.info("response:")
+    logger.info(s"response schema: \n ${endDsExpected.schema.pretty} \n response data frame:")
     responseDf.show()
 
     val diff = Comparison.sideBySide(responseDf, endDsExpected, keyishColumns, aName = "online", bName = "offline")
@@ -645,7 +652,7 @@ class FetcherTest extends TestCase {
     val namespace = "generated_fetch"
     val joinConf = generateRandomData(namespace)
     compareTemporalFetch(joinConf,
-                         tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                         dummyTableUtils.partitionSpec.at(System.currentTimeMillis()),
                          namespace,
                          consistencyCheck = true,
                          dropDsOnWrite = false)
@@ -659,6 +666,7 @@ class FetcherTest extends TestCase {
 
   // test soft-fail on missing keys
   def testEmptyRequest(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build(sessionName + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val namespace = "empty_request"
     val joinConf = generateRandomData(namespace, 5, 5)
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))

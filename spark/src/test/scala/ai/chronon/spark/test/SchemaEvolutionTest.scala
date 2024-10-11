@@ -301,7 +301,7 @@ class SchemaEvolutionTest extends TestCase {
     flattenedDf
   }
 
-  def testSchemaEvolution(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
+  private def testSchemaEvolution(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
     assert(joinSuiteV1.joinConf.metaData.name == joinSuiteV2.joinConf.metaData.name,
            message = "Schema evolution can only be tested on changes of the SAME join")
     val tableUtils: TableUtils = TableUtils(spark)

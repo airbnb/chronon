@@ -20,8 +20,9 @@
 import json
 import logging
 import os
+import pprint
 import textwrap
-from typing import Optional, Tuple, Type, Union
+from typing import List, Optional, Tuple, Type, Union
 
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
@@ -116,6 +117,9 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         chronon_root_path=full_output_root,
         log_level=log_level,
     )
+
+    _print_debug_info(results.keys(), f"Extracted Entities Of Type {obj_class.__name__}", log_level)
+
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
@@ -143,11 +147,12 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                         offline_backfill_enabled_group_bys[jp.groupBy.metaData.name] = jp.groupBy
                     else:
                         offline_gbs.append(jp.groupBy.metaData.name)
-                logging.debug(
-                    f"Online GroupBys: {online_group_bys.keys()}, "
-                    f"Offline GroupBys with backfill enabled: {offline_backfill_enabled_group_bys.keys()}, "
-                    f"Offline GroupBys: {offline_gbs}"
+
+                _print_debug_info(list(online_group_bys.keys()), "Online Groupbys", log_level)
+                _print_debug_info(
+                    list(offline_backfill_enabled_group_bys.keys()), "Offline Groupbys With Backfill Enabled", log_level
                 )
+                _print_debug_info(offline_gbs, "Offline Groupbys", log_level)
                 extra_online_or_gb_backfill_enabled_group_bys.update(
                     {**online_group_bys, **offline_backfill_enabled_group_bys}
                 )
@@ -216,7 +221,9 @@ def _handle_dependent_configurations(
     new_joins_to_materialize = {}
 
     output_file_path = _get_relative_materialized_file_path(full_output_root, name, obj)
-    downstreams = entity_dependency_tracker.check_downstream(output_file_path)
+    downstreams = entity_dependency_tracker.get_downstream_names(output_file_path)
+
+    _print_debug_info(downstreams, f"Downstreams For {output_file_path}", log_level)
 
     for downstream in downstreams:
         if obj_class is Join:
@@ -227,15 +234,29 @@ def _handle_dependent_configurations(
             continue
         conf_result = _get_conf_file_path(downstream, downstream_class)
         if conf_result is None:
+            if log_level == logging.DEBUG:
+                print(f"No {downstream} dependency of type {downstream_class} for {name}")
             continue
 
         conf_var, conf_file_path = conf_result
-        conf_obj = eo.from_file(
-            chronon_root_path,
-            os.path.join(chronon_root_path, conf_file_path),
-            downstream_class,
-            log_level=log_level,
-        )
+        try:
+            conf_obj = eo.from_file(
+                chronon_root_path,
+                os.path.join(chronon_root_path, conf_file_path),
+                downstream_class,
+                log_level=log_level,
+            )
+            _print_debug_info(
+                [key for key, _ in conf_obj.items()],
+                f"Entities Within Dependent Configuration To Compile {conf_file_path}",
+                log_level,
+            )
+        except Exception as e:
+            _print_error(
+                f"Failed to parse {downstream} dependency of type {downstream_class} for {name} at {conf_file_path}",
+                str(e),
+            )
+            raise e
 
         obj_to_materialize = conf_obj[downstream]
         if downstream_class is GroupBy:
@@ -278,12 +299,16 @@ def _get_conf_file_path(downstream: str, downstream_class: Type[Union[Join, Grou
     elif downstream_class is GroupBy:
         return conf_var, os.path.join(GROUP_BY_FOLDER_NAME, conf_file_path)
     else:
-        return None  # Handle other cases or errors if needed
+        raise ValueError(f"Invalid downstream class: {downstream_class}")
 
 
 def _print_features(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]]) -> None:
     if obj_class is Join:
-        _print_features_names("Output Join Features", get_join_output_columns(obj))
+        features = get_join_output_columns(obj)
+        for key, value in features.items():
+            left = key.value.replace("_", " ").title()
+            right = pprint.pformat(value, width=80, compact=True)
+            _print_features_names(left, f"\n{right}")
     if obj_class is GroupBy:
         _print_features_names("Output GroupBy Features", get_group_by_output_columns(obj))
 
@@ -501,6 +526,15 @@ def _print_error(left, right):
 def _print_warning(string):
     # print in yellow - \u001b[33m
     print(f"\u001b[33m{string}\u001b[0m")
+
+
+def _print_debug_info(keys: List[str], header: str, log_level=logging.DEBUG):
+    if log_level != logging.DEBUG:
+        return
+
+    print(f"{header}")
+    right = pprint.pformat(list(keys)) if keys else "None"
+    print(f"\t\u001b[34m{right}\u001b[0m")
 
 
 if __name__ == "__main__":

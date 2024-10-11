@@ -74,9 +74,9 @@ html_theme_options = {
     "use_download_button": True,
     "icon_links": [
         {
-            "name": "Discord",
-            "url": "https://discord.gg/GbmGATNqqP",
-            "icon": "fa-brands fa-discord",
+            "name": "Slack",
+            "url": "https://join.slack.com/t/chrononworkspace/shared_invite/zt-2r621b6hw-pm552u71Y257Vtpt4RTiyg",
+            "icon": "fa-brands fa-slack",
             "type": "fontawesome",
         },
         # {
@@ -90,9 +90,7 @@ html_theme_options = {
     # "navbar_end": ["navbar-icon-links.html", "search-field.html"]
 }
 
-html_sidebars = {
-    "**": ["navbar-logo.html", "search-field.html", "sbt-sidebar-nav.html"]
-}
+html_sidebars = {"**": ["navbar-logo.html", "search-field.html", "sbt-sidebar-nav.html"]}
 html_title = "Chronon"
 html_static_path = ["_static"]
 html_css_files = ["chronon.css"]
