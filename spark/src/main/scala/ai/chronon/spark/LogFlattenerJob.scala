@@ -105,9 +105,19 @@ class LogFlattenerJob(session: SparkSession,
     fields.foreach { f =>
       {
         if (fieldsBuilder.contains(f.name)) {
-          if (fieldsBuilder(f.name) != f.fieldType) {
-            throw new Exception(
-              s"Found field with same name ${f.name} but different dataTypes: ${fieldsBuilder(f.name)} vs ${f.fieldType}")
+          val existingType = fieldsBuilder(f.name)
+          val newType = f.fieldType
+          if (existingType != newType) {
+            (existingType, newType) match {
+              case (FloatType, DoubleType) | (DoubleType, FloatType) => {
+                logger.warn(s"Field ${f.name} has both FloatType and DoubleType. Promoting to DoubleType.")
+                fieldsBuilder.put(f.name, DoubleType)
+              }
+              case _ =>
+                throw new Exception(
+                  s"Found field with same name ${f.name} but different dataTypes: ${fieldsBuilder(f.name)} vs ${f.fieldType}"
+                )
+            }
           }
         } else {
           fieldsBuilder.put(f.name, f.fieldType)
@@ -214,7 +224,9 @@ class LogFlattenerJob(session: SparkSession,
       val rawTableScan = unfilled.genScanQuery(null, logTable)
       val rawDf = tableUtils.sql(rawTableScan).where(col("name") === joinName)
       val schemaHashes = rawDf.select(col(Constants.SchemaHash)).distinct().collect().map(_.getString(0)).toSeq
+      logger.info(s"Processing ${schemaHashes.length} schema hashes: ${schemaHashes.mkString(", ")}")
       val schemaStringsMap = fetchSchemas(schemaHashes)
+      schemaStringsMap.foreach { case (key, value) => logger.info(s"Schema hash: $key, schema: $value") }
 
       // we do not have exact joinConf at time of logging, and since it is not used during flattening, we pass in null
       val schemaMap = schemaStringsMap.mapValues(LoggingSchema.parseLoggingSchema).map(identity).toMap
