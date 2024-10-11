@@ -444,7 +444,8 @@ object Driver {
                    args.count(),
                    args.sample(),
                    args.enableHitter(),
-                   args.skipTimestampCheck()).run
+                   silenceMode = false,
+                   skipTimestampCheck = args.skipTimestampCheck()).run
     }
   }
 
