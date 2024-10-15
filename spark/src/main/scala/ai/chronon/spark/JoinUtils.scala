@@ -304,11 +304,10 @@ object JoinUtils {
               s"KeyName: $keyName, leftSide KeyName: $leftSideKeyName , Join right to left: ${joinPart.rightToLeft
                 .mkString(", ")}")
             val values = collectedLeft.map(row => row.getAs[Any](leftSideKeyName))
-            // Check for null keys, warn if found, err if all null
+            // Check for null keys, warn if found
             val (notNullValues, nullValues) = values.partition(_ != null)
             if (notNullValues.isEmpty) {
-              throw new RuntimeException(
-                s"No not-null keys found for key: $keyName. Check source table or where clauses.")
+              logger.warn(s"No not-null keys found for key: $keyName.")
             } else if (!nullValues.isEmpty) {
               logger.warn(s"Found ${nullValues.length} null keys for key: $keyName.")
             }
@@ -319,8 +318,11 @@ object JoinUtils {
               case other     => other.toString // Keep other types (like Int) as they are
             }.toSet
 
-            // Form the final WHERE clause for injection
-            s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
+            if (valueSet.isEmpty) {
+              "false"
+            } else {
+              s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
+            }
         }
         .foreach { whereClause =>
           // Skip adding the filter if it is a join source
