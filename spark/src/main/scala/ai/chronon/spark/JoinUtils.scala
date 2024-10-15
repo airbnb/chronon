@@ -319,9 +319,9 @@ object JoinUtils {
             }.toSet
 
             if (valueSet.isEmpty) {
-              s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
-            } else {
               "false"
+            } else {
+              s"$groupByKeyExpression in (${valueSet.mkString(sep = ",")})"
             }
         }
         .foreach { whereClause =>
