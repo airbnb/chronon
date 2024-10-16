@@ -370,12 +370,14 @@ def _handle_deprecation_warning(
             )
 
 
-def _print_tables(obj: Union[Join, GroupBy], obj_class: Type[Union[Join, GroupBy]]) -> None:
+def _print_tables(obj: utils.ChrononJobTypes, obj_class: Type[utils.ChrononJobTypes]) -> None:
     tables = utils.get_modes_tables(obj)
     if obj_class is Join:
         _print_modes_tables("Output Join Tables", tables)
     if obj_class is GroupBy:
         _print_modes_tables("Output GroupBy Tables", tables)
+    if obj_class is StagingQuery:
+        _print_modes_tables("Output StagingQuery Tables", tables)
 
 
 def _handle_extra_conf_objects_to_materialize(
@@ -515,7 +517,10 @@ def _print_features_names(left, right):
 
 def _print_modes_tables(left, right):
     text = textwrap.indent(json.dumps(right, indent=2), " " * 27)
-    print(f"{left:>25} - \u001b[32m\n{text}\u001b[0m")
+    json_start = "json.start"
+    json_end = "json.end\n"
+
+    print(f"{left:>25} - \n{json_start:>25} \u001b[32m\n{text}\u001b[0m \n{json_end:>25}")
 
 
 def _print_error(left, right):
