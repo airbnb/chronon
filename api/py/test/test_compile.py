@@ -16,7 +16,9 @@ Run the flow for materialize.
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+import json
 import os
+import re
 
 import pytest
 from ai.chronon.repo.compile import extract_and_convert
@@ -51,6 +53,17 @@ def _invoke_cli_with_params(runner, input_path, flags=None):
 def _assert_file_exists(full_file_path, message):
     """Assert that a file exists at the specified path."""
     assert os.path.isfile(full_file_path), message
+
+
+def _extract_display_output_json_block(output, block_name):
+    """Extract a JSON block from the output of a CLI command."""
+
+    field_index = output.find(block_name)
+    subset = output[field_index:]
+    start_index = subset.find("json.start")
+    end_index = subset.find("json.end")
+    s = re.sub(r"\x1b\[[0-9;]*m", "", subset[start_index + 10 : end_index].strip())
+    return json.loads(s)
 
 
 @pytest.fixture
@@ -281,6 +294,18 @@ def test_compile_table_display():
     result = _invoke_cli_with_params(runner, input_path, ["--table-display"])
 
     assert "Output Join Tables" in result.output
+    output_json_dict = _extract_display_output_json_block(result.output, "Output Join Tables")
+    expected_json_dict = {
+        "backfill": ["chronon_db.sample_team_sample_join_with_derivations_on_external_parts_v1"],
+        "stats-summary": ["chronon_db.sample_team_sample_join_with_derivations_on_external_parts_v1_daily_stats"],
+        "log-flattener": ["chronon_db.sample_team_sample_join_with_derivations_on_external_parts_v1_logged"],
+        "bootstrap": ["chronon_db.sample_team_sample_join_with_derivations_on_external_parts_v1_bootstrap"],
+        "join_parts": [
+            "sample_team_sample_join_with_derivations_on_external_parts_v1_sample_team_event_sample_group_by_v1",
+            "sample_team_sample_join_with_derivations_on_external_parts_v1_sample_team_entity_sample_group_by_from_module_v1",
+        ],
+    }
+    assert json.dumps(output_json_dict, sort_keys=True) == json.dumps(expected_json_dict, sort_keys=True)
     assert result.exit_code == 0
 
 
@@ -304,6 +329,28 @@ def test_compile_feature_display():
     )
     for key in expected:
         assert key in result.output
+    assert result.exit_code == 0
+
+
+def test_table_display_staging_query():
+    """
+    Test a staging query compile produces related table
+    """
+    runner = CliRunner()
+    input_path = f"staging_queries/sample_team/sample_staging_query.py"
+    result = runner.invoke(
+        extract_and_convert,
+        [
+            "--chronon_root=test/sample",
+            f"--input_path={input_path}",
+            "--table-display",
+        ],
+    )
+
+    assert "Output StagingQuery Tables" in result.output
+    output_json_dict = _extract_display_output_json_block(result.output, "Output StagingQuery Tables")
+    expected_json_dict = {"backfill": ["sample_namespace.sample_team_sample_staging_query_v1"]}
+    assert json.dumps(output_json_dict, sort_keys=True) == json.dumps(expected_json_dict, sort_keys=True)
     assert result.exit_code == 0
 
 
