@@ -17,9 +17,9 @@ from ai.chronon.join import Join, JoinPart
 from ai.chronon.api.ttypes import Source, EventSource
 from ai.chronon.query import Query, select
 
-from group_bys.quickstart.purchases import v1 as purchases_v1
-from group_bys.quickstart.returns import v1 as returns_v1
-from group_bys.quickstart.users import v1 as users
+from sample.group_bys.quickstart.purchases import v1 as purchases_v1
+from sample.group_bys.quickstart.returns import v1 as returns_v1
+from sample.group_bys.quickstart.users import v1 as users
 
 """
 This is the "left side" of the join that will comprise our training set. It is responsible for providing the primary keys
