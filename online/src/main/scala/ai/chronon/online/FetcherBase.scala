@@ -91,7 +91,7 @@ class FetcherBase(kvStore: KVStore,
                                                      servingInfo.outputCodec.decodeMap,
                                                      servingInfo,
                                                      keys)
-      context.histogramTagged("group_by.batchir_decode.latency.millis",
+      context.distribution("group_by.batchir_decode.latency.millis",
                               System.currentTimeMillis() - batchResponseDecodeStartTime)
       response
     } else { // temporal accurate
@@ -113,7 +113,7 @@ class FetcherBase(kvStore: KVStore,
         (batchResponses.isInstanceOf[KvStoreBatchResponse] && batchBytes == null)
       ) {
         if (debug) logger.info("Both batch and streaming data are null")
-        context.histogramTagged("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
+        context.distribution("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
         return null
       }
 
@@ -128,7 +128,7 @@ class FetcherBase(kvStore: KVStore,
       val batchIrDecodeStartTime = System.currentTimeMillis()
       val batchIr: FinalBatchIr =
         getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
-      context.histogramTagged("group_by.batchir_decode.latency.millis",
+      context.distribution("group_by.batchir_decode.latency.millis",
                               System.currentTimeMillis() - batchIrDecodeStartTime)
 
       // check if we have late batch data for this GroupBy resulting in degraded counters
@@ -166,7 +166,7 @@ class FetcherBase(kvStore: KVStore,
           .toArray
           .iterator
 
-        context.histogramTagged("group_by.all_streamingir_decode.latency.millis",
+        context.distribution("group_by.all_streamingir_decode.latency.millis",
                                 System.currentTimeMillis() - allStreamingIrDecodeStartTime)
 
         if (debug) {
@@ -181,7 +181,7 @@ class FetcherBase(kvStore: KVStore,
 
         val aggregatorStartTime = System.currentTimeMillis()
         aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
-        context.histogramTagged("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
+        context.distribution("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
       } else {
         val selectedCodec = servingInfo.groupByOps.dataModel match {
           case DataModel.Events   => servingInfo.valueAvroCodec
