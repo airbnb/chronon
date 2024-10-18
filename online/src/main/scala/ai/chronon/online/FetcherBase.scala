@@ -92,7 +92,7 @@ class FetcherBase(kvStore: KVStore,
                                                      servingInfo,
                                                      keys)
       context.distribution("group_by.batchir_decode.latency.millis",
-                              System.currentTimeMillis() - batchResponseDecodeStartTime)
+                           System.currentTimeMillis() - batchResponseDecodeStartTime)
       response
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
@@ -129,7 +129,7 @@ class FetcherBase(kvStore: KVStore,
       val batchIr: FinalBatchIr =
         getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
       context.distribution("group_by.batchir_decode.latency.millis",
-                              System.currentTimeMillis() - batchIrDecodeStartTime)
+                           System.currentTimeMillis() - batchIrDecodeStartTime)
 
       // check if we have late batch data for this GroupBy resulting in degraded counters
       val degradedCount = checkLateBatchData(queryTimeMs,
@@ -167,7 +167,7 @@ class FetcherBase(kvStore: KVStore,
           .iterator
 
         context.distribution("group_by.all_streamingir_decode.latency.millis",
-                                System.currentTimeMillis() - allStreamingIrDecodeStartTime)
+                             System.currentTimeMillis() - allStreamingIrDecodeStartTime)
 
         if (debug) {
           val gson = new Gson()
