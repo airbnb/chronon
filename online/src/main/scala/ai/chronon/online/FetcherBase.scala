@@ -180,8 +180,9 @@ class FetcherBase(kvStore: KVStore,
         }
 
         val aggregatorStartTime = System.currentTimeMillis()
-        aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
+        val result = aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
         context.distribution("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
+        result
       } else {
         val selectedCodec = servingInfo.groupByOps.dataModel match {
           case DataModel.Events   => servingInfo.valueAvroCodec
