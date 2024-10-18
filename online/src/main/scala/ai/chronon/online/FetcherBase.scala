@@ -84,7 +84,12 @@ class FetcherBase(kvStore: KVStore,
                                       servingInfo,
                                       keys)
     } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
-      getMapResponseFromBatchResponse(batchResponses, batchBytes, servingInfo.outputCodec.decodeMap, servingInfo, keys)
+
+      val batchResponseDecodeStartTime = System.currentTimeMillis()
+      val response = getMapResponseFromBatchResponse(batchResponses, batchBytes, servingInfo.outputCodec.decodeMap, servingInfo, keys)
+      context.histogramTagged("group_by.batchir_decode.latency.millis",
+        System.currentTimeMillis() - batchResponseDecodeStartTime)
+      response
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
@@ -104,6 +109,7 @@ class FetcherBase(kvStore: KVStore,
         (batchResponses.isInstanceOf[KvStoreBatchResponse] && batchBytes == null)
       ) {
         if (debug) logger.info("Both batch and streaming data are null")
+        context.histogramTagged("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
         return null
       }
 
@@ -115,10 +121,14 @@ class FetcherBase(kvStore: KVStore,
                        totalResponseValueBytes)
 
       // If caching is enabled, we try to fetch the batch IR from the cache so we avoid the work of decoding it.
+      val batchIrDecodeStartTime = System.currentTimeMillis()
       val batchIr: FinalBatchIr =
         getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
+      context.histogramTagged("group_by.batchir_decode.latency.millis",
+        System.currentTimeMillis() - batchIrDecodeStartTime)
 
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
+        val allStreamingIrDecodeStartTime = System.currentTimeMillis()
         val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .flatMap { tVal =>
@@ -144,6 +154,9 @@ class FetcherBase(kvStore: KVStore,
           .toArray
           .iterator
 
+        context.histogramTagged("group_by.all_streamingir_decode.latency.millis",
+          System.currentTimeMillis() - allStreamingIrDecodeStartTime)
+
         if (debug) {
           val gson = new Gson()
           logger.info(s"""
@@ -154,7 +167,9 @@ class FetcherBase(kvStore: KVStore,
                          |""".stripMargin)
         }
 
+        val aggregatorStartTime = System.currentTimeMillis()
         aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
+        context.histogramTagged("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
       } else {
         val selectedCodec = servingInfo.groupByOps.dataModel match {
           case DataModel.Events   => servingInfo.valueAvroCodec
