@@ -20,7 +20,7 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, ThrowableOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, WindowOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
@@ -126,6 +126,14 @@ class FetcherBase(kvStore: KVStore,
         getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
       context.histogramTagged("group_by.batchir_decode.latency.millis",
         System.currentTimeMillis() - batchIrDecodeStartTime)
+
+      // check if we have late batch data for this GroupBy resulting in degraded counters
+      val degradedCount = checkLateBatchData(queryTimeMs,
+        servingInfo.groupBy.metaData.name,
+        servingInfo.batchEndTsMillis,
+        aggregator.tailBufferMillis,
+        aggregator.perWindowAggs.map(_.window))
+      context.count("group_by.degraded_counter.count", degradedCount)
 
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
         val allStreamingIrDecodeStartTime = System.currentTimeMillis()
@@ -710,6 +718,24 @@ class FetcherBase(kvStore: KVStore,
 
       responseByQuery
     }
+  }
+
+  // This method checks if there's a longer gap between the batch end and the query time than the tail buffer duration
+  // This indicates we're missing batch data for too long and if there are groupBy aggregations that include a longer
+  // lookback window than the tail buffer duration, it means that we are serving degraded counters.
+  private[online] def checkLateBatchData(queryTimeMs: Long,
+                                         groupByName: String,
+                                         batchEndTsMillis: Long,
+                                         tailBufferMillis: Long,
+                                         windows: Seq[Window]): Long = {
+    val groupByContainsLongerWinThanTailBuffer = windows.exists(p => p.millis > tailBufferMillis)
+    if (queryTimeMs > (tailBufferMillis + batchEndTsMillis) && groupByContainsLongerWinThanTailBuffer) {
+      println(
+        s"Encountered a request for $groupByName at $queryTimeMs which is more than $tailBufferMillis ms after the " +
+          s"batch dataset landing at $batchEndTsMillis. ")
+      1L
+    } else
+      0L
   }
 }
 
