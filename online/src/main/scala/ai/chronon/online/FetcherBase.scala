@@ -86,9 +86,13 @@ class FetcherBase(kvStore: KVStore,
     } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
 
       val batchResponseDecodeStartTime = System.currentTimeMillis()
-      val response = getMapResponseFromBatchResponse(batchResponses, batchBytes, servingInfo.outputCodec.decodeMap, servingInfo, keys)
+      val response = getMapResponseFromBatchResponse(batchResponses,
+                                                     batchBytes,
+                                                     servingInfo.outputCodec.decodeMap,
+                                                     servingInfo,
+                                                     keys)
       context.histogramTagged("group_by.batchir_decode.latency.millis",
-        System.currentTimeMillis() - batchResponseDecodeStartTime)
+                              System.currentTimeMillis() - batchResponseDecodeStartTime)
       response
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
@@ -125,14 +129,14 @@ class FetcherBase(kvStore: KVStore,
       val batchIr: FinalBatchIr =
         getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
       context.histogramTagged("group_by.batchir_decode.latency.millis",
-        System.currentTimeMillis() - batchIrDecodeStartTime)
+                              System.currentTimeMillis() - batchIrDecodeStartTime)
 
       // check if we have late batch data for this GroupBy resulting in degraded counters
       val degradedCount = checkLateBatchData(queryTimeMs,
-        servingInfo.groupBy.metaData.name,
-        servingInfo.batchEndTsMillis,
-        aggregator.tailBufferMillis,
-        aggregator.perWindowAggs.map(_.window))
+                                             servingInfo.groupBy.metaData.name,
+                                             servingInfo.batchEndTsMillis,
+                                             aggregator.tailBufferMillis,
+                                             aggregator.perWindowAggs.map(_.window))
       context.count("group_by.degraded_counter.count", degradedCount)
 
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
@@ -163,7 +167,7 @@ class FetcherBase(kvStore: KVStore,
           .iterator
 
         context.histogramTagged("group_by.all_streamingir_decode.latency.millis",
-          System.currentTimeMillis() - allStreamingIrDecodeStartTime)
+                                System.currentTimeMillis() - allStreamingIrDecodeStartTime)
 
         if (debug) {
           val gson = new Gson()
