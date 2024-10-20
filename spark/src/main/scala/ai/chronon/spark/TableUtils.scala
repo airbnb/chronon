@@ -41,6 +41,77 @@ import scala.collection.immutable
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.{Failure, Success, Try}
 
+/**
+ * Trait to track the table format in use by a Chronon dataset and some utility methods to help
+ * retrieve metadata / configure it appropriately at creation time
+ */
+sealed trait Format {
+  // Return a sequence for partitions where each partition entry consists of a Map of partition keys to values
+  def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]]
+
+  // Help specify the appropriate table type to use in the Spark create table DDL query
+  def createTableTypeString: String
+
+  // Help specify the appropriate file format to use in the Spark create table DDL query
+  def fileFormatString(format: String): String
+}
+
+case object Hive extends Format {
+  def parseHivePartition(pstring: String): Map[String, String] = {
+    pstring
+      .split("/")
+      .map { part =>
+        val p = part.split("=", 2)
+        p(0) -> p(1)
+      }
+      .toMap
+  }
+
+  override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
+    // data is structured as a Df with single composite partition key column. Every row is a partition with the
+    // column values filled out as a formatted key=value pair
+    // Eg. df schema = (partitions: String)
+    // rows = [ "day=2020-10-10/hour=00", ... ]
+    sparkSession.sqlContext
+      .sql(s"SHOW PARTITIONS $tableName")
+      .collect()
+      .map ( row => parseHivePartition(row.getString(0)) )
+  }
+
+  def createTableTypeString: String = ""
+  def fileFormatString(format: String): String = s"STORED AS $format"
+}
+
+case object Iceberg extends Format {
+  override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
+    throw new NotImplementedError(
+      "Multi-partitions retrieval is not supported on Iceberg tables yet." +
+        "For single partition retrieval, please use 'partition' method.")
+  }
+
+  def createTableTypeString: String = "USING iceberg"
+  def fileFormatString(format: String): String = ""
+}
+
+case object DeltaLake extends Format {
+  override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
+    // data is structured as a Df with a column per partition key. Every row is a partition with the
+    // column values filled out for the partition keys appropriately.
+    // Eg. df schema = (day: String, hour: String)
+    // rows = [ ("2020-10-10", "00"), ... ]
+    val partitionsDf = sparkSession.sqlContext.sql(s"SHOW PARTITIONS $tableName")
+    val partitionKeys = partitionsDf.schema.fieldNames
+
+    partitionsDf.collect().map {
+      row =>
+        partitionKeys.indices.map(i => partitionKeys(i) -> row.getString(i) ).toMap
+    }
+  }
+
+  def createTableTypeString: String = "USING DELTA"
+  def fileFormatString(format: String): String = ""
+}
+
 case class TableUtils(sparkSession: SparkSession) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
@@ -70,6 +141,15 @@ case class TableUtils(sparkSession: SparkSession) {
     sparkSession.conf.get("spark.chronon.table_write.cache.blocking", "false").toBoolean
 
   val useIceberg: Boolean = sparkSession.conf.get("spark.chronon.table_write.iceberg", "false").toBoolean
+
+  // write data using the relevant supported Chronon write format
+  val maybeWriteFormat: Option[Format] = sparkSession.conf.getOption("spark.chronon.table_write.format").map(_.toLowerCase) match {
+    case Some("hive") => Some(Hive)
+    case Some("iceberg") => Some(Iceberg)
+    case Some("delta") => Some(DeltaLake)
+    case _ => None
+  }
+
   val cacheLevel: Option[StorageLevel] = Try {
     if (cacheLevelString == "NONE") None
     else Some(StorageLevel.fromString(cacheLevelString))
@@ -101,16 +181,6 @@ case class TableUtils(sparkSession: SparkSession) {
       rdd
     }
 
-  def parsePartition(pstring: String): Map[String, String] = {
-    pstring
-      .split("/")
-      .map { part =>
-        val p = part.split("=", 2)
-        p(0) -> p(1)
-      }
-      .toMap
-  }
-
   def tableExists(tableName: String): Boolean = sparkSession.catalog.tableExists(tableName)
 
   def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
@@ -136,56 +206,72 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+  def tableFormat(tableName: String): Format = {
+    if (isIcebergTable(tableName)) {
+      Iceberg
+    } else if (isDeltaTable(tableName)) {
+      DeltaLake
+    } else {
+      Hive
+    }
+  }
+
   // return all specified partition columns in a table in format of Map[partitionName, PartitionValue]
   def allPartitions(tableName: String, partitionColumnsFilter: Seq[String] = Seq.empty): Seq[Map[String, String]] = {
     if (!tableExists(tableName)) return Seq.empty[Map[String, String]]
-    if (isIcebergTable(tableName)) {
-      throw new NotImplementedError(
-        "Multi-partitions retrieval is not supported on Iceberg tables yet." +
-          "For single partition retrieval, please use 'partition' method.")
+    val format = tableFormat(tableName)
+    val partitionSeq = format.partitions(tableName)(sparkSession)
+    if (partitionColumnsFilter.isEmpty) {
+      partitionSeq
     }
-    sparkSession.sqlContext
-      .sql(s"SHOW PARTITIONS $tableName")
-      .collect()
-      .map { row =>
-        {
-          val partitionMap = parsePartition(row.getString(0))
-          if (partitionColumnsFilter.isEmpty) {
-            partitionMap
-          } else {
-            partitionMap.filterKeys(key => partitionColumnsFilter.contains(key)).toMap
-          }
-        }
+    else {
+      partitionSeq.map {
+        partitionMap => partitionMap.filterKeys(key => partitionColumnsFilter.contains(key)).toMap
       }
+    }
   }
 
   def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
     if (!tableExists(tableName)) return Seq.empty[String]
-    if (isIcebergTable(tableName)) {
+    val format = tableFormat(tableName)
+
+    if (format == Iceberg) {
       if (subPartitionsFilter.nonEmpty) {
         throw new NotImplementedError("subPartitionsFilter is not supported on Iceberg tables yet.")
       }
       return getIcebergPartitions(tableName)
     }
-    sparkSession.sqlContext
-      .sql(s"SHOW PARTITIONS $tableName")
-      .collect()
-      .flatMap { row =>
-        {
-          val partitionMap = parsePartition(row.getString(0))
-          if (
-            subPartitionsFilter.forall {
-              case (k, v) => partitionMap.get(k).contains(v)
-            }
-          ) {
-            partitionMap.get(partitionColumn)
-          } else {
-            None
+
+    val partitionSeq = format.partitions(tableName)(sparkSession)
+    partitionSeq.flatMap {
+      partitionMap =>
+        if (
+          subPartitionsFilter.forall {
+            case (k, v) => partitionMap.get(k).contains(v)
           }
+        ) {
+          partitionMap.get(partitionColumn)
+        } else {
+          None
         }
-      }
+    }
   }
 
+  private def isDeltaTable(tableName: String): Boolean = {
+    Try {
+      val describeResult = sparkSession.sql(s"DESCRIBE DETAIL $tableName")
+      describeResult.select("format").first().getString(0).toLowerCase
+    } match {
+      case Success(format) =>
+        logger.info(s"Delta check: Successfully read the format of table: $tableName as $format")
+        format == "delta"
+      case _ =>
+        // the describe detail calls fails for Iceberg tables
+        logger.info(s"Delta check: Unable to read the format of the table $tableName using DESCRIBE DETAIL")
+        false
+    }
+  }
+  
   private def isIcebergTable(tableName: String): Boolean =
     Try {
       sparkSession.read.format("iceberg").load(tableName)
@@ -519,11 +605,18 @@ case class TableUtils(sparkSession: SparkSession) {
       .filterNot(field => partitionColumns.contains(field.name))
       .map(field => s"`${field.name}` ${field.dataType.catalogString}")
 
-    val tableTypString = if (useIceberg) {
-      "USING iceberg"
-    } else {
-      ""
-    }
+    val writeFormat =
+      (useIceberg, maybeWriteFormat) match {
+        // if explicitly configured Iceberg - we go with that setting
+        case (true, _ ) => Iceberg
+        // else if there is a write format we pick that
+        case (false, Some(format)) => format
+        // fallback to hive (parquet)
+        case (false, None) => Hive
+      }
+
+    val tableTypString = writeFormat.createTableTypeString
+
     val createFragment =
       s"""CREATE TABLE $tableName (
          |    ${fieldDefinitions.mkString(",\n    ")}
@@ -545,11 +638,7 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       ""
     }
-    val fileFormatString = if (useIceberg) {
-      ""
-    } else {
-      s"STORED AS $fileFormat"
-    }
+    val fileFormatString = writeFormat.fileFormatString(fileFormat)
     Seq(createFragment, partitionFragment, fileFormatString, propertiesFragment).mkString("\n")
   }
 

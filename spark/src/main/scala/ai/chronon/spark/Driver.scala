@@ -81,6 +81,11 @@ object Driver {
                    default = Some(false),
                    descr = "Skip the first unfilled partition range if some future partitions have been populated.")
 
+    val useDeltaCatalog: ScallopOption[Boolean] =
+      opt[Boolean](required = false,
+        default = Some(false),
+        descr = "Enable the use of the delta lake catalog")
+
     val stepDays: ScallopOption[Int] =
       opt[Int](required = false,
                descr = "Runs offline backfill in steps, step-days at a time. Default is 30 days",
@@ -136,8 +141,17 @@ object Driver {
     def isLocal: Boolean = localTableMapping.nonEmpty || localDataPath.isDefined
 
     protected def buildSparkSession(): SparkSession = {
+      // use of the delta lake catalog requires a couple of additional spark config options
+      val extraDeltaConfigs = useDeltaCatalog.toOption match {
+        case Some(true) =>
+          Some(Map(
+            "spark.sql.extensions" -> "io.delta.sql.DeltaSparkSessionExtension",
+            "spark.sql.catalog.spark_catalog" -> "org.apache.spark.sql.delta.catalog.DeltaCatalog"))
+        case _ => None
+      }
+
       if (localTableMapping.nonEmpty) {
-        val localSession = SparkSessionBuilder.build(subcommandName(), local = true, localWarehouseLocation.toOption)
+        val localSession = SparkSessionBuilder.build(subcommandName(), local = true, localWarehouseLocation.toOption, additionalConfig = extraDeltaConfigs)
         localTableMapping.foreach {
           case (table, filePath) =>
             val file = new File(filePath)
@@ -150,13 +164,14 @@ object Driver {
         val localSession =
           SparkSessionBuilder.build(subcommandName(),
                                     local = true,
-                                    localWarehouseLocation = localWarehouseLocation.toOption)
+                                    localWarehouseLocation = localWarehouseLocation.toOption,
+                                    additionalConfig = extraDeltaConfigs)
         LocalDataLoader.loadDataRecursively(dir, localSession)
         localSession
       } else {
         // We use the KryoSerializer for group bys and joins since we serialize the IRs.
         // But since staging query is fairly freeform, it's better to stick to the java serializer.
-        SparkSessionBuilder.build(subcommandName(), enforceKryoSerializer = !subcommandName().contains("staging_query"))
+        SparkSessionBuilder.build(subcommandName(), enforceKryoSerializer = !subcommandName().contains("staging_query"), additionalConfig = extraDeltaConfigs)
       }
     }
 
