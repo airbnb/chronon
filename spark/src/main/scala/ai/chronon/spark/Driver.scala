@@ -82,9 +82,7 @@ object Driver {
                    descr = "Skip the first unfilled partition range if some future partitions have been populated.")
 
     val useDeltaCatalog: ScallopOption[Boolean] =
-      opt[Boolean](required = false,
-        default = Some(false),
-        descr = "Enable the use of the delta lake catalog")
+      opt[Boolean](required = false, default = Some(false), descr = "Enable the use of the delta lake catalog")
 
     val stepDays: ScallopOption[Int] =
       opt[Int](required = false,
@@ -144,14 +142,19 @@ object Driver {
       // use of the delta lake catalog requires a couple of additional spark config options
       val extraDeltaConfigs = useDeltaCatalog.toOption match {
         case Some(true) =>
-          Some(Map(
-            "spark.sql.extensions" -> "io.delta.sql.DeltaSparkSessionExtension",
-            "spark.sql.catalog.spark_catalog" -> "org.apache.spark.sql.delta.catalog.DeltaCatalog"))
+          Some(
+            Map(
+              "spark.sql.extensions" -> "io.delta.sql.DeltaSparkSessionExtension",
+              "spark.sql.catalog.spark_catalog" -> "org.apache.spark.sql.delta.catalog.DeltaCatalog"
+            ))
         case _ => None
       }
 
       if (localTableMapping.nonEmpty) {
-        val localSession = SparkSessionBuilder.build(subcommandName(), local = true, localWarehouseLocation.toOption, additionalConfig = extraDeltaConfigs)
+        val localSession = SparkSessionBuilder.build(subcommandName(),
+                                                     local = true,
+                                                     localWarehouseLocation.toOption,
+                                                     additionalConfig = extraDeltaConfigs)
         localTableMapping.foreach {
           case (table, filePath) =>
             val file = new File(filePath)
@@ -171,7 +174,9 @@ object Driver {
       } else {
         // We use the KryoSerializer for group bys and joins since we serialize the IRs.
         // But since staging query is fairly freeform, it's better to stick to the java serializer.
-        SparkSessionBuilder.build(subcommandName(), enforceKryoSerializer = !subcommandName().contains("staging_query"), additionalConfig = extraDeltaConfigs)
+        SparkSessionBuilder.build(subcommandName(),
+                                  enforceKryoSerializer = !subcommandName().contains("staging_query"),
+                                  additionalConfig = extraDeltaConfigs)
       }
     }
 

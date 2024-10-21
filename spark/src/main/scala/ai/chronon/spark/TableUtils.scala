@@ -42,9 +42,9 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 import scala.util.{Failure, Success, Try}
 
 /**
- * Trait to track the table format in use by a Chronon dataset and some utility methods to help
- * retrieve metadata / configure it appropriately at creation time
- */
+  * Trait to track the table format in use by a Chronon dataset and some utility methods to help
+  * retrieve metadata / configure it appropriately at creation time
+  */
 sealed trait Format {
   // Return a sequence for partitions where each partition entry consists of a Map of partition keys to values
   def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]]
@@ -75,7 +75,7 @@ case object Hive extends Format {
     sparkSession.sqlContext
       .sql(s"SHOW PARTITIONS $tableName")
       .collect()
-      .map ( row => parseHivePartition(row.getString(0)) )
+      .map(row => parseHivePartition(row.getString(0)))
   }
 
   def createTableTypeString: String = ""
@@ -102,9 +102,8 @@ case object DeltaLake extends Format {
     val partitionsDf = sparkSession.sqlContext.sql(s"SHOW PARTITIONS $tableName")
     val partitionKeys = partitionsDf.schema.fieldNames
 
-    partitionsDf.collect().map {
-      row =>
-        partitionKeys.indices.map(i => partitionKeys(i) -> row.getString(i) ).toMap
+    partitionsDf.collect().map { row =>
+      partitionKeys.indices.map(i => partitionKeys(i) -> row.getString(i)).toMap
     }
   }
 
@@ -143,12 +142,13 @@ case class TableUtils(sparkSession: SparkSession) {
   val useIceberg: Boolean = sparkSession.conf.get("spark.chronon.table_write.iceberg", "false").toBoolean
 
   // write data using the relevant supported Chronon write format
-  val maybeWriteFormat: Option[Format] = sparkSession.conf.getOption("spark.chronon.table_write.format").map(_.toLowerCase) match {
-    case Some("hive") => Some(Hive)
-    case Some("iceberg") => Some(Iceberg)
-    case Some("delta") => Some(DeltaLake)
-    case _ => None
-  }
+  val maybeWriteFormat: Option[Format] =
+    sparkSession.conf.getOption("spark.chronon.table_write.format").map(_.toLowerCase) match {
+      case Some("hive")    => Some(Hive)
+      case Some("iceberg") => Some(Iceberg)
+      case Some("delta")   => Some(DeltaLake)
+      case _               => None
+    }
 
   val cacheLevel: Option[StorageLevel] = Try {
     if (cacheLevelString == "NONE") None
@@ -223,10 +223,9 @@ case class TableUtils(sparkSession: SparkSession) {
     val partitionSeq = format.partitions(tableName)(sparkSession)
     if (partitionColumnsFilter.isEmpty) {
       partitionSeq
-    }
-    else {
-      partitionSeq.map {
-        partitionMap => partitionMap.filterKeys(key => partitionColumnsFilter.contains(key)).toMap
+    } else {
+      partitionSeq.map { partitionMap =>
+        partitionMap.filterKeys(key => partitionColumnsFilter.contains(key)).toMap
       }
     }
   }
@@ -243,17 +242,16 @@ case class TableUtils(sparkSession: SparkSession) {
     }
 
     val partitionSeq = format.partitions(tableName)(sparkSession)
-    partitionSeq.flatMap {
-      partitionMap =>
-        if (
-          subPartitionsFilter.forall {
-            case (k, v) => partitionMap.get(k).contains(v)
-          }
-        ) {
-          partitionMap.get(partitionColumn)
-        } else {
-          None
+    partitionSeq.flatMap { partitionMap =>
+      if (
+        subPartitionsFilter.forall {
+          case (k, v) => partitionMap.get(k).contains(v)
         }
+      ) {
+        partitionMap.get(partitionColumn)
+      } else {
+        None
+      }
     }
   }
 
@@ -271,7 +269,7 @@ case class TableUtils(sparkSession: SparkSession) {
         false
     }
   }
-  
+
   private def isIcebergTable(tableName: String): Boolean =
     Try {
       sparkSession.read.format("iceberg").load(tableName)
@@ -608,7 +606,7 @@ case class TableUtils(sparkSession: SparkSession) {
     val writeFormat =
       (useIceberg, maybeWriteFormat) match {
         // if explicitly configured Iceberg - we go with that setting
-        case (true, _ ) => Iceberg
+        case (true, _) => Iceberg
         // else if there is a write format we pick that
         case (false, Some(format)) => format
         // fallback to hive (parquet)
