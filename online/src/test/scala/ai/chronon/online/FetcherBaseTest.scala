@@ -22,7 +22,7 @@ import ai.chronon.api.{Builders, GroupBy, MetaData, TimeUnit, Window}
 import ai.chronon.online.Fetcher.{ColumnSpec, Request, Response}
 import ai.chronon.online.FetcherCache.BatchResponses
 import ai.chronon.online.KVStore.TimedValue
-import org.junit.Assert.{assertFalse, assertTrue, fail}
+import org.junit.Assert.{assertFalse, assertTrue, assertSame, fail}
 import org.junit.{Before, Test}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
@@ -226,7 +226,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     val flagStore: FlagStore = (flagName: String, attributes: java.util.Map[String, String]) => {
       flagName match {
         case "enable_entity_validity_check" => true
-        case _ => false
+        case _                              => false
       }
     }
 
@@ -238,7 +238,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
 
   @Test
   def test_checkLateBatchData_ShouldHandle_BatchDataIsLate(): Unit = {
-    val fetcherBase = new FetcherBase(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
+    val fetcherBase = new FetcherBase(mock[KVStore])
 
     // lookup request - 03/20/2024 01:00 UTC
     // batch landing time 03/17/2024 00:00 UTC
@@ -255,7 +255,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
 
   @Test
   def test_checkLateBatchData_ShouldHandle_BatchDataIsNotLate(): Unit = {
-    val fetcherBase = new FetcherBase(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
+    val fetcherBase = new FetcherBase(mock[KVStore])
 
     // lookup request - 03/20/2024 01:00 UTC
     // batch landing time 03/19/2024 00:00 UTC
