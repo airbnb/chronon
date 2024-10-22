@@ -92,7 +92,7 @@ class FetcherBase(kvStore: KVStore,
                                                      servingInfo,
                                                      keys)
       context.distribution("group_by.batchir_decode.latency.millis",
-                              System.currentTimeMillis() - batchResponseDecodeStartTime)
+                           System.currentTimeMillis() - batchResponseDecodeStartTime)
       response
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
@@ -129,7 +129,7 @@ class FetcherBase(kvStore: KVStore,
       val batchIr: FinalBatchIr =
         getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
       context.distribution("group_by.batchir_decode.latency.millis",
-                              System.currentTimeMillis() - batchIrDecodeStartTime)
+                           System.currentTimeMillis() - batchIrDecodeStartTime)
 
       // check if we have late batch data for this GroupBy resulting in degraded counters
       val degradedCount = checkLateBatchData(queryTimeMs,
@@ -139,8 +139,8 @@ class FetcherBase(kvStore: KVStore,
                                              aggregator.perWindowAggs.map(_.window))
       context.count("group_by.degraded_counter.count", degradedCount)
 
+      val allStreamingIrDecodeStartTime = System.currentTimeMillis()
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
-        val allStreamingIrDecodeStartTime = System.currentTimeMillis()
         val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .flatMap { tVal =>
@@ -167,7 +167,7 @@ class FetcherBase(kvStore: KVStore,
           .iterator
 
         context.distribution("group_by.all_streamingir_decode.latency.millis",
-                                System.currentTimeMillis() - allStreamingIrDecodeStartTime)
+                             System.currentTimeMillis() - allStreamingIrDecodeStartTime)
 
         if (debug) {
           val gson = new Gson()
@@ -180,8 +180,9 @@ class FetcherBase(kvStore: KVStore,
         }
 
         val aggregatorStartTime = System.currentTimeMillis()
-        aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
+        val result = aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
         context.distribution("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
+        result
       } else {
         val selectedCodec = servingInfo.groupByOps.dataModel match {
           case DataModel.Events   => servingInfo.valueAvroCodec
@@ -211,6 +212,9 @@ class FetcherBase(kvStore: KVStore,
             })
           .toArray
 
+        context.distribution("group_by.all_streamingir_decode.latency.millis",
+                             System.currentTimeMillis() - allStreamingIrDecodeStartTime)
+
         if (debug) {
           val gson = new Gson()
           logger.info(s"""
@@ -221,7 +225,10 @@ class FetcherBase(kvStore: KVStore,
                          |""".stripMargin)
         }
 
-        aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
+        val aggregatorStartTime = System.currentTimeMillis()
+        val result = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
+        context.distribution("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
+        result
       }
       servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
     }

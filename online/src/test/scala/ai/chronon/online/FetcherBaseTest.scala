@@ -238,35 +238,35 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
 
   @Test
   def test_checkLateBatchData_ShouldHandle_BatchDataIsLate(): Unit = {
-    val baseFetcher = new BaseFetcher(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
+    val fetcherBase = new FetcherBase(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
 
     // lookup request - 03/20/2024 01:00 UTC
     // batch landing time 03/17/2024 00:00 UTC
     val longWindows = Seq(new Window(7, TimeUnit.DAYS), new Window(10, TimeUnit.DAYS))
     val tailHops2d = new Window(2, TimeUnit.DAYS).millis
-    val result = baseFetcher.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, longWindows)
+    val result = fetcherBase.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, longWindows)
     assertSame(result, 1L)
 
     // try the same with a shorter lookback window
     val shortWindows = Seq(new Window(1, TimeUnit.DAYS), new Window(10, TimeUnit.HOURS))
-    val result2 = baseFetcher.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, shortWindows)
+    val result2 = fetcherBase.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, shortWindows)
     assertSame(result2, 0L)
   }
 
   @Test
   def test_checkLateBatchData_ShouldHandle_BatchDataIsNotLate(): Unit = {
-    val baseFetcher = new BaseFetcher(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
+    val fetcherBase = new FetcherBase(mock[KVStore], mock[BiPredicate[String, java.util.Map[String, String]]])
 
     // lookup request - 03/20/2024 01:00 UTC
     // batch landing time 03/19/2024 00:00 UTC
     val longWindows = Seq(new Window(7, TimeUnit.DAYS), new Window(10, TimeUnit.DAYS))
     val tailHops2d = new Window(2, TimeUnit.DAYS).millis
-    val result = baseFetcher.checkLateBatchData(1710896400000L, "myGroupBy", 1710806400000L, tailHops2d, longWindows)
+    val result = fetcherBase.checkLateBatchData(1710896400000L, "myGroupBy", 1710806400000L, tailHops2d, longWindows)
     assertSame(result, 0L)
 
     // try the same with a shorter lookback window
     val shortWindows = Seq(new Window(1, TimeUnit.DAYS), new Window(10, TimeUnit.HOURS))
-    val result2 = baseFetcher.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, shortWindows)
+    val result2 = fetcherBase.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, shortWindows)
     assertSame(result2, 0L)
   }
 }
