@@ -37,6 +37,7 @@ class TableUtilsFormatTest extends AnyFunSuite with BeforeAndAfterEach {
       test(spark)
     } finally {
       spark.stop()
+      configs.keys.foreach(cfg => spark.conf.unset(cfg))
     }
   }
 
