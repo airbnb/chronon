@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.api.{DoubleType, IntType, LongType, StringType, StructField, StructType}
 import ai.chronon.spark.test.TestUtils.makeDf
-import ai.chronon.spark.{DeltaLake, Format, IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{DeltaLake, Format, Hive, IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
@@ -28,8 +28,8 @@ class TableUtilsFormatTest extends AnyFunSuite with BeforeAndAfterEach {
   val formats =
     Table(
       ("format", "configs"),
-      (DeltaLake, deltaConfigMap),
-      //(Hive, hiveConfigMap)
+      //(DeltaLake, deltaConfigMap),
+      (Hive, hiveConfigMap)
     )
 
   private def withSparkSession[T](configs: Map[String, String])(test: SparkSession => T): T = {
