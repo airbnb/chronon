@@ -3,6 +3,7 @@ package ai.chronon.spark.test
 import ai.chronon.api.{DoubleType, IntType, LongType, StringType, StructField, StructType}
 import ai.chronon.spark.test.TestUtils.makeDf
 import ai.chronon.spark.{DeltaLake, Format, IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
+import org.apache.spark.SparkContext
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
@@ -33,11 +34,12 @@ class TableUtilsFormatTest extends AnyFunSuite with BeforeAndAfterEach {
 
   private def withSparkSession[T](configs: Map[String, String])(test: SparkSession => T): T = {
     val spark = SparkSessionBuilder.build("TableUtilsFormatTest", local = true, additionalConfig = Some(configs))
+    val sc = SparkContext.getOrCreate()
     try {
       test(spark)
     } finally {
+      configs.keys.foreach(cfg => sc.getConf.remove(cfg))
       spark.stop()
-      configs.keys.foreach(cfg => spark.conf.unset(cfg))
     }
   }
 
