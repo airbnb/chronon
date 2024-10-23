@@ -156,23 +156,13 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     None,
     Some("1.0.4")
   ),
-  // delta lake has set of deps introduced in 2.12 that weren't
-  // present prior
   "delta-core" -> VersionDependency(
     Seq(
       "io.delta" %% "delta-core"
     ),
     Some("0.6.1"),
-    None,
-    None
-  ),
-  "delta-spark" -> VersionDependency(
-    Seq(
-      "io.delta" %% "delta-spark"
-    ),
-    None,
-    Some("3.1.0"),
-    Some("3.2.1")
+    Some("1.0.1"),
+    Some("2.0.2")
   ),
   "jackson" -> VersionDependency(
     Seq(
@@ -383,7 +373,7 @@ lazy val spark_uber = (project in file("spark"))
     sparkBaseSettings,
     version := git.versionProperty.value,
     crossScalaVersions := supportedVersions,
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "jackson", "spark-all/provided", "delta-core/provided", "delta-spark/provided")
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "jackson", "spark-all/provided", "delta-core/provided")
   )
 
 lazy val spark_embedded = (project in file("spark"))
@@ -392,7 +382,7 @@ lazy val spark_embedded = (project in file("spark"))
     sparkBaseSettings,
     version := git.versionProperty.value,
     crossScalaVersions := supportedVersions,
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "delta-core", "delta-spark"),
+    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "delta-core"),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     Test / test := {}
   )

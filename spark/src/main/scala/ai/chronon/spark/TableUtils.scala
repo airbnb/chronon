@@ -23,11 +23,13 @@ import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
+import io.delta.tables.DeltaTable
 import jnr.ffi.annotations.Synchronized
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
+import org.apache.spark.sql.delta.DeltaLog
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SaveMode, SparkSession}
@@ -95,16 +97,17 @@ case object Iceberg extends Format {
 
 case object DeltaLake extends Format {
   override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
-    // data is structured as a Df with a column per partition key. Every row is a partition with the
-    // column values filled out for the partition keys appropriately.
-    // Eg. df schema = (day: String, hour: String)
-    // rows = [ ("2020-10-10", "00"), ... ]
-    val partitionsDf = sparkSession.sqlContext.sql(s"SHOW PARTITIONS $tableName")
-    val partitionKeys = partitionsDf.schema.fieldNames
+    // delta lake doesn't support the `SHOW PARTITIONS <tableName>` syntax - https://github.com/delta-io/delta/issues/996
+    // there's alternative ways to retrieve partitions using the DeltaLog abstraction which is what we have to lean into
+    // below
+    // first pull table location as that is what we need to pass to the delta log
+    val describeResult = sparkSession.sql(s"DESCRIBE DETAIL $tableName")
+    val tablePath = describeResult.select("location").head().getString(0)
 
-    partitionsDf.collect().map { row =>
-      partitionKeys.indices.map(i => partitionKeys(i) -> row.getString(i)).toMap
-    }
+    val snapshot = DeltaLog.forTable(sparkSession, tablePath).update()
+    val snapshotPartitionsDf = snapshot.allFiles.toDF().select("partitionValues")
+    val partitions = snapshotPartitionsDf.collect().map(r => r.getAs[Map[String, String]](0))
+    partitions
   }
 
   def createTableTypeString: String = "USING DELTA"
