@@ -60,6 +60,8 @@ object MetadataExporter {
             }
           }
         }
+      } else {
+        fileBuffer += currentDir.getAbsolutePath
       }
     }
 
