@@ -617,7 +617,8 @@ case class TableUtils(sparkSession: SparkSession) {
       }
 
     logger.info(
-      s"Choosing format: $writeFormat based on useIceberg flag = $useIceberg and writeFormat: $maybeWriteFormat")
+      s"Choosing format: $writeFormat based on useIceberg flag = $useIceberg and " +
+        s"writeFormat: ${sparkSession.conf.getOption("spark.chronon.table_write.format")}")
     val tableTypString = writeFormat.createTableTypeString
 
     val createFragment =
