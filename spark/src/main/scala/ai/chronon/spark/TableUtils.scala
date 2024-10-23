@@ -616,7 +616,8 @@ case class TableUtils(sparkSession: SparkSession) {
         case (false, None) => Hive
       }
 
-    logger.info(s"Choosing format: $writeFormat based on useIceberg flag = $useIceberg and writeFormat: $maybeWriteFormat")
+    logger.info(
+      s"Choosing format: $writeFormat based on useIceberg flag = $useIceberg and writeFormat: $maybeWriteFormat")
     val tableTypString = writeFormat.createTableTypeString
 
     val createFragment =
