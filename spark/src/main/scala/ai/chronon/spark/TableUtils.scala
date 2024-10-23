@@ -597,6 +597,17 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+  protected[spark] def getWriteFormat: Format = {
+    (useIceberg, maybeWriteFormat) match {
+      // if explicitly configured Iceberg - we go with that setting
+      case (true, _) => Iceberg
+      // else if there is a write format we pick that
+      case (false, Some(format)) => format
+      // fallback to hive (parquet)
+      case (false, None) => Hive
+    }
+  }
+
   private def createTableSql(tableName: String,
                              schema: StructType,
                              partitionColumns: Seq[String],
@@ -606,15 +617,7 @@ case class TableUtils(sparkSession: SparkSession) {
       .filterNot(field => partitionColumns.contains(field.name))
       .map(field => s"`${field.name}` ${field.dataType.catalogString}")
 
-    val writeFormat =
-      (useIceberg, maybeWriteFormat) match {
-        // if explicitly configured Iceberg - we go with that setting
-        case (true, _) => Iceberg
-        // else if there is a write format we pick that
-        case (false, Some(format)) => format
-        // fallback to hive (parquet)
-        case (false, None) => Hive
-      }
+    val writeFormat = getWriteFormat
 
     logger.info(
       s"Choosing format: $writeFormat based on useIceberg flag = $useIceberg and " +

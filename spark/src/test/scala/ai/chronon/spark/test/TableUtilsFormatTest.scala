@@ -2,7 +2,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.api.{DoubleType, IntType, LongType, StringType, StructField, StructType}
 import ai.chronon.spark.test.TestUtils.makeDf
-import ai.chronon.spark.{DeltaLake, Format, Hive, IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{DeltaLake, Format, IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
 import org.apache.spark.SparkContext
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
@@ -13,6 +13,10 @@ import org.scalatest.prop.TableDrivenPropertyChecks._
 
 import scala.util.Try
 
+class TestTableUtils(sparkSession: SparkSession, format: Format) extends TableUtils(sparkSession) {
+  override def getWriteFormat: Format = format
+}
+
 class TableUtilsFormatTest extends AnyFunSuite with BeforeAndAfterEach {
 
   import TableUtilsFormatTest._
@@ -20,16 +24,15 @@ class TableUtilsFormatTest extends AnyFunSuite with BeforeAndAfterEach {
   val deltaConfigMap = Map(
     "spark.sql.extensions" -> "io.delta.sql.DeltaSparkSessionExtension",
     "spark.sql.catalog.spark_catalog" -> "org.apache.spark.sql.delta.catalog.DeltaCatalog",
-    "spark.chronon.table_write.format" -> "delta"
   )
-  val hiveConfigMap = Map("spark.chronon.table_write.format" -> "hive")
+  val hiveConfigMap = Map.empty
 
   // TODO: include Hive + Iceberg support in these tests
   val formats =
     Table(
       ("format", "configs"),
-      //(DeltaLake, deltaConfigMap),
-      (Hive, hiveConfigMap)
+      (DeltaLake, deltaConfigMap),
+      //(Hive, hiveConfigMap)
     )
 
   private def withSparkSession[T](configs: Map[String, String])(test: SparkSession => T): T = {
@@ -46,7 +49,7 @@ class TableUtilsFormatTest extends AnyFunSuite with BeforeAndAfterEach {
   test("test insertion of partitioned data and adding of columns") {
     forAll(formats) { (format, configs) =>
       withSparkSession(configs) { spark =>
-        val tableUtils = TableUtils(spark)
+        val tableUtils = new TestTableUtils(spark, format)
 
         val tableName = s"db.test_table_1_$format"
         spark.sql("CREATE DATABASE IF NOT EXISTS db")
