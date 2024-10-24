@@ -20,7 +20,7 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, ThrowableOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, WindowOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
@@ -84,7 +84,15 @@ class FetcherBase(kvStore: KVStore,
                                       servingInfo,
                                       keys)
     } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
-      getMapResponseFromBatchResponse(batchResponses, batchBytes, servingInfo.outputCodec.decodeMap, servingInfo, keys)
+      val batchResponseDecodeStartTime = System.currentTimeMillis()
+      val response = getMapResponseFromBatchResponse(batchResponses,
+                                                     batchBytes,
+                                                     servingInfo.outputCodec.decodeMap,
+                                                     servingInfo,
+                                                     keys)
+      context.distribution("group_by.batchir_decode.latency.millis",
+                           System.currentTimeMillis() - batchResponseDecodeStartTime)
+      response
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
@@ -104,6 +112,7 @@ class FetcherBase(kvStore: KVStore,
         (batchResponses.isInstanceOf[KvStoreBatchResponse] && batchBytes == null)
       ) {
         if (debug) logger.info("Both batch and streaming data are null")
+        context.distribution("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
         return null
       }
 
@@ -115,9 +124,21 @@ class FetcherBase(kvStore: KVStore,
                        totalResponseValueBytes)
 
       // If caching is enabled, we try to fetch the batch IR from the cache so we avoid the work of decoding it.
+      val batchIrDecodeStartTime = System.currentTimeMillis()
       val batchIr: FinalBatchIr =
         getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
+      context.distribution("group_by.batchir_decode.latency.millis",
+                           System.currentTimeMillis() - batchIrDecodeStartTime)
 
+      // check if we have late batch data for this GroupBy resulting in degraded counters
+      val degradedCount = checkLateBatchData(queryTimeMs,
+                                             servingInfo.groupBy.metaData.name,
+                                             servingInfo.batchEndTsMillis,
+                                             aggregator.tailBufferMillis,
+                                             aggregator.perWindowAggs.map(_.window))
+      context.count("group_by.degraded_counter.count", degradedCount)
+
+      val allStreamingIrDecodeStartTime = System.currentTimeMillis()
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
         val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
@@ -144,6 +165,9 @@ class FetcherBase(kvStore: KVStore,
           .toArray
           .iterator
 
+        context.distribution("group_by.all_streamingir_decode.latency.millis",
+                             System.currentTimeMillis() - allStreamingIrDecodeStartTime)
+
         if (debug) {
           val gson = new Gson()
           logger.info(s"""
@@ -154,7 +178,10 @@ class FetcherBase(kvStore: KVStore,
                          |""".stripMargin)
         }
 
-        aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
+        val aggregatorStartTime = System.currentTimeMillis()
+        val result = aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
+        context.distribution("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
+        result
       } else {
         val selectedCodec = servingInfo.groupByOps.dataModel match {
           case DataModel.Events   => servingInfo.valueAvroCodec
@@ -184,6 +211,9 @@ class FetcherBase(kvStore: KVStore,
             })
           .toArray
 
+        context.distribution("group_by.all_streamingir_decode.latency.millis",
+                             System.currentTimeMillis() - allStreamingIrDecodeStartTime)
+
         if (debug) {
           val gson = new Gson()
           logger.info(s"""
@@ -194,7 +224,10 @@ class FetcherBase(kvStore: KVStore,
                          |""".stripMargin)
         }
 
-        aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
+        val aggregatorStartTime = System.currentTimeMillis()
+        val result = aggregator.lambdaAggregateFinalized(batchIr, streamingRows.iterator, queryTimeMs, mutations)
+        context.distribution("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
+        result
       }
       servingInfo.outputCodec.fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
     }
@@ -695,6 +728,24 @@ class FetcherBase(kvStore: KVStore,
 
       responseByQuery
     }
+  }
+
+  // This method checks if there's a longer gap between the batch end and the query time than the tail buffer duration
+  // This indicates we're missing batch data for too long and if there are groupBy aggregations that include a longer
+  // lookback window than the tail buffer duration, it means that we are serving degraded counters.
+  private[online] def checkLateBatchData(queryTimeMs: Long,
+                                         groupByName: String,
+                                         batchEndTsMillis: Long,
+                                         tailBufferMillis: Long,
+                                         windows: Seq[Window]): Long = {
+    val groupByContainsLongerWinThanTailBuffer = windows.exists(p => p.millis > tailBufferMillis)
+    if (queryTimeMs > (tailBufferMillis + batchEndTsMillis) && groupByContainsLongerWinThanTailBuffer) {
+      logger.warn(
+        s"Encountered a request for $groupByName at $queryTimeMs which is more than $tailBufferMillis ms after the " +
+          s"batch dataset landing at $batchEndTsMillis. ")
+      1L
+    } else
+      0L
   }
 }
 
