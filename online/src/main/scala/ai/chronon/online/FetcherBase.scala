@@ -84,7 +84,6 @@ class FetcherBase(kvStore: KVStore,
                                       servingInfo,
                                       keys)
     } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
-
       val batchResponseDecodeStartTime = System.currentTimeMillis()
       val response = getMapResponseFromBatchResponse(batchResponses,
                                                      batchBytes,
@@ -741,7 +740,7 @@ class FetcherBase(kvStore: KVStore,
                                          windows: Seq[Window]): Long = {
     val groupByContainsLongerWinThanTailBuffer = windows.exists(p => p.millis > tailBufferMillis)
     if (queryTimeMs > (tailBufferMillis + batchEndTsMillis) && groupByContainsLongerWinThanTailBuffer) {
-      println(
+      logger.warn(
         s"Encountered a request for $groupByName at $queryTimeMs which is more than $tailBufferMillis ms after the " +
           s"batch dataset landing at $batchEndTsMillis. ")
       1L
