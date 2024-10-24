@@ -54,14 +54,14 @@ object MetadataExporter {
         if (files != null) {
           for (file <- files) {
             if (file.isFile) {
-              fileBuffer += file.getAbsolutePath
+              fileBuffer += file.getPath
             } else if (file.isDirectory) {
               traverseDirectory(file)
             }
           }
         }
       } else {
-        fileBuffer += currentDir.getAbsolutePath
+        fileBuffer += currentDir.getPath
       }
     }
 
