@@ -115,7 +115,7 @@ object MetadataExporter {
     }
     val failuresAndTraces = processSuccess.filter(!_._2)
     logger.info(
-      s"Successfully processed ${processSuccess.filter(_._2).length} from $inputPath \n " +
+      s"Successfully processed ${processSuccess.filter(_._2).length} from $inputPath to $outputPath \n " +
         s"Failed to process ${failuresAndTraces.length}: \n ${failuresAndTraces.mkString("\n")}")
   }
 
