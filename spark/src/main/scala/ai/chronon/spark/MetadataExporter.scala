@@ -107,7 +107,11 @@ object MetadataExporter {
     val processSuccess = getFilePaths(inputPath).map { path =>
       try {
         val data = enrichMetadata(path)
-        writeOutput(data, path, outputPath)
+        if (path.contains(GROUPBY_PATH_SUFFIX)) {
+          writeOutput(data, path, outputPath + GROUPBY_PATH_SUFFIX)
+        } else if (path.contains(JOIN_PATH_SUFFIX)) {
+          writeOutput(data, path, outputPath + JOIN_PATH_SUFFIX)
+        }
         (path, true, None)
       } catch {
         case exception: Throwable => (path, false, ExceptionUtils.getStackTrace(exception))
