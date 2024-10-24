@@ -95,11 +95,13 @@ object MetadataExporter {
 
   def writeOutput(data: String, path: String, outputDirectory: String): Unit = {
     Files.createDirectories(Paths.get(outputDirectory))
+    logger.info(s"[test111] create directory ${outputDirectory}")
     val file = new File(outputDirectory + "/" + path.split("/").last)
     file.createNewFile()
     val writer = new BufferedWriter(new FileWriter(file))
     writer.write(data)
     writer.close()
+    logger.info(s"[test111] file path ${file.getAbsolutePath}")
     logger.info(s"${path} : Wrote to output directory successfully")
   }
 
