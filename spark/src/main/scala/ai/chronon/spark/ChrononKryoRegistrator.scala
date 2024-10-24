@@ -147,9 +147,9 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$8",
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5",
       "scala.collection.immutable.ArraySeq$ofRef",
-      "org.apache.spark.sql.catalyst.expressions.GenericInternalRow",
-      "org.apache.spark.sql.delta.stats.DeltaFileStatistics",
-      "org.apache.spark.sql.delta.actions.AddFile"
+      "org.apache.spark.sql.catalyst.expressions.GenericInternalRow"
+//      "org.apache.spark.sql.delta.stats.DeltaFileStatistics",
+//      "org.apache.spark.sql.delta.actions.AddFile"
     )
     names.foreach { name =>
       try {
