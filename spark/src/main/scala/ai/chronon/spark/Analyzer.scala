@@ -247,11 +247,8 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
-    val aggMetadata = if (groupByConf.aggregations != null) {
-      groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
-    } else {
-      schema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
-    }
+    val aggMetadata = schema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
+
     val keySchemaMap = groupBy.keySchema.map { field =>
       field.name -> SparkConversions.toChrononType(field.name, field.dataType)
     }.toMap
