@@ -81,6 +81,7 @@ class MetadataExporterTest extends TestCase {
     val confResource = getClass.getResource("/")
     val tmpDir: File = Files.createTempDir()
     MetadataExporter.run(confResource.getPath, tmpDir.getAbsolutePath)
+    print(s"[test111] ${tmpDir.getAbsolutePath}")
     printFilesInDirectory(s"${confResource.getPath}/joins/team")
     printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
     // Read the files.
