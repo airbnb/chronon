@@ -147,23 +147,34 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$8",
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5",
       "scala.collection.immutable.ArraySeq$ofRef",
-      "org.apache.spark.sql.catalyst.expressions.GenericInternalRow",
-      "org.apache.spark.sql.delta.stats.DeltaFileStatistics",
-      "org.apache.spark.sql.delta.actions.AddFile"
+      "org.apache.spark.sql.catalyst.expressions.GenericInternalRow"
     )
-    names.foreach { name =>
-      try {
-        kryo.register(Class.forName(name))
-        kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
-      } catch {
-        case _: ClassNotFoundException => // do nothing
-      }
-    }
+    names.foreach(name => doRegister(name, kryo))
 
     kryo.register(classOf[Array[Array[Array[AnyRef]]]])
     kryo.register(classOf[Array[Array[AnyRef]]])
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
     kryo.register(classOf[Array[ItemSketchSerializable]])
     kryo.register(classOf[ItemsSketchIR[AnyRef]], new ItemsSketchKryoSerializer[AnyRef])
+  }
+
+  def doRegister(name: String, kryo: Kryo): Unit = {
+    try {
+      kryo.register(Class.forName(name))
+      kryo.register(Class.forName(s"[L$name;")) // represents array of a type to jvm
+    } catch {
+      case _: ClassNotFoundException => // do nothing
+    }
+  }
+}
+
+class ChrononDeltaLakeKryoRegistrator extends ChrononKryoRegistrator {
+  override def registerClasses(kryo: Kryo): Unit = {
+    super.registerClasses(kryo)
+    val additionalDeltaNames = Seq(
+      "org.apache.spark.sql.delta.stats.DeltaFileStatistics",
+      "org.apache.spark.sql.delta.actions.AddFile"
+    )
+    additionalDeltaNames.foreach(name => doRegister(name, kryo))
   }
 }
