@@ -22,7 +22,6 @@ import org.apache.spark.SPARK_VERSION
 
 import java.io.File
 import java.util.logging.Logger
-import scala.reflect.io.Path
 import scala.util.Properties
 
 object SparkSessionBuilder {
@@ -30,6 +29,7 @@ object SparkSessionBuilder {
 
   private val warehouseId = java.util.UUID.randomUUID().toString.takeRight(6)
   private val DefaultWarehouseDir = new File("/tmp/chronon/spark-warehouse_" + warehouseId)
+  val FormatTestEnvVar: String = "format_test"
 
   def expandUser(path: String): String = path.replaceFirst("~", System.getProperty("user.home"))
   // we would want to share locally generated warehouse during CI testing
@@ -38,6 +38,23 @@ object SparkSessionBuilder {
             localWarehouseLocation: Option[String] = None,
             additionalConfig: Option[Map[String, String]] = None,
             enforceKryoSerializer: Boolean = true): SparkSession = {
+
+    // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
+    // between Spark sessions created in existing chronon tests that need the hive format and some specific tests
+    // that require a format override like delta lake.
+    val formatConfigs = sys.env.get(FormatTestEnvVar) match {
+      case Some("deltalake") =>
+        Map(
+          "spark.sql.extensions" -> "io.delta.sql.DeltaSparkSessionExtension",
+          "spark.sql.catalog.spark_catalog" -> "org.apache.spark.sql.delta.catalog.DeltaCatalog",
+          "spark.chronon.table_write.format" -> "delta"
+        )
+      case _ => Map.empty
+    }
+
+    // tack on format configs with additional configs
+    val mergedConfigs = additionalConfig.getOrElse(Map.empty) ++ formatConfigs
+
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
@@ -65,9 +82,8 @@ object SparkSessionBuilder {
         .config("spark.kryoserializer.buffer.max", "2000m")
         .config("spark.kryo.referenceTracking", "false")
     }
-    additionalConfig.foreach { configMap =>
-      configMap.foreach { config => baseBuilder = baseBuilder.config(config._1, config._2) }
-    }
+
+    mergedConfigs.foreach { config => baseBuilder = baseBuilder.config(config._1, config._2) }
 
     if (SPARK_VERSION.startsWith("2")) {
       // Otherwise files left from deleting the table with the same name result in test failures
