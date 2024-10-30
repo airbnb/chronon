@@ -400,7 +400,7 @@ lazy val flink = (project in file("flink"))
   )
 
 lazy val service = (project in file("service"))
-  //.dependsOn(online.%("compile->compile;test->test"))
+  .dependsOn(online)
   .settings(
     libraryDependencies ++= Seq(
       "io.vertx" % "vertx-core" % "4.5.10",
@@ -408,7 +408,10 @@ lazy val service = (project in file("service"))
       "io.vertx" % "vertx-config" % "4.5.10",
       "ch.qos.logback" % "logback-classic" % "1.5.6",
       "org.slf4j" % "slf4j-api" % "2.0.12",
-      "com.typesafe" % "config" % "1.4.3"
+      "com.typesafe" % "config" % "1.4.3",
+      // force netty versions -> without this we conflict with the versions pulled in from
+      // our online module's spark deps which causes the web-app to not serve up content
+      "io.netty" % "netty-all" % "4.1.111.Final",
     ),
     // Assembly settings
     assembly / assemblyJarName := s"${name.value}-${version.value}.jar",
