@@ -80,7 +80,7 @@ enablePlugins(GitVersioning, GitBranchPrompt)
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded, service)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -397,6 +397,40 @@ lazy val flink = (project in file("flink"))
                                        "spark-all/provided",
                                        "scala-parallel-collections",
                                        "flink")
+  )
+
+lazy val service = (project in file("service"))
+  //.dependsOn(online.%("compile->compile;test->test"))
+  .settings(
+    libraryDependencies ++= Seq(
+      "io.vertx" % "vertx-core" % "4.5.10",
+      "io.vertx" % "vertx-web" % "4.5.10",
+      "io.vertx" % "vertx-config" % "4.5.10",
+      "ch.qos.logback" % "logback-classic" % "1.5.6",
+      "org.slf4j" % "slf4j-api" % "2.0.12",
+      "com.typesafe" % "config" % "1.4.3"
+    ),
+    // Assembly settings
+    assembly / assemblyJarName := s"${name.value}-${version.value}.jar",
+
+    // Main class configuration
+    // For now we use the built-in vertx launcher, we can extend this in the future
+    Compile / mainClass := Some("io.vertx.core.Launcher"),
+    assembly / mainClass := Some("io.vertx.core.Launcher"),
+
+    // Merge strategy for assembly
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
+      case PathList("META-INF", xs @ _*) => MergeStrategy.first
+      case PathList("javax", "activation", xs @ _*) => MergeStrategy.first
+      case PathList("org", "apache", "logging", xs @ _*) => MergeStrategy.first
+      case PathList("org", "slf4j", xs @ _*) => MergeStrategy.first
+      case "application.conf" => MergeStrategy.concat
+      case "reference.conf" => MergeStrategy.concat
+      case x =>
+        val oldStrategy = (assembly / assemblyMergeStrategy).value
+        oldStrategy(x)
+    }
   )
 
 // Build Sphinx documentation
