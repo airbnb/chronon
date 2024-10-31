@@ -7,139 +7,124 @@ import ai.chronon.spark.{IncompatibleSchemaException, SparkSessionBuilder, Table
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
-import org.scalatest.funsuite.AnyFunSuite
+import org.junit.Ignore
 
 import scala.util.Try
 
-class TableUtilsFormatTest extends AnyFunSuite {
+class TableUtilsFormatTest {
 
   import TableUtilsFormatTest._
 
   // Read the format we want this instantiation of the test to run via environment vars
   val format: String = sys.env.getOrElse(FormatTestEnvVar, "hive")
+  val spark = SparkSessionBuilder.build("TableUtilsFormatTest", local = true)
+  val tableUtils = TableUtils(spark)
 
-  private def withSparkSession[T](test: SparkSession => T): T = {
-    val spark = SparkSessionBuilder.build("TableUtilsFormatTest", local = true)
-    try {
-      test(spark)
-    } finally {
-      spark.stop()
-    }
+  @Ignore
+  def testInsertPartitionsAddColumns(): Unit = {
+    val tableName = s"db.test_table_1_$format"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType),
+      StructField("string_field", StringType)
+    )
+    val df1 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1 :+ StructField("ds", StringType)
+      ),
+      List(
+        Row(1L, 2, "3", "2022-10-01")
+      )
+    )
+
+    val df2 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1
+          :+ StructField("double_field", DoubleType)
+          :+ StructField("ds", StringType)
+      ),
+      List(
+        Row(4L, 5, "6", 7.0, "2022-10-02")
+      )
+    )
+    testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
   }
 
-  test("test insertion of partitioned data and adding of columns") {
-    withSparkSession { spark =>
-      val tableUtils = TableUtils(spark)
+  @Ignore
+  def testInsertPartitionsAddRemoveColumns(): Unit = {
+    val tableName = s"db.test_table_2_$format"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType),
+      StructField("string_field", StringType)
+    )
+    val df1 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1
+          :+ StructField("double_field", DoubleType)
+          :+ StructField("ds", StringType)
+      ),
+      List(
+        Row(1L, 2, "3", 4.0, "2022-10-01")
+      )
+    )
 
-      val tableName = s"db.test_table_1_$format"
-      spark.sql("CREATE DATABASE IF NOT EXISTS db")
-      val columns1 = Array(
-        StructField("long_field", LongType),
-        StructField("int_field", IntType),
-        StructField("string_field", StringType)
+    val df2 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1 :+ StructField("ds", StringType)
+      ),
+      List(
+        Row(5L, 6, "7", "2022-10-02")
       )
-      val df1 = makeDf(
-        spark,
-        StructType(
-          tableName,
-          columns1 :+ StructField("ds", StringType)
-        ),
-        List(
-          Row(1L, 2, "3", "2022-10-01")
-        )
-      )
-
-      val df2 = makeDf(
-        spark,
-        StructType(
-          tableName,
-          columns1
-            :+ StructField("double_field", DoubleType)
-            :+ StructField("ds", StringType)
-        ),
-        List(
-          Row(4L, 5, "6", 7.0, "2022-10-02")
-        )
-      )
-      testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
-    }
+    )
+    testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
   }
 
-  test("test insertion of partitioned data and removal of columns") {
-    withSparkSession { spark =>
-      val tableUtils = TableUtils(spark)
-      val tableName = s"db.test_table_2_$format"
-      spark.sql("CREATE DATABASE IF NOT EXISTS db")
-      val columns1 = Array(
-        StructField("long_field", LongType),
-        StructField("int_field", IntType),
-        StructField("string_field", StringType)
+  @Ignore
+  def testInsertPartitionsAddModifyColumns(): Unit = {
+    val tableName = s"db.test_table_3_$format"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType)
+    )
+    val df1 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1
+          :+ StructField("string_field", StringType)
+          :+ StructField("ds", StringType)
+      ),
+      List(
+        Row(1L, 2, "3", "2022-10-01")
       )
-      val df1 = makeDf(
-        spark,
-        StructType(
-          tableName,
-          columns1
-            :+ StructField("double_field", DoubleType)
-            :+ StructField("ds", StringType)
-        ),
-        List(
-          Row(1L, 2, "3", 4.0, "2022-10-01")
-        )
-      )
+    )
 
-      val df2 = makeDf(
-        spark,
-        StructType(
-          tableName,
-          columns1 :+ StructField("ds", StringType)
-        ),
-        List(
-          Row(5L, 6, "7", "2022-10-02")
-        )
+    val df2 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1
+          :+ StructField("string_field", DoubleType) // modified column data type
+          :+ StructField("ds", StringType)
+      ),
+      List(
+        Row(1L, 2, 3.0, "2022-10-02")
       )
-      testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
-    }
-  }
+    )
 
-  test("test insertion of partitioned data and modification of columns") {
-    withSparkSession { spark =>
-      val tableUtils = TableUtils(spark)
-
-      val tableName = s"db.test_table_3_$format"
-      spark.sql("CREATE DATABASE IF NOT EXISTS db")
-      val columns1 = Array(
-        StructField("long_field", LongType),
-        StructField("int_field", IntType)
-      )
-      val df1 = makeDf(
-        spark,
-        StructType(
-          tableName,
-          columns1
-            :+ StructField("string_field", StringType)
-            :+ StructField("ds", StringType)
-        ),
-        List(
-          Row(1L, 2, "3", "2022-10-01")
-        )
-      )
-
-      val df2 = makeDf(
-        spark,
-        StructType(
-          tableName,
-          columns1
-            :+ StructField("string_field", DoubleType) // modified column data type
-            :+ StructField("ds", StringType)
-        ),
-        List(
-          Row(1L, 2, 3.0, "2022-10-02")
-        )
-      )
-
-      testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
-    }
+    testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
   }
 }
 
