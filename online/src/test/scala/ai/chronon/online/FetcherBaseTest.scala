@@ -17,12 +17,12 @@
 package ai.chronon.online
 
 import ai.chronon.aggregator.windowing.FinalBatchIr
-import ai.chronon.api.Extensions.GroupByOps
-import ai.chronon.api.{Builders, GroupBy, MetaData}
+import ai.chronon.api.Extensions.{GroupByOps, WindowOps}
+import ai.chronon.api.{Builders, GroupBy, MetaData, TimeUnit, Window}
 import ai.chronon.online.Fetcher.{ColumnSpec, Request, Response}
 import ai.chronon.online.FetcherCache.BatchResponses
 import ai.chronon.online.KVStore.TimedValue
-import org.junit.Assert.{assertFalse, assertTrue, fail}
+import org.junit.Assert.{assertFalse, assertTrue, assertSame, fail}
 import org.junit.{Before, Test}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito._
@@ -226,7 +226,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     val flagStore: FlagStore = (flagName: String, attributes: java.util.Map[String, String]) => {
       flagName match {
         case "enable_entity_validity_check" => true
-        case _ => false
+        case _                              => false
       }
     }
 
@@ -234,5 +234,39 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     val fetcherBaseWithFlagStore = spy(new FetcherBase(kvStore, flagStore = flagStore))
 
     assertTrue(fetcherBaseWithFlagStore.isEntityValidityCheckEnabled)
+  }
+
+  @Test
+  def testCheckLateBatchDataShouldHandleBatchDataIsLate(): Unit = {
+    val fetcherBase = new FetcherBase(mock[KVStore])
+
+    // lookup request - 03/20/2024 01:00 UTC
+    // batch landing time 03/17/2024 00:00 UTC
+    val longWindows = Seq(new Window(7, TimeUnit.DAYS), new Window(10, TimeUnit.DAYS))
+    val tailHops2d = new Window(2, TimeUnit.DAYS).millis
+    val result = fetcherBase.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, longWindows)
+    assertSame(result, 1L)
+
+    // try the same with a shorter lookback window
+    val shortWindows = Seq(new Window(1, TimeUnit.DAYS), new Window(10, TimeUnit.HOURS))
+    val result2 = fetcherBase.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, shortWindows)
+    assertSame(result2, 0L)
+  }
+
+  @Test
+  def testCheckLateBatchDataShouldHandleBatchDataIsNotLate(): Unit = {
+    val fetcherBase = new FetcherBase(mock[KVStore])
+
+    // lookup request - 03/20/2024 01:00 UTC
+    // batch landing time 03/19/2024 00:00 UTC
+    val longWindows = Seq(new Window(7, TimeUnit.DAYS), new Window(10, TimeUnit.DAYS))
+    val tailHops2d = new Window(2, TimeUnit.DAYS).millis
+    val result = fetcherBase.checkLateBatchData(1710896400000L, "myGroupBy", 1710806400000L, tailHops2d, longWindows)
+    assertSame(result, 0L)
+
+    // try the same with a shorter lookback window
+    val shortWindows = Seq(new Window(1, TimeUnit.DAYS), new Window(10, TimeUnit.HOURS))
+    val result2 = fetcherBase.checkLateBatchData(1710896400000L, "myGroupBy", 1710633600000L, tailHops2d, shortWindows)
+    assertSame(result2, 0L)
   }
 }
