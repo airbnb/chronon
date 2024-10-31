@@ -27,7 +27,7 @@ class TableUtilsFormatTest extends AnyFunSuite {
     }
   }
 
-  ignore("test insertion of partitioned data and adding of columns") {
+  test("test insertion of partitioned data and adding of columns") {
     withSparkSession { spark =>
       val tableUtils = TableUtils(spark)
 
@@ -65,7 +65,7 @@ class TableUtilsFormatTest extends AnyFunSuite {
     }
   }
 
-  ignore("test insertion of partitioned data and removal of columns") {
+  test("test insertion of partitioned data and removal of columns") {
     withSparkSession { spark =>
       val tableUtils = TableUtils(spark)
       val tableName = s"db.test_table_2_$format"
@@ -102,7 +102,7 @@ class TableUtilsFormatTest extends AnyFunSuite {
     }
   }
 
-  ignore("test insertion of partitioned data and modification of columns") {
+  test("test insertion of partitioned data and modification of columns") {
     withSparkSession { spark =>
       val tableUtils = TableUtils(spark)
 

@@ -47,7 +47,7 @@ import scala.util.{Failure, Success, Try}
   * Trait to track the table format in use by a Chronon dataset and some utility methods to help
   * retrieve metadata / configure it appropriately at creation time
   */
-sealed trait Format {
+trait Format {
   // Return a sequence for partitions where each partition entry consists of a Map of partition keys to values
   def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]]
 
