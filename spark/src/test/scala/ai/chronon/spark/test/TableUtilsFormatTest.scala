@@ -7,7 +7,7 @@ import ai.chronon.spark.{IncompatibleSchemaException, SparkSessionBuilder, Table
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
-import org.junit.{Ignore, Test}
+import org.junit.Test
 
 import scala.util.Try
 
@@ -55,7 +55,7 @@ class TableUtilsFormatTest {
     testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
   }
 
-  @Ignore
+  @Test
   def testInsertPartitionsAddRemoveColumns(): Unit = {
     val tableName = s"db.test_table_2_$format"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
@@ -90,7 +90,7 @@ class TableUtilsFormatTest {
     testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
   }
 
-  @Ignore
+  @Test
   def testInsertPartitionsAddModifyColumns(): Unit = {
     val tableName = s"db.test_table_3_$format"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
