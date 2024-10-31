@@ -237,7 +237,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   }
 
   @Test
-  def test_checkLateBatchData_ShouldHandle_BatchDataIsLate(): Unit = {
+  def testCheckLateBatchDataShouldHandleBatchDataIsLate(): Unit = {
     val fetcherBase = new FetcherBase(mock[KVStore])
 
     // lookup request - 03/20/2024 01:00 UTC
