@@ -164,7 +164,7 @@ object TableUtilsFormatTest {
     tableUtils.insertPartitions(df2, tableName, autoExpand = true)
 
     // check that we wrote out a table in the right format
-    val readTableFormat = tableUtils.tableFormat(tableName).toString
+    val readTableFormat = tableUtils.tableReadFormat(tableName).toString
     assertTrue(s"Mismatch in table format: $readTableFormat; expected: $format", readTableFormat.toLowerCase == format)
 
     // check we have all the partitions written
