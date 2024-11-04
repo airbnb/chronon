@@ -412,6 +412,10 @@ lazy val service = (project in file("service"))
       // force netty versions -> without this we conflict with the versions pulled in from
       // our online module's spark deps which causes the web-app to not serve up content
       "io.netty" % "netty-all" % "4.1.111.Final",
+      "junit" % "junit" % "4.13.2" % Test,
+      "com.novocode" % "junit-interface" % "0.11" % Test,
+      "io.vertx" % "vertx-unit" % "4.5.10" % Test,
+      "org.mockito" % "mockito-core" % "3.4.0" % Test
     ),
     // Assembly settings
     assembly / assemblyJarName := s"${name.value}-${version.value}.jar",
