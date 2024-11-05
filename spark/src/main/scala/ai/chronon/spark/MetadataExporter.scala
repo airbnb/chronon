@@ -17,16 +17,17 @@
 package ai.chronon.spark
 
 import org.slf4j.LoggerFactory
+
 import java.io.{BufferedWriter, File, FileWriter}
 import ai.chronon.api
 import ai.chronon.api.{DataType, ThriftJsonCodec}
+import java.nio.file.{Files, Paths, SimpleFileVisitor, FileVisitResult}
+import java.nio.file.attribute.BasicFileAttributes
+
+import collection.mutable.ListBuffer
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.lang.exception.ExceptionUtils
-
-import java.nio.file.Files
-import java.nio.file.Paths
-import scala.collection.immutable.Map
 
 object MetadataExporter {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -42,10 +43,30 @@ object MetadataExporter {
 
   def getFilePaths(inputPath: String): Seq[String] = {
     val rootDir = new File(inputPath)
-    rootDir.listFiles
-      .filter(!_.isFile)
-      .flatMap(_.listFiles())
-      .map(_.getPath)
+    if (!rootDir.exists()) {
+      throw new Exception(f"Directory $inputPath does not exist!")
+    }
+    val fileBuffer = new ListBuffer[String]()
+
+    def traverseDirectory(currentDir: File): Unit = {
+      if (currentDir.isDirectory) {
+        val files = currentDir.listFiles()
+        if (files != null) {
+          for (file <- files) {
+            if (file.isFile) {
+              fileBuffer += file.getAbsolutePath
+            } else if (file.isDirectory) {
+              traverseDirectory(file)
+            }
+          }
+        }
+      } else {
+        fileBuffer += currentDir.getAbsolutePath
+      }
+    }
+
+    traverseDirectory(rootDir)
+    fileBuffer.toList
   }
 
   def enrichMetadata(path: String): String = {
@@ -56,11 +77,13 @@ object MetadataExporter {
         if (path.contains(GROUPBY_PATH_SUFFIX)) {
           val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
           configData + { "features" -> analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap) }
-        } else {
+        } else if (path.contains(JOIN_PATH_SUFFIX)) {
           val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
           val joinAnalysis = analyzer.analyzeJoin(join, validateTablePermission = false)
           val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
           configData + { "features" -> featureMetadata }
+        } else {
+          throw new Exception(f"Unknown entity type for $path")
         }
       } catch {
         case exception: Throwable =>
@@ -80,11 +103,15 @@ object MetadataExporter {
     logger.info(s"${path} : Wrote to output directory successfully")
   }
 
-  def processEntities(inputPath: String, outputPath: String, suffix: String): Unit = {
-    val processSuccess = getFilePaths(inputPath + suffix).map { path =>
+  def processEntities(inputPath: String, outputPath: String): Unit = {
+    val processSuccess = getFilePaths(inputPath).map { path =>
       try {
         val data = enrichMetadata(path)
-        writeOutput(data, path, outputPath + suffix)
+        if (path.contains(GROUPBY_PATH_SUFFIX)) {
+          writeOutput(data, path, outputPath + GROUPBY_PATH_SUFFIX)
+        } else if (path.contains(JOIN_PATH_SUFFIX)) {
+          writeOutput(data, path, outputPath + JOIN_PATH_SUFFIX)
+        }
         (path, true, None)
       } catch {
         case exception: Throwable => (path, false, ExceptionUtils.getStackTrace(exception))
@@ -92,12 +119,11 @@ object MetadataExporter {
     }
     val failuresAndTraces = processSuccess.filter(!_._2)
     logger.info(
-      s"Successfully processed ${processSuccess.filter(_._2).length} from $suffix \n " +
+      s"Successfully processed ${processSuccess.filter(_._2).length} from $inputPath \n " +
         s"Failed to process ${failuresAndTraces.length}: \n ${failuresAndTraces.mkString("\n")}")
   }
 
   def run(inputPath: String, outputPath: String): Unit = {
-    processEntities(inputPath, outputPath, GROUPBY_PATH_SUFFIX)
-    processEntities(inputPath, outputPath, JOIN_PATH_SUFFIX)
+    processEntities(inputPath, outputPath)
   }
 }
