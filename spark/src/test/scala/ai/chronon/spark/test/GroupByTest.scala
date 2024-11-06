@@ -304,7 +304,7 @@ class GroupByTest {
     aggregationsMetadata
       .map(agg => s"${agg.name} => ${agg.columnType}")
       .foreach(s => assertTrue(expectedSchema.contains(s)))
-    logger.info("[test]:" + aggregationsMetadata.map(agg => s"${agg.name} => ${agg.columnType}").mkString(","))
+    println("[test]:" + aggregationsMetadata.map(agg => s"${agg.name} => ${agg.columnType}").mkString(","))
     // feature name is constructed by input_column_operation_window
     // assert feature columns attributes mapping
     aggregationsMetadata.foreach(aggregation => {
