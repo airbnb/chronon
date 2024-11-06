@@ -5,6 +5,7 @@ import ai.chronon.service.handlers.FeaturesRouter;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.http.HttpServer;
+import io.vertx.core.http.HttpServerOptions;
 import io.vertx.ext.web.Router;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +50,11 @@ public class WebServiceVerticle extends AbstractVerticle {
         });
 
         // Start HTTP server
-        server = vertx.createHttpServer();
+        HttpServerOptions httpOptions =
+                new HttpServerOptions()
+                        .setTcpKeepAlive(true)
+                        .setIdleTimeout(60);
+        server = vertx.createHttpServer(httpOptions);
         server.requestHandler(router)
                 .listen(port)
                 .onSuccess(server -> {
