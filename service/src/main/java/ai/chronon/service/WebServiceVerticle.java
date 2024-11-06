@@ -1,7 +1,7 @@
 package ai.chronon.service;
 
 import ai.chronon.online.Api;
-import ai.chronon.service.handlers.FeaturesHandler;
+import ai.chronon.service.handlers.FeaturesRouter;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.core.http.HttpServer;
@@ -34,7 +34,7 @@ public class WebServiceVerticle extends AbstractVerticle {
         // Define routes
 
         // Set up sub-routes for the various feature retrieval apis
-        router.route("/v1/features/*").subRouter(FeaturesHandler.createFeaturesRoutes(vertx, api));
+        router.route("/v1/features/*").subRouter(FeaturesRouter.createFeaturesRoutes(vertx, api));
 
         // Health check route
         router.get("/ping").handler(ctx -> {
