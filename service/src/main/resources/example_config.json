@@ -1,0 +1,10 @@
+{
+  "online.jar": "./quickstart/mongo-online-impl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar",
+  "online.class": "ai.chronon.quickstart.online.ChrononMongoOnlineImpl",  
+  "online.api.props": {
+    "user": "admin",
+    "password": "admin",
+    "host": "localhost",
+    "port": "27017"
+  }
+}

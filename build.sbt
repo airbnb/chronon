@@ -412,6 +412,9 @@ lazy val service = (project in file("service"))
       // force netty versions -> without this we conflict with the versions pulled in from
       // our online module's spark deps which causes the web-app to not serve up content
       "io.netty" % "netty-all" % "4.1.111.Final",
+      // wire up metrics using micro meter and statsd
+      "io.vertx" % "vertx-micrometer-metrics" % "4.5.10",
+      "io.micrometer" % "micrometer-registry-statsd" % "1.13.6",
       "junit" % "junit" % "4.13.2" % Test,
       "com.novocode" % "junit-interface" % "0.11" % Test,
       "org.mockito" % "mockito-core" % "5.12.0" % Test,
@@ -421,9 +424,9 @@ lazy val service = (project in file("service"))
     assembly / assemblyJarName := s"${name.value}-${version.value}.jar",
 
     // Main class configuration
-    // For now we use the built-in vertx launcher, we can extend this in the future
-    Compile / mainClass := Some("io.vertx.core.Launcher"),
-    assembly / mainClass := Some("io.vertx.core.Launcher"),
+    // We use a custom launcher to help us wire up our statsd metrics
+    Compile / mainClass := Some("ai.chronon.service.ChrononServiceLauncher"),
+    assembly / mainClass := Some("ai.chronon.service.ChrononServiceLauncher"),
 
     // Merge strategy for assembly
     assembly / assemblyMergeStrategy := {
