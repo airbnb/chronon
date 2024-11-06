@@ -7,6 +7,8 @@ import io.vertx.ext.web.handler.BodyHandler;
 import static ai.chronon.service.handlers.FeaturesHandler.EntityType.GroupBy;
 import static ai.chronon.service.handlers.FeaturesHandler.EntityType.Join;
 
+// Configures the routes for our get features endpoints
+// We support bulkGets of groupBys and bulkGets of joins
 public class FeaturesRouter {
 
     public static Router createFeaturesRoutes(Vertx vertx, Api api) {
