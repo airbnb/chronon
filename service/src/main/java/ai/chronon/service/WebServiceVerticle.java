@@ -11,11 +11,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Entry point for the Chronon webservice. We choose to use just 1 verticle for now as it allows us to
- * keep things simple and we don't need to scale / independently deploy different endpoint routes.
- * To run:
- * $ sbt "project service" clean assembly
- * $ java -jar service/target/scala-2.12/service-vertx_service-0.0.86-SNAPSHOT.jar run ai.chronon.service.WebServiceVerticle -Dserver.port=9000 -Donline.jar=/Users/piyush/workspace/airbnb-chronon/quickstart/mongo-online-impl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar -Donline.class=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
+ * Entry point for the Chronon webservice. We wire up our API routes and configure and launch our HTTP service here.
+ * We choose to use just 1 verticle for now as it allows us to keep things simple and we don't need to scale /
+ * independently deploy different endpoint routes.
  */
 public class WebServiceVerticle extends AbstractVerticle {
     private static final Logger logger = LoggerFactory.getLogger(WebServiceVerticle.class);
