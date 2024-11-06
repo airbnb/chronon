@@ -6,6 +6,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * PoJo capturing the response we return back as part of /v1/features/groupby and /v1/features/join endpoints
+ * when the individual bulkGet lookups were either all successful or partially successful.
+ */
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class GetFeaturesResponse {
     private final List<Result> results;
