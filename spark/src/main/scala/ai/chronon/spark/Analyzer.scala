@@ -247,6 +247,8 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
+    println(f"[test]: ${schema.toArray.mkString(", ")}")
+
     val aggMetadata = schema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
 
     val keySchemaMap = groupBy.keySchema.map { field =>
