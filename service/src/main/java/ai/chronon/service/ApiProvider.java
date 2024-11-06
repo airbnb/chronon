@@ -11,11 +11,18 @@ import java.net.URLClassLoader;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * Responsible for loading the relevant concrete Chronon Api implementation and providing that
+ * for use in the Web service code. We follow similar semantics as the Driver to configure this:
+ * online.jar - Jar that contains the implementation of the Api
+ * online.class - Name of the Api class
+ * online.api.props - Structure that contains fields that are loaded and passed to the Api implementation
+ * during instantiation to configure it (e.g. connection params)
+ */
 public class ApiProvider {
-    public final Api api;
     private static final Logger logger = LoggerFactory.getLogger(ApiProvider.class);
 
-    public ApiProvider(ConfigStore configStore) throws Exception {
+    public static Api buildApi(ConfigStore configStore) throws Exception {
         Optional<String> maybeJarPath = configStore.getOnlineJar();
         Optional<String> maybeClass = configStore.getOnlineClass();
         if (maybeJarPath.isEmpty() || maybeClass.isEmpty()) {
@@ -35,7 +42,7 @@ public class ApiProvider {
         URL jarUrl = jarFile.toURI().toURL();
         URLClassLoader apiClassLoader = new URLClassLoader(
                 new URL[]{jarUrl},
-                this.getClass().getClassLoader()
+                ApiProvider.class.getClassLoader()
         );
 
         // Load and instantiate the API implementation
@@ -49,6 +56,6 @@ public class ApiProvider {
         Map<String, String> propsMap = configStore.getOnlineApiProps();
         scala.collection.immutable.Map<String, String> scalaPropsMap = ScalaVersionSpecificCollectionsConverter.convertJavaMapToScala(propsMap);
 
-        this.api = (Api) apiClass.getConstructors()[0].newInstance(scalaPropsMap);
+        return (Api) apiClass.getConstructors()[0].newInstance(scalaPropsMap);
     }
 }

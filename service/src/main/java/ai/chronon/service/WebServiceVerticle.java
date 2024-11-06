@@ -25,8 +25,7 @@ public class WebServiceVerticle extends AbstractVerticle {
     @Override
     public void start(Promise<Void> startPromise) throws Exception {
         ConfigStore cfgStore = new ConfigStore(vertx);
-        ApiProvider apiProvider = new ApiProvider(cfgStore);
-        startHttpServer(cfgStore.getServerPort(), cfgStore.encodeConfig(), apiProvider.api, startPromise);
+        startHttpServer(cfgStore.getServerPort(), cfgStore.encodeConfig(), ApiProvider.buildApi(cfgStore), startPromise);
     }
 
     protected void startHttpServer(int port, String configJsonString, Api api, Promise<Void> startPromise) throws Exception {
