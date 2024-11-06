@@ -308,7 +308,7 @@ class GroupByTest {
     // feature name is constructed by input_column_operation_window
     // assert feature columns attributes mapping
     aggregationsMetadata.foreach(aggregation => {
-      //assertTrue(aggregation.name.contains(aggregation.operation.toLowerCase))
+      assertTrue(aggregation.name.contains(aggregation.operation.toLowerCase))
       //assertTrue(aggregation.name.contains(aggregation.inputColumn.toLowerCase))
     })
   }
