@@ -172,7 +172,7 @@ class Analyzer(tableUtils: TableUtils,
 
   }
 
-  def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType): AggregationMetadata = {
+  private def toAggregationMetadata(aggPart: AggregationPart, columnType: DataType): AggregationMetadata = {
     AggregationMetadata(aggPart.outputColumnName,
                         columnType,
                         aggPart.operation.toString.toLowerCase,
@@ -180,8 +180,9 @@ class Analyzer(tableUtils: TableUtils,
                         aggPart.inputColumn.toLowerCase)
   }
 
-  def toAggregationMetadata(columnName: String, columnType: DataType): AggregationMetadata = {
-    AggregationMetadata(columnName, columnType, "No operation", "Unbounded", columnName)
+  private def toAggregationMetadata(columnName: String, columnType: DataType, hasDerivation: Boolean = false): AggregationMetadata = {
+    val operation = if (hasDerivation) "Derivation" else "No Operation"
+    AggregationMetadata(columnName, columnType, operation, "Unbounded", columnName)
   }
 
   def analyzeGroupBy(
@@ -248,7 +249,7 @@ class Analyzer(tableUtils: TableUtils,
     }
 
     val aggMetadata = if (groupByConf.hasDerivations || groupByConf.aggregations == null) {
-      schema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
+      schema.map { tup => toAggregationMetadata(tup.name, tup.fieldType, groupByConf.hasDerivations) }.toArray
     } else {
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
     }
