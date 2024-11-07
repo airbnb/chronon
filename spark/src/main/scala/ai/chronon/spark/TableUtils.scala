@@ -230,19 +230,10 @@ case class TableUtils(sparkSession: SparkSession) {
   val blockingCacheEviction: Boolean =
     sparkSession.conf.get("spark.chronon.table_write.cache.blocking", "false").toBoolean
 
-  private lazy val tableReadFormatProvider: FormatProvider = {
-    sparkSession.conf.getOption("spark.chronon.table_read.format_provider") match {
+  private lazy val tableFormatProvider: FormatProvider = {
+    sparkSession.conf.getOption("spark.chronon.table.format_provider") match {
       case Some(clazzName) =>
         // Load object instead of class/case class
-        Class.forName(clazzName).getField("MODULE$").get(null).asInstanceOf[FormatProvider]
-      case None =>
-        DefaultFormatProvider(sparkSession)
-    }
-  }
-
-  private lazy val tableWriteFormatProvider: FormatProvider = {
-    sparkSession.conf.getOption("spark.chronon.table_write.format_provider") match {
-      case Some(clazzName) =>
         Class.forName(clazzName).getField("MODULE$").get(null).asInstanceOf[FormatProvider]
       case None =>
         DefaultFormatProvider(sparkSession)
@@ -305,7 +296,7 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def tableReadFormat(tableName: String): Format = tableReadFormatProvider.readFormat(tableName)
+  def tableReadFormat(tableName: String): Format = tableFormatProvider.readFormat(tableName)
 
   // return all specified partition columns in a table in format of Map[partitionName, PartitionValue]
   def allPartitions(tableName: String, partitionColumnsFilter: Seq[String] = Seq.empty): Seq[Map[String, String]] = {
@@ -667,7 +658,7 @@ case class TableUtils(sparkSession: SparkSession) {
       .filterNot(field => partitionColumns.contains(field.name))
       .map(field => s"`${field.name}` ${field.dataType.catalogString}")
 
-    val writeFormat = tableWriteFormatProvider.writeFormat(tableName)
+    val writeFormat = tableFormatProvider.writeFormat(tableName)
 
     val tableTypString = writeFormat.createTableTypeString
 
