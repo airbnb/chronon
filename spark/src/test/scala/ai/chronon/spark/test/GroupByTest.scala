@@ -19,7 +19,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window, Derivation}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
@@ -344,33 +344,25 @@ class GroupByTest {
   }
 
   @Test
-  def testGroupByDerivation(): Unit = {
+  def testGroupByDerivationAnalyzer(): Unit = {
     lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource(30)
-    val testName = "unit_analyze_test_item_no_agg"
     val tableUtils = TableUtils(spark)
-    val namespace = "test_analyzer_testGroupByNoAggregationAnalyzer"
-    val groupByConf = Builders.GroupBy(
-      sources = Seq(source),
-      keyColumns = Seq("item"),
-      aggregations = null,
-      metaData = Builders.MetaData(name = testName, namespace = namespace, team = "chronon"),
-      backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
-        new Window(60, TimeUnit.DAYS))
-    )
+    val namespace = "test_analyzer_testGroupByDerivation"
+    val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace, Seq.empty, derivations = Seq(Derivation(name = "*", expression = "*")))
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val (aggregationsMetadata, _) =
       new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
-
-    print(aggregationsMetadata)
-    assertTrue(aggregationsMetadata.length == 2)
-
-    val columns = aggregationsMetadata.map(a => a.name -> a.columnType).toMap
-    assertEquals(Map(
-      "time_spent_ms" -> LongType,
-      "price" -> DoubleType
-    ),
-      columns)
+    val outputTable = backfill(name = "unit_analyze_test_item_views",
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils)
+    val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")
+    val expectedSchema = df.schema.fields.map(field => s"${field.name} => ${field.dataType}")
+    aggregationsMetadata
+      .map(agg => s"${agg.name} => ${agg.columnType}")
+      .foreach(s => assertTrue(expectedSchema.contains(s)))
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
@@ -471,7 +463,8 @@ class GroupByTest {
   def getSampleGroupBy(name: String,
                        source: Source,
                        namespace: String,
-                       additionalAgg: Seq[Aggregation] = Seq.empty): ai.chronon.api.GroupBy = {
+                       additionalAgg: Seq[Aggregation] = Seq.empty,
+                       derivations: Seq[Derivation] = Seq.empty): ai.chronon.api.GroupBy = {
     lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     Builders.GroupBy(
@@ -490,7 +483,8 @@ class GroupByTest {
       ) ++ additionalAgg,
       metaData = Builders.MetaData(name = name, namespace = namespace, team = "chronon"),
       backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
-                                                         new Window(60, TimeUnit.DAYS))
+                                                         new Window(60, TimeUnit.DAYS)),
+      derivations = derivations
     )
   }
 
