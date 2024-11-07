@@ -343,6 +343,36 @@ class GroupByTest {
                  columns)
   }
 
+  @Test
+  def testGroupByDerivation(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val (source, endPartition) = createTestSource(30)
+    val testName = "unit_analyze_test_item_no_agg"
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_analyzer_testGroupByNoAggregationAnalyzer"
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = null,
+      metaData = Builders.MetaData(name = testName, namespace = namespace, team = "chronon"),
+      backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+        new Window(60, TimeUnit.DAYS))
+    )
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val (aggregationsMetadata, _) =
+      new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+
+    print(aggregationsMetadata)
+    assertTrue(aggregationsMetadata.length == 2)
+
+    val columns = aggregationsMetadata.map(a => a.name -> a.columnType).toMap
+    assertEquals(Map(
+      "time_spent_ms" -> LongType,
+      "price" -> DoubleType
+    ),
+      columns)
+  }
+
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
   @Test
   def testFirstKLastKTopKBottomKApproxUniqueCount(): Unit = {

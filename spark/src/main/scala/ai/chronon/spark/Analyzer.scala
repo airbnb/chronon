@@ -247,7 +247,7 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
-    val aggMetadata = if (groupByConf.hasDerivations || groupByConf.aggregation == null) {
+    val aggMetadata = if (groupByConf.hasDerivations || groupByConf.aggregations == null) {
       schema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
     } else {
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
