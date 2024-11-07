@@ -16,7 +16,7 @@
 
 package ai.chronon.spark
 
-import java.io.{PrintWriter, StringWriter}
+import java.io.{PrintWriter, Serializable, StringWriter}
 import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
@@ -65,7 +65,7 @@ trait Format {
   * cases such as leveraging different library versions from what we support in the Chronon project (e.g. newer delta lake)
   * as well as working with custom internal company logic / checks.
   */
-trait FormatProvider {
+trait FormatProvider extends Serializable {
   def readFormat(tableName: String): Format
   def writeFormat(tableName: String): Format
 }
