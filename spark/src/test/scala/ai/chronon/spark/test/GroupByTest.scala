@@ -19,7 +19,8 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window, Derivation}
+import ai.chronon.api.{Aggregation, Builders, Constants, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
+import ai.chronon.api.Builders.Derivation
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
@@ -349,7 +350,8 @@ class GroupByTest {
     val (source, endPartition) = createTestSource(30)
     val tableUtils = TableUtils(spark)
     val namespace = "test_analyzer_testGroupByDerivation"
-    val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace, Seq.empty, derivations = Seq(Derivation(name = "*", expression = "*")))
+    val derivation = Builders.Derivation(name = "*", expression = "*")
+    val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace, Seq.empty, derivations = Seq(derivation))
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val (aggregationsMetadata, _) =
       new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
