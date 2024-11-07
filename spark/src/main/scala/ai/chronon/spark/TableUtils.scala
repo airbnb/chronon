@@ -59,9 +59,9 @@ trait Format {
 }
 
 /**
- * Dynamically provide table Format depending on table name.
- * This supports reading/writing tables with heterogeneous formats.
- */
+  * Dynamically provide table Format depending on table name.
+  * This supports reading/writing tables with heterogeneous formats.
+  */
 trait FormatProvider {
   def get(tableName: String): Format
 }
@@ -158,20 +158,21 @@ case class TableUtils(sparkSession: SparkSession) {
 
   val useIceberg: Boolean = sparkSession.conf.get("spark.chronon.table_write.iceberg", "false").toBoolean
 
-  private lazy val tableReadFormatProvider: FormatProvider =  {
+  private lazy val tableReadFormatProvider: FormatProvider = {
     sparkSession.conf.getOption("spark.chronon.table_read.format_provider") match {
       case Some(clazzName) =>
         // Load object instead of class/case class
         Class.forName(clazzName).getField("MODULE$").get(null).asInstanceOf[FormatProvider]
-      case None => (tableName: String) => {
-        if (isIcebergTable(tableName)) {
-          Iceberg
-        } else if (isDeltaTable(tableName)) {
-          DeltaLake
-        } else {
-          Hive
+      case None =>
+        (tableName: String) => {
+          if (isIcebergTable(tableName)) {
+            Iceberg
+          } else if (isDeltaTable(tableName)) {
+            DeltaLake
+          } else {
+            Hive
+          }
         }
-      }
     }
   }
 
@@ -180,24 +181,25 @@ case class TableUtils(sparkSession: SparkSession) {
       case Some(clazzName) =>
         val clazz = Class.forName(clazzName)
         clazz.getField("MODULE$").get(null).asInstanceOf[FormatProvider]
-      case None => (_: String) => {
-        // Default provider just looks for any default config.
-        // Unlike read table, these write tables might not already exist.
-        val maybeFormat = sparkSession.conf.getOption("spark.chronon.table_write.format").map(_.toLowerCase) match {
-          case Some("hive") => Some(Hive)
-          case Some("iceberg") => Some(Iceberg)
-          case Some("delta") => Some(DeltaLake)
-          case _ => None
+      case None =>
+        (_: String) => {
+          // Default provider just looks for any default config.
+          // Unlike read table, these write tables might not already exist.
+          val maybeFormat = sparkSession.conf.getOption("spark.chronon.table_write.format").map(_.toLowerCase) match {
+            case Some("hive")    => Some(Hive)
+            case Some("iceberg") => Some(Iceberg)
+            case Some("delta")   => Some(DeltaLake)
+            case _               => None
+          }
+          (useIceberg, maybeFormat) match {
+            // if explicitly configured Iceberg - we go with that setting
+            case (true, _) => Iceberg
+            // else if there is a write format we pick that
+            case (false, Some(format)) => format
+            // fallback to hive (parquet)
+            case (false, None) => Hive
+          }
         }
-        (useIceberg, maybeFormat) match {
-          // if explicitly configured Iceberg - we go with that setting
-          case (true, _) => Iceberg
-          // else if there is a write format we pick that
-          case (false, Some(format)) => format
-          // fallback to hive (parquet)
-          case (false, None) => Hive
-        }
-      }
     }
   }
 
