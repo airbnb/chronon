@@ -417,7 +417,8 @@ lazy val service = (project in file("service"))
       "io.micrometer" % "micrometer-registry-statsd" % "1.13.6",
       "junit" % "junit" % "4.13.2" % Test,
       "com.novocode" % "junit-interface" % "0.11" % Test,
-      "org.mockito" % "mockito-core" % "5.12.0" % Test,
+      // use mockito 4.x as Chronon builds on Java8
+      "org.mockito" % "mockito-core" % "4.11.0" % Test,
       "io.vertx" % "vertx-unit" % "4.5.10" % Test,
     ),
     // Assembly settings
