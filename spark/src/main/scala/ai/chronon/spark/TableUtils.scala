@@ -59,17 +59,25 @@ trait Format {
 }
 
 /**
-  * Dynamically provide table Format depending on table name.
+  * Dynamically provide the read / write table format depending on table name.
   * This supports reading/writing tables with heterogeneous formats.
+  * This approach enables users to override and specify a custom format provider if needed. This is useful in
+  * cases such as leveraging different library versions from what we support in the Chronon project (e.g. newer delta lake)
+  * as well as working with custom internal company logic / checks.
   */
 trait FormatProvider {
-  def get(tableName: String): Format
+  def readFormat(tableName: String): Format
+  def writeFormat(tableName: String): Format
 }
 
-case class DefaultReadFormatProvider(sparkSession: SparkSession) extends FormatProvider {
+/**
+  * Default format provider implementation based on default Chronon supported open source library versions.
+  */
+case class DefaultFormatProvider(sparkSession: SparkSession) extends FormatProvider {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
-  override def get(tableName: String): Format = {
+  // Checks the format of a given table by checking the format it's written out as
+  override def readFormat(tableName: String): Format = {
     if (isIcebergTable(tableName)) {
       Iceberg
     } else if (isDeltaTable(tableName)) {
@@ -105,10 +113,14 @@ case class DefaultReadFormatProvider(sparkSession: SparkSession) extends FormatP
         false
     }
   }
-}
 
-case class DefaultWriteFormatProvider(sparkSession: SparkSession) extends FormatProvider {
-  override def get(tableName: String): Format = {
+  // Return the write format to use for the given table. The logic at a high level is:
+  // 1) If the user specifies the spark.chronon.table_write.iceberg - we go with Iceberg
+  // 2) If the user specifies a spark.chronon.table_write.format as Hive (parquet), Iceberg or Delta we go with their choice
+  // 3) Default to Hive (parquet)
+  // Note the table_write.iceberg is supported for legacy reasons. Specifying "iceberg" in spark.chronon.table_write.format
+  // is preferred as the latter conf also allows us to support additional formats
+  override def writeFormat(tableName: String): Format = {
     val useIceberg: Boolean = sparkSession.conf.get("spark.chronon.table_write.iceberg", "false").toBoolean
 
     // Default provider just looks for any default config.
@@ -167,13 +179,11 @@ case object Iceberg extends Format {
   def fileFormatString(format: String): String = ""
 }
 
+// The Delta Lake format is compatible with the Delta lake and Spark versions currently supported by the project.
+// Attempting to use newer Delta lake library versions (e.g. 3.2 which works with Spark 3.5) results in errors:
+// java.lang.NoSuchMethodError: 'org.apache.spark.sql.delta.Snapshot org.apache.spark.sql.delta.DeltaLog.update(boolean)'
+// In such cases, you should implement your own FormatProvider built on the newer Delta lake version
 case object DeltaLake extends Format {
-  // Although Chronon OSS supports delta with provided dep,
-  // the code is written with Delta 2.0x compatible with Spark 3.2.
-  // When user brings Delta 3.2 compatible with Spark 3.5, there's runtime error
-  // runtime: java.lang.NoSuchMethodError: 'org.apache.spark.sql.delta.Snapshot org.apache.spark.sql.delta.DeltaLog.update(boolean)'
-  // Delta 3.2 has DeltaLog.update(boolean, Option[Long]).
-  // In such situation, consider implement your own FormatProvider
   override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
     // delta lake doesn't support the `SHOW PARTITIONS <tableName>` syntax - https://github.com/delta-io/delta/issues/996
     // there's alternative ways to retrieve partitions using the DeltaLog abstraction which is what we have to lean into
@@ -226,7 +236,7 @@ case class TableUtils(sparkSession: SparkSession) {
         // Load object instead of class/case class
         Class.forName(clazzName).getField("MODULE$").get(null).asInstanceOf[FormatProvider]
       case None =>
-        DefaultReadFormatProvider(sparkSession)
+        DefaultFormatProvider(sparkSession)
     }
   }
 
@@ -235,7 +245,7 @@ case class TableUtils(sparkSession: SparkSession) {
       case Some(clazzName) =>
         Class.forName(clazzName).getField("MODULE$").get(null).asInstanceOf[FormatProvider]
       case None =>
-        DefaultWriteFormatProvider(sparkSession)
+        DefaultFormatProvider(sparkSession)
     }
   }
 
@@ -295,7 +305,7 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def tableReadFormat(tableName: String): Format = tableReadFormatProvider.get(tableName)
+  def tableReadFormat(tableName: String): Format = tableReadFormatProvider.readFormat(tableName)
 
   // return all specified partition columns in a table in format of Map[partitionName, PartitionValue]
   def allPartitions(tableName: String, partitionColumnsFilter: Seq[String] = Seq.empty): Seq[Map[String, String]] = {
@@ -657,7 +667,7 @@ case class TableUtils(sparkSession: SparkSession) {
       .filterNot(field => partitionColumns.contains(field.name))
       .map(field => s"`${field.name}` ${field.dataType.catalogString}")
 
-    val writeFormat = tableWriteFormatProvider.get(tableName)
+    val writeFormat = tableWriteFormatProvider.writeFormat(tableName)
 
     val tableTypString = writeFormat.createTableTypeString
 
