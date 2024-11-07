@@ -66,6 +66,47 @@ trait FormatProvider {
   def get(tableName: String): Format
 }
 
+case class DefaultFormatProvider(sparkSession: SparkSession) extends FormatProvider {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
+
+  override def get(tableName: String): Format = {
+    if (isIcebergTable(tableName)) {
+      Iceberg
+    } else if (isDeltaTable(tableName)) {
+      DeltaLake
+    } else {
+      Hive
+    }
+  }
+
+  private def isIcebergTable(tableName: String): Boolean =
+    Try {
+      sparkSession.read.format("iceberg").load(tableName)
+    } match {
+      case Success(_) =>
+        logger.info(s"IcebergCheck: Detected iceberg formatted table $tableName.")
+        true
+      case _ =>
+        logger.info(s"IcebergCheck: Checked table $tableName is not iceberg format.")
+        false
+    }
+
+  private def isDeltaTable(tableName: String): Boolean = {
+    Try {
+      val describeResult = sparkSession.sql(s"DESCRIBE DETAIL $tableName")
+      describeResult.select("format").first().getString(0).toLowerCase
+    } match {
+      case Success(format) =>
+        logger.info(s"Delta check: Successfully read the format of table: $tableName as $format")
+        format == "delta"
+      case _ =>
+        // the describe detail calls fails for Iceberg tables
+        logger.info(s"Delta check: Unable to read the format of the table $tableName using DESCRIBE DETAIL")
+        false
+    }
+  }
+}
+
 case object Hive extends Format {
   def parseHivePartition(pstring: String): Map[String, String] = {
     pstring
@@ -164,23 +205,14 @@ case class TableUtils(sparkSession: SparkSession) {
         // Load object instead of class/case class
         Class.forName(clazzName).getField("MODULE$").get(null).asInstanceOf[FormatProvider]
       case None =>
-        (tableName: String) => {
-          if (isIcebergTable(tableName)) {
-            Iceberg
-          } else if (isDeltaTable(tableName)) {
-            DeltaLake
-          } else {
-            Hive
-          }
-        }
+        DefaultFormatProvider(sparkSession)
     }
   }
 
   private lazy val tableWriteFormatProvider: FormatProvider = {
     sparkSession.conf.getOption("spark.chronon.table_write.format_provider") match {
       case Some(clazzName) =>
-        val clazz = Class.forName(clazzName)
-        clazz.getField("MODULE$").get(null).asInstanceOf[FormatProvider]
+        Class.forName(clazzName).getField("MODULE$").get(null).asInstanceOf[FormatProvider]
       case None =>
         (_: String) => {
           // Default provider just looks for any default config.
@@ -299,33 +331,6 @@ case class TableUtils(sparkSession: SparkSession) {
       }
     }
   }
-
-  private def isDeltaTable(tableName: String): Boolean = {
-    Try {
-      val describeResult = sparkSession.sql(s"DESCRIBE DETAIL $tableName")
-      describeResult.select("format").first().getString(0).toLowerCase
-    } match {
-      case Success(format) =>
-        logger.info(s"Delta check: Successfully read the format of table: $tableName as $format")
-        format == "delta"
-      case _ =>
-        // the describe detail calls fails for Iceberg tables
-        logger.info(s"Delta check: Unable to read the format of the table $tableName using DESCRIBE DETAIL")
-        false
-    }
-  }
-
-  private def isIcebergTable(tableName: String): Boolean =
-    Try {
-      sparkSession.read.format("iceberg").load(tableName)
-    } match {
-      case Success(_) =>
-        logger.info(s"IcebergCheck: Detected iceberg formatted table $tableName.")
-        true
-      case _ =>
-        logger.info(s"IcebergCheck: Checked table $tableName is not iceberg format.")
-        false
-    }
 
   private def getIcebergPartitions(tableName: String): Seq[String] = {
     val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
