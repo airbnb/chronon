@@ -25,7 +25,7 @@ public class ApiProvider {
     public static Api buildApi(ConfigStore configStore) throws Exception {
         Optional<String> maybeJarPath = configStore.getOnlineJar();
         Optional<String> maybeClass = configStore.getOnlineClass();
-        if (maybeJarPath.isEmpty() || maybeClass.isEmpty()) {
+        if (!(maybeJarPath.isPresent() && maybeClass.isPresent())) {
             throw new IllegalArgumentException("Both 'online.jar' and 'online.class' configs must be set.");
         }
 

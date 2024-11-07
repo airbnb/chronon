@@ -15,6 +15,7 @@ import io.vertx.ext.web.RoutingContext;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -60,7 +61,7 @@ public class FeaturesHandler implements Handler<RoutingContext> {
         JTry<List<JavaRequest>> maybeRequest = parseJavaRequest(entityName, ctx.body());
         if (! maybeRequest.isSuccess()) {
             logger.error("Unable to parse request body", maybeRequest.getException());
-            List<String> errorMessages = List.of(maybeRequest.getException().getMessage());
+            List<String> errorMessages = Collections.singletonList(maybeRequest.getException().getMessage());
             ctx.response()
                     .setStatusCode(400)
                     .putHeader("content-type", "application/json")
@@ -98,7 +99,7 @@ public class FeaturesHandler implements Handler<RoutingContext> {
         });
 
         maybeFeatureResponses.onFailure(err -> {
-            List<String> failureMessages = List.of(err.getMessage());
+            List<String> failureMessages = Collections.singletonList(err.getMessage());
             ctx.response()
                     .setStatusCode(500)
                     .putHeader("content-type", "application/json")
@@ -111,7 +112,7 @@ public class FeaturesHandler implements Handler<RoutingContext> {
     }
 
     public static JTry<List<JavaRequest>> parseJavaRequest(String name, RequestBody body) {
-        TypeReference<List<Map<String, Object>>> ref = new TypeReference<>() { };
+        TypeReference<List<Map<String, Object>>> ref = new TypeReference<List<Map<String, Object>>>() { };
         try {
             List<Map<String, Object>> entityKeysList = objectMapper.readValue(body.asString(), ref);
             List<JavaRequest> requests = entityKeysList.stream().map(m -> new JavaRequest(name, m)).collect(Collectors.toList());

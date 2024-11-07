@@ -11,6 +11,7 @@ import io.vertx.micrometer.Label;
 import io.vertx.micrometer.MicrometerMetricsFactory;
 import io.vertx.micrometer.MicrometerMetricsOptions;
 
+import java.util.HashMap;
 import java.util.Map;
 
 /**
@@ -29,11 +30,11 @@ public class ChrononServiceLauncher extends Launcher {
             private final String statsdHost = Metrics.Context$.MODULE$.statsHost();
             private final String statsdPort = String.valueOf(Metrics.Context$.MODULE$.statsPort());
 
-            final Map<String, String> statsProps = Map.of(
-                    prefix() + "." + "port", statsdPort,
-                    prefix() + "." + "host", statsdHost,
-                    prefix() + "." + "protocol", Integer.parseInt(statsdPort) == 0 ? "UDS_DATAGRAM" : "UDP"
-                    );
+            final Map<String, String> statsProps = new HashMap<String, String>() {{
+                put(prefix() + "." + "port", statsdPort);
+                put(prefix() + "." + "host", statsdHost);
+                put(prefix() + "." + "protocol", Integer.parseInt(statsdPort) == 0 ? "UDS_DATAGRAM" : "UDP");
+            }};
 
             @Override
             public String get(String key) {

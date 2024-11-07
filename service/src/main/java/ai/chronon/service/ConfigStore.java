@@ -4,6 +4,7 @@ import io.vertx.config.ConfigRetriever;
 import io.vertx.core.Vertx;
 import io.vertx.core.json.JsonObject;
 
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -50,7 +51,7 @@ public class ConfigStore {
     public Map<String, String> getOnlineApiProps() {
         JsonObject apiProps = jsonConfig.getJsonObject(ONLINE_API_PROPS);
         if (apiProps == null) {
-            return Map.of();
+            return new HashMap<String, String>();
         }
 
         return apiProps.stream().collect(Collectors.toMap(
