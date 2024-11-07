@@ -180,7 +180,9 @@ class Analyzer(tableUtils: TableUtils,
                         aggPart.inputColumn.toLowerCase)
   }
 
-  private def toAggregationMetadata(columnName: String, columnType: DataType, hasDerivation: Boolean = false): AggregationMetadata = {
+  private def toAggregationMetadata(columnName: String,
+                                    columnType: DataType,
+                                    hasDerivation: Boolean = false): AggregationMetadata = {
     val operation = if (hasDerivation) "Derivation" else "No Operation"
     AggregationMetadata(columnName, columnType, operation, "Unbounded", columnName)
   }
