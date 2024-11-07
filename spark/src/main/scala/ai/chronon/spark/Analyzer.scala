@@ -247,7 +247,7 @@ class Analyzer(tableUtils: TableUtils,
            |""".stripMargin)
     }
 
-    val aggMetadata = if (groupByConf.hasDerivations) {
+    val aggMetadata = if (groupByConf.isSetBackfillStartDate && groupByConf.hasDerivations) {
       schema.map { tup => toAggregationMetadata(tup.name, tup.fieldType) }.toArray
     } else {
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
