@@ -364,8 +364,12 @@ class GroupByTest {
 
     // When the groupBy has derivations, the aggMetadata will only contains the name and type, which will be the same with the schema in output table.
     aggregationsMetadata
-      .map(agg => s"${agg.name} => ${agg.columnType}")
-      .foreach(s => assertTrue(expectedSchema.contains(s)))
+      .foreach(
+        agg => {
+          assertTrue(expectedSchema.contains(s"${agg.name} => ${agg.columnType})"))
+          assertTrue(agg.operation == "Derivation")
+        }
+      )
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
