@@ -79,6 +79,7 @@ jobs:
                   when: on_fail
 
     # run these separately as we need a isolated JVM to not have Spark session settings interfere with other runs
+    # long term goal is to refactor the current testing spark session builder and avoid adding new single test to CI
     "Scala 13 -- Delta Lake Format Tests":
       executor: docker_baseimg_executor
       steps:

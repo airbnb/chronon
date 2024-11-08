@@ -108,7 +108,7 @@ case class DefaultFormatProvider(sparkSession: SparkSession) extends FormatProvi
         logger.info(s"Delta check: Successfully read the format of table: $tableName as $format")
         format == "delta"
       case _ =>
-        // the describe detail calls fails for Iceberg tables
+        // the describe detail calls fails for Delta Lake tables
         logger.info(s"Delta check: Unable to read the format of the table $tableName using DESCRIBE DETAIL")
         false
     }
