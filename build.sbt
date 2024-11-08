@@ -420,6 +420,8 @@ lazy val service = (project in file("service"))
       // use mockito 4.x as Chronon builds on Java8
       "org.mockito" % "mockito-core" % "4.11.0" % Test,
       "io.vertx" % "vertx-unit" % "4.5.10" % Test,
+      // add codegen dep to help with mockito errors
+      "io.vertx" % "vertx-codegen" % "4.5.10" % Test,
     ),
     // Assembly settings
     assembly / assemblyJarName := s"${name.value}-${version.value}.jar",
