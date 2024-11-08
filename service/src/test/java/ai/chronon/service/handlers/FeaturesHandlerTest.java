@@ -21,8 +21,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
 import static ai.chronon.service.model.GetFeaturesResponse.Result.Status.Failure;
@@ -73,13 +72,17 @@ public class FeaturesHandlerTest {
         String validRequestBody = "[{\"user_id\":\"123\"}]";
         when(requestBody.asString()).thenReturn(validRequestBody);
 
-        JavaRequest request = new JavaRequest(TEST_GROUP_BY, Map.of("user_id", "123"));
-        Map<String, Object> featureMap = Map.of("feature_1", 12, "feature_2", 23.3, "feature_3", "USD");
+        JavaRequest request = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "123"));
+        Map<String, Object> featureMap = new HashMap<String, Object>() {{
+            put("feature_1", 12);
+            put("feature_2", 23.3);
+            put("feature_3", "USD");
+        }};
         JTry<Map<String, Object>> values = JTry.success(featureMap);
         JavaResponse mockResponse = new JavaResponse(request, values);
 
         CompletableFuture<List<JavaResponse>> futureResponse =
-                CompletableFuture.completedFuture(List.of(mockResponse));
+                CompletableFuture.completedFuture(Collections.singletonList(mockResponse));
         when(mockFetcher.fetchJoin(anyList())).thenReturn(futureResponse);
 
         // Capture the response that will be sent
@@ -97,7 +100,7 @@ public class FeaturesHandlerTest {
             // Verify response format
             JsonObject actualResponse = new JsonObject(responseCaptor.getValue());
             GetFeaturesResponse.Result expectedResult = GetFeaturesResponse.Result.builder().status(Success).features(featureMap).build();
-            validateSuccessfulResponse(actualResponse, List.of(expectedResult), context);
+            validateSuccessfulResponse(actualResponse, Collections.singletonList(expectedResult), context);
             async.complete();
         });
     }
@@ -136,8 +139,8 @@ public class FeaturesHandlerTest {
         String validRequestBody = "[{\"user_id\":\"123\"}]";
         when(requestBody.asString()).thenReturn(validRequestBody);
 
-        CompletableFuture<List<JavaResponse>> futureResponse =
-                CompletableFuture.failedFuture(new RuntimeException("Error in KV store lookup"));
+        CompletableFuture<List<JavaResponse>> futureResponse = new CompletableFuture<>();
+        futureResponse.completeExceptionally(new RuntimeException("Error in KV store lookup"));
         when(mockFetcher.fetchJoin(anyList())).thenReturn(futureResponse);
 
         // Capture the response that will be sent
@@ -166,18 +169,31 @@ public class FeaturesHandlerTest {
         String validRequestBody = "[{\"user_id\":\"123\"}, {\"user_id\":\"456\"}]";
         when(requestBody.asString()).thenReturn(validRequestBody);
 
-        JavaRequest request1 = new JavaRequest(TEST_GROUP_BY, Map.of("user_id", "123"));
-        JavaRequest request2 = new JavaRequest(TEST_GROUP_BY, Map.of("user_id", "456"));
-        Map<String, Object> featureMap1 = Map.of("feature_1", 12, "feature_2", 23.3, "feature_3", "USD");
-        Map<String, Object> featureMap2 = Map.of("feature_1", 24, "feature_2", 26.3, "feature_3", "CAD");
+        JavaRequest request1 = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "123"));
+        JavaRequest request2 = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "456"));
+        Map<String, Object> featureMap1 = new HashMap<String, Object>() {{
+            put("feature_1", 12);
+            put("feature_2", 23.3);
+            put("feature_3", "USD");
+        }};
+
+        Map<String, Object> featureMap2 = new HashMap<String, Object>() {{
+            put("feature_1", 24);
+            put("feature_2", 26.3);
+            put("feature_3", "CAD");
+        }};
 
         JTry<Map<String, Object>> values1 = JTry.success(featureMap1);
         JTry<Map<String, Object>> values2 = JTry.success(featureMap2);
         JavaResponse mockResponse1 = new JavaResponse(request1, values1);
         JavaResponse mockResponse2 = new JavaResponse(request2, values2);
 
+        List<JavaResponse> mockResponseList = new ArrayList<JavaResponse>() {{
+            add(mockResponse1);
+            add(mockResponse2);
+        }};
         CompletableFuture<List<JavaResponse>> futureResponse =
-                CompletableFuture.completedFuture(List.of(mockResponse1, mockResponse2));
+                CompletableFuture.completedFuture(mockResponseList);
         when(mockFetcher.fetchJoin(anyList())).thenReturn(futureResponse);
 
         // Capture the response that will be sent
@@ -196,7 +212,12 @@ public class FeaturesHandlerTest {
             JsonObject actualResponse = new JsonObject(responseCaptor.getValue());
             GetFeaturesResponse.Result expectedResult1 = GetFeaturesResponse.Result.builder().status(Success).features(featureMap1).build();
             GetFeaturesResponse.Result expectedResult2 = GetFeaturesResponse.Result.builder().status(Success).features(featureMap2).build();
-            validateSuccessfulResponse(actualResponse, List.of(expectedResult1, expectedResult2), context);
+
+            List<GetFeaturesResponse.Result> expectedResultList = new ArrayList<GetFeaturesResponse.Result>() {{
+                add(expectedResult1);
+                add(expectedResult2);
+            }};
+            validateSuccessfulResponse(actualResponse, expectedResultList, context);
             async.complete();
         });
     }
@@ -209,17 +230,25 @@ public class FeaturesHandlerTest {
         String validRequestBody = "[{\"user_id\":\"123\"}, {\"user_id\":\"456\"}]";
         when(requestBody.asString()).thenReturn(validRequestBody);
 
-        JavaRequest request1 = new JavaRequest(TEST_GROUP_BY, Map.of("user_id", "123"));
-        JavaRequest request2 = new JavaRequest(TEST_GROUP_BY, Map.of("user_id", "456"));
-        Map<String, Object> featureMap1 = Map.of("feature_1", 12, "feature_2", 23.3, "feature_3", "USD");
+        JavaRequest request1 = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "123"));
+        JavaRequest request2 = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "456"));
+        Map<String, Object> featureMap = new HashMap<String, Object>() {{
+            put("feature_1", 12);
+            put("feature_2", 23.3);
+            put("feature_3", "USD");
+        }};
 
-        JTry<Map<String, Object>> values1 = JTry.success(featureMap1);
+        JTry<Map<String, Object>> values1 = JTry.success(featureMap);
         JTry<Map<String, Object>> values2 = JTry.failure(new RuntimeException("some failure!"));
         JavaResponse mockResponse1 = new JavaResponse(request1, values1);
         JavaResponse mockResponse2 = new JavaResponse(request2, values2);
 
+        List<JavaResponse> mockResponseList = new ArrayList<JavaResponse>() {{
+            add(mockResponse1);
+            add(mockResponse2);
+        }};
         CompletableFuture<List<JavaResponse>> futureResponse =
-                CompletableFuture.completedFuture(List.of(mockResponse1, mockResponse2));
+                CompletableFuture.completedFuture(mockResponseList);
         when(mockFetcher.fetchJoin(anyList())).thenReturn(futureResponse);
 
         // Capture the response that will be sent
@@ -236,9 +265,13 @@ public class FeaturesHandlerTest {
 
             // Verify response format
             JsonObject actualResponse = new JsonObject(responseCaptor.getValue());
-            GetFeaturesResponse.Result expectedResult1 = GetFeaturesResponse.Result.builder().status(Success).features(featureMap1).build();
+            GetFeaturesResponse.Result expectedResult1 = GetFeaturesResponse.Result.builder().status(Success).features(featureMap).build();
             GetFeaturesResponse.Result expectedResult2 = GetFeaturesResponse.Result.builder().status(Failure).error("some failure!").build();
-            validateSuccessfulResponse(actualResponse, List.of(expectedResult1, expectedResult2), context);
+            List<GetFeaturesResponse.Result> expectedResultList = new ArrayList<GetFeaturesResponse.Result>() {{
+               add(expectedResult1);
+               add(expectedResult2);
+            }};
+            validateSuccessfulResponse(actualResponse, expectedResultList, context);
             async.complete();;
         });
     }
