@@ -361,7 +361,8 @@ class GroupByTest {
       tableUtils = tableUtils)
     val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")
     val expectedSchema = df.schema.fields.map(field => s"${field.name} => ${field.dataType}")
-    print(s"[testttt] ${aggregationsMetadata.toSeq}")
+    print(s"[testttt1] ${aggregationsMetadata.toSeq}")
+    print(s"[testttt2] ${expectedSchema.toSeq}")
     // When the groupBy has derivations, the aggMetadata will only contains the name and type, which will be the same with the schema in output table.
     aggregationsMetadata
       .foreach(
