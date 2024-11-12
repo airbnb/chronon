@@ -363,6 +363,8 @@ class GroupByTest {
     val expectedSchema = df.schema.fields.map(field => s"${field.name} => ${field.dataType}")
     print(s"[testttt1] ${aggregationsMetadata.toSeq}")
     print(s"[testttt2] ${expectedSchema.toSeq}")
+    val debug = aggregationsMetadata.filter(agg => !expectedSchema.contains(s"${agg.name} => ${agg.columnType})"))
+    print(s"[testttt3] ${debug.toSeq}")
     // When the groupBy has derivations, the aggMetadata will only contains the name and type, which will be the same with the schema in output table.
     aggregationsMetadata
       .foreach(
