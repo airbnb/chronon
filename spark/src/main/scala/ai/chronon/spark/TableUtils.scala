@@ -50,7 +50,10 @@ import scala.util.{Failure, Success, Try}
 trait Format {
   // Return the primary partitions (based on the 'partitionColumn') filtered down by sub-partition filters if provided
   // If subpartition filters are supplied and the format doesn't support it, we throw an error
-  def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String] = Map.empty)(implicit sparkSession: SparkSession): Seq[String] = {
+  def primaryPartitions(tableName: String,
+                        partitionColumn: String,
+                        subPartitionsFilter: Map[String, String] = Map.empty)(implicit
+      sparkSession: SparkSession): Seq[String] = {
     if (!supportSubPartitionsFilter && subPartitionsFilter.nonEmpty) {
       throw new NotImplementedError(s"subPartitionsFilter is not supported on this format")
     }
@@ -167,7 +170,8 @@ case class DefaultFormatProvider(sparkSession: SparkSession) extends FormatProvi
 }
 
 case object Hive extends Format {
-  override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(implicit sparkSession: SparkSession): Seq[String] =
+  override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(
+      implicit sparkSession: SparkSession): Seq[String] =
     super.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)
 
   def parseHivePartition(pstring: String): Map[String, String] = {
@@ -198,11 +202,12 @@ case object Hive extends Format {
 }
 
 case object Iceberg extends Format {
-  override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(implicit sparkSession: SparkSession): Seq[String] = {
+  override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(
+      implicit sparkSession: SparkSession): Seq[String] = {
     if (!supportSubPartitionsFilter && subPartitionsFilter.nonEmpty) {
       throw new NotImplementedError(s"subPartitionsFilter is not supported on this format")
     }
-    
+
     getIcebergPartitions(tableName)
   }
 
@@ -245,7 +250,8 @@ case object Iceberg extends Format {
 // In such cases, you should implement your own FormatProvider built on the newer Delta lake version
 case object DeltaLake extends Format {
 
-  override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(implicit sparkSession: SparkSession): Seq[String] =
+  override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(
+      implicit sparkSession: SparkSession): Seq[String] =
     super.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)
 
   override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
