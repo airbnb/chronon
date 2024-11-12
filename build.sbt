@@ -406,8 +406,8 @@ lazy val service = (project in file("service"))
       "io.vertx" % "vertx-core" % "4.5.10",
       "io.vertx" % "vertx-web" % "4.5.10",
       "io.vertx" % "vertx-config" % "4.5.10",
-      "ch.qos.logback" % "logback-classic" % "1.5.6",
-      "org.slf4j" % "slf4j-api" % "2.0.12",
+      "ch.qos.logback" % "logback-classic" % "1.2.11",
+      "org.slf4j" % "slf4j-api" % "1.7.36",
       "com.typesafe" % "config" % "1.4.3",
       // force netty versions -> without this we conflict with the versions pulled in from
       // our online module's spark deps which causes the web-app to not serve up content
