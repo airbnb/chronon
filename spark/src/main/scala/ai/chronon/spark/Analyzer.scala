@@ -287,7 +287,16 @@ class Analyzer(tableUtils: TableUtils,
       (analysis, leftDf)
     }
 
-    if (!skipTimestampCheck) {
+    val gbTables = ListBuffer[String]()
+    joinConf.joinParts.toScala.foreach { part =>
+      gbTables ++= part.groupBy.sources.toScala.map(_.table)
+    }
+
+    val noAccessTables = if (validateTablePermission) {
+      runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
+    } else Set()
+
+    if (!skipTimestampCheck && noAccessTables.isEmpty) {
       val timestampChecks = runTimestampChecks(leftDf)
       validateTimestampChecks(timestampChecks, "Join", name)
     }
@@ -297,7 +306,6 @@ class Analyzer(tableUtils: TableUtils,
       .toMap
     val aggregationsMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
-    val gbTables = ListBuffer[String]()
     val gbStartPartitions = mutable.Map[String, List[String]]()
     // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
@@ -347,9 +355,6 @@ class Analyzer(tableUtils: TableUtils,
         }
       }
     }
-    val noAccessTables = if (validateTablePermission) {
-      runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
-    } else Set()
 
     val rightSchema: Map[String, DataType] =
       aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
