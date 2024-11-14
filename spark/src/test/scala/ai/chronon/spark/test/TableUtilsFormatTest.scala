@@ -22,8 +22,9 @@ class TableUtilsFormatTest {
 
   @Test
   def testInsertPartitionsAddColumns(): Unit = {
-    val tableName = s"db.test_table_1_$format"
-    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val dbName = s"db_${System.currentTimeMillis()}"
+    val tableName = s"$dbName.test_table_1_$format"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
     val columns1 = Array(
       StructField("long_field", LongType),
       StructField("int_field", IntType),
@@ -57,8 +58,9 @@ class TableUtilsFormatTest {
 
   @Test
   def testInsertPartitionsAddRemoveColumns(): Unit = {
-    val tableName = s"db.test_table_2_$format"
-    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val dbName = s"db_${System.currentTimeMillis()}"
+    val tableName = s"$dbName.test_table_2_$format"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
     val columns1 = Array(
       StructField("long_field", LongType),
       StructField("int_field", IntType),
@@ -92,8 +94,9 @@ class TableUtilsFormatTest {
 
   @Test
   def testInsertPartitionsAddModifyColumns(): Unit = {
-    val tableName = s"db.test_table_3_$format"
-    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val dbName = s"db_${System.currentTimeMillis()}"
+    val tableName = s"$dbName.test_table_3_$format"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
     val columns1 = Array(
       StructField("long_field", LongType),
       StructField("int_field", IntType)
