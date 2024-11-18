@@ -14,7 +14,7 @@
         <!-- Use environment variable for log path -->
         <file>${LOG_PATH}/chronon-fs.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
-            <FileNamePattern>${LOG_DIR}/chronon-fs.%d{yyyy-dd-MM}-%i.log</FileNamePattern>
+            <FileNamePattern>${LOG_PATH}/chronon-fs.%d{yyyy-dd-MM}-%i.log</FileNamePattern>
             <!-- each archived file, size max 100MB -->
             <maxFileSize>100MB</maxFileSize>
             <!-- total size of all archive files, if total size > 10GB, it will delete old archived file -->

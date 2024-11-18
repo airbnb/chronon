@@ -402,6 +402,13 @@ lazy val flink = (project in file("flink"))
 lazy val service = (project in file("service"))
   .dependsOn(online)
   .settings(
+    assembly / assemblyJarName := s"${name.value}-${version.value}.jar",
+    assembly / artifact := {
+      val art = (assembly / artifact).value
+      art.withClassifier(Some("assembly"))
+    },
+    addArtifact(assembly / artifact, assembly),
+    publishSettings,
     libraryDependencies ++= Seq(
       "io.vertx" % "vertx-core" % "4.5.10",
       "io.vertx" % "vertx-web" % "4.5.10",
