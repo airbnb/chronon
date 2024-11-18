@@ -430,7 +430,11 @@ case class TableUtils(sparkSession: SparkSession) {
                                   sortByCols: Seq[String] = Seq.empty): Unit = {
     wrapWithCache(s"repartition & write to $tableName", df) {
       logger.info(s"Repartitioning before writing...")
-      repartitionAndWriteInternal(df, tableName, saveMode, stats, sortByCols)
+      df.repartition(1000)
+        .write
+        .mode(saveMode)
+        .insertInto(tableName)
+      //repartitionAndWriteInternal(df, tableName, saveMode, stats, sortByCols)
     }.get
   }
 
