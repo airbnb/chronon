@@ -366,7 +366,7 @@ class GroupByTest {
     aggregationsMetadata
       .foreach(
         agg => {
-          assertTrue(expectedSchema.contains(s"${agg.name} => ${agg.columnType})"))
+          assertTrue(expectedSchema.contains(s"${agg.name} => ${agg.columnType}"))
           assertTrue(agg.operation == "Derivation")
         }
       )
