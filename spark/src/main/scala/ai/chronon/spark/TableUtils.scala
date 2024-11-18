@@ -83,6 +83,8 @@ case class TableUtils(sparkSession: SparkSession) {
   val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
   val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
 
+  val minWriteShuffleParallelism = 200
+
   sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
 
@@ -486,7 +488,7 @@ case class TableUtils(sparkSession: SparkSession) {
       val dailyFileCount = outputParallelism.getOrElse(dailyFileCountBounded)
 
       // finalized shuffle parallelism
-      val shuffleParallelism = dailyFileCount * nonZeroTablePartitionCount
+      val shuffleParallelism = Math.max(dailyFileCount * nonZeroTablePartitionCount, minWriteShuffleParallelism)
       val saltCol = "random_partition_salt"
       val saltedDf = df.withColumn(saltCol, round(rand() * (dailyFileCount + 1)))
 
