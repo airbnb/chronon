@@ -176,7 +176,7 @@ def test_validator_ok():
     )
 
 def test_validator_accuracy():
-    with pytest.raises(AssertionError):
+    with pytest.raises(AssertionError, match="SNAPSHOT accuracy should not be specified for streaming sources"):
         gb = group_by.GroupBy(
             sources=event_source("table", "topic"),
             keys=["subject"],
@@ -192,6 +192,7 @@ def test_validator_accuracy():
         )
         assert all([agg.inputColumn for agg in gb.aggregations if agg.operation != ttypes.Operation.COUNT])
         group_by.validate_group_by(gb)
+
 def test_generic_collector():
     aggregation = group_by.Aggregation(
         input_column="test", operation=group_by.Operation.APPROX_PERCENTILE([0.4, 0.2]))
