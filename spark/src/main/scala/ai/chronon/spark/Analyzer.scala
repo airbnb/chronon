@@ -407,8 +407,24 @@ class Analyzer(tableUtils: TableUtils,
         )
       }
     }
+    val aggMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
+      val keyAndPartitionFields = leftDf.schema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
+      val sparkSchema = {
+        val schema: Seq[(String, DataType)] = leftSchema.toSeq ++ rightSchema.toSeq
+        StructType(SparkConversions.fromChrononSchema(schema))
+      }
+      val dummyOutputDf = tableUtils.sparkSession
+        .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
+      val finalOutputColumns = joinConf.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
+      val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+      val columns = SparkConversions.toChrononSchema(
+        StructType(derivedDummyOutputDf.schema.filterNot(keyAndPartitionFields.contains)))
+      ListBuffer(columns.map { tup => toAggregationMetadata(tup._1, tup._2, joinConf.hasDerivations) }: _*)
+    } else {
+      aggregationsMetadata
+    }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
-    (leftSchema ++ rightSchema, aggregationsMetadata)
+    (leftSchema ++ rightSchema, aggMetadata)
   }
 
   // validate the schema of the left and right side of the join and make sure the types match
