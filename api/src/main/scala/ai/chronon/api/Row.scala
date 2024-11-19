@@ -41,14 +41,14 @@ trait Row {
 }
 
 /**
- * SchemaTraverser aids in the traversal of the given SchemaType.
- * In some cases (eg avro), it is more performant to create the
- * top-level schema once and then traverse it top-to-bottom, rather
- * than recreating at each node.
- *
- * This helper trait allows the Row.to function to traverse SchemaType
- * without leaking details of the SchemaType structure.
- */
+  * SchemaTraverser aids in the traversal of the given SchemaType.
+  * In some cases (eg avro), it is more performant to create the
+  * top-level schema once and then traverse it top-to-bottom, rather
+  * than recreating at each node.
+  *
+  * This helper trait allows the Row.to function to traverse SchemaType
+  * without leaking details of the SchemaType structure.
+  */
 trait SchemaTraverser[SchemaType] {
 
   def currentNode: SchemaType
@@ -125,15 +125,15 @@ object Row {
   }
 
   // recursively traverse a chronon dataType value, and convert it to an external type
-  def to[StructType, BinaryType, ListType, MapType, OutputSchema](value: Any,
-                                                    dataType: DataType,
-                                                    composer: (Iterator[Any], DataType, Option[OutputSchema]) => StructType,
-                                                    binarizer: Array[Byte] => BinaryType,
-                                                    collector: (Iterator[Any], Int) => ListType,
-                                                    mapper: (util.Map[Any, Any] => MapType),
-                                                    extraneousRecord: Any => Array[Any] = null,
-                                                    schemaTraverser: Option[SchemaTraverser[OutputSchema]] = None
-                                                   ): Any = {
+  def to[StructType, BinaryType, ListType, MapType, OutputSchema](
+      value: Any,
+      dataType: DataType,
+      composer: (Iterator[Any], DataType, Option[OutputSchema]) => StructType,
+      binarizer: Array[Byte] => BinaryType,
+      collector: (Iterator[Any], Int) => ListType,
+      mapper: (util.Map[Any, Any] => MapType),
+      extraneousRecord: Any => Array[Any] = null,
+      schemaTraverser: Option[SchemaTraverser[OutputSchema]] = None): Any = {
 
     if (value == null) return null
 
@@ -180,7 +180,7 @@ object Row {
               list.iterator().asScala.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
               list.size()
             )
-          case arr: Array[_]  => // avro only recognizes arrayList for its ArrayType/ListType
+          case arr: Array[_] => // avro only recognizes arrayList for its ArrayType/ListType
             collector(
               arr.iterator.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
               arr.length
@@ -199,8 +199,8 @@ object Row {
               .entrySet()
               .iterator()
               .asScala
-              .foreach {
-                entry => newMap.put(
+              .foreach { entry =>
+                newMap.put(
                   edit(
                     entry.getKey,
                     keyType,
@@ -217,8 +217,8 @@ object Row {
           case map: collection.immutable.Map[Any, Any] =>
             val newMap = new util.HashMap[Any, Any](map.size)
             map
-              .foreach {
-                entry => newMap.put(
+              .foreach { entry =>
+                newMap.put(
                   edit(
                     entry._1,
                     keyType,

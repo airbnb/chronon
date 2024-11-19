@@ -111,8 +111,11 @@ object AvroConversions {
           s"Cannot convert chronon type $dataType to avro type. Cast it to string please")
     }
   }
-  
-  def fromChrononRow(value: Any, dataType: DataType, topLevelSchema: Schema,  extraneousRecord: Any => Array[Any] = null): Any = {
+
+  def fromChrononRow(value: Any,
+                     dataType: DataType,
+                     topLevelSchema: Schema,
+                     extraneousRecord: Any => Array[Any] = null): Any = {
     // But this also has to happen at the recursive depth - data type and schema inside the compositor need to
     Row.to[GenericRecord, ByteBuffer, util.ArrayList[Any], util.Map[Any, Any], Schema](
       value,
@@ -168,7 +171,8 @@ object AvroConversions {
   def encodeBytes(schema: StructType, extraneousRecord: Any => Array[Any] = null): Any => Array[Byte] = {
     val codec: AvroCodec = new AvroCodec(fromChrononSchema(schema).toString(true));
     { data: Any =>
-      val record = fromChrononRow(data, codec.chrononSchema, codec.schema, extraneousRecord).asInstanceOf[GenericData.Record]
+      val record =
+        fromChrononRow(data, codec.chrononSchema, codec.schema, extraneousRecord).asInstanceOf[GenericData.Record]
       val bytes = codec.encodeBinary(record)
       bytes
     }
@@ -177,7 +181,8 @@ object AvroConversions {
   def encodeJson(schema: StructType, extraneousRecord: Any => Array[Any] = null): Any => String = {
     val codec: AvroCodec = new AvroCodec(fromChrononSchema(schema).toString(true));
     { data: Any =>
-      val record = fromChrononRow(data, codec.chrononSchema, codec.schema, extraneousRecord).asInstanceOf[GenericData.Record]
+      val record =
+        fromChrononRow(data, codec.chrononSchema, codec.schema, extraneousRecord).asInstanceOf[GenericData.Record]
       val json = codec.encodeJson(record)
       json
     }
@@ -195,26 +200,30 @@ case class AvroSchemaTraverser(currentNode: Schema) extends SchemaTraverser[Sche
       maybeUnion
     }
 
-  override def getField(field: StructField): SchemaTraverser[Schema] = copy(
-    unboxUnion(currentNode.getField(field.name).schema())
-  )
+  override def getField(field: StructField): SchemaTraverser[Schema] =
+    copy(
+      unboxUnion(currentNode.getField(field.name).schema())
+    )
 
-  override def getCollectionType: SchemaTraverser[Schema] = copy(
-    unboxUnion(currentNode.getElementType)
-  )
+  override def getCollectionType: SchemaTraverser[Schema] =
+    copy(
+      unboxUnion(currentNode.getElementType)
+    )
 
   // Avro map keys are always strings.
-  override def getMapKeyType: SchemaTraverser[Schema] = if (currentNode.getType == Schema.Type.MAP) {
-    copy(
-      Schema.create(Schema.Type.STRING)
-    )
-  } else {
-    throw new UnsupportedOperationException(
-      s"Current node ${currentNode.getName} is a ${currentNode.getType}, not a ${Schema.Type.MAP}"
-    )
-  }
+  override def getMapKeyType: SchemaTraverser[Schema] =
+    if (currentNode.getType == Schema.Type.MAP) {
+      copy(
+        Schema.create(Schema.Type.STRING)
+      )
+    } else {
+      throw new UnsupportedOperationException(
+        s"Current node ${currentNode.getName} is a ${currentNode.getType}, not a ${Schema.Type.MAP}"
+      )
+    }
 
-  override def getMapValueType: SchemaTraverser[Schema] = copy(
-    unboxUnion(currentNode.getValueType)
-  )
+  override def getMapValueType: SchemaTraverser[Schema] =
+    copy(
+      unboxUnion(currentNode.getValueType)
+    )
 }
