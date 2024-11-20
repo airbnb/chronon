@@ -201,30 +201,25 @@ class Join(joinConf: api.Join,
   }
 
   private def getRightPartsData(leftRange: PartitionRange): Seq[(JoinPart, DataFrame)] = {
-    joinConf.joinParts.asScala.map { joinPart =>
+    joinConf.joinParts.asScala.flatMap { joinPart =>
       val partTable = joinConf.partOutputTable(joinPart)
-      val effectiveRange =
-        if (joinConf.left.dataModel != Entities && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
-          leftRange.shift(-1)
-        } else {
-          leftRange
-        }
-      val wheres = Seq(s"ds >= '${effectiveRange.start}'", s"ds <= '${effectiveRange.end}'")
-      val sql = QueryUtils.build(null, partTable, wheres)
-      logger.info(s"Pulling data from joinPart table with: $sql")
-      val dfTry = Try {
-        tableUtils.sparkSession.sql(sql)
+      if (!tableUtils.tableExists(partTable)) {
+        // When a JoinPart is fully bootstrapped, its partTable may not exist and we skip it during final join.
+        None
+      } else {
+        val effectiveRange =
+          if (joinConf.left.dataModel != Entities && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+            leftRange.shift(-1)
+          } else {
+            leftRange
+          }
+        val wheres = Seq(s"ds >= '${effectiveRange.start}'", s"ds <= '${effectiveRange.end}'")
+        val sql = QueryUtils.build(null, partTable, wheres)
+        logger.info(s"Pulling data from joinPart table with: $sql")
+        val df = tableUtils.sparkSession.sql(sql)
+        Some((joinPart, df))
       }
-
-      dfTry match {
-        case Success(df) => Some((joinPart, df))
-        case Failure(e: org.apache.spark.sql.AnalysisException) if e.getMessage.contains("Table or view not found") =>
-          logger.warn(s"Skipping join part ${joinPart.groupBy.metaData.name} as the table does not exist: ${e.getMessage}")
-          None
-        case Failure(e) =>
-          throw e
-      }
-    }.collect { case Some(value) => value }
+    }
   }
 
   override def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit = {
