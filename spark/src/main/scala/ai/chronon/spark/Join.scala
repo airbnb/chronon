@@ -205,6 +205,7 @@ class Join(joinConf: api.Join,
       val partTable = joinConf.partOutputTable(joinPart)
       if (!tableUtils.tableExists(partTable)) {
         // When a JoinPart is fully bootstrapped, its partTable may not exist and we skip it during final join.
+        logger.warn(s"Table $partTable does not exist, possibly due to full bootstrap covering, skipping it.")
         None
       } else {
         val effectiveRange =
