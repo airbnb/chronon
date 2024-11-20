@@ -157,8 +157,7 @@ abstract class JoinBase(joinConf: api.Join,
       leftRange
     }
 
-    logger.info(
-      s"""
+    logger.info(s"""
          |Computing right table for joinPart: ${joinPart.groupBy.metaData.name}
          |Shift days $shiftDays
          |Missing left partitions $leftRange
