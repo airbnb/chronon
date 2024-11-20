@@ -157,6 +157,14 @@ abstract class JoinBase(joinConf: api.Join,
       leftRange
     }
 
+    logger.info(
+      s"""
+         |Computing right table for joinPart: ${joinPart.groupBy.metaData.name}
+         |Shift days $shiftDays
+         |Missing left partitions $leftRange
+         |Range of timestamps within missing left partitions $leftTimeRangeOpt
+         |Right range $rightRange""".stripMargin)
+
     try {
       val unfilledRanges = tableUtils
         .unfilledRanges(
@@ -465,7 +473,7 @@ abstract class JoinBase(joinConf: api.Join,
       try {
         analyzer.analyzeJoin(joinConf, validationAssert = true)
         metrics.gauge(Metrics.Name.validationSuccess, 1)
-        logger.info("Join conf validation succeeded. No error found.")
+        logger.info("Join conf validation succeeded. No error found. Analyzer is completed")
       } catch {
         case ex: AssertionError =>
           metrics.gauge(Metrics.Name.validationFailure, 1)
