@@ -435,10 +435,6 @@ case class TableUtils(sparkSession: SparkSession) {
       .insertInto(tableName)
     /*wrapWithCache(s"repartition & write to $tableName", df) {
       logger.info(s"Repartitioning before writing...")
-      df.repartition(1000)
-        .write
-        .mode(saveMode)
-        .insertInto(tableName)
       //repartitionAndWriteInternal(df, tableName, saveMode, stats, sortByCols)
     }.get*/
   }
