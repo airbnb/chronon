@@ -408,7 +408,8 @@ class Analyzer(tableUtils: TableUtils,
       }
     }
     val aggMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
-      val keyAndPartitionFields = leftDf.schema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
+      val keyAndPartitionFields =
+        leftDf.schema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
       val sparkSchema = {
         val schema: Seq[(String, DataType)] = leftSchema.toSeq ++ rightSchema.toSeq
         StructType(SparkConversions.fromChrononSchema(schema))

@@ -18,18 +18,8 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{
-  Accuracy,
-  Builders,
-  Constants,
-  JoinPart,
-  LongType,
-  Operation,
-  PartitionSpec,
-  StringType,
-  TimeUnit,
-  Window
-}
+import ai.chronon.api.Builders.Derivation
+import ai.chronon.api.{Accuracy, Builders, Constants, JoinPart, LongType, Operation, PartitionSpec, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.renderDataSourceQuery
@@ -1546,5 +1536,31 @@ class JoinTest {
     }
     assert(
       thrown2.getMessage.contains("Table or view not found") && thrown3.getMessage.contains("Table or view not found"))
+  }
+
+  def testJoinDerivationAnalyzer(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_join_derivation" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true, namespace)
+    val joinConf = getEventsEventsTemporal("cumulative", namespace)
+    joinConf.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
+    joinConf.setDerivations(Seq(
+      Derivation(
+        name = "*",
+        expression = "*"
+      ), Derivation(
+        name = "test_feature_name",
+        expression = f"${viewsGroupBy.metaData.name}_time_spent_ms_average"
+      )
+    ).asJava)
+
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val (_, aggregationsMetadata) =
+      new Analyzer(tableUtils, joinConf, monthAgo, today).analyzeJoin(joinConf, enableHitter = false)
+    aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
+    aggregationsMetadata.exists(_.name == "test_feature_name")
   }
 }
