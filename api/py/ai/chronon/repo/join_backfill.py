@@ -98,7 +98,8 @@ class JoinBackfill:
             "selected_join_parts": join_part,
             "use_cached_left": None,
         }
-        settings = self.settings.get(join_part, self.settings["default"])
+        # Merge default settings and join_part settings
+        settings = {**self.settings["default"], **self.settings.get(join_part, {})}
         return (
             self.export_template(settings)
             + " && "
