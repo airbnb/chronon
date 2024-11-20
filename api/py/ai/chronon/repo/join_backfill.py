@@ -106,7 +106,8 @@ class JoinBackfill:
         )
 
     def run_left_table(self, join_name: str):
-        settings = self.settings.get("left_table", self.settings["default"])
+        # Merge default settings and left_table settings
+        settings = {**self.settings["default"], **self.settings.get("left_table", {})}
         return (
             self.export_template(settings)
             + " && "
@@ -114,7 +115,8 @@ class JoinBackfill:
         )
 
     def run_final_join(self, join_name: str):
-        settings = self.settings.get("final_join", self.settings["default"])
+        # Merge default settings and final_join settings
+        settings = {**self.settings["default"], **self.settings.get("final_join", {})}
         return (
             self.export_template(settings)
             + " && "
