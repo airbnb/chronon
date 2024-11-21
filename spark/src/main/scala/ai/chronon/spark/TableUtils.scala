@@ -599,10 +599,15 @@ case class TableUtils(sparkSession: SparkSession) {
                                   saveMode: SaveMode,
                                   stats: Option[DfStats],
                                   sortByCols: Seq[String] = Seq.empty): Unit = {
-    wrapWithCache(s"repartition & write to $tableName", df) {
+    logger.info(s"Repartitioning before writing...")
+    df.repartition(1000)
+      .write
+      .mode(saveMode)
+      .insertInto(tableName)
+    /*wrapWithCache(s"repartition & write to $tableName", df) {
       logger.info(s"Repartitioning before writing...")
-      repartitionAndWriteInternal(df, tableName, saveMode, stats, sortByCols)
-    }.get
+      //repartitionAndWriteInternal(df, tableName, saveMode, stats, sortByCols)
+    }.get*/
   }
 
   private def repartitionAndWriteInternal(df: DataFrame,
