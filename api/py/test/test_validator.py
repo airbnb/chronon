@@ -157,3 +157,10 @@ def test_validate_group_by_deprecation_date(zvalidator):
     assert len(errors) == 0
     errors = zvalidator._validate_group_by(v1_incorrect_deprecation_format)
     assert len(errors) == 1
+
+
+def test_validate_derivation_on_keys(zvalidator):
+    from sample.join.sample_team.sample_join_external_parts import v2
+
+    errors = zvalidator._validate_join(v2)
+    assert len(errors) == 0
