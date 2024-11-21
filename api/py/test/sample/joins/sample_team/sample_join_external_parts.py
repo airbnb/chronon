@@ -58,6 +58,7 @@ v1 = Join(
     output_namespace="sample_namespace",
 )
 
+# sample join with derivations on external column to pass key fields
 v2 = Join(
     left=test_sources.staging_entities,
     right_parts=[JoinPart(group_by=sample_group_by.v1)],
@@ -72,6 +73,9 @@ v2 = Join(
         )
     ],
     table_properties={"config_json": """{"sample_key": "sample_value"}"""},
-    derivations=[Derivation(name="*", expression="*"), Derivation(name="place_id", expression="ext_place_id")],
+    derivations=[
+        Derivation(name="*", expression="*"),
+        Derivation(name="place_id", expression="ext_test_external_source_ext_place_id"),
+    ],
     output_namespace="sample_namespace",
 )

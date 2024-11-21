@@ -159,8 +159,9 @@ def test_validate_group_by_deprecation_date(zvalidator):
     assert len(errors) == 1
 
 
+# Derive from external column to key should be enabled in validator
 def test_validate_derivation_on_keys(zvalidator):
-    from sample.join.sample_team.sample_join_external_parts import v2
+    from sample.joins.sample_team.sample_join_external_parts import v2
 
     errors = zvalidator._validate_join(v2)
     assert len(errors) == 0
