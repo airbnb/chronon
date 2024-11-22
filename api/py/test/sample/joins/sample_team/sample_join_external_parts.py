@@ -62,20 +62,11 @@ v1 = Join(
 v2 = Join(
     left=test_sources.staging_entities,
     right_parts=[JoinPart(group_by=sample_group_by.v1)],
-    online_external_parts=[
-        ExternalPart(
-            ExternalSource(
-                name="test_external_source",
-                team="chronon",
-                key_fields=[("key", DataType.LONG)],
-                value_fields=[("ext_place_id", DataType.STRING)],
-            )
-        )
-    ],
+    online_external_parts=[ExternalPart(ContextualSource(fields=[("place_id", DataType.STRING)]))],
     table_properties={"config_json": """{"sample_key": "sample_value"}"""},
     derivations=[
         Derivation(name="*", expression="*"),
-        Derivation(name="place_id", expression="ext_test_external_source_ext_place_id"),
+        Derivation(name="place_id", expression="ext_contextual_place_id"),
     ],
     output_namespace="sample_namespace",
 )
