@@ -355,3 +355,33 @@ v1 = GroupBy(
     online=True,
 ) 
 ```
+
+### Batch Entity GroupBy with aggregations examples
+
+This is a modification of the above `Batch Entity GroupBy` example to include an aggregation. In this case, we pick a primary key `zip_code` that is different from the UUID of `user_id` on the table in order to perform an aggregation.
+
+Semantically, we're expressing "count the number of users per zip code" as a feature.
+
+```python
+source = Source(
+    entities=EntitySource(
+        snapshotTable="data.users", # This points to a table that contains daily snapshots of the entire product catalog
+        query=Query(
+            selects=select( # Select the fields we care about
+                user_id="CAST (user_id AS BIGINT)", # it supports Spark SQL expressions
+                zip_code="zip_code", 
+                account_created_ds="account_created_ds",
+                email_verified="email_verified"), 
+            )
+    ))
+
+v1 = GroupBy(
+    sources=[source],
+    keys=["zip_code"], # Changing the PK to Zip Code
+    aggregations=Aggregation(
+            input_column="user_id",
+            operation=Operation.COUNT,
+            windows=[None]),
+    online=True,
+)
+```
