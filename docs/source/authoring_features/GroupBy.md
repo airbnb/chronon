@@ -367,8 +367,12 @@ source = Source(
     entities=EntitySource(
         snapshotTable="data.users", # This points to a table that contains daily snapshots of the entire product catalog
         query=Query(
-            selects=select("user_id", "zip_code", "account_created_ds","email_verified"), # Select the fields we care about
-        )
+            selects=select( # Select the fields we care about
+                user_id="CAST (user_id AS BIGINT)", # it supports Spark SQL expressions
+                zip_code="zip_code", 
+                account_created_ds="account_created_ds",
+                email_verified="email_verified"), 
+            )
     ))
 
 v1 = GroupBy(
