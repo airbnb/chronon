@@ -164,4 +164,4 @@ def test_validate_derivation_on_keys(zvalidator):
     from sample.joins.sample_team.sample_join_external_parts import v2
 
     errors = zvalidator._validate_join(v2)
-    assert len(errors) == 0
+    assert len(errors) == 0, f"Failed on: {errors}"
