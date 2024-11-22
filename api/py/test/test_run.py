@@ -69,18 +69,14 @@ def test_download_jar(monkeypatch, sleepless):
 
     monkeypatch.setattr(time, "sleep", sleepless)
     monkeypatch.setattr(run, "download_only_once", mock_cmd)
-    jar_path = run.download_jar(
-        "version", jar_type="uber", release_tag=None, spark_version="2.4.0"
-    )
+    jar_path = run.download_jar("version", jar_type="uber", release_tag=None, spark_version="2.4.0")
     assert jar_path == "/tmp/spark_uber_2.11-version-assembly.jar"
-    jar_path = run.download_jar(
-        "version", jar_type="uber", release_tag=None, spark_version="3.1.1"
-    )
+    jar_path = run.download_jar("version", jar_type="uber", release_tag=None, spark_version="3.1.1")
     assert jar_path == "/tmp/spark_uber_2.12-version-assembly.jar"
+    jar_path = run.download_jar("version", jar_type="uber", release_tag=None, spark_version="3.2.1")
+    assert jar_path == "/tmp/spark_uber_2.13-version-assembly.jar"
     with pytest.raises(Exception):
-        run.download_jar(
-            "version", jar_type="uber", release_tag=None, spark_version="2.1.0"
-        )
+        run.download_jar("version", jar_type="uber", release_tag=None, spark_version="2.1.0")
 
 
 def test_environment(teams_json, repo, parser, test_conf_location):
@@ -106,9 +102,7 @@ def test_environment(teams_json, repo, parser, test_conf_location):
 
     # If app_name can be passed from cli.
     reset_env(default_environment)
-    run.set_runtime_env(
-        parser.parse_args(args=["--mode", "metadata-export", "--app-name", "fake-name"])
-    )
+    run.set_runtime_env(parser.parse_args(args=["--mode", "metadata-export", "--app-name", "fake-name"]))
     assert os.environ["APP_NAME"] == "fake-name"
 
     # Check default backfill for a team sets parameters accordingly.
@@ -136,10 +130,7 @@ def test_environment(teams_json, repo, parser, test_conf_location):
     # from common env.
     assert os.environ["VERSION"] == "latest"
     # derived from args.
-    assert (
-        os.environ["APP_NAME"]
-        == "chronon_joins_backfill_production_sample_team.sample_online_join.v1"
-    )
+    assert os.environ["APP_NAME"] == "chronon_joins_backfill_production_sample_team.sample_online_join.v1"
     # from additional_args
     assert os.environ["CHRONON_CONFIG_ADDITIONAL_ARGS"] == "--step-days 14"
 
@@ -238,17 +229,13 @@ def test_environment(teams_json, repo, parser, test_conf_location):
 def test_property_default_update(repo, parser, test_conf_location):
     reset_env(DEFAULT_ENVIRONMENT.copy())
     assert "VERSION" not in os.environ
-    args, _ = parser.parse_known_args(
-        args=["--mode", "backfill", "--conf", test_conf_location, "--repo", repo]
-    )
+    args, _ = parser.parse_known_args(args=["--mode", "backfill", "--conf", test_conf_location, "--repo", repo])
     assert args.version is None
     run.set_runtime_env(args)
     assert "VERSION" in os.environ
     assert args.version is None
     run.set_defaults(parser)
-    reparsed, _ = parser.parse_known_args(
-        args=["--mode", "backfill", "--conf", test_conf_location, "--repo", repo]
-    )
+    reparsed, _ = parser.parse_known_args(args=["--mode", "backfill", "--conf", test_conf_location, "--repo", repo])
     assert reparsed.version is not None
 
 
@@ -256,9 +243,7 @@ def test_render_info_setting_update(repo, parser, test_conf_location):
     default_environment = DEFAULT_ENVIRONMENT.copy()
 
     run.set_defaults(parser)
-    args, _ = parser.parse_known_args(
-        args=["--mode", "info", "--conf", test_conf_location, "--repo", repo]
-    )
+    args, _ = parser.parse_known_args(args=["--mode", "info", "--conf", test_conf_location, "--repo", repo])
     run.set_defaults(parser)
     assert args.render_info == os.path.join(".", run.RENDER_INFO_DEFAULT_SCRIPT)
 
@@ -266,9 +251,7 @@ def test_render_info_setting_update(repo, parser, test_conf_location):
     run.set_runtime_env(args)
     os.environ["CHRONON_REPO_PATH"] = repo
     run.set_defaults(parser)
-    args, _ = parser.parse_known_args(
-        args=["--mode", "info", "--conf", test_conf_location, "--repo", repo]
-    )
+    args, _ = parser.parse_known_args(args=["--mode", "info", "--conf", test_conf_location, "--repo", repo])
     assert args.render_info == os.path.join(repo, run.RENDER_INFO_DEFAULT_SCRIPT)
 
     reset_env(default_environment)
@@ -301,9 +284,7 @@ def test_render_info(repo, parser, test_conf_location, monkeypatch):
     monkeypatch.setattr(run, "check_call", mock_check_call)
     monkeypatch.setattr(os.path, "exists", mock_exists)
     run.set_defaults(parser)
-    args, _ = parser.parse_known_args(
-        args=["--mode", "info", "--conf", test_conf_location, "--repo", repo]
-    )
+    args, _ = parser.parse_known_args(args=["--mode", "info", "--conf", test_conf_location, "--repo", repo])
 
     args.args = _
     runner = run.Runner(args, "some.jar")
