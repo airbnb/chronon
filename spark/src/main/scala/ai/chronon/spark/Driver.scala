@@ -779,20 +779,24 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      if (args.endPointName.isDefined) {
-        val acceptedEndPoints = List(args.endPointName())
+      val acceptedEndPoints = if (args.endPointName.isDefined) {
+        List(args.endPointName())
       } else {
-        val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
+        List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
       }
       val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
       val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
       implicit val ec: ExecutionContext = ExecutionContext.global
       val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
-        case (endPoint, kvMap) => args.metaDataStore.put(
-          kVPairs = kvMap,
-          datasetName = endPoint,
-          batchSize = args.batchSize() if args.batchSize.isDefined else args.metaDataStore.CONF_BATCH_SIZE
-        )
+        case (endPoint, kvMap) => if (args.batchSize.isDefined) {
+            args.metaDataStore.put(
+                kVPairs = kvMap,
+                datasetName = endPoint,
+                batchSize = args.batchSize()
+            )
+        } else {
+            args.metaDataStore.put(kVPairs = kvMap, datasetName = endPoint)
+        }
       }
       val res = putRequestsSeq.flatMap(putRequests => Await.result(putRequests, 1.hour))
       logger.info(
