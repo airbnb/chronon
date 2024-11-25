@@ -788,15 +788,16 @@ object Driver {
       val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
       implicit val ec: ExecutionContext = ExecutionContext.global
       val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
-        case (endPoint, kvMap) => if (args.batchSize.isDefined) {
+        case (endPoint, kvMap) =>
+          if (args.batchSize.isDefined) {
             args.metaDataStore.put(
-                kVPairs = kvMap,
-                datasetName = endPoint,
-                batchSize = args.batchSize()
+              kVPairs = kvMap,
+              datasetName = endPoint,
+              batchSize = args.batchSize()
             )
-        } else {
+          } else {
             args.metaDataStore.put(kVPairs = kvMap, datasetName = endPoint)
-        }
+          }
       }
       val res = putRequestsSeq.flatMap(putRequests => Await.result(putRequests, 1.hour))
       logger.info(
