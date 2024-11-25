@@ -94,7 +94,7 @@ struct EntitySource {
     3: optional string mutationTopic
 
     /**
-    If each new hive partition contains not just the current day's events but the entire set of events since the begininng. The key property is that the events are not mutated across partitions.
+    * The logic used to scan both the table and the topic. Contains row level transformations and filtering expressed as Spark SQL statements.
     */
     4: optional Query query
 }

@@ -287,7 +287,9 @@ class ChrononRepoValidator(object):
         old_obj = self._get_old_obj(type(obj), obj.metaData.name)
         return not old_obj or not self._has_diff(obj, old_obj) or not old_obj.metaData.online
 
-    def _validate_derivations(self, pre_derived_cols: List[str], derivations: List[Derivation]) -> List[str]:
+    def _validate_derivations(
+        self, key_cols: List[str], pre_derived_cols: List[str], derivations: List[Derivation]
+    ) -> List[str]:
         """
         Validate join/groupBy's derivation is defined correctly.
 
@@ -315,7 +317,8 @@ class ChrononRepoValidator(object):
                         )
                     )
             if derivation.name != "*":
-                if derivation.name in derived_columns:
+                # Do not validate the name conflict for keys
+                if derivation.name in derived_columns and derivation.name not in key_cols:
                     errors.append(
                         "Incorrect derivation name {} due to output column name conflict".format(derivation.name)
                     )
@@ -375,7 +378,7 @@ class ChrononRepoValidator(object):
 
             keys = get_pre_derived_source_keys(join.left)
             columns = pre_derived_columns_list + keys
-            errors.extend(self._validate_derivations(columns, join.derivations))
+            errors.extend(self._validate_derivations(keys, columns, join.derivations))
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
@@ -413,7 +416,7 @@ class ChrononRepoValidator(object):
         # validate the derivations are defined correctly
         if group_by.derivations:
             columns = get_pre_derived_group_by_columns(group_by)
-            errors.extend(self._validate_derivations(columns, group_by.derivations))
+            errors.extend(self._validate_derivations(group_by.keyColumns, columns, group_by.derivations))
 
         # validate the expected deprecation date is in the correct format it is defined
         if group_by.metaData.deprecationDate:
