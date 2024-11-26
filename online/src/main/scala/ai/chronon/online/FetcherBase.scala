@@ -92,6 +92,7 @@ class FetcherBase(kvStore: KVStore,
                                                      keys)
       context.distribution("group_by.batchir_decode.latency.millis",
                            System.currentTimeMillis() - batchResponseDecodeStartTime)
+      logger.info(s"debug $response, name = ${servingInfo.groupByOps.metaData.getName}")
       response
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
