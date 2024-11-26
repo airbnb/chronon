@@ -18,6 +18,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
+import ai.chronon.api.StructField
 import ai.chronon.api.Builders.Derivation
 import ai.chronon.api.{Accuracy, Builders, Constants, JoinPart, LongType, Operation, PartitionSpec, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
@@ -1576,7 +1577,7 @@ class JoinTest {
     joinConfWithExternal.setOnlineExternalParts(Seq(
       Builders.ExternalPart(
         Builders.ContextualSource(
-          fields = Array(StructField("user_txn_count_30d", SparkLongType))
+          fields = Array(StructField("user_txn_count_30d", LongType))
         )
       )
     ).asJava
