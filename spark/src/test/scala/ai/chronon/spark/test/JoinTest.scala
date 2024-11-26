@@ -29,7 +29,7 @@ import ai.chronon.spark.stats.SummaryJob
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{StructType, StringType => SparkStringType, StructField, LongType => SparkLongType}
+import org.apache.spark.sql.types.{StructType, StringType => SparkStringType, LongType => SparkLongType}
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
