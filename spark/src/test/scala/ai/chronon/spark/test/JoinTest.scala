@@ -29,7 +29,7 @@ import ai.chronon.spark.stats.SummaryJob
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{StructType, StringType => SparkStringType, StructField, LongType}
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
@@ -1562,5 +1562,43 @@ class JoinTest {
       new Analyzer(tableUtils, joinConf, monthAgo, today).analyzeJoin(joinConf, enableHitter = false)
     aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
     aggregationsMetadata.exists(_.name == "test_feature_name")
+  }
+
+  def testJoinDerivationOnExternalAnalyzer(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_join_derivation" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true, namespace)
+    val joinConfWithExternal = getEventsEventsTemporal("cumulative", namespace)
+    joinConfWithExternal.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
+
+    joinConfWithExternal.setOnlineExternalParts(Seq(
+      Builders.ExternalPart(
+        Builders.ContextualSource(
+          fields = Array(StructField("user_txn_count_30d", LongType))
+        )
+      )
+    ).asJava
+    )
+
+    joinConfWithExternal.setDerivations(
+      Seq(
+        Builders.Derivation(
+          name = "*"
+        ),
+        // contextual feature rename
+        Builders.Derivation(
+          name = "user_txn_count_30d",
+          expression = "ext_contextual_user_txn_count_30d"
+        )
+      ).asJava
+    )
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val (_, aggregationsMetadata) =
+      new Analyzer(tableUtils, joinConfWithExternal, monthAgo, today).analyzeJoin(joinConfWithExternal, enableHitter = false)
+    aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
+    aggregationsMetadata.exists(_.name == "user_txn_count_30d")
   }
 }
