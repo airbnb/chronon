@@ -63,7 +63,7 @@ class DataRangeTest {
         |  ts as `ts`,
         |  col_1 as `col_1`,
         |  col_2 as `col_2`
-        |FROM date_range_test_namespace.test_gen_scan_query
+        |FROM date_range_test_namespace.test_gen_scan_query 
         |WHERE
         |  (ds >= '2024-03-01') AND (ds <= '2024-04-01') AND (col_1 = 'TEST')"""
     assertEquals(expected.stripMargin, result.stripMargin)
