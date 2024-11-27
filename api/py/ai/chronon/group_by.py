@@ -210,6 +210,8 @@ def validate_group_by(group_by: ttypes.GroupBy):
                 assert query.timeColumn is not None, (
                     "please specify query.timeColumn for non-snapshot accurate " "group by with event source"
                 )
+            else:
+                assert not utils.is_streaming(src), "SNAPSHOT accuracy should not be specified for streaming sources"
         else:
             if contains_windowed_aggregation(aggregations):
                 assert query.timeColumn, "Please specify timeColumn for entity source with windowed aggregations"
