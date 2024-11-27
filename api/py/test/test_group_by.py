@@ -16,7 +16,7 @@
 import pytest, json
 
 from ai.chronon import group_by, query
-from ai.chronon.group_by import GroupBy, TimeUnit, Window, Aggregation
+from ai.chronon.group_by import GroupBy, TimeUnit, Window, Aggregation, Accuracy
 from ai.chronon.api import ttypes
 from ai.chronon.api.ttypes import EventSource, EntitySource, Operation
 
@@ -41,12 +41,13 @@ def hours_unit():
     return ttypes.TimeUnit.HOURS
 
 
-def event_source(table):
+def event_source(table, topic=None):
     """
     Sample left join
     """
     return ttypes.EventSource(
         table=table,
+        topic=topic,
         query=ttypes.Query(
             startPartition="2020-04-09",
             selects={
@@ -174,6 +175,23 @@ def test_validator_ok():
         aggregations=None,
     )
 
+def test_validator_accuracy():
+    with pytest.raises(AssertionError, match="SNAPSHOT accuracy should not be specified for streaming sources"):
+        gb = group_by.GroupBy(
+            sources=event_source("table", "topic"),
+            keys=["subject"],
+            aggregations=group_by.Aggregations(
+                random=ttypes.Aggregation(inputColumn="event_id", operation=ttypes.Operation.SUM),
+                event_id=ttypes.Aggregation(operation=ttypes.Operation.LAST),
+                cnt=ttypes.Aggregation(operation=ttypes.Operation.COUNT),
+                percentile=group_by.Aggregation(
+                    input_column="event_id", operation=group_by.Operation.APPROX_PERCENTILE([0.5, 0.75])
+                ),
+            ),
+            accuracy=Accuracy.SNAPSHOT,
+        )
+        assert all([agg.inputColumn for agg in gb.aggregations if agg.operation != ttypes.Operation.COUNT])
+        group_by.validate_group_by(gb)
 
 def test_generic_collector():
     aggregation = group_by.Aggregation(
