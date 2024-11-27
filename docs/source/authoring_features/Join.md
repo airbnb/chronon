@@ -234,6 +234,8 @@ In this case you will get midnight accurate feature backfills in your join table
 
 In this case you will get midnight accurate feature backfills in your join table by default, same as the `Left side events, right side batch events` and `Left side entities, right side realtime entities` cases, for a combination of both reasons.
 
+Common use cases for left side entities are batch prediction workflows like user LTV estimation, forecasting, etc.
+
 # Scenarios Deep Dive
 
 This section goes over various common scenarios for how users might want to manage their offline data for ML worklows. "Offline data" means data that is materialized in the warehouse (often used for model training, evaluation and analysis workflows), as opposed to "Online data" which is in the production model serving path.

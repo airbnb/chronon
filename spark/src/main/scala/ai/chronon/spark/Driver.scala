@@ -772,15 +772,32 @@ object Driver {
     class Args extends Subcommand("metadata-upload") with OnlineSubcommand {
       val confPath: ScallopOption[String] =
         opt[String](required = true, descr = "Path to the Chronon config file or directory")
+      val endPointName: ScallopOption[String] =
+        opt[String](required = false, descr = "Name of the endpoint to upload the metadata to")
+      val batchSize: ScallopOption[Int] =
+        opt[Int](required = false, descr = "Batch size for uploading metadata", default = Some(50))
     }
 
     def run(args: Args): Unit = {
-      val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
+      val acceptedEndPoints = if (args.endPointName.isDefined) {
+        List(args.endPointName())
+      } else {
+        List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
+      }
       val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
       val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
       implicit val ec: ExecutionContext = ExecutionContext.global
       val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
-        case (endPoint, kvMap) => args.metaDataStore.put(kvMap, endPoint)
+        case (endPoint, kvMap) =>
+          if (args.batchSize.isDefined) {
+            args.metaDataStore.put(
+              kVPairs = kvMap,
+              datasetName = endPoint,
+              batchSize = args.batchSize()
+            )
+          } else {
+            args.metaDataStore.put(kVPairs = kvMap, datasetName = endPoint)
+          }
       }
       val res = putRequestsSeq.flatMap(putRequests => Await.result(putRequests, 1.hour))
       logger.info(

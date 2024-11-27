@@ -201,19 +201,25 @@ class Join(joinConf: api.Join,
   }
 
   private def getRightPartsData(leftRange: PartitionRange): Seq[(JoinPart, DataFrame)] = {
-    joinConf.joinParts.asScala.map { joinPart =>
+    joinConf.joinParts.asScala.flatMap { joinPart =>
       val partTable = joinConf.partOutputTable(joinPart)
-      val effectiveRange =
-        if (joinConf.left.dataModel != Entities && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
-          leftRange.shift(-1)
-        } else {
-          leftRange
-        }
-      val wheres = Seq(s"ds >= '${effectiveRange.start}'", s"ds <= '${effectiveRange.end}'")
-      val sql = QueryUtils.build(null, partTable, wheres)
-      logger.info(s"Pulling data from joinPart table with: $sql")
-      val df = tableUtils.sparkSession.sql(sql)
-      (joinPart, df)
+      if (!tableUtils.tableExists(partTable)) {
+        // When a JoinPart is fully bootstrapped, its partTable may not exist and we skip it during final join.
+        logger.warn(s"Table $partTable does not exist, possibly due to full bootstrap covering, skipping it.")
+        None
+      } else {
+        val effectiveRange =
+          if (joinConf.left.dataModel != Entities && joinPart.groupBy.inferredAccuracy == Accuracy.SNAPSHOT) {
+            leftRange.shift(-1)
+          } else {
+            leftRange
+          }
+        val wheres = Seq(s"ds >= '${effectiveRange.start}'", s"ds <= '${effectiveRange.end}'")
+        val sql = QueryUtils.build(null, partTable, wheres)
+        logger.info(s"Pulling data from joinPart table with: $sql")
+        val df = tableUtils.sparkSession.sql(sql)
+        Some((joinPart, df))
+      }
     }
   }
 
