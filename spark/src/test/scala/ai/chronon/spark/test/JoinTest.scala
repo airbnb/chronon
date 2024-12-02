@@ -1605,6 +1605,6 @@ class JoinTest {
       new Analyzer(tableUtils, joinConfWithExternal, monthAgo, today).analyzeJoin(joinConfWithExternal, enableHitter = false)
     aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
     aggregationsMetadata.exists(_.name == "user_txn_count_30d")
-    aggregationsMetadata.exists(_.name == "event_id")
+    aggregationsMetadata.exists(_.name == "item")
   }
 }
