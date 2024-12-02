@@ -23,14 +23,14 @@ import ai.chronon.api.Builders.Derivation
 import ai.chronon.api.{Accuracy, Builders, Constants, JoinPart, LongType, Operation, PartitionSpec, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.GroupBy.renderDataSourceQuery
+import ai.chronon.spark.GroupBy.{logger, renderDataSourceQuery}
 import ai.chronon.spark.SemanticHashUtils.{tableHashesChanged, tablesToRecompute}
 import ai.chronon.spark._
 import ai.chronon.spark.stats.SummaryJob
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{StructType, StringType => SparkStringType, LongType => SparkLongType}
+import org.apache.spark.sql.types.{StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
@@ -1546,7 +1546,6 @@ class JoinTest {
     tableUtils.createDatabase(namespace)
     val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true, namespace)
     val joinConf = getEventsEventsTemporal("cumulative", namespace)
-    joinConf.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
     joinConf.setDerivations(Seq(
       Derivation(
         name = "*",
@@ -1570,14 +1569,15 @@ class JoinTest {
     val tableUtils = TableUtils(spark)
     val namespace = "test_join_derivation" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
-    val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true, namespace)
     val joinConfWithExternal = getEventsEventsTemporal("cumulative", namespace)
-    joinConfWithExternal.setJoinParts(Seq(Builders.JoinPart(groupBy = viewsGroupBy)).asJava)
 
     joinConfWithExternal.setOnlineExternalParts(Seq(
       Builders.ExternalPart(
         Builders.ContextualSource(
-          fields = Array(StructField("user_txn_count_30d", LongType))
+          fields = Array(
+            StructField("user_txn_count_30d", LongType),
+            StructField("event_id", StringType)
+          )
         )
       )
     ).asJava
@@ -1592,6 +1592,10 @@ class JoinTest {
         Builders.Derivation(
           name = "user_txn_count_30d",
           expression = "ext_contextual_user_txn_count_30d"
+        ),
+        Builders.Derivation(
+          name = "event_id",
+          expression = "ext_contextual_event_id"
         )
       ).asJava
     )
@@ -1601,5 +1605,6 @@ class JoinTest {
       new Analyzer(tableUtils, joinConfWithExternal, monthAgo, today).analyzeJoin(joinConfWithExternal, enableHitter = false)
     aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
     aggregationsMetadata.exists(_.name == "user_txn_count_30d")
+    aggregationsMetadata.exists(_.name == "event_id")
   }
 }
