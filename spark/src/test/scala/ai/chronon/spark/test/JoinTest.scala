@@ -1576,7 +1576,7 @@ class JoinTest {
         Builders.ContextualSource(
           fields = Array(
             StructField("user_txn_count_30d", LongType),
-            StructField("event_id", StringType)
+            StructField("item", StringType)
           )
         )
       )
@@ -1594,8 +1594,8 @@ class JoinTest {
           expression = "ext_contextual_user_txn_count_30d"
         ),
         Builders.Derivation(
-          name = "event_id",
-          expression = "ext_contextual_event_id"
+          name = "item",
+          expression = "ext_contextual_item"
         )
       ).asJava
     )
