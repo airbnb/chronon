@@ -256,9 +256,11 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       leftDf
     }
 
-    val renamedRightDf = rightDf.renameRightColumnsForJoin(
-      joinPart,
-      Set(Constants.TimeColumn, tableUtils.partitionColumn, Constants.TimePartitionColumn, Constants.LabelPartitionColumn))
+    val renamedRightDf = rightDf.renameRightColumnsForJoin(joinPart,
+                                                           Set(Constants.TimeColumn,
+                                                               tableUtils.partitionColumn,
+                                                               Constants.TimePartitionColumn,
+                                                               Constants.LabelPartitionColumn))
 
     val partName = joinPart.groupBy.metaData.name
 
