@@ -17,6 +17,7 @@
 package ai.chronon.spark
 
 import ai.chronon.aggregator.windowing.TsUtils
+import ai.chronon.api.Extensions.QueryOps
 import ai.chronon.api.{Constants, Query, QueryUtils}
 
 import scala.collection.JavaConverters._
@@ -103,7 +104,7 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
       whereClauses(partitionColumn) ++ queryOpt
         .flatMap(q => Option(q.wheres).map(_.asScala))
         .getOrElse(Seq.empty[String])
-    QueryUtils.build(selects = queryOpt.map { query => Option(query.selects).map(_.asScala.toMap).orNull }.orNull,
+    QueryUtils.build(selects = queryOpt.map(_.getQuerySelects).orNull,
                      from = table,
                      wheres = wheres,
                      fillIfAbsent = fillIfAbsent)
