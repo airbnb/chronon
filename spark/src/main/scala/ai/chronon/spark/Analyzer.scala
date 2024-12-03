@@ -408,15 +408,20 @@ class Analyzer(tableUtils: TableUtils,
       }
     }
     val aggMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
+      val keyColumns: List[String] = joinConf.joinParts.toScala.flatMap(_.groupBy.keyColumns.toScala).distinct
+      val tsDsSchema: Map[String, DataType] = {
+        Map("ts" -> api.StringType, "ds" -> api.StringType)
+      }
       val sparkSchema = {
-        val schema: Seq[(String, DataType)] = leftSchema.toSeq ++ rightSchema.toSeq
+        val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
+        val schema: Seq[(String, DataType)] = keySchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
         StructType(SparkConversions.fromChrononSchema(schema))
       }
       val dummyOutputDf = tableUtils.sparkSession
         .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
-      val finalOutputColumns = joinConf.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
+      val finalOutputColumns = joinConf.derivationsScala.finalOutputColumn(dummyOutputDf.columns)
       val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
-      val columns = SparkConversions.toChrononSchema(StructType(derivedDummyOutputDf.schema))
+      val columns = SparkConversions.toChrononSchema(StructType(derivedDummyOutputDf.schema.filterNot(tup => tsDsSchema.contains(tup.name))))
       ListBuffer(columns.map { tup => toAggregationMetadata(tup._1, tup._2, joinConf.hasDerivations) }: _*)
     } else {
       aggregationsMetadata
