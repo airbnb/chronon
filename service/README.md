@@ -74,3 +74,39 @@ StatsD Metric: ai.zipline.join.fetch.join_request.count 1|c|#null,null,null,null
 StatsD Metric: ai.zipline.join.fetch.group_by_request.count 1|c|#null,null,accuracy:SNAPSHOT,environment:join.fetch,owner:quickstart,team:quickstart,production:false,group_by:quickstart_purchases_v1,join:quickstart_training_set_v2
 ...
 ```
+
+## Features Lookup Response Structure
+
+The /v1/features/join and /v1/features/groupby endpoints are bulkGet endpoints (against a single GroupBy or Join). Users can request multiple lookups, for example:
+```bash
+$ curl -X POST   'http://localhost:9000/v1/features/join/quickstart%2Ftraining_set.v2'   -H 'Content-Type: application/json'   -d '[{"user_id": "5"}, {"user_id": "7"}]'
+```
+
+The response status is 4xx (in case of errors parsing the incoming json request payload), 5xx (internal error like the KV store being unreachable) or 200 (some / all successful lookups).
+In case of the 200 response, the payload looks like the example shown below:
+```json
+{
+  "results": [
+    {
+      "status": "Success",
+      "entityKeys": {
+        "user_id": "5"
+      },
+      "features": {
+        "A": 12,
+        "B": 24
+      }
+    },
+    {
+      "status": "Success",
+      "entityKeys": {
+        "user_id": "7"
+      },
+      "features": {
+        "A": 36,
+        "B": 48,
+      }
+    }
+  ]
+}
+```
