@@ -162,7 +162,7 @@ object Extensions {
         .filterNot(field => existingColumns.contains(field.name))
         .map(field => lit(null).cast(field.dataType).as(field.name))
       val columnsWithPadding = df.columns.map(col) ++ paddedColumns
-      df.select(columnsWithPadding:_*)
+      df.select(columnsWithPadding: _*)
     }
 
     def renameRightColumnsForJoin(joinPart: JoinPart, timeColumns: Set[String]): DataFrame = {
@@ -180,7 +180,7 @@ object Extensions {
         }
       }
 
-      df.select(renamedColumns:_*)
+      df.select(renamedColumns: _*)
     }
 
     def validateJoinKeys(right: DataFrame, keys: Seq[String]): Unit = {
