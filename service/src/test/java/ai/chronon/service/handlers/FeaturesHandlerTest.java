@@ -72,7 +72,8 @@ public class FeaturesHandlerTest {
         String validRequestBody = "[{\"user_id\":\"123\"}]";
         when(requestBody.asString()).thenReturn(validRequestBody);
 
-        JavaRequest request = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "123"));
+        Map<String, Object> keys = Collections.singletonMap("user_id", "123");
+        JavaRequest request = new JavaRequest(TEST_GROUP_BY, keys);
         Map<String, Object> featureMap = new HashMap<String, Object>() {{
             put("feature_1", 12);
             put("feature_2", 23.3);
@@ -99,7 +100,7 @@ public class FeaturesHandlerTest {
 
             // Verify response format
             JsonObject actualResponse = new JsonObject(responseCaptor.getValue());
-            GetFeaturesResponse.Result expectedResult = GetFeaturesResponse.Result.builder().status(Success).features(featureMap).build();
+            GetFeaturesResponse.Result expectedResult = GetFeaturesResponse.Result.builder().status(Success).entityKeys(keys).features(featureMap).build();
             validateSuccessfulResponse(actualResponse, Collections.singletonList(expectedResult), context);
             async.complete();
         });
@@ -169,8 +170,12 @@ public class FeaturesHandlerTest {
         String validRequestBody = "[{\"user_id\":\"123\"}, {\"user_id\":\"456\"}]";
         when(requestBody.asString()).thenReturn(validRequestBody);
 
-        JavaRequest request1 = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "123"));
-        JavaRequest request2 = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "456"));
+        Map<String, Object> keys1 = Collections.singletonMap("user_id", "123");
+        JavaRequest request1 = new JavaRequest(TEST_GROUP_BY, keys1);
+
+        Map<String, Object> keys2 = Collections.singletonMap("user_id", "456");
+        JavaRequest request2 = new JavaRequest(TEST_GROUP_BY, keys2);
+
         Map<String, Object> featureMap1 = new HashMap<String, Object>() {{
             put("feature_1", 12);
             put("feature_2", 23.3);
@@ -210,8 +215,8 @@ public class FeaturesHandlerTest {
 
             // Verify response format
             JsonObject actualResponse = new JsonObject(responseCaptor.getValue());
-            GetFeaturesResponse.Result expectedResult1 = GetFeaturesResponse.Result.builder().status(Success).features(featureMap1).build();
-            GetFeaturesResponse.Result expectedResult2 = GetFeaturesResponse.Result.builder().status(Success).features(featureMap2).build();
+            GetFeaturesResponse.Result expectedResult1 = GetFeaturesResponse.Result.builder().status(Success).entityKeys(keys1).features(featureMap1).build();
+            GetFeaturesResponse.Result expectedResult2 = GetFeaturesResponse.Result.builder().status(Success).entityKeys(keys2).features(featureMap2).build();
 
             List<GetFeaturesResponse.Result> expectedResultList = new ArrayList<GetFeaturesResponse.Result>() {{
                 add(expectedResult1);
@@ -230,8 +235,12 @@ public class FeaturesHandlerTest {
         String validRequestBody = "[{\"user_id\":\"123\"}, {\"user_id\":\"456\"}]";
         when(requestBody.asString()).thenReturn(validRequestBody);
 
-        JavaRequest request1 = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "123"));
-        JavaRequest request2 = new JavaRequest(TEST_GROUP_BY, Collections.singletonMap("user_id", "456"));
+        Map<String, Object> keys1 = Collections.singletonMap("user_id", "123");
+        JavaRequest request1 = new JavaRequest(TEST_GROUP_BY, keys1);
+
+        Map<String, Object> keys2 = Collections.singletonMap("user_id", "456");
+        JavaRequest request2 = new JavaRequest(TEST_GROUP_BY, keys2);
+
         Map<String, Object> featureMap = new HashMap<String, Object>() {{
             put("feature_1", 12);
             put("feature_2", 23.3);
@@ -265,8 +274,8 @@ public class FeaturesHandlerTest {
 
             // Verify response format
             JsonObject actualResponse = new JsonObject(responseCaptor.getValue());
-            GetFeaturesResponse.Result expectedResult1 = GetFeaturesResponse.Result.builder().status(Success).features(featureMap).build();
-            GetFeaturesResponse.Result expectedResult2 = GetFeaturesResponse.Result.builder().status(Failure).error("some failure!").build();
+            GetFeaturesResponse.Result expectedResult1 = GetFeaturesResponse.Result.builder().status(Success).entityKeys(keys1).features(featureMap).build();
+            GetFeaturesResponse.Result expectedResult2 = GetFeaturesResponse.Result.builder().status(Failure).entityKeys(keys2).error("some failure!").build();
             List<GetFeaturesResponse.Result> expectedResultList = new ArrayList<GetFeaturesResponse.Result>() {{
                add(expectedResult1);
                add(expectedResult2);
@@ -293,6 +302,11 @@ public class FeaturesHandlerTest {
             Map<String, Object> resultMap = results.getJsonObject(i).getMap();
             context.assertTrue(resultMap.containsKey("status"));
             context.assertEquals(resultMap.get("status"), expectedResults.get(i).getStatus().name());
+
+            context.assertTrue(resultMap.containsKey("entityKeys"));
+            Map<String, Object> returnedKeys = (Map<String, Object>) resultMap.get("entityKeys");
+            context.assertEquals(expectedResults.get(i).getEntityKeys(), returnedKeys);
+
             if (expectedResults.get(i).getStatus().equals(Success)) {
                 context.assertTrue(resultMap.containsKey("features"));
                 Map<String, Object> returnedFeatureMap = (Map<String, Object>) resultMap.get("features");

@@ -52,11 +52,13 @@ public class GetFeaturesResponse {
         }
 
         private final Status status;
+        private final Map<String, Object> entityKeys;
         private final Map<String, Object> features;
         private final String error;
 
         private Result(Builder builder) {
             this.status = builder.status;
+            this.entityKeys = builder.entityKeys;
             this.features = builder.features;
             this.error = builder.error;
         }
@@ -69,6 +71,10 @@ public class GetFeaturesResponse {
             return features;
         }
 
+        public Map<String, Object> getEntityKeys() {
+            return entityKeys;
+        }
+
         public String getError() {
             return error;
         }
@@ -79,6 +85,7 @@ public class GetFeaturesResponse {
 
         public static class Builder {
             private Status status;
+            private Map<String, Object> entityKeys;
             private Map<String, Object> features;
             private String error;
 
@@ -89,6 +96,11 @@ public class GetFeaturesResponse {
 
             public Builder features(Map<String, Object> features) {
                 this.features = features;
+                return this;
+            }
+
+            public Builder entityKeys(Map<String, Object> entityKeys) {
+                this.entityKeys = entityKeys;
                 return this;
             }
 

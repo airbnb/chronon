@@ -43,6 +43,17 @@ public class FeaturesHandler implements Handler<RoutingContext> {
         Join
     }
 
+    // PoJo to simplify transforming responses from the Fetcher to the final results form we return
+    private static class EntityKeyToValues {
+        public EntityKeyToValues(Map<String, Object> keys, JTry<Map<String, Object>> values) {
+            this.entityKeys = keys;
+            this.features = values;
+        }
+
+        public Map<String, Object> entityKeys;
+        public JTry<Map<String, Object>> features;
+    }
+
     private static final Logger logger = LoggerFactory.getLogger(FeaturesHandler.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -73,9 +84,9 @@ public class FeaturesHandler implements Handler<RoutingContext> {
         CompletableFuture<List<JavaResponse>> resultsJavaFuture =
                 entityType.equals(EntityType.GroupBy) ? fetcher.fetchGroupBys(requests) : fetcher.fetchJoin(requests);
         // wrap the Java future we get in a Vert.x Future to not block the worker thread
-        Future<List<JTry<Map<String, Object>>>> maybeFeatureResponses =
+        Future<List<EntityKeyToValues>> maybeFeatureResponses =
                 Future.fromCompletionStage(resultsJavaFuture)
-                      .map(result -> result.stream().map(FeaturesHandler::responseToMap)
+                      .map(result -> result.stream().map(FeaturesHandler::responseToPoJo)
                       .collect(Collectors.toList()));
 
         maybeFeatureResponses.onSuccess(resultList -> {
@@ -83,11 +94,11 @@ public class FeaturesHandler implements Handler<RoutingContext> {
             // we return the responses in the same order as they come in and mark them as successful / failed based
             // on the lookups
             GetFeaturesResponse.Builder responseBuilder = GetFeaturesResponse.builder();
-            List<GetFeaturesResponse.Result> results = resultList.stream().map(tryObj -> {
-                if (tryObj.isSuccess()) {
-                    return GetFeaturesResponse.Result.builder().status(Success).features(tryObj.getValue()).build();
+            List<GetFeaturesResponse.Result> results = resultList.stream().map(resultsPojo -> {
+                if (resultsPojo.features.isSuccess()) {
+                    return GetFeaturesResponse.Result.builder().status(Success).entityKeys(resultsPojo.entityKeys).features(resultsPojo.features.getValue()).build();
                 } else {
-                    return GetFeaturesResponse.Result.builder().status(Failure).error(tryObj.getException().getMessage()).build();
+                    return GetFeaturesResponse.Result.builder().status(Failure).entityKeys(resultsPojo.entityKeys).error(resultsPojo.features.getException().getMessage()).build();
                 }
             }).collect(Collectors.toList());
             responseBuilder.results(results);
@@ -107,8 +118,8 @@ public class FeaturesHandler implements Handler<RoutingContext> {
         });
     }
 
-    public static JTry<Map<String, Object>> responseToMap(JavaResponse response) {
-        return response.values;
+    public static EntityKeyToValues responseToPoJo(JavaResponse response) {
+        return new EntityKeyToValues(response.request.keys, response.values);
     }
 
     public static JTry<List<JavaRequest>> parseJavaRequest(String name, RequestBody body) {

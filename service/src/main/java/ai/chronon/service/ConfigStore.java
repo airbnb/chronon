@@ -7,6 +7,8 @@ import io.vertx.core.json.JsonObject;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
@@ -24,16 +26,30 @@ public class ConfigStore {
     private static final String ONLINE_CLASS = "online.class";
     private static final String ONLINE_API_PROPS = "online.api.props";
 
-    private JsonObject jsonConfig;
+    private volatile JsonObject jsonConfig;
+    private final Object lock = new Object();
 
     public ConfigStore(Vertx vertx) {
+        // Use CountDownLatch to wait for config loading
+        CountDownLatch latch = new CountDownLatch(1);
         ConfigRetriever configRetriever = ConfigRetriever.create(vertx);
         configRetriever.getConfig().onComplete(ar -> {
             if (ar.failed()) {
                 throw new IllegalStateException("Unable to load service config", ar.cause());
             }
-            jsonConfig = ar.result();
+            synchronized (lock) {
+                jsonConfig = ar.result();
+            }
+            latch.countDown();
         });
+        try {
+            if (!latch.await(1, TimeUnit.SECONDS)) {
+                throw new IllegalStateException("Timed out waiting for Vertx config read");
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while loading config", e);
+        }
     }
 
     public int getServerPort() {
