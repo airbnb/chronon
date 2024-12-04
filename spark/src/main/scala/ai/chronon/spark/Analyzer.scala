@@ -412,7 +412,7 @@ class Analyzer(tableUtils: TableUtils,
       val keyColumns: List[String] = joinConf.joinParts.toScala
         .flatMap(joinPart => {
           val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
-          if (joinPart.keyMapping.isEmpty) keyCols
+          if (joinPart.keyMapping == null || joinPart.keyMapping.isEmpty) keyCols
           else {
             keyCols.map(key => joinPart.keyMapping.getOrDefault(key, key))
           }
