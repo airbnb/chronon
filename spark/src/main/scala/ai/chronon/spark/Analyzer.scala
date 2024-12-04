@@ -407,8 +407,17 @@ class Analyzer(tableUtils: TableUtils,
         )
       }
     }
+    // Derive the join online fetching output schema with metadata
     val aggMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
-      val keyColumns: List[String] = joinConf.joinParts.toScala.flatMap(_.groupBy.keyColumns.toScala).distinct
+      val keyColumns: List[String] = joinConf.joinParts.toScala
+        .flatMap(
+          joinPart => {
+            val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
+            if (joinPart.keyMapping.isEmpty) keyCols else {
+                keyCols.map(key => joinPart.keyMapping.getOrDefault(key, key))
+            }
+          })
+        .distinct
       val tsDsSchema: Map[String, DataType] = {
         Map("ts" -> api.StringType, "ds" -> api.StringType)
       }
