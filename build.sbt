@@ -400,7 +400,7 @@ lazy val flink = (project in file("flink"))
   )
 
 lazy val service = (project in file("service"))
-  .dependsOn(online)
+  .dependsOn(online.%("compile->compile;test->test"))
   .settings(
     assembly / assemblyJarName := s"${name.value}-${version.value}.jar",
     assembly / artifact := {
