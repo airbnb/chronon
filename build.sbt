@@ -409,6 +409,7 @@ lazy val service = (project in file("service"))
     },
     addArtifact(assembly / artifact, assembly),
     publishSettings,
+    crossScalaVersions := supportedVersions,
     libraryDependencies ++= Seq(
       "io.vertx" % "vertx-core" % "4.5.10",
       "io.vertx" % "vertx-web" % "4.5.10",
