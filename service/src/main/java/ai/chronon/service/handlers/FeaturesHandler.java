@@ -68,7 +68,7 @@ public class FeaturesHandler implements Handler<RoutingContext> {
     @Override
     public void handle(RoutingContext ctx) {
         String entityName = ctx.pathParam("name");
-        logger.info("Retrieving {} - {}", entityType.name(), entityName);
+        logger.debug("Retrieving {} - {}", entityType.name(), entityName);
         JTry<List<JavaRequest>> maybeRequest = parseJavaRequest(entityName, ctx.body());
         if (! maybeRequest.isSuccess()) {
             logger.error("Unable to parse request body", maybeRequest.getException());

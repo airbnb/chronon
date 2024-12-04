@@ -1,4 +1,4 @@
-# Chronon Feature Service
+# Chronon Feature Fetching Service
 
 The feature service module consists of code to bring up a service that provides a thin shim around the Fetcher code. This 
 is meant to aid Chronon adopters who either need a quicker way to get a feature serving layer up and running or need to 
