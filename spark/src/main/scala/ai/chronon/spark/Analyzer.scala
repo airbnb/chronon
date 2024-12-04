@@ -419,7 +419,7 @@ class Analyzer(tableUtils: TableUtils,
       }
       val dummyOutputDf = tableUtils.sparkSession
         .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
-      val finalOutputColumns = joinConf.derivationsScala.finalOutputColumn(dummyOutputDf.columns)
+      val finalOutputColumns = joinConf.derivationsScala.finalOutputColumn(rightSchema.toSeq.map(_._1))
       val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
       val columns = SparkConversions.toChrononSchema(StructType(derivedDummyOutputDf.schema.filterNot(tup => tsDsSchema.contains(tup.name))))
       ListBuffer(columns.map { tup => toAggregationMetadata(tup._1, tup._2, joinConf.hasDerivations) }: _*)
