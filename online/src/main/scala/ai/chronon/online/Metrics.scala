@@ -125,6 +125,9 @@ object Metrics {
       )
     }
 
+    // Host can also be a Unix socket like: unix:///opt/datadog-agent/run/dogstatsd.sock
+    // In the unix socket case port is configured to be 0
+    val statsHost: String = System.getProperty("ai.chronon.metrics.host", "localhost")
     val statsPort: Int = System.getProperty("ai.chronon.metrics.port", "8125").toInt
     val tagCache: TTLCache[Context, String] = new TTLCache[Context, String](
       { ctx => ctx.toTags.reverse.mkString(",") },
@@ -132,7 +135,7 @@ object Metrics {
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
 
-    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.zipline", "localhost", statsPort)
+    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.zipline", statsHost, statsPort)
   }
 
   case class Context(environment: Environment,

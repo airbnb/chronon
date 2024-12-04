@@ -80,7 +80,7 @@ enablePlugins(GitVersioning, GitBranchPrompt)
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded)
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded, service)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
@@ -397,6 +397,61 @@ lazy val flink = (project in file("flink"))
                                        "spark-all/provided",
                                        "scala-parallel-collections",
                                        "flink")
+  )
+
+lazy val service = (project in file("service"))
+  .dependsOn(online.%("compile->compile;test->test"))
+  .settings(
+    assembly / assemblyJarName := s"${name.value}-${version.value}.jar",
+    assembly / artifact := {
+      val art = (assembly / artifact).value
+      art.withClassifier(Some("assembly"))
+    },
+    addArtifact(assembly / artifact, assembly),
+    publishSettings,
+    crossScalaVersions := supportedVersions,
+    libraryDependencies ++= Seq(
+      "io.vertx" % "vertx-core" % "4.5.10",
+      "io.vertx" % "vertx-web" % "4.5.10",
+      "io.vertx" % "vertx-config" % "4.5.10",
+      "ch.qos.logback" % "logback-classic" % "1.2.11",
+      "org.slf4j" % "slf4j-api" % "1.7.36",
+      "com.typesafe" % "config" % "1.4.3",
+      // force netty versions -> without this we conflict with the versions pulled in from
+      // our online module's spark deps which causes the web-app to not serve up content
+      "io.netty" % "netty-all" % "4.1.111.Final",
+      // wire up metrics using micro meter and statsd
+      "io.vertx" % "vertx-micrometer-metrics" % "4.5.10",
+      "io.micrometer" % "micrometer-registry-statsd" % "1.13.6",
+      "junit" % "junit" % "4.13.2" % Test,
+      "com.novocode" % "junit-interface" % "0.11" % Test,
+      // use mockito 4.x as Chronon builds on Java8
+      "org.mockito" % "mockito-core" % "4.11.0" % Test,
+      "io.vertx" % "vertx-unit" % "4.5.10" % Test,
+      // add codegen dep to help with mockito errors
+      "io.vertx" % "vertx-codegen" % "4.5.10" % Test,
+    ),
+    // Assembly settings
+    assembly / assemblyJarName := s"${name.value}-${version.value}.jar",
+
+    // Main class configuration
+    // We use a custom launcher to help us wire up our statsd metrics
+    Compile / mainClass := Some("ai.chronon.service.ChrononServiceLauncher"),
+    assembly / mainClass := Some("ai.chronon.service.ChrononServiceLauncher"),
+
+    // Merge strategy for assembly
+    assembly / assemblyMergeStrategy := {
+      case PathList("META-INF", "MANIFEST.MF") => MergeStrategy.discard
+      case PathList("META-INF", xs @ _*) => MergeStrategy.first
+      case PathList("javax", "activation", xs @ _*) => MergeStrategy.first
+      case PathList("org", "apache", "logging", xs @ _*) => MergeStrategy.first
+      case PathList("org", "slf4j", xs @ _*) => MergeStrategy.first
+      case "application.conf" => MergeStrategy.concat
+      case "reference.conf" => MergeStrategy.concat
+      case x =>
+        val oldStrategy = (assembly / assemblyMergeStrategy).value
+        oldStrategy(x)
+    }
   )
 
 // Build Sphinx documentation
