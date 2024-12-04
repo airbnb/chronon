@@ -25,7 +25,7 @@ import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
-import org.apache.spark.sql.{DataFrame, Row, types}
+import org.apache.spark.sql.{Column, DataFrame, Row, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit, sum, when}
 import org.apache.spark.sql.types.{StringType, StructType}
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
@@ -428,7 +428,7 @@ class Analyzer(tableUtils: TableUtils,
       }
       val dummyOutputDf = tableUtils.sparkSession
         .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
-      val finalOutputColumns = joinConf.derivationsScala.finalOutputColumn(rightSchema.toArray.map(_._1))
+      val finalOutputColumns: Seq[Column] = joinConf.derivationsScala.finalOutputColumn(rightSchema.toArray.map(_._1))
       val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
       val columns = SparkConversions.toChrononSchema(
         StructType(derivedDummyOutputDf.schema.filterNot(tup => tsDsSchema.contains(tup.name))))
