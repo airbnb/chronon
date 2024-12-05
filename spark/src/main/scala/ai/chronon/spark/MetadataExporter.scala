@@ -74,18 +74,18 @@ object MetadataExporter {
     val analyzer = new Analyzer(tableUtils, path, yesterday, today, silenceMode = true, skipTimestampCheck = true)
     val enrichedData: Map[String, Any] =
       //try {
-        if (path.contains(GROUPBY_PATH_SUFFIX)) {
-          val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
-          configData + { "features" -> analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap) }
-        } else if (path.contains(JOIN_PATH_SUFFIX)) {
-          val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
-          val joinAnalysis = analyzer.analyzeJoin(join, validateTablePermission = false)
-          val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
-          configData + { "features" -> featureMetadata }
-        } else {
-          throw new Exception(f"Unknown entity type for $path")
-        }
-      /*} catch {
+      if (path.contains(GROUPBY_PATH_SUFFIX)) {
+        val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
+        configData + { "features" -> analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap) }
+      } else if (path.contains(JOIN_PATH_SUFFIX)) {
+        val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
+        val joinAnalysis = analyzer.analyzeJoin(join, validateTablePermission = false)
+        val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
+        configData + { "features" -> featureMetadata }
+      } else {
+        throw new Exception(f"Unknown entity type for $path")
+      }
+    /*} catch {
         case exception: Throwable =>
           logger.error(s"Exception while processing entity $path: ${ExceptionUtils.getStackTrace(exception)}")
           configData

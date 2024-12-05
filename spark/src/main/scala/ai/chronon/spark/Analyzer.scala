@@ -416,7 +416,7 @@ class Analyzer(tableUtils: TableUtils,
           else {
             keyCols.map(key => {
               val findKey = joinPart.keyMapping.toScala.find(_._2 == key)
-              if (findKey.isDefined){
+              if (findKey.isDefined) {
                 findKey.get._1
               } else {
                 key
