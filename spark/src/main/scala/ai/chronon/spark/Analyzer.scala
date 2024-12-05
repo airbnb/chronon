@@ -32,7 +32,7 @@ import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 
 import scala.collection.{Seq, immutable, mutable}
 import scala.collection.mutable.ListBuffer
-import scala.util.ScalaJavaConversions.ListOps
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -412,9 +412,16 @@ class Analyzer(tableUtils: TableUtils,
       val keyColumns: List[String] = joinConf.joinParts.toScala
         .flatMap(joinPart => {
           val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
-          if (joinPart.keyMapping == null || joinPart.keyMapping.isEmpty) keyCols
+          if (joinPart.keyMapping == null) keyCols
           else {
-            keyCols.map(key => joinPart.keyMapping.getOrDefault(key, key))
+            keyCols.map(key => {
+              val findKey = joinPart.keyMapping.toScala.find(_._2 == key)
+              if (findKey.isDefined){
+                findKey.get._1
+              } else {
+                key
+              }
+            })
           }
         })
         .distinct

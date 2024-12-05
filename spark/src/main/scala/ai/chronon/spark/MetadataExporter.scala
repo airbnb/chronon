@@ -73,7 +73,7 @@ object MetadataExporter {
     val configData = mapper.readValue(new File(path), classOf[Map[String, Any]])
     val analyzer = new Analyzer(tableUtils, path, yesterday, today, silenceMode = true, skipTimestampCheck = true)
     val enrichedData: Map[String, Any] =
-      try {
+      //try {
         if (path.contains(GROUPBY_PATH_SUFFIX)) {
           val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
           configData + { "features" -> analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap) }
@@ -85,11 +85,11 @@ object MetadataExporter {
         } else {
           throw new Exception(f"Unknown entity type for $path")
         }
-      } catch {
+      /*} catch {
         case exception: Throwable =>
           logger.error(s"Exception while processing entity $path: ${ExceptionUtils.getStackTrace(exception)}")
           configData
-      }
+      }*/
     mapper.writeValueAsString(enrichedData)
   }
 
