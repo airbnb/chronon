@@ -157,10 +157,10 @@ object Extensions {
     }
 
     /**
-     * Pads fields in a dataframe according to a schema.
-     * Fields in the schema that are not present in the dataframe
-     * are filled with null values.
-     */
+      * Pads fields in a dataframe according to a schema.
+      * Fields in the schema that are not present in the dataframe
+      * are filled with null values.
+      */
     def padFields(structType: sql.types.StructType): DataFrame = {
       val existingColumns = df.columns.toSet
       val paddedColumns = structType
