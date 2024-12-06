@@ -18,28 +18,19 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{
-  Accuracy,
-  Builders,
-  Constants,
-  JoinPart,
-  LongType,
-  Operation,
-  PartitionSpec,
-  StringType,
-  TimeUnit,
-  Window
-}
+import ai.chronon.api.StructField
+import ai.chronon.api.Builders.Derivation
+import ai.chronon.api.{Accuracy, Builders, Constants, JoinPart, LongType, Operation, PartitionSpec, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.GroupBy.renderDataSourceQuery
+import ai.chronon.spark.GroupBy.{logger, renderDataSourceQuery}
 import ai.chronon.spark.SemanticHashUtils.{tableHashesChanged, tablesToRecompute}
 import ai.chronon.spark._
 import ai.chronon.spark.stats.SummaryJob
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
@@ -976,6 +967,44 @@ class JoinTest {
     )
   }
 
+  private def getViewsGroupByWithKeyMapping(suffix: String, makeCumulative: Boolean = false, namespace: String) = {
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item_id", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val viewsTable = s"$namespace.view_$suffix"
+    val df = DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200)
+
+    val viewsSource = Builders.Source.events(
+      table = viewsTable,
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
+      isCumulative = makeCumulative
+    )
+
+    val dfToWrite = if (makeCumulative) {
+      // Move all events into latest partition and set isCumulative on thrift object
+      df.drop("ds").withColumn("ds", lit(today))
+    } else { df }
+
+    spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
+    dfToWrite.save(viewsTable, Map("tblProp1" -> "1"))
+
+    Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item_id"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
+        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+      ),
+      metaData = Builders.MetaData(name = "unit_test.item_views_key_mapping", namespace = namespace, team = "item_team"),
+      accuracy = Accuracy.TEMPORAL
+    )
+  }
+
   private def getEventsEventsTemporal(nameSuffix: String = "", namespace: String) = {
     val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
@@ -1546,5 +1575,111 @@ class JoinTest {
     }
     assert(
       thrown2.getMessage.contains("Table or view not found") && thrown3.getMessage.contains("Table or view not found"))
+  }
+
+  def testJoinDerivationAnalyzer(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_join_derivation" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true, namespace)
+    val joinConf = getEventsEventsTemporal("cumulative", namespace)
+    joinConf.setDerivations(Seq(
+      Derivation(
+        name = "*",
+        expression = "*"
+      ), Derivation(
+        name = "test_feature_name",
+        expression = f"${viewsGroupBy.metaData.name}_time_spent_ms_average"
+      )
+    ).asJava)
+
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val (_, aggregationsMetadata) =
+      new Analyzer(tableUtils, joinConf, monthAgo, today).analyzeJoin(joinConf, enableHitter = false)
+    aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
+    aggregationsMetadata.exists(_.name == "test_feature_name")
+  }
+
+  def testJoinDerivationOnExternalAnalyzer(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_join_derivation" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val joinConfWithExternal = getEventsEventsTemporal("cumulative", namespace)
+
+    joinConfWithExternal.setOnlineExternalParts(Seq(
+      Builders.ExternalPart(
+        Builders.ContextualSource(
+          fields = Array(
+            StructField("user_txn_count_30d", LongType),
+            StructField("item", StringType)
+          )
+        )
+      )
+    ).asJava
+    )
+
+    joinConfWithExternal.setDerivations(
+      Seq(
+        Builders.Derivation(
+          name = "*"
+        ),
+        // contextual feature rename
+        Builders.Derivation(
+          name = "user_txn_count_30d",
+          expression = "ext_contextual_user_txn_count_30d"
+        ),
+        Builders.Derivation(
+          name = "item",
+          expression = "ext_contextual_item"
+        )
+      ).asJava
+    )
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val (_, aggregationsMetadata) =
+      new Analyzer(tableUtils, joinConfWithExternal, monthAgo, today).analyzeJoin(joinConfWithExternal, enableHitter = false)
+    aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
+    aggregationsMetadata.exists(_.name == "user_txn_count_30d")
+    aggregationsMetadata.exists(_.name == "item")
+  }
+
+  def testJoinDerivationWithKeyAnalyzer(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_join_derivation" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val joinConfWithDerivationWithKey = getEventsEventsTemporal("cumulative", namespace)
+    val viewsGroupBy = getViewsGroupBy(suffix = "cumulative", makeCumulative = true, namespace)
+    val viewGroupByWithKepMapping = getViewsGroupByWithKeyMapping("cumulative", makeCumulative = true, namespace)
+
+    joinConfWithDerivationWithKey.setJoinParts(
+      Seq(Builders.JoinPart(
+        groupBy = viewGroupByWithKepMapping,
+        keyMapping = Map("item" -> "item_id")
+      )).asJava
+    )
+
+    joinConfWithDerivationWithKey.setDerivations(
+      Seq(
+        Builders.Derivation(
+          name = "*"
+        ),
+        Builders.Derivation(
+          name = "item",
+          expression = "item"
+        )
+      ).asJava
+    )
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val (_, aggregationsMetadata) =
+      new Analyzer(tableUtils, joinConfWithDerivationWithKey, monthAgo, today).analyzeJoin(joinConfWithDerivationWithKey, enableHitter = false)
+    aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
+    aggregationsMetadata.exists(_.name == f"${viewsGroupBy.metaData.name}_time_spent_ms_average")
+    aggregationsMetadata.exists(_.name == f"${viewGroupByWithKepMapping.metaData.name}_time_spent_ms_average")
+    aggregationsMetadata.exists(_.name == "item")
   }
 }
