@@ -295,7 +295,7 @@ class Analyzer(tableUtils: TableUtils,
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
       .toMap
-    val aggregationsMetadata = ListBuffer[AggregationMetadata]()
+    val joinIntermediateValuesMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbTables = ListBuffer[String]()
     val gbStartPartitions = mutable.Map[String, List[String]]()
@@ -316,7 +316,7 @@ class Analyzer(tableUtils: TableUtils,
                        includeOutputTableName = true,
                        enableHitter = enableHitter,
                        skipTimestampCheck = skipTimestampCheck)
-      aggregationsMetadata ++= aggMetadata.map { aggMeta =>
+      joinIntermediateValuesMetadata ++= aggMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
                             aggMeta.operation,
@@ -337,7 +337,7 @@ class Analyzer(tableUtils: TableUtils,
     }
     if (joinConf.onlineExternalParts != null) {
       joinConf.onlineExternalParts.toScala.foreach { part =>
-        aggregationsMetadata ++= part.source.valueFields.map { field =>
+        joinIntermediateValuesMetadata ++= part.source.valueFields.map { field =>
           AggregationMetadata(part.fullName + "_" + field.name,
                               field.fieldType,
                               null,
@@ -352,7 +352,7 @@ class Analyzer(tableUtils: TableUtils,
     } else Set()
 
     val rightSchema: Map[String, DataType] =
-      aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
+      joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
@@ -408,19 +408,15 @@ class Analyzer(tableUtils: TableUtils,
       }
     }
     // Derive the join online fetching output schema with metadata
-    val aggMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
+    val joinOutputValuesMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
       val keyColumns: List[String] = joinConf.joinParts.toScala
         .flatMap(joinPart => {
           val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
           if (joinPart.keyMapping == null) keyCols
           else {
             keyCols.map(key => {
-              val findKey = joinPart.keyMapping.toScala.find(_._2 == key)
-              if (findKey.isDefined) {
-                findKey.get._1
-              } else {
-                key
-              }
+              if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
+              else key
             })
           }
         })
@@ -442,10 +438,10 @@ class Analyzer(tableUtils: TableUtils,
         StructType(derivedDummyOutputDf.schema.filterNot(tup => tsDsSchema.contains(tup.name))))
       ListBuffer(columns.map { tup => toAggregationMetadata(tup._1, tup._2, joinConf.hasDerivations) }: _*)
     } else {
-      aggregationsMetadata
+      joinIntermediateValuesMetadata
     }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
-    (leftSchema ++ rightSchema, aggMetadata)
+    (leftSchema ++ rightSchema, joinOutputValuesMetadata)
   }
 
   // validate the schema of the left and right side of the join and make sure the types match
