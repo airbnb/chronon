@@ -289,7 +289,7 @@ class Fetcher(val kvStore: KVStore,
             elem
           }
       }
-      val avroRecord = AvroConversions.fromChrononRow(data, schema).asInstanceOf[GenericRecord]
+      val avroRecord = AvroConversions.fromChrononRow(data, schema, codec.schema).asInstanceOf[GenericRecord]
       codec.encodeBinary(avroRecord)
     }
 
