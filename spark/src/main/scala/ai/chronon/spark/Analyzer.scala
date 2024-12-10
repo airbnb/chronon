@@ -25,14 +25,14 @@ import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
-import org.apache.spark.sql.{DataFrame, Row, types}
+import org.apache.spark.sql.{Column, DataFrame, Row, types}
 import org.apache.spark.sql.functions.{col, from_unixtime, lit, sum, when}
 import org.apache.spark.sql.types.{StringType, StructType}
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 
 import scala.collection.{Seq, immutable, mutable}
 import scala.collection.mutable.ListBuffer
-import scala.util.ScalaJavaConversions.ListOps
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -295,7 +295,7 @@ class Analyzer(tableUtils: TableUtils,
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
       .toMap
-    val aggregationsMetadata = ListBuffer[AggregationMetadata]()
+    val joinIntermediateValuesMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbTables = ListBuffer[String]()
     val gbStartPartitions = mutable.Map[String, List[String]]()
@@ -316,7 +316,7 @@ class Analyzer(tableUtils: TableUtils,
                        includeOutputTableName = true,
                        enableHitter = enableHitter,
                        skipTimestampCheck = skipTimestampCheck)
-      aggregationsMetadata ++= aggMetadata.map { aggMeta =>
+      joinIntermediateValuesMetadata ++= aggMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
                             aggMeta.operation,
@@ -337,7 +337,7 @@ class Analyzer(tableUtils: TableUtils,
     }
     if (joinConf.onlineExternalParts != null) {
       joinConf.onlineExternalParts.toScala.foreach { part =>
-        aggregationsMetadata ++= part.source.valueFields.map { field =>
+        joinIntermediateValuesMetadata ++= part.source.valueFields.map { field =>
           AggregationMetadata(part.fullName + "_" + field.name,
                               field.fieldType,
                               null,
@@ -352,7 +352,7 @@ class Analyzer(tableUtils: TableUtils,
     } else Set()
 
     val rightSchema: Map[String, DataType] =
-      aggregationsMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
+      joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
@@ -407,8 +407,41 @@ class Analyzer(tableUtils: TableUtils,
         )
       }
     }
+    // Derive the join online fetching output schema with metadata
+    val joinOutputValuesMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
+      val keyColumns: List[String] = joinConf.joinParts.toScala
+        .flatMap(joinPart => {
+          val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
+          if (joinPart.keyMapping == null) keyCols
+          else {
+            keyCols.map(key => {
+              if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
+              else key
+            })
+          }
+        })
+        .distinct
+      val tsDsSchema: Map[String, DataType] = {
+        Map("ts" -> api.StringType, "ds" -> api.StringType)
+      }
+      val sparkSchema = {
+        val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
+        val schema: Seq[(String, DataType)] = keySchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
+        StructType(SparkConversions.fromChrononSchema(schema))
+      }
+      val dummyOutputDf = tableUtils.sparkSession
+        .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
+      val finalOutputColumns: Array[Column] =
+        joinConf.derivationsScala.finalOutputColumn(rightSchema.toArray.map(_._1)).toArray
+      val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+      val columns = SparkConversions.toChrononSchema(
+        StructType(derivedDummyOutputDf.schema.filterNot(tup => tsDsSchema.contains(tup.name))))
+      ListBuffer(columns.map { tup => toAggregationMetadata(tup._1, tup._2, joinConf.hasDerivations) }: _*)
+    } else {
+      joinIntermediateValuesMetadata
+    }
     // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
-    (leftSchema ++ rightSchema, aggregationsMetadata)
+    (leftSchema ++ rightSchema, joinOutputValuesMetadata)
   }
 
   // validate the schema of the left and right side of the join and make sure the types match
