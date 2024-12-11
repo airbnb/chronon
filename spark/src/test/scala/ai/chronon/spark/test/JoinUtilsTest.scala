@@ -18,9 +18,9 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{Builders, Constants, TimeUnit, Window}
+import ai.chronon.api.{Builders, Constants}
 import ai.chronon.spark.JoinUtils.{contains_any, set_add}
-import ai.chronon.spark.{JoinUtils, PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{GroupBy, JoinUtils, PartitionRange, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
@@ -427,5 +427,40 @@ class JoinUtilsTest {
       Row(3L, 19L, "CA", "2022-10-01", "2022-10-01 08:00:00")
     )
     TestUtils.makeDf(spark, schema, rows)
+  }
+
+  @Test
+  def testInjectKeyFiter(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    // Create spark sample dataframe
+    val seq = Seq(
+      ("A", 1, "2024-01-01"),
+      ("B's C", 2, "2024-01-01") // edge case with ' in the string
+    )
+    val df = spark.createDataFrame(seq).toDF("k", "v", "ds")
+    val namespace = "join_util_test" + "_" + Random.alphanumeric.take(6).mkString
+    val table = namespace + ".sample_table"
+    val tableUtils = TableUtils(spark)
+    tableUtils.createDatabase(namespace)
+    df.save(table, partitionColumns = Seq("ds"))
+    val joinPart = Builders.JoinPart(
+      Builders.GroupBy(
+        sources = List(
+          Builders.Source.events(table = table, query = Builders.Query(selects = Map("k" -> "k", "v" -> "v")))
+        ),
+        keyColumns = List("k"),
+        metaData = Builders.MetaData(name = "join_util_test.test_inject_key_filter")
+      )
+    )
+
+    val leftSeq = Seq(("B's C", "2024-01-02"))
+    val leftDf = spark.createDataFrame(leftSeq).toDF("k", "ds")
+    val newJoinPart = JoinUtils.injectKeyFilter(leftDf, joinPart)
+    val gb = GroupBy.from(newJoinPart.groupBy,
+                          PartitionRange("2024-01-01", "2024-01-01")(tableUtils),
+                          tableUtils,
+                          computeDependency = false)
+    assertEquals(1, gb.inputDf.count())
   }
 }
