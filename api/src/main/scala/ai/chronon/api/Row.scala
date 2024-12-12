@@ -40,6 +40,36 @@ trait Row {
   }
 }
 
+/**
+  * SchemaTraverser aids in the traversal of the given SchemaType.
+  * In some cases (eg avro), it is more performant to create the
+  * top-level schema once and then traverse it top-to-bottom, rather
+  * than recreating at each node.
+  *
+  * This helper trait allows the Row.to function to traverse SchemaType
+  * without leaking details of the SchemaType structure.
+  */
+trait SchemaTraverser[SchemaType] {
+
+  def currentNode: SchemaType
+
+  // Returns the equivalent SchemaType representation of the given field
+  def getField(field: StructField): SchemaTraverser[SchemaType]
+
+  // Returns the inner type of the current collection field type.
+  // Throws if the current type is not a collection.
+  def getCollectionType: SchemaTraverser[SchemaType]
+
+  // Returns the key type of the current map field type.
+  // Throws if the current type is not a map.
+  def getMapKeyType: SchemaTraverser[SchemaType]
+
+  // Returns the valye type of the current map field type.
+  // Throws if the current type is not a map.
+  def getMapValueType: SchemaTraverser[SchemaType]
+
+}
+
 object Row {
   // recursively traverse a logical struct, and convert it chronon's row type
   def from[CompositeType, BinaryType, ArrayType, StringType](
@@ -95,49 +125,71 @@ object Row {
   }
 
   // recursively traverse a chronon dataType value, and convert it to an external type
-  def to[StructType, BinaryType, ListType, MapType](value: Any,
-                                                    dataType: DataType,
-                                                    composer: (Iterator[Any], DataType) => StructType,
-                                                    binarizer: Array[Byte] => BinaryType,
-                                                    collector: (Iterator[Any], Int) => ListType,
-                                                    mapper: (util.Map[Any, Any] => MapType),
-                                                    extraneousRecord: Any => Array[Any] = null): Any = {
+  def to[StructType, BinaryType, ListType, MapType, OutputSchema](
+      value: Any,
+      dataType: DataType,
+      composer: (Iterator[Any], DataType, Option[OutputSchema]) => StructType,
+      binarizer: Array[Byte] => BinaryType,
+      collector: (Iterator[Any], Int) => ListType,
+      mapper: (util.Map[Any, Any] => MapType),
+      extraneousRecord: Any => Array[Any] = null,
+      schemaTraverser: Option[SchemaTraverser[OutputSchema]] = None): Any = {
 
     if (value == null) return null
-    def edit(value: Any, dataType: DataType): Any =
-      to(value, dataType, composer, binarizer, collector, mapper, extraneousRecord)
+
+    def getFieldSchema(f: StructField) = schemaTraverser.map(_.getField(f))
+
+    def edit(value: Any, dataType: DataType, subTreeTraverser: Option[SchemaTraverser[OutputSchema]]): Any =
+      to(value, dataType, composer, binarizer, collector, mapper, extraneousRecord, subTreeTraverser)
+
     dataType match {
       case StructType(_, fields) =>
         value match {
           case arr: Array[Any] =>
-            composer(arr.iterator.zipWithIndex.map { case (value, idx) => edit(value, fields(idx).fieldType) },
-                     dataType)
+            composer(
+              arr.iterator.zipWithIndex.map {
+                case (value, idx) => edit(value, fields(idx).fieldType, getFieldSchema(fields(idx)))
+              },
+              dataType,
+              schemaTraverser.map(_.currentNode)
+            )
           case list: util.ArrayList[Any] =>
-            composer(list
-                       .iterator()
-                       .asScala
-                       .zipWithIndex
-                       .map { case (value, idx) => edit(value, fields(idx).fieldType) },
-                     dataType)
-          case list: List[Any] =>
-            composer(list.iterator.zipWithIndex
-                       .map { case (value, idx) => edit(value, fields(idx).fieldType) },
-                     dataType)
+            composer(
+              list
+                .iterator()
+                .asScala
+                .zipWithIndex
+                .map { case (value, idx) => edit(value, fields(idx).fieldType, getFieldSchema(fields(idx))) },
+              dataType,
+              schemaTraverser.map(_.currentNode)
+            )
           case value: Any =>
             assert(extraneousRecord != null, s"No handler for $value of class ${value.getClass}")
-            composer(extraneousRecord(value).iterator.zipWithIndex.map {
-                       case (value, idx) => edit(value, fields(idx).fieldType)
-                     },
-                     dataType)
+            composer(
+              extraneousRecord(value).iterator.zipWithIndex.map {
+                case (value, idx) => edit(value, fields(idx).fieldType, getFieldSchema(fields(idx)))
+              },
+              dataType,
+              schemaTraverser.map(_.currentNode)
+            )
         }
       case ListType(elemType) =>
         value match {
           case list: util.ArrayList[Any] =>
-            collector(list.iterator().asScala.map(edit(_, elemType)), list.size())
+            collector(
+              list.iterator().asScala.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
+              list.size()
+            )
           case arr: Array[_] => // avro only recognizes arrayList for its ArrayType/ListType
-            collector(arr.iterator.map(edit(_, elemType)), arr.length)
+            collector(
+              arr.iterator.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
+              arr.length
+            )
           case arr: mutable.WrappedArray[Any] => // handles the wrapped array type from transform function in spark sql
-            collector(arr.iterator.map(edit(_, elemType)), arr.length)
+            collector(
+              arr.iterator.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
+              arr.length
+            )
         }
       case MapType(keyType, valueType) =>
         value match {
@@ -147,12 +199,38 @@ object Row {
               .entrySet()
               .iterator()
               .asScala
-              .foreach { entry => newMap.put(edit(entry.getKey, keyType), edit(entry.getValue, valueType)) }
+              .foreach { entry =>
+                newMap.put(
+                  edit(
+                    entry.getKey,
+                    keyType,
+                    schemaTraverser.map(_.getMapKeyType)
+                  ),
+                  edit(
+                    entry.getValue,
+                    valueType,
+                    schemaTraverser.map(_.getMapValueType)
+                  )
+                )
+              }
             mapper(newMap)
           case map: collection.immutable.Map[Any, Any] =>
             val newMap = new util.HashMap[Any, Any](map.size)
             map
-              .foreach { entry => newMap.put(edit(entry._1, keyType), edit(entry._2, valueType)) }
+              .foreach { entry =>
+                newMap.put(
+                  edit(
+                    entry._1,
+                    keyType,
+                    schemaTraverser.map(_.getMapKeyType)
+                  ),
+                  edit(
+                    entry._2,
+                    valueType,
+                    schemaTraverser.map(_.getMapValueType)
+                  )
+                )
+              }
             mapper(newMap)
         }
       case BinaryType  => binarizer(value.asInstanceOf[Array[Byte]])
