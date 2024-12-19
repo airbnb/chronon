@@ -1,0 +1,5 @@
+py_library(
+    name = "chronon_lib",
+    srcs = glob(["*.py"]),
+    srcs_version = "PY3",
+)
