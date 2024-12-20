@@ -1,3 +1,2 @@
 ## Disable remote cache completely when --config=local is passed
 build:local --remote_cache=
-common --enable_workspace

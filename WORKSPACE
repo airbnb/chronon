@@ -13,7 +13,10 @@ load("@rules_jvm_external//:defs.bzl", "maven_install")
 maven_install(
     artifacts = [
         # List your Maven dependencies here
-        "org.scala-lang:scala-library:2.12.10",
+        #        "org.scala-lang:scala-library:2.11.12",
+        #        "org.scala-lang:scala-library:2.12.18",
+        "org.scala-lang:scala-library:2.13.12",
+        "org.scala-lang.modules:scala-parallel-collections_2.13:1.0.4",
         # Add other dependencies
     ],
     repositories = [
@@ -65,23 +68,51 @@ http_archive(
 
 http_archive(
     name = "io_bazel_rules_scala",
-    sha256 = "3b00fa0b243b04565abb17d3839a5f4fa6cc2cac571f6db9f83c1982ba1e19e5",
-    strip_prefix = "rules_scala-6.5.0",
-    url = "https://github.com/bazelbuild/rules_scala/releases/download/v6.5.0/rules_scala-v6.5.0.tar.gz",
+    sha256 = "e734eef95cf26c0171566bdc24d83bd82bdaf8ca7873bec6ce9b0d524bdaf05d",
+    strip_prefix = "rules_scala-6.6.0",
+    url = "https://github.com/bazelbuild/rules_scala/releases/download/v6.6.0/rules_scala-v6.6.0.tar.gz",
 )
+
+#load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
+#
+#git_repository(
+#    name = "io_bazel_rules_scala",
+#    branch = "master",
+#    #    commit = "719f353b85129106a745d9825be2c09231d4fcae",
+#    # patch prevents default namespace being passed to helm
+#    remote = "https://github.com/bazelbuild/rules_scala.git",
+#    #tag = "v0.5.0",
+#)
 
 load("@io_bazel_rules_scala//:scala_config.bzl", "scala_config")
 
-scala_config()
+scala_config(
+    scala_version = "2.13.12",  # Specify your desired Scala version
+)
 
+#
 load("@io_bazel_rules_scala//scala:scala.bzl", "rules_scala_setup", "rules_scala_toolchain_deps_repositories")
 
-# loads other rules Rules Scala depends on
+#
+## loads other rules Rules Scala depends on
 rules_scala_setup()
 
-# Loads Maven deps like Scala compiler and standard libs. On production projects you should consider
-# defining a custom deps toolchains to use your project libs instead
+#
+## Loads Maven deps like Scala compiler and standard libs. On production projects you should consider
+## defining a custom deps toolchains to use your project libs instead
 rules_scala_toolchain_deps_repositories(fetch_sources = True)
+
+#############################
+#         Protobuf          #
+#############################
+http_archive(
+    name = "rules_proto",
+    sha256 = "dc3fb206a2cb3441b485eb1e423165b231235a1ea9b031b4433cf7bc1fa460dd",
+    strip_prefix = "rules_proto-5.3.0-21.7",
+    urls = [
+        "https://github.com/bazelbuild/rules_proto/archive/refs/tags/5.3.0-21.7.tar.gz",
+    ],
+)
 
 load("@rules_proto//proto:repositories.bzl", "rules_proto_dependencies", "rules_proto_toolchains")
 
@@ -91,6 +122,7 @@ rules_proto_toolchains()
 
 load("@io_bazel_rules_scala//scala:toolchains.bzl", "scala_register_toolchains")
 
+#
 scala_register_toolchains()
 
 # optional: setup ScalaTest toolchain and dependencies
