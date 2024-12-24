@@ -312,9 +312,12 @@ object JoinUtils {
               logger.warn(s"Found ${nullValues.length} null keys for key: $keyName.")
             }
 
+            // Escape single quotes in string values for spark sql
+            def escapeSingleQuotes(s: String): String = s.replace("'", "\\'")
+
             // String manipulate to form valid SQL
             val valueSet = notNullValues.map {
-              case s: String => s"'$s'" // Add single quotes for string values
+              case s: String => s"'${escapeSingleQuotes(s)}'" // Add single quotes for string values
               case other     => other.toString // Keep other types (like Int) as they are
             }.toSet
 
