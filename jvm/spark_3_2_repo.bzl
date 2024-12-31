@@ -17,6 +17,11 @@ spark_3_2_repo = repo(
         "org.apache.spark:spark-mllib_2.12:{spark_version}",
         "org.apache.spark:spark-hive_2.12:{spark_version}",
 
+        # Spark artifacts - only Scala 2.12 since that's our target
+        "org.apache.spark:spark-sql_2.13:{spark_version}",
+        "org.apache.spark:spark-mllib_2.13:{spark_version}",
+        "org.apache.spark:spark-hive_2.13:{spark_version}",
+
         # Hive
         "org.apache.hive:hive-exec:2.3.9",
 

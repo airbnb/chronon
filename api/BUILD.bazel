@@ -23,10 +23,12 @@ scala_library(
         maven_artifact("org.apache.thrift:libthrift"),
         maven_artifact("org.slf4j:slf4j-api"),
         maven_artifact("org.slf4j:slf4j-log4j12"),
-        scala_artifact(
-            "org.scala-lang.modules:scala-collection-compat",
-        ),
     ] + select_for_scala_version(
+        before_2_13 = [
+            scala_artifact(
+                "org.scala-lang.modules:scala-collection-compat",
+            ),
+        ],
         since_2_13 = [
             maven_artifact("org.scala-lang.modules:scala-parallel-collections_2.13"),
         ],
