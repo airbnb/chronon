@@ -29,7 +29,7 @@ WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'
 
 v1 = StagingQuery(
     query=query,
-    startPartition="2020-03-01",
+startPartition="2020-03-01",
     setups=[
         "CREATE TEMPORARY FUNCTION S2_CELL AS 'com.sample.hive.udf.S2CellId'",
     ],

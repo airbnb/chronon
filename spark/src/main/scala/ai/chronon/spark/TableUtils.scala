@@ -550,7 +550,8 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       s"STORED AS $fileFormat"
     }
-    Seq(createFragment, partitionFragment, fileFormatString, propertiesFragment).mkString("\n")
+    val location = "LOCATION 's3://sr-search-data-638782101961/kchakka/datasets'"
+    Seq(createFragment, partitionFragment, fileFormatString, propertiesFragment, location).mkString("\n")
   }
 
   def alterTableProperties(tableName: String,
@@ -628,7 +629,8 @@ case class TableUtils(sparkSession: SparkSession) {
       .map { tables =>
         tables
           .flatMap { table =>
-            partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))
+            val inputPartitions = partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))
+            inputPartitions
           }
           .map(partitionSpec.shift(_, inputToOutputShift))
       }
