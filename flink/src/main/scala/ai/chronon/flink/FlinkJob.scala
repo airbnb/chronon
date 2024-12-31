@@ -1,19 +1,13 @@
 package ai.chronon.flink
 
 import ai.chronon.aggregator.windowing.ResolutionUtils
-import ai.chronon.api.{DataType}
+import ai.chronon.api.DataType
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.flink.window.{
-  AlwaysFireOnElementTrigger,
-  FlinkRowAggProcessFunction,
-  FlinkRowAggregationFunction,
-  KeySelector,
-  TimestampedTile
-}
+import ai.chronon.flink.window.{AlwaysFireOnElementTrigger, FlinkRowAggProcessFunction, FlinkRowAggregationFunction, KeySelector, TimestampedTile}
 import ai.chronon.online.{GroupByServingInfoParsed, SparkConversions}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment}
-import org.apache.spark.sql.Encoder
+import org.apache.spark.sql.{Encoder, Row}
 import org.apache.flink.api.scala._
 import org.apache.flink.streaming.api.functions.async.RichAsyncFunction
 import org.apache.flink.streaming.api.windowing.assigners.{TumblingEventTimeWindows, WindowAssigner}
@@ -192,5 +186,21 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
       sinkFn,
       featureGroupName
     )
+  }
+}
+
+object FlinkJob {
+
+  def fromAvro(avroSource: AvroFlinkSource,
+               sinkFn: RichAsyncFunction[PutRequest, WriteResponse],
+               groupByServingInfoParsed: GroupByServingInfoParsed,
+               parallelism: Int): FlinkJob[Row] = {
+
+    new FlinkJob[Row](
+      avroSource,
+      sinkFn: RichAsyncFunction[PutRequest, WriteResponse],
+      groupByServingInfoParsed: GroupByServingInfoParsed,
+      avroSource.encoder,
+      parallelism: Int)
   }
 }

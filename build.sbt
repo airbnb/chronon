@@ -123,6 +123,14 @@ git.versionProperty := {
   * scala 13 + spark 3.2.1: https://mvnrepository.com/artifact/org.apache.spark/spark-core_2.13/3.2.1
   */
 val VersionMatrix: Map[String, VersionDependency] = Map(
+  "spark-avro" -> VersionDependency(
+    Seq(
+      "org.apache.spark" %% "spark-avro",
+    ),
+    Some(spark2_4_0),
+    Some(spark3_1_1),
+    Some(spark3_2_1)
+  ),
   "spark-sql" -> VersionDependency(
     Seq(
       "org.apache.spark" %% "spark-sql",
@@ -395,6 +403,7 @@ lazy val flink = (project in file("flink"))
     libraryDependencies ++= fromMatrix(scalaVersion.value,
                                        "avro",
                                        "spark-all/provided",
+                                       "spark-avro/provided",
                                        "scala-parallel-collections",
                                        "flink")
   )
