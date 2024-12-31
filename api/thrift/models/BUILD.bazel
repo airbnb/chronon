@@ -1,0 +1,9 @@
+java_library(
+    name = "api-models",
+    srcs = glob(["src/main/java/ai/chronon/api/*.java"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        maven_artifact("javax.annotation:javax.annotation.api"),
+        maven_artifact("org.apache.thrift:libthrift"),
+    ],
+)

@@ -1,2 +1,17 @@
 ## Disable remote cache completely when --config=local is passed
 build:local --remote_cache=
+
+# Scala version config flags:
+# To build with Scala 2.12, pass "--config scala_2.12" to "bazel build"
+# To set a different default Scala version, add the following to
+# user.bazelrc:
+# common --config scala_2.12
+common:scala_2.11 --repo_env=SCALA_VERSION=2.11.12
+common:scala_2.12 --repo_env=SCALA_VERSION=2.12.18
+common:scala_2.13 --repo_env=SCALA_VERSION=2.13.12
+# Default scala version to 2.12
+common --repo_env=SCALA_VERSION=2.12.18
+# Default to Spark 3.2 if no value is specified
+build --define=spark_version=3.2
+
+build --javacopt=-Xep:DoubleBraceInitialization:OFF

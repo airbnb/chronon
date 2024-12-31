@@ -1,5 +1,5 @@
-filegroup(
-    name = "scala_version_specific_collections_converter",
-    srcs = ["ScalaVersionSpecificCollectionsConverter.scala"],
-    visibility = ["//visibility:public"],
+exports_files(
+    [
+        "ScalaVersionSpecificCollectionsConverter.scala",
+    ],
 )
