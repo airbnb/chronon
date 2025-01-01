@@ -7,7 +7,6 @@ load(
     "jar",
     "scala_jar")
 
-load("//tools/build_rules:jar_library.bzl", "jar_library")
 load("@rules_java//java:defs.bzl", "java_library","java_binary")
 load("@io_bazel_rules_scala//scala:scala.bzl", "scala_library", "scala_binary","scala_test_suite")
 load("//tools/build_rules:maven_artifact.bzl", "maven_artifact", "scala_artifact")

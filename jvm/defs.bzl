@@ -1,5 +1,6 @@
 load("@rules_jvm_external//:specs.bzl", "parse")
 load("//tools/build_rules:utils.bzl", "flatten", "map")
+load("@rules_jvm_external//:defs.bzl", "artifact")
 
 def _parse_versioned_artifact(artifact, version, exclusions):
     result = parse.parse_maven_coordinate("{}:{}".format(artifact, version))
@@ -30,3 +31,6 @@ def repo(name, pinned = True, artifacts = [], overrides = {}, provided = False, 
         vars = vars,
         excluded_artifacts = excluded_artifacts,
     )
+
+def get_jars_for_repo(repo_name, jars):
+    return [artifact(jar, repository_name = repo_name) for jar in jars]

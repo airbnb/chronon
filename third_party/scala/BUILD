@@ -2,14 +2,12 @@ load("@io_bazel_rules_scala_config//:config.bzl", "SCALA_MAJOR_VERSION", "SCALA_
 
 package(default_visibility = ["//visibility:public"])
 
-jar_library(
+alias(
     name = "combinators",
-    jars = [
-        scala_jar(
-            name = "scala-parser-combinators",
-            org = "org.scala-lang.modules",
-        ),
-    ],
+    actual = maven_artifact(
+        "org.scala-lang.modules:scala-parser-combinators",
+        repository_name = "scala_" + SCALA_MAJOR_VERSION,
+    ),
 )
 
 alias(

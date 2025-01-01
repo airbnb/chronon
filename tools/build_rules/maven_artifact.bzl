@@ -1,6 +1,5 @@
 load("@rules_jvm_external//:defs.bzl", _rje_artifact = "artifact")
 load("@io_bazel_rules_scala_config//:config.bzl", "SCALA_MAJOR_VERSION")
-load("//tools/build_rules:jar_library.bzl", "jar_library")
 
 def _safe_name(coord):
     return coord.replace(":", "_").replace(".", "_").replace("-", "_")
@@ -27,9 +26,9 @@ def maven_artifact(coord, repository_name = "maven"):
     safe_name = _safe_name(coord)
 
     if not native.existing_rule(safe_name):
-        jar_library(
+        native.java_library(
             name = safe_name,
-            jars = [coord],
+            exports = [coord],
             visibility = ["//visibility:private"],
             tags = ["manual"],
         )
