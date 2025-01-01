@@ -2,7 +2,18 @@ load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_
 
 scala_library(
     name = "spark",
-    srcs = glob(["src/main/scala/ai/chronon/spark/**/*.scala"]),
+    srcs = glob(["src/main/scala/ai/chronon/spark/**/*.scala"]) +
+           select({
+               "//tools/flags/spark:spark_3_5": [
+                   "//spark/src/main/spark-3_5_plus/ai/chronon/spark:EncoderUtil.scala",
+               ],
+               "//conditions:default": [
+                   "//spark/src/main/spark-default/ai/chronon/spark:EncoderUtil.scala",
+               ],
+           }),
+    resources = [
+        "src/main/resources/log4j.properties",
+    ],
     deps = [
         "//aggregator",
         "//api:api-lib",

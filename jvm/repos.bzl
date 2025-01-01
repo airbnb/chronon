@@ -5,7 +5,6 @@ load(":defs.bzl", "repo", "versioned_artifacts")
 
 # repos with artifacts defined in external files
 load(":maven_repo.bzl", "maven_repo")
-load(":spark_2_4_repo.bzl", "spark_2_4_repo")
 load(":spark_3_1_repo.bzl", "spark_3_1_repo")
 load(":spark_3_2_repo.bzl", "spark_3_2_repo")
 load(":spark_3_5_repo.bzl", "spark_3_5_repo")
@@ -13,17 +12,9 @@ load(":spark_3_5_repo.bzl", "spark_3_5_repo")
 repos = [
     # The main repos are defined in individual files, which are loaded above and referenced here
     maven_repo,  # defined in maven_repo.bzl
-    spark_2_4_repo,
     spark_3_1_repo,
     spark_3_2_repo,
     spark_3_5_repo,
-    repo(name = "scala_2.11", artifacts = [
-        versioned_artifacts("2.11.12", [
-            "org.scala-lang:scala-library",
-            "org.scala-lang:scala-compiler",
-            "org.scala-lang:scala-reflect",
-        ]),
-    ]),
     repo(name = "scala_2.12", artifacts = [
         versioned_artifacts("2.12.18", [
             "org.scala-lang:scala-library",

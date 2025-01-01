@@ -4,10 +4,6 @@ scala_library(
     name = "online",
     srcs = glob(["src/main/scala/ai/chronon/online/*.scala"]) +
            select_for_scala_version(
-               before_2_12 = [
-                   # For Scala 2.11.x
-                   "//online/src/main/scala-2.11/ai/chronon/online:ScalaVersionSpecificCatalystHelper.scala",
-               ],
                between_2_12_and_2_13 = [
                    # For Scala 2.12.x
                    "//online/src/main/scala-2.12/ai/chronon/online:ScalaVersionSpecificCatalystHelper.scala",

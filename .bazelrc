@@ -6,7 +6,6 @@ build:local --remote_cache=
 # To set a different default Scala version, add the following to
 # user.bazelrc:
 # common --config scala_2.12
-common:scala_2.11 --repo_env=SCALA_VERSION=2.11.12
 common:scala_2.12 --repo_env=SCALA_VERSION=2.12.18
 common:scala_2.13 --repo_env=SCALA_VERSION=2.13.12
 # Default scala version to 2.12
