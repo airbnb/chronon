@@ -1,4 +1,3 @@
-load("//tools/build_rules:common.bzl", "guess_java_class")
 load("@rules_java//java:defs.bzl", "java_binary", "java_library")
 load("@io_bazel_rules_scala//scala:scala.bzl", "scala_binary", "scala_library")
 
@@ -44,12 +43,11 @@ def jvm_binary(
             testonly = testonly,
         )
 
-    default_main_class = guess_java_class(name)
     java_binary(
         name = name,
         runtime_deps = [lib_name],
         tags = tags,
-        main_class = main_class or default_main_class,
+        main_class = main_class,
         create_executable = create_executable,
         testonly = testonly,
         **kwargs

@@ -17,6 +17,7 @@ scala_library(
         maven_artifact("io.dropwizard.metrics:metrics-core"),
         maven_artifact("org.reactivestreams:reactive-streams"),
         maven_artifact("org.mongodb:mongodb-driver-reactivestreams"),
+        maven_artifact("org.apache.thrift:libthrift"),
         maven_artifact("org.slf4j:slf4j-api"),
         maven_artifact("org.slf4j:slf4j-log4j12"),
         scala_artifact("org.scala-lang.modules:scala-collection-compat"),

@@ -4,11 +4,7 @@
 
 load(
     "//tools/build_rules:common.bzl",
-    "DirectoryReMapper",
-    "bundle",
-    "globs",
     "jar",
-    "rglobs",
     "scala_jar")
 
 load("//tools/build_rules:jar_library.bzl", "jar_library")

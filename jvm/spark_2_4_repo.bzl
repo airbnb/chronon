@@ -2,12 +2,6 @@ load("@rules_jvm_external//:specs.bzl", "maven")
 load(":defs.bzl", "repo", "versioned_artifacts")
 
 spark_2_4_repo = repo(name = "spark_2_4", provided = True, artifacts = [
-    "com.amazon.deequ:deequ:1.0.2",
-    # TODO(scala_2.12)
-    "com.databricks:spark-avro_2.11:4.0.0",
-    # TODO(scala_2.12)
-    "com.databricks:spark-redshift_2.11:3.0.0-preview1",
-    "com.databricks:spark-xml_2.11:0.5.0",
     "com.esotericsoftware:kryo:5.1.1",
     "com.esotericsoftware.kryo:kryo:2.21",
     versioned_artifacts("2.6.7", [
@@ -15,39 +9,18 @@ spark_2_4_repo = repo(name = "spark_2_4", provided = True, artifacts = [
         "com.fasterxml.jackson.core:jackson-core",
         "com.fasterxml.jackson.core:jackson-databind",
     ]),
-    "com.fasterxml.jackson.module:jackson-module-afterburner:2.11.0",
-    "com.github.mrpowers:spark-fast-tests_2.11:0.23.0",
-    maven.artifact(
-        group = "com.google.cloud.bigdataoss",
-        artifact = "gcs-connector",
-        version = "hadoop2-2.2.7",
-        classifier = "shaded",
-    ),
     "com.google.guava:guava:14.0.1",
-    versioned_artifacts("0.4.0", [
-        "com.hortonworks.registries:registry-common",
-        "com.hortonworks.registries:schema-registry-client",
-        "com.hortonworks.registries:schema-registry-common",
-    ]),
-    "com.maxmind.geoip2:geoip2:2.1.0",
     versioned_artifacts("0.12.0", [
         "com.yahoo.datasketches:memory",
         "com.yahoo.datasketches:sketches-core",
     ]),
-    "com.yahoo.datasketches:sketches-hive:0.11.0",
     "commons-codec:commons-codec:1.10",
     "io.netty:netty-all:4.1.74.Final",
-    versioned_artifacts("2.4.8", [
-        "net.minidev:accessors-smart",
-        "net.minidev:json-smart",
-    ]),
     "org.apache.avro:avro:1.8.2",
+    # Hive
     "org.apache.curator:apache-curator:2.6.0",
     "org.apache.datasketches:datasketches-java:2.0.0",
     "org.apache.datasketches:datasketches-memory:1.3.0",
-    "org.apache.directory.api:api-util:1.0.2",
-    "org.apache.hudi:hudi-spark-bundle_2.11:0.7.0",
-    # TODO(scala_2.12)
     "org.apache.kafka:kafka_2.11:0.8.2.2",
     versioned_artifacts("2.17.1", [
         "org.apache.logging.log4j:log4j-api",
@@ -56,15 +29,10 @@ spark_2_4_repo = repo(name = "spark_2_4", provided = True, artifacts = [
         "org.apache.logging.log4j:log4j-web",
     ]),
     "org.apache.logging.log4j:log4j-1.2-api:2.12.4",
-    versioned_artifacts("1.5.13", [
-        "org.apache.orc:orc-core",
-        "org.apache.orc:orc-mapreduce",
-    ]),
     versioned_artifacts("2.4.0", [
         "org.apache.spark:spark-avro_2.11",
         "org.apache.spark:spark-catalyst_2.11",
         "org.apache.spark:spark-core_2.11",
-        "org.apache.spark:spark-core_2.11:jar:tests",
         "org.apache.spark:spark-hive_2.11",
         "org.apache.spark:spark-mllib-local_2.11",
         "org.apache.spark:spark-mllib_2.11",
@@ -73,20 +41,13 @@ spark_2_4_repo = repo(name = "spark_2_4", provided = True, artifacts = [
         "org.apache.spark:spark-streaming_2.11",
         "org.apache.spark:spark-tags_2.11",
         "org.apache.spark:spark-unsafe_2.11",
-        "org.apache.spark:spark-streaming-kafka-0-8_2.11",
         "org.apache.spark:spark-streaming-kafka-0-10_2.11",
     ]),
-    "org.apache.thrift:libthrift:0.9.3-1",
-    "org.apache.zookeeper:zookeeper:3.8.0",
-    "org.datanucleus:datanucleus-core:datanucleus-core:3.2.10",
-    "org.eclipse.jetty.aggregate:jetty-all:9.4.44.v20210927",
-    "org.elasticsearch:elasticsearch-hadoop:6.4.2",
-    "org.elasticsearch:elasticsearch-spark-20_2.11:7.12.1",
     versioned_artifacts("3.5.3", [
         "org.json4s:json4s-ast_2.11",
         "org.json4s:json4s-core_2.11",
         "org.json4s:json4s-jackson_2.11",
     ]),
-    "org.scalanlp:breeze_2.11:0.13.2",
-    "org.scalanlp:breeze-macros_2.11:1.0",
+    "org.apache.hive:hive-metastore:2.3.9",
+    "org.apache.hive:hive-exec:2.3.9",
 ], excluded_artifacts = ["org.pentaho:pentaho-aggdesigner-algorithm"])

@@ -1,7 +1,7 @@
 load("@rules_jvm_external//:defs.bzl", "artifact")
 load("@bazel_skylib//lib:dicts.bzl", "dicts")
 load("@rules_jvm_external//:defs.bzl", "maven_install")
-load(":repos.bzl", "repos")
+load(":repos.bzl", "get_override_targets", "repos")
 
 # These mirrors apply to all repos
 _mirrors = [
@@ -24,9 +24,9 @@ def load_deps():
             name = repo.name,
             artifacts = repo.artifacts,
             repositories = _mirrors + _extra_mirrors.get(repo.name, []),
-            #            version_conflict_policy = "pinned",
+            version_conflict_policy = "pinned",
             fetch_sources = True,
-            #            override_targets = dicts.add(get_override_targets(repo.name), repo.overrides),
+            override_targets = dicts.add(get_override_targets(repo.name), repo.overrides),
             duplicate_version_warning = "error",
             fail_if_repin_required = True,
             resolve_timeout = 5000,

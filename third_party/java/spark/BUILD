@@ -41,6 +41,22 @@ jar_library(
             name = "spark-unsafe",
             org = "org.apache.spark",
         ),
+        #        scala_jar(
+        #            name = "spark-common-utils",
+        #            org = "org.apache.spark",
+        #        ),
+        #        scala_jar(
+        #            name = "spark-sql-api",
+        #            org = "org.apache.spark",
+        #        ),
+        jar(
+            name = "avro",
+            org = "org.apache.avro",
+        ),
+        jar(
+            name = "hive-metastore",
+            org = "org.apache.hive",
+        ),
         jar(
             name = "hive-exec",
             org = "org.apache.hive",
@@ -70,23 +86,16 @@ jar_library(
             org = "org.json4s",
         ),
         jar(
-            name = "protobuf-java",
-            org = "com.google.protobuf",
-        ),
-        jar(
-            name = "hive-metastore",
-            org = "org.apache.hive",
+            name = "commons-lang3",
+            org = "org.apache.commons",
         ),
     ],
 )
 
-_SPARK_DEPS = [
-    "//third_party/java/spark:spark-exec",
-    maven_artifact("org.apache.commons:commons-lang3"),
-]
-
 java_binary(
     name = "spark",
     main_class = "None",  #hack
-    runtime_deps = _SPARK_DEPS,
+    runtime_deps = [
+        "//third_party/java/spark:spark-exec",
+    ],
 )
