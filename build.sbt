@@ -11,6 +11,7 @@ lazy val scala213 = "2.13.6"
 lazy val spark2_4_0 = "2.4.0"
 lazy val spark3_1_1 = "3.1.1"
 lazy val spark3_2_1 = "3.2.1"
+lazy val spark3_5_3 = "3.5.3"
 lazy val tmp_warehouse = "/tmp/chronon/"
 
 ThisBuild / organization := "ai.chronon"
@@ -36,6 +37,9 @@ ThisBuild / developers := List(
   )
 )
 ThisBuild / assembly / test := {}
+
+val use_spark_3_5 = settingKey[Boolean]("Flag to build for 3.5")
+ThisBuild / use_spark_3_5 := false 
 
 def buildTimestampSuffix = ";build.timestamp=" + new java.util.Date().getTime
 lazy val publishSettings = Seq(
@@ -132,6 +136,15 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Some(spark3_1_1),
     Some(spark3_2_1)
   ),
+  "spark-sql-3-5" -> VersionDependency(
+    Seq(
+      "org.apache.spark" %% "spark-sql",
+      "org.apache.spark" %% "spark-core"
+    ),
+    Some(spark2_4_0),
+    Some(spark3_5_3),
+    Some(spark3_5_3)
+  ),
   "spark-all" -> VersionDependency(
     Seq(
       "org.apache.spark" %% "spark-sql",
@@ -143,6 +156,18 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Some(spark2_4_0),
     Some(spark3_1_1),
     Some(spark3_2_1)
+  ),
+  "spark-all-3-5" -> VersionDependency(
+    Seq(
+      "org.apache.spark" %% "spark-sql",
+      "org.apache.spark" %% "spark-hive",
+      "org.apache.spark" %% "spark-core",
+      "org.apache.spark" %% "spark-streaming",
+      "org.apache.spark" %% "spark-sql-kafka-0-10"
+    ),
+    Some(spark2_4_0),
+    Some(spark3_5_3),
+    Some(spark3_5_3)
   ),
   "scala-reflect" -> VersionDependency(
     Seq("org.scala-lang" % "scala-reflect"),
@@ -360,6 +385,20 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
     val art = (assembly / artifact).value
     art.withClassifier(Some("assembly"))
   },
+  Compile / unmanagedSources := {
+    val sources = (Compile / unmanagedSources).value
+    val srcDir = (Compile / sourceDirectory).value
+    
+    val spark_3_5_encoder = srcDir / "spark-3_5_plus" / "ai" / "chronon" / "spark" / "EncoderUtil.scala"
+    val spark_default_encoder = srcDir / "spark-default" / "ai" / "chronon" / "spark" / "EncoderUtil.scala"
+    
+    val filteredSources = sources.filterNot(f => 
+      f.getAbsolutePath == spark_3_5_encoder.getAbsolutePath || 
+      f.getAbsolutePath == spark_default_encoder.getAbsolutePath
+    )
+    
+    filteredSources :+ (if (use_spark_3_5.value) spark_3_5_encoder else spark_default_encoder)
+  },
   mainClass in (Compile, run) := Some("ai.chronon.spark.Driver"),
   cleanFiles ++= Seq(file(tmp_warehouse)),
   Test / testOptions += Tests.Setup(() => cleanSparkMeta()),
@@ -373,7 +412,10 @@ lazy val spark_uber = (project in file("spark"))
     sparkBaseSettings,
     version := git.versionProperty.value,
     crossScalaVersions := supportedVersions,
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "jackson", "spark-all/provided", "delta-core/provided")
+    libraryDependencies ++= (if (use_spark_3_5.value) 
+      fromMatrix(scalaVersion.value, "jackson", "spark-all-3-5/provided", "delta-core/provided")
+    else
+      fromMatrix(scalaVersion.value, "jackson", "spark-all/provided", "delta-core/provided"))
   )
 
 lazy val spark_embedded = (project in file("spark"))
@@ -382,7 +424,10 @@ lazy val spark_embedded = (project in file("spark"))
     sparkBaseSettings,
     version := git.versionProperty.value,
     crossScalaVersions := supportedVersions,
-    libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "delta-core"),
+    libraryDependencies ++= (if (use_spark_3_5.value) 
+      fromMatrix(scalaVersion.value, "spark-all-3-5", "delta-core")
+    else
+      fromMatrix(scalaVersion.value, "spark-all", "delta-core")),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     Test / test := {}
   )
