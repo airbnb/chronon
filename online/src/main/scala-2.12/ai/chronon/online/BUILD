@@ -1,3 +1,6 @@
 exports_files(
-    ["ScalaVersionSpecificCatalystHelper.scala"],
+    [
+        "ScalaVersionSpecificCatalystHelper.scala",
+        "FutureConverters.scala"
+    ],
 )

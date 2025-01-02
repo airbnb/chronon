@@ -7,10 +7,12 @@ scala_library(
                between_2_12_and_2_13 = [
                    # For Scala 2.12.x
                    "//online/src/main/scala-2.12/ai/chronon/online:ScalaVersionSpecificCatalystHelper.scala",
+                   "//online/src/main/scala-2.12/ai/chronon/online:FutureConverters.scala",
                ],
                since_2_13 = [
                    # For Scala 2.13.x
                    "//online/src/main/scala-2.13/ai/chronon/online:ScalaVersionSpecificCatalystHelper.scala",
+                   "//online/src/main/scala-2.13/ai/chronon/online:FutureConverters.scala",
                ],
            ) + glob([
         "src/main/java/ai/chronon/online/*.java",
