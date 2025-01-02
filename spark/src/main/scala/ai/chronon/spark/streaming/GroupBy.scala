@@ -23,17 +23,16 @@ import ai.chronon.api.{Row => _, _}
 import ai.chronon.online._
 import ai.chronon.api.Extensions._
 import ai.chronon.online.Extensions.ChrononStructTypeOps
-import ai.chronon.spark.GenericRowHandler
+import ai.chronon.spark.{EncoderUtil, GenericRowHandler}
 import com.google.gson.Gson
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger}
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import scala.collection.JavaConverters._
-import scala.concurrent.duration.{DurationInt}
+import scala.concurrent.duration.DurationInt
 
 class GroupBy(inputStream: DataFrame,
               session: SparkSession,
@@ -129,7 +128,7 @@ class GroupBy(inputStream: DataFrame,
         Seq(mutation.after, mutation.before)
           .filter(_ != null)
           .map(SparkConversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
-      }(RowEncoder(streamSchema))
+      }(EncoderUtil(streamSchema))
 
     des.createOrReplaceTempView(streamingTable)
 

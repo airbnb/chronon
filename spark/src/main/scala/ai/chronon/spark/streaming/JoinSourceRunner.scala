@@ -22,10 +22,9 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online._
-import ai.chronon.spark.{GenericRowHandler, TableUtils}
+import ai.chronon.spark.{GenericRowHandler, TableUtils, EncoderUtil}
 import com.google.gson.Gson
 import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
-import org.apache.spark.sql.catalyst.encoders.RowEncoder
 import org.apache.spark.sql.streaming.{DataStreamWriter, Trigger}
 import org.apache.spark.sql.types.{BooleanType, LongType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSession}
@@ -259,7 +258,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         Seq(mutation.after, mutation.before)
           .filter(_ != null)
           .map(SparkConversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
-      }(RowEncoder(streamSchema))
+      }(EncoderUtil(streamSchema))
     dataStream.copy(df = des)
   }
 
@@ -342,7 +341,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     val schemas = buildSchemas(leftSchema)
     val joinChrononSchema = SparkConversions.toChrononSchema(schemas.joinSchema)
-    val joinEncoder: Encoder[Row] = RowEncoder(schemas.joinSchema)
+    val joinEncoder: Encoder[Row] = EncoderUtil(schemas.joinSchema)
     val joinFields = schemas.joinSchema.fieldNames
     val leftColumns = schemas.leftSourceSchema.fieldNames
     logger.info(s"""

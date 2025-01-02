@@ -18,11 +18,12 @@ package ai.chronon.online;
 
 import ai.chronon.online.Fetcher.Request;
 import ai.chronon.online.Fetcher.Response;
+import ai.chronon.online.FutureConverters;
+
 import scala.collection.Iterator;
 import scala.collection.Seq;
 import scala.Option;
 import scala.collection.mutable.ArrayBuffer;
-import scala.compat.java8.FutureConverters;
 import scala.concurrent.Future;
 
 import java.util.ArrayList;
