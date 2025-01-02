@@ -60,7 +60,7 @@ scala_test_suite(
 
 thrift_java_library(
     name = "api-models-java",
-    src = "thrift/api.thrift",
+    srcs = ["thrift/api.thrift"],
 )
 
 java_library(
