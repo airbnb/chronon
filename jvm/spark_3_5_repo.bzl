@@ -9,15 +9,15 @@ spark_3_5_repo = repo(
         "hadoop_version": "3.3.6",
     },
     artifacts = [
-        # Spark artifacts - only Scala 2.12 since that's our target
+        # Spark artifacts - for scala 2.12
         "org.apache.spark:spark-sql_2.12:{spark_version}",
-        "org.apache.spark:spark-mllib_2.12:{spark_version}",
         "org.apache.spark:spark-hive_2.12:{spark_version}",
+        "org.apache.spark:spark-streaming_2.12:{spark_version}",
 
         # Spark artifacts for Scala 2.13
         "org.apache.spark:spark-sql_2.13:{spark_version}",
-        "org.apache.spark:spark-mllib_2.13:{spark_version}",
         "org.apache.spark:spark-hive_2.13:{spark_version}",
+        "org.apache.spark:spark-streaming_2.13:{spark_version}",
 
         # Other dependencies
         "org.apache.curator:apache-curator:2.12.0",
@@ -27,8 +27,6 @@ spark_3_5_repo = repo(
         "com.yahoo.datasketches:sketches-hive:0.13.0",
         "org.apache.datasketches:datasketches-java:2.0.0",
         "org.apache.datasketches:datasketches-memory:1.3.0",
-        "org.apache.hadoop:hadoop-aws:3.3.6",
-        "com.amazonaws:aws-java-sdk-s3:1.12.367",
 
         # Kafka dependencies - only Scala 2.12
         "org.apache.kafka:kafka_2.12:2.6.3",

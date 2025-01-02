@@ -11,13 +11,13 @@ spark_3_2_repo = repo(
     artifacts = [
         # Spark artifacts - only Scala 2.12 since that's our target
         "org.apache.spark:spark-sql_2.12:{spark_version}",
-        "org.apache.spark:spark-mllib_2.12:{spark_version}",
         "org.apache.spark:spark-hive_2.12:{spark_version}",
+        "org.apache.spark:spark-streaming_2.12:{spark_version}",
 
         # Spark artifacts for Scala 2.13
         "org.apache.spark:spark-sql_2.13:{spark_version}",
-        "org.apache.spark:spark-mllib_2.13:{spark_version}",
         "org.apache.spark:spark-hive_2.13:{spark_version}",
+        "org.apache.spark:spark-streaming_2.13:{spark_version}",
 
         # Other dependencies
         "org.apache.curator:apache-curator:2.12.0",

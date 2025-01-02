@@ -7,6 +7,7 @@ maven_repo = repo(
     artifacts = [
         "org.scala-lang.modules:scala-collection-compat_2.12:2.6.0",
         "org.scala-lang.modules:scala-collection-compat_2.13:2.6.0",
+        "org.scala-lang.modules:scala-parser-combinators_2.13:2.4.0",
         "org.scala-lang.modules:scala-java8-compat_2.12:1.0.0",
         "org.scala-lang.modules:scala-java8-compat_2.13:1.0.0",
         "org.apache.thrift:libthrift:0.13.0",

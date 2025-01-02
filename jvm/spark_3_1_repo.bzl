@@ -11,12 +11,10 @@ spark_3_1_repo = repo(name = "spark_3_1", provided = True, artifacts = [
     versioned_artifacts("3.1.3", [
         "org.apache.spark:spark-core_2.12:jar:tests",
         "org.apache.spark:spark-hive_2.12",
-        "org.apache.spark:spark-mllib_2.12",
         "org.apache.spark:spark-sql-kafka-0-10_2.12",
         "org.apache.spark:spark-sql_2.12",
         "org.apache.spark:spark-streaming-kafka-0-10_2.12",
     ]),
-    "org.elasticsearch:elasticsearch-hadoop:6.4.2",
     versioned_artifacts("3.7.0-M5", [
         "org.json4s:json4s-ast_2.12",
         "org.json4s:json4s-core_2.12",
