@@ -17,7 +17,7 @@ scala_library(
     ]),
     visibility = ["//visibility:public"],
     deps = [
-        "//api/thrift/models:api-models",
+        "//api:api-models",
         "//api:api-lib",
         "//third_party/java/spark:spark-exec",
         "//aggregator",
@@ -54,7 +54,7 @@ scala_library(
     srcs = glob(["src/test/scala/ai/chronon/online/**/*.scala"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//api/thrift/models:api-models",
+        "//api:api-models",
         "//api:api-lib",
         ":online",
         "//aggregator",
@@ -104,7 +104,7 @@ scala_test_suite(
         ":test-lib",
         "//aggregator",
         "//api:api-lib",
-        "//api/thrift/models:api-models",
+        "//api:api-models",
         "//third_party/java/spark:spark-exec",
         scala_artifact("org.scalatestplus:mockito-3-4"),
         maven_artifact("org.mockito:mockito-core"),

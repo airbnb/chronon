@@ -6,7 +6,7 @@ scala_library(
     visibility = ["//visibility:public"],
     deps = [
         "//api:api-lib",
-        "//api/thrift/models:api-models",
+        "//api:api-models",
         maven_artifact("com.fasterxml.jackson.core:jackson-core"),
         maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
         maven_artifact("com.google.code.gson:gson"),
@@ -34,7 +34,7 @@ scala_library(
     deps = [
                ":aggregator",
                "//api:api-lib",
-               "//api/thrift/models:api-models",
+               "//api:api-models",
                maven_artifact("junit:junit"),
                maven_artifact("com.novocode:junit-interface"),
                maven_artifact("org.slf4j:slf4j-api"),
@@ -64,7 +64,7 @@ scala_test_suite(
                ":aggregator",
                ":test-lib",
                "//api:api-lib",
-               "//api/thrift/models:api-models",
+               "//api:api-models",
                maven_artifact("junit:junit"),
                maven_artifact("com.novocode:junit-interface"),
                maven_artifact("org.slf4j:slf4j-api"),

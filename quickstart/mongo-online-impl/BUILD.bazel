@@ -7,7 +7,7 @@ scala_library(
     deps = [
         "//aggregator",
         "//api:api-lib",
-        "//api/thrift/models:api-models",
+        "//api:api-models",
         "//online",
         "//third_party/java/spark:spark-exec",
         maven_artifact("org.mongodb.scala:mongo-scala-driver_2.12"),

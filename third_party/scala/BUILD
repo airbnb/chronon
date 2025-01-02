@@ -4,10 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 alias(
     name = "combinators",
-    actual = maven_artifact(
-        "org.scala-lang.modules:scala-parser-combinators",
-        repository_name = "scala_" + SCALA_MAJOR_VERSION,
-    ),
+    actual = scala_artifact("org.scala-lang.modules:scala-parser-combinators"),
 )
 
 alias(

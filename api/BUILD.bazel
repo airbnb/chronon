@@ -1,4 +1,5 @@
 load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_scala_version")
+load("//tools/build_rules/thrift:thrift.bzl", "thrift_java_library")
 
 scala_library(
     name = "api-lib",
@@ -13,7 +14,7 @@ scala_library(
            ),
     visibility = ["//visibility:public"],
     deps = [
-        "//api/thrift/models:api-models",
+        ":api-models",
         "//third_party/java/spark:spark-exec",
         maven_artifact("com.fasterxml.jackson.core:jackson-core"),
         maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
@@ -35,8 +36,8 @@ scala_test_suite(
     srcs = glob(["src/test/scala/ai/chronon/api/test/*.scala"]),
     visibility = ["//visibility:public"],
     deps = [
+        ":api-models",
         ":api-lib",
-        "//api/thrift/models:api-models",
         "//third_party/java/spark:spark-exec",
         maven_artifact("com.fasterxml.jackson.core:jackson-core"),
         maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
@@ -55,4 +56,19 @@ scala_test_suite(
             maven_artifact("org.scala-lang.modules:scala-parallel-collections_2.13"),
         ],
     ),
+)
+
+thrift_java_library(
+    name = "api-models-java",
+    src = "thrift/api.thrift",
+)
+
+java_library(
+    name = "api-models",
+    srcs = [":api-models-java"],
+    visibility = ["//visibility:public"],
+    deps = [
+        maven_artifact("javax.annotation:javax.annotation.api"),
+        maven_artifact("org.apache.thrift:libthrift"),
+    ],
 )
