@@ -550,7 +550,7 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       s"STORED AS $fileFormat"
     }
-    val location = "LOCATION 's3://sr-search-data-638782101961/kchakka/datasets'"
+    val location = "LOCATION '/tmp/chronon'"
     Seq(createFragment, partitionFragment, fileFormatString, propertiesFragment, location).mkString("\n")
   }
 
