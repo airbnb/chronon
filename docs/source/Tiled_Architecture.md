@@ -14,7 +14,7 @@ Tiling requires [Flink](https://flink.apache.org/) for stream processing.
 
 The regular, untiled architecture (Figure 1) works the following way:
 
-- Write path: ingests an event stream, processes the events, and writes them out individually to a datastore.
+- Write path: ingests an event stream, processes the events using either Spark Streaming or Flink, and writes them out individually to a datastore.
 - Read path: retrieves O(events) from the store, aggregates them, and returns feature values to the client.
 
 ![Architecture](../images/Untiled_Architecture.png)
