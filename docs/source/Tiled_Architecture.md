@@ -1,6 +1,6 @@
 # The Tiled Architecture
 
-**Important**: Tiling is a new feature currently being open-sourced. Feel free to reach out in the Chronon Slack channel if you need support using it. 
+**Important**: Tiling is a new feature currently being open-sourced. Feel free to reach out in the Chronon Slack channel if you need support using it.
 
 ## Tiling Overview
 
@@ -20,8 +20,7 @@ The regular, untiled architecture (Figure 1) works the following way:
 ![Architecture](../images/Untiled_Architecture.png)
 _Figure 1: Regular, untiled Chronon architecture_
 
-At scale, aggregating O(n) events per request can become computationally expensive. For example, with an event stream generating 10 events/sec for a specific key, each feature request with a 12-hour window requires fetching and aggregating 432,000 events.For a simple GroupBy that counts the number of events for a key, Chronon
-would iterate over 432,000 items to compute the total.
+At scale, aggregating O(n) events per request can become computationally expensive. For example, with an event stream generating 10 events/sec for a specific key, each feature request with a 12-hour window requires fetching and aggregating 432,000 events. For a simple GroupBy that counts the number of events for a key, Chronon would iterate over 432,000 items to compute the total.
 
 ### Tiled Chronon Architecture
 
@@ -54,9 +53,9 @@ The IRs would then be combined to produce the final feature values: `[14, "C"]`.
 Tiling is particularly beneficial for:
 
 1. Reducing feature serving latency at scale (Stripe saw a 33% reduction after the initial implementation.)
-3. Minimizing datastore load, as fetching O(tiles) is generally less work than fetching O(events). 
-4. Supporting aggregations over very hot key entities
-2. Organizations that don't have access to a datastore with range query capabilities, such as Cassandra.
+2. Minimizing datastore load, as fetching O(tiles) is generally less work than fetching O(events).
+3. Supporting aggregations over very hot key entities
+4. Organizations that don't have access to a datastore with range query capabilities, such as Cassandra. Tiling allows efficient retrieval of aggregated data without the need for complex range queries.
 
 Organizations operating at scale with many hot-key entities (such as big merchants in payments companies) should consider using the tiled architecture. If your hottest keys don't exceed a few thousand events per day, the untiled approach may still be sufficient.
 
@@ -64,6 +63,5 @@ Organizations operating at scale with many hot-key entities (such as big merchan
 
 To enable tiling:
 
-1. Implement Flink on the write path (refer to the [Chronon on Flink documentation](setup/Flink.md)). As part of this process, you may also need to
-   modify your KV store implementation to support writing and and fetching tiles.
+1. Implement Flink on the write path (refer to the [Chronon on Flink documentation](setup/Flink.md)). As part of this process, you may also need to modify your KV store implementation to support writing and fetching tiles.
 2. Once your Flink app is writing tiles to the datastore, enable tiled reads in the Fetcher by adding `enable_tiling=true` to the [customJson](https://github.com/airbnb/chronon/blob/48b789dd2c216c62bbf1d74fbf4e779f23db541f/api/py/ai/chronon/group_by.py#L561) of any GroupBy definition.
