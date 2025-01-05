@@ -1,5 +1,25 @@
+load("@rules_python//python:packaging.bzl", "py_wheel")
+load("@pypi//:requirements.bzl", "requirement")
+load("@rules_python//python:py_library.bzl", "py_library")
+
 py_library(
-    name = "chronon_lib",
-    srcs = glob(["*.py"]),
-    srcs_version = "PY3",
+    name = "api_py",
+    srcs = glob(["**/*.py"]),  # All Python files in your_module
+    imports = ["api/py/"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api/thrift:api-models-py",
+        requirement("thrift"),
+    ],
+)
+
+# Create a Python wheel from your package
+py_wheel(
+    name = "chronon_ai",
+    distribution = "chronon_ai",
+    version = "0.0.1",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":api_py",
+    ],
 )

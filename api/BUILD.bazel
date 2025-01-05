@@ -1,5 +1,4 @@
 load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_scala_version")
-load("//tools/build_rules/thrift:thrift.bzl", "thrift_java_library")
 
 scala_library(
     name = "api-lib",
@@ -58,14 +57,9 @@ scala_test_suite(
     ),
 )
 
-thrift_java_library(
-    name = "api-models-java",
-    srcs = ["thrift/api.thrift"],
-)
-
 java_library(
     name = "api-models",
-    srcs = [":api-models-java"],
+    srcs = ["//api/thrift:api-models-java"],
     visibility = ["//visibility:public"],
     deps = [
         maven_artifact("javax.annotation:javax.annotation.api"),

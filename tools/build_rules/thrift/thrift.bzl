@@ -1,4 +1,4 @@
-# thrift.bzl
+load("@rules_python//python:defs.bzl", "py_library")
 
 def _thrift_java_library_impl(ctx):
     thrift_path = ctx.attr.thrift_binary
@@ -63,8 +63,89 @@ def thrift_java_library(name, srcs, **kwargs):
         name = name,
         srcs = srcs,
         thrift_binary = select({
-            "@platforms//os:macos": "/usr/local/opt/thrift@0.13/bin/thrift",
+            "@platforms//os:macos": "/opt/homebrew/bin/thrift",
             "//conditions:default": "/usr/local/bin/thrift",
         }),
         **kwargs
+    )
+
+def _thrift_python_library_impl(ctx):
+    thrift_binary = ctx.attr.thrift_binary
+    all_outputs = []
+    commands = []
+
+    for src in ctx.files.srcs:
+        # Get base name without .thrift extension
+        base_name = src.basename.replace(".thrift", "")
+
+        # Convert namespace to directory structure
+        namespace_dir = ctx.attr.namespace.replace(".", "/")
+
+        # Declare output directory matching the namespace structure
+        output_dir = "{}/{}".format(namespace_dir, base_name)
+        main_py = ctx.actions.declare_file("{}/{}.py".format(output_dir, base_name))
+        constants_py = ctx.actions.declare_file("{}/constants.py".format(output_dir))
+        ttypes_py = ctx.actions.declare_file("{}/ttypes.py".format(output_dir))
+        module_init = ctx.actions.declare_file("{}/__init__.py".format(output_dir))
+
+        file_outputs = [main_py, constants_py, ttypes_py, module_init]
+        all_outputs.extend(file_outputs)
+
+        # Command to generate files in the correct namespace
+        command = """
+            mkdir -p {output_dir} && \
+            {thrift_binary} --gen py:package_prefix={namespace}. -out $(dirname {output_dir}) {src} && \
+            touch {main_py} {constants_py} {ttypes_py} {module_init}
+        """.format(
+            thrift_binary = thrift_binary,
+            namespace = ctx.attr.namespace,
+            output_dir = main_py.dirname,
+            src = src.path,
+            main_py = main_py.path,
+            constants_py = constants_py.path,
+            ttypes_py = ttypes_py.path,
+            module_init = module_init.path,
+        )
+        commands.append(command)
+
+    combined_command = " && ".join(commands)
+
+    print("commands: {}".format(combined_command))
+
+    # Generate files
+    ctx.actions.run_shell(
+        outputs = all_outputs,
+        inputs = ctx.files.srcs,
+        command = combined_command,
+        progress_message = "Generating Python code from Thrift files: %s" % ", ".join([src.path for src in ctx.files.srcs]),
+    )
+
+    return [DefaultInfo(files = depset(all_outputs))]
+
+_thrift_python_library_gen = rule(
+    implementation = _thrift_python_library_impl,
+    attrs = {
+        "srcs": attr.label_list(allow_files = [".thrift"]),
+        "thrift_binary": attr.string(),
+        "namespace": attr.string(),
+    },
+)
+
+def thrift_python_library(name, srcs, namespace, visibility = None):
+    """Generates Python code from Thrift files with correct namespace structure."""
+    _thrift_python_library_gen(
+        name = name + "_gen",
+        srcs = srcs,
+        namespace = namespace,
+        thrift_binary = select({
+            "@platforms//os:macos": "/opt/homebrew/bin/thrift",
+            "//conditions:default": "/usr/local/bin/thrift",
+        }),
+    )
+
+    py_library(
+        name = name,
+        srcs = [":" + name + "_gen"],
+        imports = ["api/thrift/"],
+        visibility = visibility,
     )
