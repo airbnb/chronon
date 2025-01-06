@@ -138,7 +138,7 @@ def thrift_python_library(name, srcs, namespace, visibility = None):
         srcs = srcs,
         namespace = namespace,
         thrift_binary = select({
-            "@platforms//os:macos": "/opt/homebrew/bin/thrift",
+            "@platforms//os:macos": "/usr/local/opt/thrift@0.13/bin/thrift",
             "//conditions:default": "/usr/local/bin/thrift",
         }),
     )

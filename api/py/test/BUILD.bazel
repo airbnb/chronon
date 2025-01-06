@@ -5,9 +5,13 @@ load("//tools/build_rules/python:pytest_suite.bzl", "pytest_suite")
 pytest_suite(
     name = "api_test",
     srcs = glob(["**/*.py"]),
+    data = ["sample/teams.json"],
     imports = [
-        "api/py/",
+        "..", "sample"
     ],
+    env = {
+        "CHRONON_ROOT": "api/py/test/sample/",
+    },
     deps = [
         "//api/py/ai/chronon:api_py",
         "//api/thrift:api-models-py",
