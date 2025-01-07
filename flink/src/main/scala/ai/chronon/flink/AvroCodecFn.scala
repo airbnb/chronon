@@ -3,7 +3,7 @@ package ai.chronon.flink
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.{Constants, DataModel, Query, StructType => ChrononStructType}
-import ai.chronon.flink.window.TimestampedTile
+import ai.chronon.flink.window.TimestampedTileState
 import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.api.common.functions.RichFlatMapFunction
@@ -124,7 +124,7 @@ case class AvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
   * @tparam T The input data type
   */
 case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParsed)
-    extends BaseAvroCodecFn[TimestampedTile, PutRequest] {
+    extends BaseAvroCodecFn[TimestampedTileState, AvroCodecOutput] {
   override def open(configuration: Configuration): Unit = {
     super.open(configuration)
     val metricsGroup = getRuntimeContext.getMetricGroup
@@ -135,9 +135,9 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
   }
   override def close(): Unit = super.close()
 
-  override def flatMap(value: TimestampedTile, out: Collector[PutRequest]): Unit =
+  override def flatMap(value: TimestampedTileState, out: Collector[AvroCodecOutput]): Unit =
     try {
-      out.collect(avroConvertTileToPutRequest(value))
+      out.collect(new AvroCodecOutput(avroConvertTileToPutRequest(value), value.kafkaTimestamp))
     } catch {
       case e: Exception =>
         // To improve availability, we don't rethrow the exception. We just drop the event
@@ -147,22 +147,20 @@ case class TiledAvroCodecFn[T](groupByServingInfoParsed: GroupByServingInfoParse
         avroConversionErrorCounter.inc()
     }
 
-  def avroConvertTileToPutRequest(in: TimestampedTile): PutRequest = {
+  def avroConvertTileToPutRequest(in: TimestampedTileState): PutRequest = {
     val tsMills = in.latestTsMillis
-
-    // 'keys' is a map of (key name in schema -> key value), e.g. Map("card_number" -> "4242-4242-4242-4242")
-    // We convert to AnyRef because Chronon expects an AnyRef (for scala <> java interoperability reasons).
-    val keys: Map[String, AnyRef] = keyColumns.zip(in.keys.map(_.asInstanceOf[AnyRef])).toMap
-    val keyBytes = keyToBytes(in.keys.toArray)
+    val keys = in.keys.toArray
+    val keyBytes = keyToBytes(keys)
     val valueBytes = in.tileBytes
+
 
     logger.debug(
       s"""
-        |Avro converting tile to PutRequest - tile=${in}
-        |groupBy=${groupByServingInfoParsed.groupBy.getMetaData.getName} tsMills=$tsMills keys=$keys
-        |keyBytes=${java.util.Base64.getEncoder.encodeToString(keyBytes)}
-        |valueBytes=${java.util.Base64.getEncoder.encodeToString(valueBytes)}
-        |streamingDataset=$streamingDataset""".stripMargin
+         |Avro converting tile to PutRequest - tile=${in}
+         |groupBy=${groupByServingInfoParsed.groupBy.getMetaData.getName} tsMills=$tsMills keys=$keys
+         |keyBytes=${java.util.Base64.getEncoder.encodeToString(keyBytes)}
+         |valueBytes=${java.util.Base64.getEncoder.encodeToString(valueBytes)}
+         |streamingDataset=$streamingDataset""".stripMargin
     )
 
     PutRequest(keyBytes, valueBytes, streamingDataset, Some(tsMills))

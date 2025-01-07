@@ -3,6 +3,7 @@ package ai.chronon.flink.window
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.{Constants, DataType, GroupBy, Row}
+import ai.chronon.flink.SparkExprOutput
 import ai.chronon.online.{ArrayRow, TileCodec}
 import org.apache.flink.api.common.functions.AggregateFunction
 import org.apache.flink.configuration.Configuration
@@ -12,62 +13,82 @@ import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 import org.apache.flink.util.Collector
 import org.slf4j.LoggerFactory
 
+import java.util.Objects
 import scala.util.{Failure, Success, Try}
 
 /**
-  * TimestampedIR combines the current Intermediate Result with the timestamp of the event being processed.
-  * We need to keep track of the timestamp of the event processed so we can calculate processing lag down the line.
-  *
-  * Example: for a GroupBy with 2 windows, we'd have TimestampedTile( [IR for window 1, IR for window 2], timestamp ).
-  *
-  * @param ir the array of partial aggregates
-  * @param latestTsMillis timestamp of the current event being processed
-  */
-case class TimestampedIR(
-    ir: Array[Any],
-    latestTsMillis: Option[Long]
-)
+ * Combines the IR (intermediate result) with the timestamp of the event being processed.
+ * We need the timestamp of the event processed so we can calculate processing lag down the line.
+ *
+ * Example: for a GroupBy with 2 windows, we'd have TimestampedTile( [IR for window 1, IR for window 2], timestamp ).
+ *
+ * Note: This is a POJO class to allow us to safely evolve the schema without breaking Flink jobs. See: go/flink-pojo-types
+ * for details on what safe evolution is.
+ *
+ *
+ * @param ir the array of partial aggregates
+ * @param latestTsMillis timestamp of the current event being processed
+ */
+class TimestampedIRState(
+                          var ir: Array[Any],
+                          var latestTsMillis: Option[Long],
+                          var kafkaTimestamp: Option[Long]
+                        ) {
+  def this() = this(Array(), None, None)
+
+  override def toString: String =
+    s"TimestampedIR(ir=${ir.mkString(", ")}, latestTsMillis=$latestTsMillis), kafkaTimestamp=$kafkaTimestamp)"
+
+  override def hashCode(): Int =
+    Objects.hash(ir.deep, latestTsMillis, kafkaTimestamp)
+
+  override def equals(other: Any): Boolean =
+    other match {
+      case e: TimestampedIRState =>
+        ir.sameElements(e.ir) && latestTsMillis == e.latestTsMillis && kafkaTimestamp == e.kafkaTimestamp
+      case _ => false
+    }
+}
 
 /**
-  * Wrapper Flink aggregator around Chronon's RowAggregator. Relies on Flink to pass in
-  * the correct set of events for the tile. As the aggregates produced by this function
-  * are used on the serving side along with other pre-aggregates, we don't 'finalize' the
-  * Chronon RowAggregator and instead return the intermediate representation.
-  *
-  * (This cannot be a RichAggregateFunction because Flink does not support Rich functions in windows.)
-  */
+ * Wrapper Flink aggregator around Chronon's RowAggregator. Relies on Flink to pass in
+ * the correct set of events for the tile. As the aggregates produced by this function
+ * are used on the serving side along with other pre-aggregates, we don't 'finalize' the
+ * Chronon RowAggregator and instead return the intermediate representation.
+ *
+ * This cannot be a RichAggregateFunction because Flink does not support Rich functions in windows.
+ */
 class FlinkRowAggregationFunction(
-    groupBy: GroupBy,
-    inputSchema: Seq[(String, DataType)]
-) extends AggregateFunction[Map[String, Any], TimestampedIR, TimestampedIR] {
+                                   groupBy: GroupBy,
+                                   inputSchema: Seq[(String, DataType)]
+                                 ) extends AggregateFunction[SparkExprOutput, TimestampedIRState, TimestampedIRState] {
   @transient private[flink] var rowAggregator: RowAggregator = _
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
-
   private val valueColumns: Array[String] = inputSchema.map(_._1).toArray // column order matters
   private val timeColumnAlias: String = Constants.TimeColumn
 
-  /*
+  /**
    * Initialize the transient rowAggregator.
-   * Running this method is an idempotent operation:
+   * This method is idempotent:
    *   1. The initialized RowAggregator is always the same given a `groupBy` and `inputSchema`.
-   *   2. The RowAggregator itself doens't hold state; Flink keeps track of the state of the IRs.
-   */
+   *   2. The RowAggregator doens't hold state; we (Flink) keep track of the state of the IRs.
+   *  */
   private def initializeRowAggregator(): Unit =
     rowAggregator = TileCodec.buildRowAggregator(groupBy, inputSchema)
 
-  override def createAccumulator(): TimestampedIR = {
+  override def createAccumulator(): TimestampedIRState = {
     initializeRowAggregator()
-    TimestampedIR(rowAggregator.init, None)
+    new TimestampedIRState(rowAggregator.init, None, None)
   }
 
   override def add(
-      element: Map[String, Any],
-      accumulatorIr: TimestampedIR
-  ): TimestampedIR = {
+      element: SparkExprOutput,
+      accumulatorIr: TimestampedIRState
+  ): TimestampedIRState = {
     // Most times, the time column is a Long, but it could be a Double.
-    val tsMills = Try(element(timeColumnAlias).asInstanceOf[Long])
-      .getOrElse(element(timeColumnAlias).asInstanceOf[Double].toLong)
-    val row = toChrononRow(element, tsMills)
+    val tsMills = Try(element.data(timeColumnAlias).asInstanceOf[Long])
+      .getOrElse(element.data(timeColumnAlias).asInstanceOf[Double].toLong)
+    val row = toChrononRow(element.data, tsMills)
 
     // Given that the rowAggregator is transient, it may be null when a job is restored from a checkpoint
     if (rowAggregator == null) {
@@ -92,7 +113,7 @@ class FlinkRowAggregationFunction(
           f"Flink pre-aggregates AFTER adding new element [${v.mkString(", ")}] " +
             f"groupBy=${groupBy.getMetaData.getName} tsMills=$tsMills element=$element"
         )
-        TimestampedIR(v, Some(tsMills))
+        new TimestampedIRState(v, Some(tsMills), element.metadata.kafkaTimestamp)
       }
       case Failure(e) =>
         logger.error(
@@ -106,15 +127,18 @@ class FlinkRowAggregationFunction(
 
   // Note we return intermediate results here as the results of this
   // aggregator are used on the serving side along with other pre-aggregates
-  override def getResult(accumulatorIr: TimestampedIR): TimestampedIR =
+  override def getResult(accumulatorIr: TimestampedIRState): TimestampedIRState =
     accumulatorIr
 
-  override def merge(aIr: TimestampedIR, bIr: TimestampedIR): TimestampedIR =
-    TimestampedIR(
+  override def merge(aIr: TimestampedIRState, bIr: TimestampedIRState): TimestampedIRState =
+    new TimestampedIRState(
       rowAggregator.merge(aIr.ir, bIr.ir),
       aIr.latestTsMillis
         .flatMap(aL => bIr.latestTsMillis.map(bL => Math.max(aL, bL)))
-        .orElse(aIr.latestTsMillis.orElse(bIr.latestTsMillis))
+        .orElse(aIr.latestTsMillis.orElse(bIr.latestTsMillis)),
+      aIr.kafkaTimestamp
+        .flatMap(aKL => bIr.kafkaTimestamp.map(bKL => Math.max(aKL, bKL)))
+        .orElse(aIr.kafkaTimestamp.orElse(bIr.kafkaTimestamp))
     )
 
   def toChrononRow(value: Map[String, Any], tsMills: Long): Row = {
@@ -127,25 +151,45 @@ class FlinkRowAggregationFunction(
 }
 
 /**
-  * TimestampedTile combines the entity keys, the encoded Intermediate Result, and the timestamp of the event being processed.
-  *
-  * We need the timestamp of the event processed so we can calculate processing lag down the line.
-  *
-  * @param keys the GroupBy entity keys
-  * @param tileBytes encoded tile IR
-  * @param latestTsMillis timestamp of the current event being processed
-  */
-case class TimestampedTile(
-    keys: List[Any],
-    tileBytes: Array[Byte],
-    latestTsMillis: Long
-)
+ * Combines the entity keys, the encoded IR (intermediate result), and the timestamp of the event being processed.
+ *
+ * We need the timestamp of the event processed so we can calculate processing lag down the line.
+ *
+ * Note: This is a POJO class to allow us to safely evolve the schema without breaking Flink jobs. See: go/flink-pojo-types
+ * for details on what safe evolution is.
+ *
+ * @param keys the GroupBy entity keys
+ * @param tileBytes encoded tile IR
+ * @param latestTsMillis timestamp of the current event being processed
+ */
+class TimestampedTileState(
+                            var keys: List[Any],
+                            var tileBytes: Array[Byte],
+                            var latestTsMillis: Long,
+                            var kafkaTimestamp: Option[Long]
+                          ) {
+  def this() = this(List(), Array(), 0L, None)
+
+  override def toString: String =
+    s"TimestampedTile(keys=${keys.mkString(", ")}, tileBytes=${java.util.Base64.getEncoder
+      .encodeToString(tileBytes)}, latestTsMillis=$latestTsMillis), kafkaTimestamp=$kafkaTimestamp)"
+
+  override def hashCode(): Int =
+    Objects.hash(keys, tileBytes.deep, latestTsMillis.asInstanceOf[java.lang.Long], kafkaTimestamp)
+
+  override def equals(other: Any): Boolean =
+    other match {
+      case e: TimestampedTileState =>
+        keys == e.keys && tileBytes.sameElements(e.tileBytes) && latestTsMillis == e.latestTsMillis && kafkaTimestamp == e.kafkaTimestamp
+      case _ => false
+    }
+}
 
 // This process function is only meant to be used downstream of the ChrononFlinkAggregationFunction
 class FlinkRowAggProcessFunction(
     groupBy: GroupBy,
     inputSchema: Seq[(String, DataType)]
-) extends ProcessWindowFunction[TimestampedIR, TimestampedTile, List[Any], TimeWindow] {
+) extends ProcessWindowFunction[TimestampedIRState, TimestampedTileState, List[Any], TimeWindow] {
 
   @transient private[flink] var tileCodec: TileCodec = _
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -172,8 +216,8 @@ class FlinkRowAggProcessFunction(
   override def process(
       keys: List[Any],
       context: Context,
-      elements: Iterable[TimestampedIR],
-      out: Collector[TimestampedTile]
+      elements: Iterable[TimestampedIRState],
+      out: Collector[TimestampedTileState]
   ): Unit = {
     val windowEnd = context.window.getEnd
     val irEntry = elements.head
@@ -186,14 +230,15 @@ class FlinkRowAggProcessFunction(
     tileBytes match {
       case Success(v) => {
         logger.debug(
-          s""" 
+          s"""
                 |Flink aggregator processed element irEntry=$irEntry
                 |tileBytes=${java.util.Base64.getEncoder.encodeToString(v)}
                 |windowEnd=$windowEnd groupBy=${groupBy.getMetaData.getName}
                 |keys=$keys isComplete=$isComplete tileAvroSchema=${tileCodec.tileAvroSchema}"""
         )
-        // The timestamp should never be None here.
-        out.collect(TimestampedTile(keys, v, irEntry.latestTsMillis.get))
+        out.collect(
+          new TimestampedTileState(keys, v, irEntry.latestTsMillis.get, irEntry.kafkaTimestamp)
+        )
       }
       case Failure(e) =>
         // To improve availability, we don't rethrow the exception. We just drop the event

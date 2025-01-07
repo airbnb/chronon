@@ -1,15 +1,9 @@
 package ai.chronon.flink
 
 import ai.chronon.aggregator.windowing.ResolutionUtils
-import ai.chronon.api.{DataType}
+import ai.chronon.api.DataType
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
-import ai.chronon.flink.window.{
-  AlwaysFireOnElementTrigger,
-  FlinkRowAggProcessFunction,
-  FlinkRowAggregationFunction,
-  KeySelector,
-  TimestampedTile
-}
+import ai.chronon.flink.window.{AlwaysFireOnElementTrigger, FlinkRowAggProcessFunction, FlinkRowAggregationFunction, KeySelector, TimestampedTile, TimestampedTileState}
 import ai.chronon.online.{GroupByServingInfoParsed, SparkConversions}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment}
@@ -35,7 +29,7 @@ import org.slf4j.LoggerFactory
   * @tparam T - The input data type
   */
 class FlinkJob[T](eventSrc: FlinkSource[T],
-                  sinkFn: RichAsyncFunction[PutRequest, WriteResponse],
+                  sinkFn: RichAsyncFunction[AvroCodecOutput, WriteResponse],
                   groupByServingInfoParsed: GroupByServingInfoParsed,
                   encoder: Encoder[T],
                   parallelism: Int) {
@@ -156,8 +150,8 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     //    - Each time a "FIRE" is triggered (i.e. on every event), getResult() is called and the current IRs are emitted
     // 6. A process window function does additional processing each time the AggregationFunction emits results
     //    - The only purpose of this window function is to mark tiles as closed so we can do client-side caching in SFS
-    // 7. Output: TimestampedTile, containing the current IRs (Avro encoded) and the timestamp of the current element
-    val tilingDS: DataStream[TimestampedTile] =
+    // 7. Output: TimestampedTileState, containing the current IRs (Avro encoded) and the timestamp of the current element
+    val tilingDS: DataStream[TimestampedTileState] =
       sparkExprEvalDS
         .keyBy(KeySelector.getKeySelectionFunction(groupByServingInfoParsed.groupBy))
         .window(window)
@@ -181,7 +175,7 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
         .name(s"Tiling Side Output Late Data for $featureGroupName")
         .setParallelism(sourceStream.parallelism)
 
-    val putRecordDS: DataStream[PutRequest] = tilingDS
+    val putRecordDS: DataStream[AvroCodecOutput] = tilingDS
       .flatMap(new TiledAvroCodecFn[T](groupByServingInfoParsed))
       .uid(s"avro-conversion-01-$featureGroupName")
       .name(s"Avro conversion for $featureGroupName")

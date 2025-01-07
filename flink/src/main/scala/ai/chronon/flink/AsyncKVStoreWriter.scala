@@ -20,8 +20,8 @@ object AsyncKVStoreWriter {
   private val kvStoreConcurrency = 10
   private val defaultTimeoutMillis = 1000L
 
-  def withUnorderedWaits(inputDS: DataStream[PutRequest],
-                         kvStoreWriterFn: RichAsyncFunction[PutRequest, WriteResponse],
+  def withUnorderedWaits(inputDS: DataStream[AvroCodecOutput],
+                         kvStoreWriterFn: RichAsyncFunction[AvroCodecOutput, WriteResponse],
                          featureGroupName: String,
                          timeoutMillis: Long = defaultTimeoutMillis,
                          capacity: Int = kvStoreConcurrency): DataStream[WriteResponse] = {
@@ -64,7 +64,7 @@ object AsyncKVStoreWriter {
   * @param featureGroupName Name of the FG we're writing to
   */
 class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
-    extends RichAsyncFunction[PutRequest, WriteResponse] {
+    extends RichAsyncFunction[AvroCodecOutput, WriteResponse] {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   @transient private var kvStore: KVStore = _
@@ -91,14 +91,14 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
     kvStore = getKVStore
   }
 
-  override def timeout(input: PutRequest, resultFuture: ResultFuture[WriteResponse]): Unit = {
+  override def timeout(input: AvroCodecOutput, resultFuture: ResultFuture[WriteResponse]): Unit = {
     logger.error(s"Timed out writing to KV Store for object: $input")
     errorCounter.inc()
-    resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
+    resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input.putRequest, status = false)))
   }
 
-  override def asyncInvoke(input: PutRequest, resultFuture: ResultFuture[WriteResponse]): Unit = {
-    val resultFutureRequested: Future[Seq[Boolean]] = kvStore.multiPut(Seq(input))
+  override def asyncInvoke(input: AvroCodecOutput, resultFuture: ResultFuture[WriteResponse]): Unit = {
+    val resultFutureRequested: Future[Seq[Boolean]] = kvStore.multiPut(Seq(input.putRequest))
     resultFutureRequested.onComplete {
       case Success(l) =>
         val succeeded = l.forall(identity)
@@ -108,14 +108,14 @@ class AsyncKVStoreWriter(onlineImpl: Api, featureGroupName: String)
           errorCounter.inc()
           logger.error(s"Failed to write to KVStore for object: $input")
         }
-        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = succeeded)))
+        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input.putRequest, status = succeeded)))
       case Failure(exception) =>
         // this should be rare and indicates we have an uncaught exception
         // in the KVStore - we log the exception and skip the object to
         // not fail the app
         errorCounter.inc()
         logger.error(s"Caught exception writing to KVStore for object: $input - $exception")
-        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input, status = false)))
+        resultFuture.complete(util.Arrays.asList[WriteResponse](WriteResponse(input.putRequest, status = false)))
     }
   }
 }

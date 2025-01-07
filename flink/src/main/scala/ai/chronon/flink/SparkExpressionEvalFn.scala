@@ -27,7 +27,7 @@ import scala.jdk.CollectionConverters.{asScalaBufferConverter, mapAsScalaMapConv
   * @param groupBy The GroupBy to evaluate.
   * @tparam T The type of the input data.
   */
-class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends RichFlatMapFunction[T, Map[String, Any]] {
+class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends RichFlatMapFunction[Event[T], SparkExprOutput] {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private val query: Query = groupBy.streamingSource.get.getEvents.query
@@ -87,16 +87,16 @@ class SparkExpressionEvalFn[T](encoder: Encoder[T], groupBy: GroupBy) extends Ri
     exprEvalErrorCounter = metricsGroup.counter("spark_expr_eval_errors")
   }
 
-  def flatMap(inputEvent: T, out: Collector[Map[String, Any]]): Unit = {
+  def flatMap(inputEvent: Event[T], out: Collector[SparkExprOutput]): Unit = {
     try {
       val start = System.currentTimeMillis()
-      val row: InternalRow = rowSerializer(inputEvent)
+      val row: InternalRow = rowSerializer(inputEvent.data)
       val serFinish = System.currentTimeMillis()
       rowSerTimeHistogram.update(serFinish - start)
 
       val maybeRow = catalystUtil.sqlTransformRowToMap(row)
       exprEvalTimeHistogram.update(System.currentTimeMillis() - serFinish)
-      maybeRow.foreach(out.collect)
+      maybeRow.foreach(m => out.collect(new SparkExprOutput(inputEvent.metadata, m)))
       exprEvalSuccessCounter.inc()
     } catch {
       case e: Exception =>
