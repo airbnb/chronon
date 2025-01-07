@@ -37,7 +37,7 @@ def _get_full_file_path(relative_path):
 def _invoke_cli_with_params(runner, input_path, flags=None):
     """Invoke the CLI command with consistent options and specified input_path."""
     command = [
-        "--chronon_root=test/sample",
+        "--chronon_root=api/py/test/sample",
         f"--input_path={input_path}",
         "--debug",
     ]
@@ -88,12 +88,12 @@ def specific_setup():
 
 def test_basic_compile():
     runner = CliRunner()
-    result = runner.invoke(extract_and_convert, ["--chronon_root=test/sample", "--input_path=joins/sample_team/"])
+    result = runner.invoke(extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/"])
     assert result.exit_code == 0
-    result = runner.invoke(extract_and_convert, ["--chronon_root=test/sample", "--input_path=joins/sample_team"])
+    result = runner.invoke(extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team"])
     assert result.exit_code == 0
     result = runner.invoke(
-        extract_and_convert, ["--chronon_root=test/sample", "--input_path=joins/sample_team/sample_join.py"]
+        extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/sample_join.py"]
     )
     assert result.exit_code == 0
 
@@ -104,7 +104,7 @@ def test_compile_group_by_deprecation():
     result = runner.invoke(
         extract_and_convert,
         [
-            "--chronon_root=test/sample",
+            "--chronon_root=api/py/test/sample",
             "--input_path=group_bys/sample_team/sample_deprecation_group_by.py",
             "--force-overwrite",
         ],
@@ -121,7 +121,7 @@ def test_compile_join_deprecation():
     result = runner.invoke(
         extract_and_convert,
         [
-            "--chronon_root=test/sample",
+            "--chronon_root=api/py/test/sample",
             "--input_path=joins/sample_team/sample_deprecation_join.py",
             "--force-overwrite",
         ],
@@ -135,7 +135,7 @@ def test_compile_join_deprecation():
 def test_debug_compile():
     runner = CliRunner()
     result = runner.invoke(
-        extract_and_convert, ["--chronon_root=test/sample", "--input_path=joins/sample_team/", "--debug"]
+        extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/", "--debug"]
     )
     assert result.exit_code == 0
 
@@ -341,7 +341,7 @@ def test_table_display_staging_query():
     result = runner.invoke(
         extract_and_convert,
         [
-            "--chronon_root=test/sample",
+            "--chronon_root=api/py/test/sample",
             f"--input_path={input_path}",
             "--table-display",
         ],
@@ -362,7 +362,7 @@ def test_compile_dependency_staging_query():
     input_path = f"staging_queries/sample_team/sample_staging_query.py"
     result = runner.invoke(
         extract_and_convert,
-        ["--chronon_root=test/sample", f"--input_path={input_path}"],
+        ["--chronon_root=api/py/test/sample", f"--input_path={input_path}"],
     )
 
     assert result.exit_code == 0
