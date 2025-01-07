@@ -27,25 +27,22 @@ py_wheel(
 
 pytest_suite(
     name = "api_test",
-    srcs = glob(["test/**/*.py"]),
-    #    data = ["sample/teams.json"],
+    srcs = glob(
+        ["test/**/*.py"],
+        exclude = ["test/sample/**/*"],
+    ),
+    data = glob(["test/sample/**/*"]),
     env = {
-        "CHRONON_ROOT": "api/py/test/sample/",
+        "CHRONON_ROOT": "api/py/",
     },
-    imports = ["."],
-    deps = [
-        "//api/py:api_py",
-        "//api/thrift:api-models-py",
-        requirement("thrift"),
+    imports = [
+        ".",
+        "test/sample",
     ],
-)
-
-py_binary(
-    name = "test2",
-    srcs = ["test/test2.py"],
     deps = [
         "//api/py:api_py",
         "//api/thrift:api-models-py",
         requirement("thrift"),
+        requirement("click"),
     ],
 )
