@@ -256,6 +256,8 @@ sbt dependencyBrowseTree
 
 ### Bazel:
 
+Default settings in .bazelrc
+
 Build all artifacts:
 
 ```shell
@@ -267,6 +269,25 @@ Build a specific artifact:
 ```shell
 bazel build //module:artifact_name
 ```
+
+Build a scala version specific artifact:
+
+```shell
+bazel build --config scala_2.12 //module:artifact_name
+```
+
+Build a spark version specific artifact:
+
+```shell
+bazel build --define spark_version=3.5 //module:artifact_name
+```
+
+Build deploy jar aka Uber jar or fat jar:
+
+```shell
+bazel build --config scala_2.13 --define spark_version=3.5 //spark:spark-assembly_deploy.jar
+```
+
 
 ### SBT:
 

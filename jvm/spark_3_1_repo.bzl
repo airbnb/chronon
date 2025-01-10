@@ -8,7 +8,8 @@ spark_3_1_repo = repo(name = "spark_3_1", provided = True, artifacts = [
     "org.apache.datasketches:datasketches-memory:1.3.0",
     "org.apache.hive:hive-exec:3.1.2",
     "org.apache.kafka:kafka_2.12:2.6.3",
-    versioned_artifacts("3.1.3", [
+    versioned_artifacts("3.1.1", [
+        "org.apache.spark:spark-streaming_2.12",
         "org.apache.spark:spark-core_2.12:jar:tests",
         "org.apache.spark:spark-hive_2.12",
         "org.apache.spark:spark-sql-kafka-0-10_2.12",
