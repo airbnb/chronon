@@ -64,7 +64,6 @@ In general, tiling improves scalability and decreases feature serving latency. S
 
 - You want to decrease feature serving latency. At Stripe, migrating to tiling decreased serving latency by 33% at 4K
   rps.
-- You don't have access to Spark Streaming
 - You don't have access to a datastore with range queries
 - You want to reduce fanout to your datastore.
 - You need to support aggregating over hot key entities

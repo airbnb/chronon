@@ -88,32 +88,32 @@
     {
       "source": {
         "metadata": {
-          "name": "test_external_source",
-          "team": "chronon"
+          "name": "contextual",
+          "team": "default"
         },
         "keySchema": {
           "kind": 13,
           "params": [
             {
-              "name": "key",
-              "dataType": {
-                "kind": 4
-              }
-            }
-          ],
-          "name": "ext_test_external_source_keys"
-        },
-        "valueSchema": {
-          "kind": 13,
-          "params": [
-            {
-              "name": "ext_place_id",
+              "name": "place_id",
               "dataType": {
                 "kind": 7
               }
             }
           ],
-          "name": "ext_test_external_source_values"
+          "name": "contextual_keys"
+        },
+        "valueSchema": {
+          "kind": 13,
+          "params": [
+            {
+              "name": "place_id",
+              "dataType": {
+                "kind": 7
+              }
+            }
+          ],
+          "name": "contextual_values"
         }
       }
     }
@@ -125,7 +125,7 @@
     },
     {
       "name": "place_id",
-      "expression": "ext_test_external_source_ext_place_id"
+      "expression": "ext_contextual_place_id"
     }
   ]
 }
