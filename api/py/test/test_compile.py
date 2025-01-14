@@ -234,7 +234,7 @@ def test_detected_dependent_joins_materialized():
     runner = CliRunner()
     result = _invoke_cli_with_params(runner, "group_bys/sample_team/event_sample_group_by.py", ["--force-overwrite"])
     assert result.exit_code == 0
-    expected_message = "Successfully wrote 8 Join objects to test/sample/production".strip().lower()
+    expected_message = "Successfully wrote 8 Join objects to api/py/test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
 
@@ -266,7 +266,7 @@ def test_detected_dependent_group_bys_materialized():
     runner = CliRunner()
     result = _invoke_cli_with_params(runner, "joins/unit_test/sample_parent_join.py", ["--force-overwrite"])
     assert result.exit_code == 0
-    expected_message = "Successfully wrote 2 GroupBy objects to test/sample/production".strip().lower()
+    expected_message = "Successfully wrote 2 GroupBy objects to api/py/test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
 
@@ -280,7 +280,7 @@ def test_detected_dependent_nested_joins():
         runner, "group_bys/unit_test/user/sample_nested_group_by.py", ["--force-overwrite"]
     )
     assert result.exit_code == 0
-    expected_message = "Successfully wrote 1 Join objects to test/sample/production".strip().lower()
+    expected_message = "Successfully wrote 1 Join objects to api/py/test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
 

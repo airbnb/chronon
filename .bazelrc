@@ -16,3 +16,6 @@ build --javacopt=-Xep:DoubleBraceInitialization:OFF
 
 # Don't implicitly create __init__.py files
 build --incompatible_default_to_explicit_init_py
+
+# https://github.com/bazelbuild/bazel/issues/2377
+test --spawn_strategy=standalone
