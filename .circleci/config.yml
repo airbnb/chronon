@@ -130,7 +130,7 @@ jobs:
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       conda activate chronon_py
-                      cd /chronon/api/py/ai/chronon
+                      cd /chronon/api/py
                       pip install importlib-metadata==4.11.4 #Install importlib-metadata < 5
                       flake8 --extend-ignore=W605,Q000,F631,E203
 
@@ -142,14 +142,8 @@ jobs:
                   name: Run Chronon Python tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
-                      conda activate chronon_py
-                      pushd /chronon/api/
-                      thrift --gen py -out /chronon/api/py/ai/chronon\
-                         /chronon/api/thrift/api.thrift                 # Generate thrift files
-                      cd /chronon/api/py                                # Go to Python module
-                      pip install -r requirements/dev.txt               # Install latest requirements
-                      tox                                               # Run tests
-                      popd
+                    cd /chronon
+                    bazel test //api/py:api_test
             - store_artifacts:
                   path: /chronon/api/py/htmlcov
 
