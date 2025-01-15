@@ -115,7 +115,18 @@ maven_repo = repo(
             "org.apache.flink:flink-streaming-java:jar:tests",
             "org.apache.flink:flink-metrics-dropwizard",
         ]),
-
+        maven.artifact(
+            group = "org.apache.flink",
+            artifact = "flink-core",
+            version = "1.19.0",
+            classifier = "tests",
+        ),
+        maven.artifact(
+            group = "org.apache.flink",
+            artifact = "flink-runtime",
+            version = "1.19.0",
+            classifier = "tests",
+        ),
         # MongoDB Scala Driver and dependencies
         "org.mongodb.scala:mongo-scala-driver_2.12:4.11.1",
         "org.mongodb.scala:mongo-scala-bson_2.12:4.11.1",
