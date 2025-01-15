@@ -22,7 +22,7 @@ from ai.chronon.repo import validator
 
 @pytest.fixture
 def zvalidator():
-    return validator.ChrononRepoValidator(chronon_root_path="api/py/test/sample", output_root="production")
+    return validator.ChrononRepoValidator(chronon_root_path="ai/chronon/test/sample", output_root="production")
 
 
 @pytest.fixture

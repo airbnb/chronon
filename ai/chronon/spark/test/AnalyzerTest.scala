@@ -19,7 +19,8 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api._
-import ai.chronon.spark.{Analyzer, Join, TableUtils}
+import ai.chronon.spark.Extensions._
+import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{col, lit}
 import org.junit.Assert.assertTrue

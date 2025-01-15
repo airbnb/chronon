@@ -17,6 +17,7 @@
 package ai.chronon.aggregator.test
 
 import org.slf4j.LoggerFactory
+import ai.chronon.aggregator.base.Variance
 import junit.framework.TestCase
 import org.junit.Assert._
 

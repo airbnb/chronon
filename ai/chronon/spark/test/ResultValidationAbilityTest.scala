@@ -16,13 +16,16 @@
 
 package ai.chronon.spark.test
 
+import ai.chronon.api.Extensions.{WindowOps, WindowUtils}
+import ai.chronon.api.PartitionSpec
 import ai.chronon.spark.Driver.{OfflineSubcommand, ResultValidationAbility}
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.{assertFalse, assertTrue}
 import org.junit.{Before, Test}
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{mock, when}
+import org.rogach.scallop.ScallopConf
 
 class ResultValidationAbilityTest {
   val confPath = "joins/team/example_join.v1"

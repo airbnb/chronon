@@ -17,12 +17,14 @@
 package ai.chronon.spark.test
 
 import ai.chronon.api._
-import ai.chronon.online.SparkConversions
+import ai.chronon.spark._
 import ai.chronon.spark.test.TestUtils.makeDf
-import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, TableUtils}
+import ai.chronon.api.{StructField, _}
+import ai.chronon.online.SparkConversions
+import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
 import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.spark.sql.functions.col
-import org.apache.spark.sql.{Row, _}
+import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 

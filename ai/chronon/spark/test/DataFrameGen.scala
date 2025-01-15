@@ -1,13 +1,31 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.{CStream, Column, RowsWithSchema}
-import ai.chronon.api.{LongType, StringType}
+import ai.chronon.api.{Constants, LongType, StringType}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+
+import scala.collection.Seq
 
 // This class generates dataframes given certain dataTypes, cardinalities and rowCounts of data
 // Nulls are injected for all types
@@ -37,16 +55,15 @@ object DataFrameGen {
   }
 
   /**
-   * Mutations and snapshots generation.
-   * To generate data for mutations we first generate random entities events.
-   * We set these as insert mutations.
-   * Then we take a sample of rows and mutate them with an is_before and after at a mutation_ts after
-   * the mutation and before the end of the day.
-   * Finally process each snapshot with a group by to generate the snapshot data.
-   * This ensures mutations end state and snapshot data is consistent.
-   *
-   * @return (SnapshotDf, MutationDf)
-   */
+    * Mutations and snapshots generation.
+    * To generate data for mutations we first generate random entities events.
+    * We set these as insert mutations.
+    * Then we take a sample of rows and mutate them with an is_before and after at a mutation_ts after
+    * the mutation and before the end of the day.
+    * Finally process each snapshot with a group by to generate the snapshot data.
+    * This ensures mutations end state and snapshot data is consistent.
+    * @return (SnapshotDf, MutationDf)
+    */
   def mutations(spark: SparkSession,
                 columns: Seq[Column],
                 count: Int,
@@ -64,7 +81,7 @@ object DataFrameGen {
       .withColumn(Constants.ReversalColumn, lit(false))
       .withColumn(Constants.MutationTimeColumn, col(Constants.TimeColumn))
       .withColumn(tableUtils.partitionColumn,
-        from_unixtime((generated.col(Constants.TimeColumn) / 1000), tableUtils.partitionSpec.format))
+                  from_unixtime((generated.col(Constants.TimeColumn) / 1000), tableUtils.partitionSpec.format))
       .drop()
 
     // Sample some of the inserted data and add a mutation time.

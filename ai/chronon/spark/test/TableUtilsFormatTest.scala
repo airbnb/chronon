@@ -1,8 +1,9 @@
 package ai.chronon.spark.test
 
-import ai.chronon.api._
+import ai.chronon.api.{DoubleType, IntType, LongType, StringType, StructField, StructType}
+import ai.chronon.spark.SparkSessionBuilder.FormatTestEnvVar
 import ai.chronon.spark.test.TestUtils.makeDf
-import ai.chronon.spark.{IncompatibleSchemaException, TableUtils}
+import ai.chronon.spark.{IncompatibleSchemaException, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}

@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.test
 
+import ai.chronon.api.Constants
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.types.{LongType, StructField, StructType}
 

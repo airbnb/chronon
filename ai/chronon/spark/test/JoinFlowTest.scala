@@ -2,8 +2,10 @@ package ai.chronon.spark.test;
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
+import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import ai.chronon.spark._
+import ai.chronon.spark.Extensions._
+import ai.chronon.spark.{Join, _}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 import org.junit.Assert._

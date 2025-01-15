@@ -16,21 +16,26 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
+import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
+import ai.chronon.api.Constants.ChrononMetadataKey
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
-import ai.chronon.online.Fetcher.Request
+import ai.chronon.online.Fetcher.{Request}
 import ai.chronon.online.{MetadataStore, SparkConversions}
+import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
-import org.slf4j.LoggerFactory
 
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
+import scala.collection.Seq
 import scala.concurrent.ExecutionContext
 import scala.util.ScalaJavaConversions._
 

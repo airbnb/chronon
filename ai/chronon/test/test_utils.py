@@ -164,7 +164,7 @@ def test_get_applicable_mode_for_joins(
 
 
 def test_get_related_table_names_for_group_bys(group_by_requiring_backfill, online_group_by_requiring_streaming):
-    with open("api/py/test/sample/production/group_bys/sample_team/entity_sample_group_by_from_module.v1") as conf_file:
+    with open("ai/chronon/test/sample/production/group_bys/sample_team/entity_sample_group_by_from_module.v1") as conf_file:
         json = conf_file.read()
         group_by = json2thrift(json, api.GroupBy)
         tables = utils.get_related_table_names(group_by)
@@ -172,7 +172,7 @@ def test_get_related_table_names_for_group_bys(group_by_requiring_backfill, onli
 
 
 def test_get_related_table_names_for_group_bys():
-    with open("api/py/test/sample/production/group_bys/sample_team/entity_sample_group_by_from_module.v1") as conf_file:
+    with open("ai/chronon/test/sample/production/group_bys/sample_team/entity_sample_group_by_from_module.v1") as conf_file:
         json = conf_file.read()
         group_by = json2thrift(json, api.GroupBy)
         tables = utils.get_related_table_names(group_by)
@@ -188,7 +188,7 @@ def test_get_related_table_names_for_group_bys():
 
 
 def test_get_related_table_names_for_simple_joins():
-    with open("api/py/test/sample/production/joins/sample_team/sample_join.v1") as conf_file:
+    with open("ai/chronon/test/sample/production/joins/sample_team/sample_join.v1") as conf_file:
         json = conf_file.read()
         join = json2thrift(json, api.Join)
         tables = utils.get_related_table_names(join)
@@ -206,7 +206,7 @@ def test_get_related_table_names_for_simple_joins():
 
 
 def test_get_related_table_names_for_label_joins():
-    with open("api/py/test/sample/production/joins/sample_team/sample_label_join.v1") as conf_file:
+    with open("ai/chronon/test/sample/production/joins/sample_team/sample_label_join.v1") as conf_file:
         json = conf_file.read()
         join = json2thrift(json, api.Join)
         tables = utils.get_related_table_names(join)
@@ -226,7 +226,7 @@ def test_get_related_table_names_for_label_joins():
 
 
 def test_get_related_table_names_for_consistency_joins():
-    with open("api/py/test/sample/production/joins/sample_team/sample_join.consistency_check") as conf_file:
+    with open("ai/chronon/test/sample/production/joins/sample_team/sample_join.consistency_check") as conf_file:
         json = conf_file.read()
         join = json2thrift(json, api.Join)
         tables = utils.get_related_table_names(join)
@@ -245,7 +245,7 @@ def test_get_related_table_names_for_consistency_joins():
 
 
 def test_get_related_table_names_for_bootstrap_joins():
-    with open("api/py/test/sample/production/joins/sample_team/sample_join_bootstrap.v1") as conf_file:
+    with open("ai/chronon/test/sample/production/joins/sample_team/sample_join_bootstrap.v1") as conf_file:
         json = conf_file.read()
         join = json2thrift(json, api.Join)
         tables = utils.get_related_table_names(join)
@@ -264,7 +264,7 @@ def test_get_related_table_names_for_bootstrap_joins():
 
 
 def test_tables_with_without_skip_join_parts():
-    with open("api/py/test/sample/production/joins/sample_team/sample_join_bootstrap.v1") as conf_file:
+    with open("ai/chronon/test/sample/production/joins/sample_team/sample_join_bootstrap.v1") as conf_file:
         json = conf_file.read()
         join = json2thrift(json, api.Join)
         tables_without = utils.get_related_table_names(join)

@@ -1,12 +1,31 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api._
 import ai.chronon.online.SparkConversions
+import ai.chronon.spark.Extensions._
 import ai.chronon.spark.TableUtils
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+
+import scala.util.ScalaJavaConversions.JListOps
 
 object TestUtils {
   def createViewsGroupBy(namespace: String,
@@ -309,8 +328,8 @@ object TestUtils {
       keyColumns = Seq("listing_id"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.MAX,
-          inputColumn = "active_status",
-          windows = Seq(new Window(windowSize, TimeUnit.DAYS)))),
+                             inputColumn = "active_status",
+                             windows = Seq(new Window(windowSize, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "listing_label_table", namespace = namespace, team = "chronon")
     )
 
@@ -412,11 +431,11 @@ object TestUtils {
   }
 
   /**
-   * This test group by is trying to get the price of listings a user viewed in the last 7 days. The source
-   * of groupby is a Join source which computes the the last accuracy price for a given listing.
-   *
-   * @return a group by with a join source
-   */
+    * This test group by is trying to get the price of listings a user viewed in the last 7 days. The source
+    * of groupby is a Join source which computes the the last accuracy price for a given listing.
+    *
+    * @return a group by with a join source
+    */
 
   def getTestGBWithJoinSource(joinSource: api.Join, query: api.Query, namespace: String, name: String): api.GroupBy = {
     Builders.GroupBy(
@@ -424,9 +443,9 @@ object TestUtils {
       keyColumns = Seq("user"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.LAST_K,
-          argMap = Map("k" -> "7"),
-          inputColumn = "parent_gb_price_last",
-          windows = Seq(new Window(7, TimeUnit.DAYS)))
+                             argMap = Map("k" -> "7"),
+                             inputColumn = "parent_gb_price_last",
+                             windows = Seq(new Window(7, TimeUnit.DAYS)))
       ),
       metaData = Builders.MetaData(name = name, namespace = namespace),
       accuracy = Accuracy.TEMPORAL

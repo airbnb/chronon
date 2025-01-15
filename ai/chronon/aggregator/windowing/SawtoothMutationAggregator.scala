@@ -103,7 +103,7 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
 
   // Ready the snapshot aggregated data to be merged with mutations data.
   def finalizeSnapshot(batchIr: BatchIr): FinalBatchIr =
-    windowing.FinalBatchIr(batchIr.collapsed, Option(batchIr.tailHops).map(hopsAggregator.toTimeSortedArray).orNull)
+    FinalBatchIr(batchIr.collapsed, Option(batchIr.tailHops).map(hopsAggregator.toTimeSortedArray).orNull)
 
   /**
     * Go through the aggregators and update or delete the intermediate with the information of the row if relevant.

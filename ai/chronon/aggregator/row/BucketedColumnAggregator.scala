@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.row
 
+import ai.chronon.aggregator.base.BaseAggregator
 import ai.chronon.api.Row
 
 class BucketedColumnAggregator[Input, IR, Output](agg: BaseAggregator[Input, IR, Output],

@@ -18,8 +18,9 @@ package ai.chronon.spark.test
 
 import ai.chronon.online.TopicInfo
 import ai.chronon.spark.streaming.KafkaStreamBuilder
+import ai.chronon.spark.{SparkSessionBuilder}
 import org.apache.spark.sql.SparkSession
-import org.junit.Test
+import org.junit.{Test}
 
 class KafkaStreamBuilderTest {
 

@@ -17,6 +17,7 @@
 package ai.chronon.spark.streaming
 
 import org.slf4j.LoggerFactory
+import ai.chronon.aggregator.base.BottomK
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{ThriftJsonCodec, UnknownType}

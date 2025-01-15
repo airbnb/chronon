@@ -1,5 +1,6 @@
 package ai.chronon.aggregator.test
 
+import ai.chronon.aggregator.base.{ApproxHistogram, ApproxHistogramIr}
 import junit.framework.TestCase
 import org.junit.Assert._
 

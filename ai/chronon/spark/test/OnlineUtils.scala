@@ -1,12 +1,30 @@
+/*
+ *    Copyright (C) 2023 The Chronon Authors.
+ *
+ *    Licensed under the Apache License, Version 2.0 (the "License");
+ *    you may not use this file except in compliance with the License.
+ *    You may obtain a copy of the License at
+ *
+ *        http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *    Unless required by applicable law or agreed to in writing, software
+ *    distributed under the License is distributed on an "AS IS" BASIS,
+ *    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *    See the License for the specific language governing permissions and
+ *    limitations under the License.
+ */
+
 package ai.chronon.spark.test
 
 import ai.chronon.api
-import ai.chronon.online.KVStore
-import ai.chronon.spark.stats.SummaryJob
+import ai.chronon.api.{Accuracy, Constants, DataModel}
+import ai.chronon.spark.{GenericRowHandler, GroupByUpload, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.streaming.{GroupBy, JoinSourceRunner}
-import ai.chronon.spark.{GenericRowHandler, GroupByUpload, TableUtils}
-import org.apache.spark.sql.SparkSession
+import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.sql.streaming.Trigger
+import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
+import ai.chronon.online.{AvroConversions, KVStore, TileCodec}
+import org.apache.spark.sql.SparkSession
 
 import scala.annotation.tailrec
 
@@ -72,10 +90,10 @@ object OnlineUtils {
     } else {
       val groupByStreaming =
         new GroupBy(inputStream.getInMemoryStreamDF(session, inputModified),
-          session,
-          groupByConf,
-          mockApi,
-          debug = debug)
+                    session,
+                    groupByConf,
+                    mockApi,
+                    debug = debug)
       // We modify the arguments for running to make sure all data gets into the KV Store before fetching.
       val dataStream = groupByStreaming.buildDataStream()
       val query = dataStream.trigger(Trigger.Once()).start()
@@ -135,13 +153,13 @@ object OnlineUtils {
         OnlineUtils.putStreamingNew(groupByConf, endDs, namespace, kvStoreGen, debug)(tableUtils.sparkSession)
       } else {
         OnlineUtils.putStreaming(tableUtils.sparkSession,
-          groupByConf,
-          kvStoreGen,
-          tableUtils,
-          endDs,
-          namespace,
-          debug,
-          dropDsOnWrite)
+                                 groupByConf,
+                                 kvStoreGen,
+                                 tableUtils,
+                                 endDs,
+                                 namespace,
+                                 debug,
+                                 dropDsOnWrite)
       }
     }
   }
@@ -150,8 +168,8 @@ object OnlineUtils {
     val statsJob = new SummaryJob(tableUtils.sparkSession, joinConf, endDs)
     statsJob.dailyRun()
     inMemoryKvStore.bulkPut(joinConf.metaData.toUploadTable(joinConf.metaData.dailyStatsOutputTable),
-      Constants.StatsBatchDataset,
-      null)
+                            Constants.StatsBatchDataset,
+                            null)
   }
 
   def serveLogStats(tableUtils: TableUtils,
@@ -161,8 +179,8 @@ object OnlineUtils {
     val statsJob = new SummaryJob(tableUtils.sparkSession, joinConf, endDs)
     statsJob.loggingRun()
     inMemoryKvStore.bulkPut(joinConf.metaData.toUploadTable(joinConf.metaData.loggingStatsTable),
-      Constants.LogStatsBatchDataset,
-      null)
+                            Constants.LogStatsBatchDataset,
+                            null)
   }
 
   def serveConsistency(tableUtils: TableUtils,

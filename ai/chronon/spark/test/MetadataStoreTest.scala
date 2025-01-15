@@ -1,5 +1,6 @@
 package ai.chronon.spark.test
 
+import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.MetadataEndPoint.NameByTeamEndPointName
 import ai.chronon.online.{MetadataDirWalker, MetadataEndPoint, MetadataStore}

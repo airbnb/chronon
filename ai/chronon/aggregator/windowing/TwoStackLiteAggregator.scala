@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.windowing
 
+import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{AggregationOps, AggregationPartOps, WindowOps}
 import ai.chronon.api._
 import scala.collection.Seq

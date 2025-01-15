@@ -16,6 +16,7 @@
 
 package ai.chronon.spark.stats
 
+import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.{DataMetrics, SparkConversions}

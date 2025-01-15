@@ -17,6 +17,8 @@
 package ai.chronon.aggregator.windowing
 
 import org.slf4j.LoggerFactory
+import ai.chronon.aggregator.row.RowAggregator
+import ai.chronon.aggregator.windowing.HopsAggregator._
 import ai.chronon.api.Extensions.{AggregationOps, AggregationsOps, WindowOps, WindowUtils}
 import ai.chronon.api.{Aggregation, DataType, Row}
 

@@ -16,11 +16,12 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
+import ai.chronon.api.Constants
 import ai.chronon.online.KVStore
 import ai.chronon.online.KVStore.{PutRequest, TimedValue}
 import ai.chronon.spark.TableUtils
 import org.apache.spark.sql.Row
-import org.slf4j.LoggerFactory
 
 import java.util.concurrent.ConcurrentHashMap
 import java.util.{Base64, function}

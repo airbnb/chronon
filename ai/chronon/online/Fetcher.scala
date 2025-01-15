@@ -16,6 +16,7 @@
 
 package ai.chronon.online
 
+import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
 import ai.chronon.api.Extensions.{ExternalPartOps, GroupByOps, JoinOps, MetadataOps, StringOps, ThrowableOps}

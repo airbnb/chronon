@@ -1,5 +1,6 @@
 package ai.chronon.quickstart.online
 import org.apache.spark.sql.SparkSession
+import ai.chronon.api.{Constants => ApiConstants}
 
 object Spark2MongoLoader {
   def main(args: Array[String]): Unit = {

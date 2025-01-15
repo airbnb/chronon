@@ -18,11 +18,13 @@ package ai.chronon.spark
 
 import java.io.{PrintWriter, Serializable, StringWriter}
 import org.slf4j.LoggerFactory
+import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
 import io.delta.tables.DeltaTable
+import jnr.ffi.annotations.Synchronized
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD

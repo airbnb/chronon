@@ -16,9 +16,11 @@
 
 package ai.chronon.spark.test
 
-import ai.chronon.api.StructType
+import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
+import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.Fetcher.Response
 import ai.chronon.online._
+import ai.chronon.spark.Extensions._
 import ai.chronon.spark.TableUtils
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
@@ -30,6 +32,7 @@ import java.io.{ByteArrayInputStream, InputStream}
 import java.util
 import java.util.Base64
 import java.util.concurrent.{CompletableFuture, ConcurrentLinkedQueue}
+import scala.collection.Seq
 import scala.concurrent.Future
 import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
 import scala.util.Success

@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.test
 
+import ai.chronon.aggregator.base.ApproxDistinctCount
 import junit.framework.TestCase
 import org.junit.Assert._
 

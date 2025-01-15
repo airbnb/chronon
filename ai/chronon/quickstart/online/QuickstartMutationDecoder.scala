@@ -1,8 +1,10 @@
 package ai.chronon.quickstart.online
 
 import ai.chronon.api
+import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{StructField, StructType}
 import ai.chronon.online.{GroupByServingInfoParsed, Mutation, StreamDecoder}
+import java.util.HashSet
 
 /**
  *  We build a convention that for events (immutable) topic starts with 'event.' For mutable topics, it starts with 'mutation.'

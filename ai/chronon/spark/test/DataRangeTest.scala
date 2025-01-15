@@ -18,7 +18,9 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.spark.{PartitionRange, TableUtils}
+import ai.chronon.api.{Builders, Constants, QueryUtils, Source}
+import ai.chronon.spark.{PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test

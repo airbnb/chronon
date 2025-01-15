@@ -4,7 +4,7 @@ load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_
 thrift_python_library(
     name = "api-models-py",
     srcs = ["api.thrift"],
-    namespace = "ai.chronon",
+    namespace = ".",
     visibility = ["//visibility:public"],
 )
 
@@ -28,11 +28,6 @@ scala_library(
     name = "api-lib",
     srcs = glob(
         ["*.scala"],
-        #               exclude = [
-        #                   "ScalaVersionSpecificCollectionsConverter211.scala",
-        #                   "ScalaVersionSpecificCollectionsConverter212.scala",
-        #                   "ScalaVersionSpecificCollectionsConverter213.scala",
-        #               ],
     ) + select_for_scala_version(
         before_2_12 = [
             "util/ScalaVersionSpecificCollectionsConverter211.scala",

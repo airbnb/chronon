@@ -16,11 +16,16 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
+import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
+import ai.chronon.api.Constants.ChrononMetadataKey
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
 import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
 import com.google.gson.GsonBuilder
@@ -29,11 +34,12 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.{avg, col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
-import org.slf4j.LoggerFactory
 
 import java.lang
 import java.util.TimeZone
 import java.util.concurrent.Executors
+import scala.collection.Seq
+import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, ExecutionContext}
 import scala.util.Random

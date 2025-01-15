@@ -18,13 +18,19 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.online.MetadataStore
+import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
+import ai.chronon.api.Constants.ChrononMetadataKey
+import ai.chronon.api.Extensions._
 import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
+import ai.chronon.online.{MetadataStore}
+import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{SparkSession}
 
 import java.util.TimeZone
+
+import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 
 object StreamingTest {
   def buildInMemoryKvStore(): InMemoryKvStore = {

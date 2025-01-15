@@ -15,15 +15,17 @@
  */
 
 package ai.chronon.spark.test
+import org.slf4j.LoggerFactory
+import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api._
 import ai.chronon.online.SparkConversions.toChrononSchema
-import ai.chronon.spark.TableUtils
-import ai.chronon.spark.stats.StatsCompute
+import ai.chronon.spark.Extensions._
+import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.lit
 import org.junit.Test
-import org.slf4j.LoggerFactory
+import ai.chronon.spark.stats.StatsCompute
+import org.apache.spark.sql.functions.lit
 
 class StatsComputeTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)

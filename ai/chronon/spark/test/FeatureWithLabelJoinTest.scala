@@ -16,13 +16,14 @@
 
 package ai.chronon.spark.test
 
-import ai.chronon.api.{LongType, StringType, StructField, StructType}
-import ai.chronon.spark.{LabelJoin, TableUtils}
-import org.apache.spark.sql.functions.{max, min}
+import org.slf4j.LoggerFactory
+import ai.chronon.api.Extensions.{LabelPartOps, MetadataOps}
+import ai.chronon.api.{Builders, LongType, StringType, StructField, StructType}
+import ai.chronon.spark.{Comparison, LabelJoin, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.functions.{max, min}
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.slf4j.LoggerFactory
 
 import scala.util.Random
 

@@ -16,20 +16,23 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
+import ai.chronon.aggregator.windowing.TsUtils
+import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online.Fetcher
-import ai.chronon.spark.{GroupByUpload, TableUtils}
+import ai.chronon.spark.Extensions.DataframeOps
+import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder, TableUtils}
 import com.google.gson.Gson
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.slf4j.LoggerFactory
 
-import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
+import scala.concurrent.Await
 import scala.util.Random
-import scala.util.ScalaJavaConversions.JMapOps
+import scala.util.ScalaJavaConversions.{JMapOps, ListOps, MapOps}
 
 class GroupByUploadTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)

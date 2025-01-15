@@ -16,6 +16,9 @@
 
 package ai.chronon.spark
 
+import ai.chronon.aggregator.base.TimeTuple
+import ai.chronon.aggregator.row.RowAggregator
+import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._

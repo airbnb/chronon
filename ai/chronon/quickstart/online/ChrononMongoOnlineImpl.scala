@@ -1,6 +1,15 @@
 package ai.chronon.quickstart.online
 
-import ai.chronon.online._
+import ai.chronon.online.{
+  Api,
+  ExternalSourceRegistry,
+  GroupByServingInfoParsed,
+  KVStore,
+  LoggableResponse,
+  StreamDecoder
+}
+
+import org.mongodb.scala._
 import org.slf4j.{Logger, LoggerFactory}
 
 class ChrononMongoOnlineImpl(userConf: Map[String, String]) extends Api(userConf) {

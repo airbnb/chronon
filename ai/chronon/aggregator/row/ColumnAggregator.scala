@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.row
 
+import ai.chronon.aggregator.base._
 import ai.chronon.api.Extensions.{AggregationPartOps, OperationOps}
 import ai.chronon.api._
 import com.fasterxml.jackson.databind.ObjectMapper

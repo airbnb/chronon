@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.base
 
+import ai.chronon.aggregator.base.TimeTuple.typ
 import ai.chronon.api._
 
 import java.util

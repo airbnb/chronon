@@ -16,13 +16,16 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
+import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
-import ai.chronon.spark.{Join, TableUtils}
-import org.apache.spark.sql.types._
+import ai.chronon.api.{Builders, Constants, Operation, TimeUnit, Window}
+import ai.chronon.spark.Extensions._
+import ai.chronon.spark.{Comparison, Join, SparkSessionBuilder, TableUtils}
+import org.apache.spark.sql.types.{BooleanType, DoubleType, IntegerType, LongType, StringType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Test
-import org.slf4j.LoggerFactory
 
 import scala.util.Random
 

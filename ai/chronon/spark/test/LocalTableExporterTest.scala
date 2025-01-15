@@ -18,10 +18,11 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{IntType, LongType, StringType}
+import ai.chronon.api.{Constants, IntType, LongType, StringType}
 import ai.chronon.spark.test.LocalTableExporterTest.{spark, tmpDir}
-import ai.chronon.spark.{LocalTableExporter, TableUtils}
+import ai.chronon.spark.{LocalTableExporter, SparkSessionBuilder, TableUtils}
 import com.google.common.io.Files
+import org.apache.commons.io.FileUtils
 import org.apache.spark.sql.{SaveMode, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.{AfterClass, Test}

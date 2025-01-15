@@ -16,11 +16,12 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
+import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.spark._
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.slf4j.LoggerFactory
 
 import scala.util.Random
 

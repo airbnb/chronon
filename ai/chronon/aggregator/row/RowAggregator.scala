@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.row
 
+import ai.chronon.aggregator.base.SimpleAggregator
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowOps}
 import ai.chronon.api.{AggregationPart, DataType, Row, StringType}
 

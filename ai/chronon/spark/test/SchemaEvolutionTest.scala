@@ -16,10 +16,13 @@
 
 package ai.chronon.spark.test
 
+import ai.chronon.api.Constants.ChrononMetadataKey
+import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online._
-import ai.chronon.spark.{LogFlattenerJob, LoggingSchema, TableUtils}
+import ai.chronon.spark.Extensions.DataframeOps
+import ai.chronon.spark.{LogFlattenerJob, LoggingSchema, SparkSessionBuilder, TableUtils}
 import junit.framework.TestCase
 import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -27,9 +30,10 @@ import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
 
 import java.nio.charset.StandardCharsets
 import java.util.{Base64, TimeZone}
+import scala.collection.Seq
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.util.ScalaJavaConversions.JListOps
+import scala.util.ScalaJavaConversions.{JListOps, ListOps}
 
 case class GroupByTestSuite(
     name: String,

@@ -17,6 +17,8 @@
 package ai.chronon.aggregator.test
 
 import org.slf4j.LoggerFactory
+import ai.chronon.aggregator.base.ApproxPercentiles
+import ai.chronon.aggregator.row.StatsGenerator
 import com.yahoo.sketches.kll.KllFloatsSketch
 import junit.framework.TestCase
 import org.junit.Assert._

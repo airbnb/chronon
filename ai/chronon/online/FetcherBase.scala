@@ -16,8 +16,11 @@
 
 package ai.chronon.online
 
+import ai.chronon.aggregator.row.ColumnAggregator
+import ai.chronon.aggregator.windowing
+import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, ThrowableOps, WindowOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, WindowOps, ThrowableOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
@@ -546,7 +549,7 @@ class FetcherBase(kvStore: KVStore,
           .map(hop => gbInfo.aggregator.baseAggregator.denormalizeInPlace(hop.asInstanceOf[Array[Any]]))
           .toArray)
       .toArray
-    FinalBatchIr(collapsed, tailHops)
+    windowing.FinalBatchIr(collapsed, tailHops)
   }
 
   // prioritize passed in joinOverrides over the ones in metadata store

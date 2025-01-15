@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.windowing
 
+import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{UnpackedAggregations, WindowMapping, WindowOps}
 import ai.chronon.api.{Aggregation, AggregationPart, DataType, Row}
 

@@ -16,6 +16,8 @@
 
 package ai.chronon.aggregator.windowing
 
+import ai.chronon.aggregator.base.SimpleAggregator
+
 import java.util
 
 case class BankersEntry[IR](var value: IR, ts: Long)

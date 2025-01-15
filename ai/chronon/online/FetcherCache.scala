@@ -1,10 +1,18 @@
 package ai.chronon.online
 
+import ai.chronon.aggregator.windowing.FinalBatchIr
 import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api.GroupBy
 import ai.chronon.online.FetcherBase.GroupByRequestMeta
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.online.FetcherCache.{BatchIrCache, BatchResponses, CachedBatchResponse, CachedFinalIrBatchResponse, CachedMapBatchResponse, KvStoreBatchResponse}
+import ai.chronon.online.FetcherCache.{
+  BatchIrCache,
+  BatchResponses,
+  CachedBatchResponse,
+  CachedFinalIrBatchResponse,
+  CachedMapBatchResponse,
+  KvStoreBatchResponse
+}
 import ai.chronon.online.KVStore.{GetRequest, TimedValue}
 import com.github.benmanes.caffeine.cache.{Cache => CaffeineCache}
 

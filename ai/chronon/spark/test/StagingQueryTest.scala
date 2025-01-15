@@ -16,13 +16,15 @@
 
 package ai.chronon.spark.test
 
+import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
+import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import ai.chronon.spark.{StagingQuery, TableUtils}
+import ai.chronon.spark.Extensions._
+import ai.chronon.spark.{Comparison, SparkSessionBuilder, StagingQuery, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
-import org.slf4j.LoggerFactory
 
 import scala.util.Random
 

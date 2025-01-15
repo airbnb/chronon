@@ -79,10 +79,10 @@ def _thrift_python_library_impl(ctx):
         base_name = src.basename.replace(".thrift", "")
 
         # Convert namespace to directory structure
-        namespace_dir = ctx.attr.namespace.replace(".", "/")
+        namespace_dir = ctx.attr.namespace
 
         # Declare output directory matching the namespace structure
-        output_dir = "{}/{}".format(namespace_dir, base_name)
+        output_dir = namespace_dir  # "{}/{}".format(namespace_dir, base_name)
         main_py = ctx.actions.declare_file("{}/{}.py".format(output_dir, base_name))
         constants_py = ctx.actions.declare_file("{}/constants.py".format(output_dir))
         ttypes_py = ctx.actions.declare_file("{}/ttypes.py".format(output_dir))

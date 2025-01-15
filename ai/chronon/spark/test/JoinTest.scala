@@ -18,22 +18,30 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.{LongType, StringType, StructField}
-import ai.chronon.spark.GroupBy.renderDataSourceQuery
+import ai.chronon.api.StructField
+import ai.chronon.api.Builders.Derivation
+import ai.chronon.api.{Accuracy, Builders, Constants, JoinPart, LongType, Operation, PartitionSpec, StringType, TimeUnit, Window}
+import ai.chronon.api.Extensions._
+import ai.chronon.spark.Extensions._
+import ai.chronon.spark.GroupBy.{logger, renderDataSourceQuery}
 import ai.chronon.spark.SemanticHashUtils.{tableHashesChanged, tablesToRecompute}
 import ai.chronon.spark._
 import ai.chronon.spark.stats.SummaryJob
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
-import org.apache.spark.sql.types.{StructType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 import org.scalatest.Assertions.intercept
+import org.apache.spark.sql.types._
+import org.apache.spark.sql.Row
 
 import scala.collection.JavaConverters._
-import scala.util.{Random, Try}
+import scala.util.Random
+import scala.util.ScalaJavaConversions.ListOps
+import scala.util.Try
 
 class JoinTest {
   val dummySpark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)

@@ -1,0 +1,24 @@
+load("//tools/build_rules/python:pytest_suite.bzl", "pytest_suite")
+load("@pypi//:requirements.bzl", "requirement")
+
+pytest_suite(
+    name = "api_test",
+    srcs = glob(
+        ["**/*.py"],
+        exclude = ["sample/**/*"],
+    ),
+    data = glob(["sample/**/*"]),
+    env = {
+        "CHRONON_ROOT": ".",
+    },
+    imports = [
+        ".",
+        "sample",
+    ],
+    deps = [
+        "//ai/chronon:api_py",
+        "//ai/chronon/api:api-models-py",
+        requirement("thrift"),
+        requirement("click"),
+    ],
+)

@@ -1,5 +1,6 @@
 package ai.chronon.flink.window
 
+import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.{Constants, DataType, GroupBy, Row}
 import ai.chronon.online.{ArrayRow, TileCodec}

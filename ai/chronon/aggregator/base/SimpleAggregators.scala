@@ -16,6 +16,7 @@
 
 package ai.chronon.aggregator.base
 
+import ai.chronon.aggregator.base.FrequentItemType.ItemType
 import ai.chronon.api._
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.cpc.{CpcSketch, CpcUnion}

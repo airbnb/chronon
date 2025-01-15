@@ -15,6 +15,9 @@
  */
 package ai.chronon.spark
 
+import ai.chronon.aggregator.base.FrequentItemType.{DoubleItemType, LongItemType, StringItemType}
+import ai.chronon.aggregator.base.FrequentItemsFriendly._
+import ai.chronon.aggregator.base.{FrequentItemType, FrequentItemsFriendly, ItemsSketchIR}
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, Serializer}
 import com.yahoo.memory.Memory
