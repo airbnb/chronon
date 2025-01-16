@@ -377,7 +377,7 @@ class AnalyzerTest {
       verify(analyzer, never()).runTimestampChecks(any(), any())
     } catch {
       case e: AssertionError =>
-        println("Caught unexpected AssertionError: " + e.getMessage)
+        logger.error("Caught unexpected AssertionError: " + e.getMessage)
       assertTrue("Timestamp checks should not be called with table permission errors", false)
     }
     analyzer.analyzeJoin(joinConf, validationAssert = true)
