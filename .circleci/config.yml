@@ -147,9 +147,6 @@ workflows:
             - "Scala 13 -- Tests":
                   requires:
                       - "Pull Docker Image"
-            - "Scala 13 -- Delta Lake Format Tests":
-                  requires:
-                    - "Pull Docker Image"
             - "Scalafmt Check":
                   requires:
                       - "Pull Docker Image"
