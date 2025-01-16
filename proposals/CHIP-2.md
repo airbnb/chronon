@@ -1,5 +1,7 @@
 # CHIP: Bazel Migration for Chronon
 
+https://github.com/airbnb/chronon/issues/904
+
 ## Motivation
 
 Migrating Chronon's build system to Bazel offers numerous benefits:
@@ -25,7 +27,7 @@ This migration will improve the developer experience and pave the way for better
 
 #### Example Build Command:
 ```bash
-bazel build --config scala_2.12 --define spark_version=3.1 //aggregator:aggregator
+bazel build --config scala_2.12 --define spark_version=3.1 //aggregator
 ```
 
 #### Deliverables:
@@ -33,6 +35,7 @@ bazel build --config scala_2.12 --define spark_version=3.1 //aggregator:aggregat
 - Documentation for building and testing with Bazel.
 - Validation that builds and tests succeed manually.
 
+PR: https://github.com/airbnb/chronon/pull/893
 ---
 
 ### **Phase 2: CI Integration with Bazel**
