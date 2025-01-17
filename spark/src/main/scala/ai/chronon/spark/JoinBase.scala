@@ -270,7 +270,7 @@ abstract class JoinBase(joinConf: api.Join,
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)
 
     lazy val unfilledTimeRange = {
-      val timeRange = leftDf.timeRange
+      val timeRange = leftDfWithStats.get.timeRange
       logger.info(s"left unfilled time range: $timeRange")
       timeRange
     }
