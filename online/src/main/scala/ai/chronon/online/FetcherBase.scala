@@ -265,7 +265,10 @@ class FetcherBase(kvStore: KVStore,
     *
     * @param oldServingInfo The previous serving information before fetching the latest KV store data.
     * @param batchResponses the latest batch responses (either a fresh KV store response or a cached batch ir).
-    * @return the GroupByServingInfoParsed containing the latest serving information.
+    * @return A tuple that contains:
+    *  - the GroupByServingInfoParsed containing the latest serving information.
+    *  - the maximum ts from the batch IR responses. It will be later used for filtering the streaming rows after
+    *    this ts to avoid any potential duplicate records between the batch IR and streaming rows.
     */
   private[online] def getServingInfo(oldServingInfo: GroupByServingInfoParsed,
                                      batchResponses: BatchResponses): (GroupByServingInfoParsed, Option[Long]) = {
