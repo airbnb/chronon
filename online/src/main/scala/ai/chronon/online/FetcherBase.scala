@@ -593,16 +593,17 @@ class FetcherBase(kvStore: KVStore,
       }
 
     val groupByRequests = joinDecomposed.flatMap {
-      case (_, gbTry) =>
+      case (request, gbTry) =>
+        val context = request.context.getOrElse(Metrics.Context(Metrics.Environment.JoinFetching, request.name))
         gbTry match {
           case Failure(ex) => {
             ex match {
               case _: InvalidEntityException =>
-                Metrics.Context(Metrics.Environment.JoinFetching).increment("fetch_invalid_join_failure.count")
+                context.increment("fetch_invalid_join_failure.count")
               case _: KeyMissingException =>
-                Metrics.Context(Metrics.Environment.JoinFetching).increment("fetch_missing_key_failure.count")
+                context.increment("fetch_missing_key_failure.count")
               case _: Exception =>
-                Metrics.Context(Metrics.Environment.JoinFetching).increment("fetch_join_failure.count")
+                context.increment("fetch_join_failure.count")
             }
             Iterator.empty
           }
