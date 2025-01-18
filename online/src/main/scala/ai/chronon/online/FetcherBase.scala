@@ -608,6 +608,7 @@ class FetcherBase(kvStore: KVStore,
             Iterator.empty
           }
           case Success(requests) => requests.iterator.flatMap(_.left.toOption).map(_.request)
+        }
     }
 
     val groupByResponsesFuture = fetchGroupBys(groupByRequests)
