@@ -597,17 +597,17 @@ class FetcherBase(kvStore: KVStore,
         val context = request.context.getOrElse(Metrics.Context(Metrics.Environment.JoinFetching, request.name))
         gbTry match {
           case Failure(ex) => {
-            case _: InvalidEntityException =>
-              context.increment("fetch_invalid_join_failure.count")
-            case _: KeyMissingException =>
-              context.increment("fetch_missing_key_failure.count")
-            case _: Exception =>
-              context.increment("fetch_join_failure.count")
+            ex match {
+              case _: InvalidEntityException =>
+                context.increment("fetch_invalid_join_failure.count")
+              case _: KeyMissingException =>
+                context.increment("fetch_missing_key_failure.count")
+              case _: Exception =>
+                context.increment("fetch_join_failure.count")
+            }
+            Iterator.empty
           }
-          case Success(requests) => {
-            requests.iterator.flatMap(_.left.toOption).map(_.request)
-          }
-        }
+          case Success(requests) => requests.iterator.flatMap(_.left.toOption).map(_.request)
     }
 
     val groupByResponsesFuture = fetchGroupBys(groupByRequests)
