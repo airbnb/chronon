@@ -589,7 +589,7 @@ class FetcherBase(kvStore: KVStore,
             Seq(Right(InvalidEntityException(request.name)))
           }
         }
-        request.copy(context = joinContext) -> decomposedTry
+        (request.copy(context = joinContext), decomposedTry)
       }
 
     val groupByRequests = joinDecomposed.flatMap {
@@ -597,17 +597,16 @@ class FetcherBase(kvStore: KVStore,
         val context = request.context.getOrElse(Metrics.Context(Metrics.Environment.JoinFetching, request.name))
         gbTry match {
           case Failure(ex) => {
-            ex match {
-              case _: InvalidEntityException =>
-                context.increment("fetch_invalid_join_failure.count")
-              case _: KeyMissingException =>
-                context.increment("fetch_missing_key_failure.count")
-              case _: Exception =>
-                context.increment("fetch_join_failure.count")
-            }
-            Iterator.empty
+            case _: InvalidEntityException =>
+              context.increment("fetch_invalid_join_failure.count")
+            case _: KeyMissingException =>
+              context.increment("fetch_missing_key_failure.count")
+            case _: Exception =>
+              context.increment("fetch_join_failure.count")
           }
-          case Success(requests) => requests.iterator.flatMap(_.left.toOption).map(_.request)
+          case Success(requests) => {
+            requests.iterator.flatMap(_.left.toOption).map(_.request)
+          }
         }
     }
 
@@ -622,6 +621,14 @@ class FetcherBase(kvStore: KVStore,
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
               groupByRequestsWithPrefix.iterator.flatMap {
                 case Right(fetchException) => {
+                  val context = joinRequest.context.getOrElse(Metrics.Context(Metrics.Environment.JoinFetching,
+                    joinRequest.name))
+                  fetchException match {
+                    case ex: KeyMissingException =>
+                      context.increment("fetch_missing_key_failure.count")
+                    case ex: Exception =>
+                      context.incrementException(ex)
+                  }
                   Map(fetchException.getRequestName + "_exception" -> fetchException.getMessage)
                 }
                 case Left(PrefixedRequest(prefix, groupByRequest)) => {
