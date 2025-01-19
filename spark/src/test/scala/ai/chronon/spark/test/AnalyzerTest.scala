@@ -25,6 +25,8 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{col, lit}
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.ArgumentMatchers.any
+import org.mockito.Mockito.{never, spy, verify, when}
 import org.slf4j.LoggerFactory
 
 import scala.util.Random
@@ -338,6 +340,48 @@ class AnalyzerTest {
 
   }
 
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testJoinAnalyzerInvalidTablePermissions(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = spy(TableUtils(spark))
+    when(tableUtils.checkTablePermission(any(), any())).thenReturn(false)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    // left side
+    // create the event source with values
+    getTestGBSourceWithTs(namespace = namespace)
+
+    // join parts
+    val joinPart = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs(namespace = namespace)),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
+      ),
+      metaData = Builders.MetaData(name = "join_analyzer_test.test_4", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = s"$namespace.test_table"),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = joinPart, prefix = "validation")
+      ),
+      metaData = Builders.MetaData(name = "test_join_analyzer.key_validation", namespace = namespace, team = "chronon")
+    )
+
+    //run analyzer an ensure ts timestamp values result in analyzer passing
+    val analyzer = spy(new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true))
+    try {
+      verify(analyzer, never()).runTimestampChecks(any(), any())
+    } catch {
+      case e: AssertionError =>
+        logger.error("Caught unexpected AssertionError: " + e.getMessage)
+      assertTrue("Timestamp checks should not be called with table permission errors", false)
+    }
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+  }
   @Test
   def testGroupByAnalyzerCheckTimestampHasValues(): Unit = {
     val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
