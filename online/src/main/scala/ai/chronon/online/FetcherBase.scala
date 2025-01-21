@@ -622,8 +622,8 @@ class FetcherBase(kvStore: KVStore,
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
               groupByRequestsWithPrefix.iterator.flatMap {
                 case Right(fetchException) => {
-                  val context = joinRequest.context.getOrElse(Metrics.Context(Metrics.Environment.JoinFetching,
-                    joinRequest.name))
+                  val context =
+                    joinRequest.context.getOrElse(Metrics.Context(Metrics.Environment.JoinFetching, joinRequest.name))
                   fetchException match {
                     case ex: KeyMissingException =>
                       context.increment("fetch_missing_key_failure.count")
