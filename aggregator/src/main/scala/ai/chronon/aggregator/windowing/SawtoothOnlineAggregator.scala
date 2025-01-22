@@ -83,7 +83,8 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   def lambdaAggregateIr(finalBatchIr: FinalBatchIr,
                         streamingRows: Iterator[Row],
                         queryTs: Long,
-                        hasReversal: Boolean = false): Array[Any] = {
+                        hasReversal: Boolean = false,
+                        batchResponseMaxTs: Option[Long] = None): Array[Any] = {
     // null handling
     if (finalBatchIr == null && streamingRows == null) return null
     val batchIr = Option(finalBatchIr).getOrElse(normalizeBatchIr(init))
@@ -106,12 +107,14 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
         val mutationTs = row.mutationTs
         val rowBeforeQuery = queryTs > rowTs && queryTs > mutationTs
         val rowAfterBatchEnd = mutationTs >= batchEndTs
-        rowBeforeQuery && rowAfterBatchEnd
+        val rowAfterBatchResponseMaxTs = batchResponseMaxTs.isEmpty || mutationTs >= batchResponseMaxTs.get
+        rowBeforeQuery && rowAfterBatchEnd && rowAfterBatchResponseMaxTs
       } else {
         // event case
         val rowBeforeQuery = queryTs > rowTs
         val rowAfterBatchEnd = rowTs >= batchEndTs
-        rowBeforeQuery && rowAfterBatchEnd
+        val rowAfterBatchResponseMaxTs = batchResponseMaxTs.isEmpty || rowTs >= batchResponseMaxTs.get
+        rowBeforeQuery && rowAfterBatchEnd && rowAfterBatchResponseMaxTs
       }
 
       if (shouldSelect) {
@@ -152,8 +155,9 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
   def lambdaAggregateFinalized(finalBatchIr: FinalBatchIr,
                                streamingRows: Iterator[Row],
                                ts: Long,
-                               hasReversal: Boolean = false): Array[Any] = {
-    windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts, hasReversal = hasReversal))
+                               hasReversal: Boolean = false,
+                               batchResponseMaxTs: Option[Long] = None): Array[Any] = {
+    windowedAggregator.finalize(lambdaAggregateIr(finalBatchIr, streamingRows, ts, hasReversal, batchResponseMaxTs))
   }
 
   def lambdaAggregateFinalizedTiled(finalBatchIr: FinalBatchIr,
