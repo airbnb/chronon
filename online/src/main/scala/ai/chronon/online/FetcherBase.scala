@@ -597,7 +597,7 @@ class FetcherBase(kvStore: KVStore,
             Seq(Right(InvalidEntityException(request.name)))
           }
         }
-        (request.copy(context = joinContext), decomposedTry)
+        request.copy(context = joinContext) -> decomposedTry
       }
 
     val groupByRequests = joinDecomposed.flatMap {
