@@ -8,10 +8,18 @@ build:local --remote_cache=
 # common --config scala_2.12
 common:scala_2.12 --repo_env=SCALA_VERSION=2.12.18
 common:scala_2.13 --repo_env=SCALA_VERSION=2.13.12
+
 # Default scala version to 2.12
 common --repo_env=SCALA_VERSION=2.12.18
-# Default to Spark 3.2 if no value is specified
-build --define=spark_version=3.2
+
+# Spark versions
+common:spark_3.1 --define spark_version=3.1
+common:spark_3.2 --define spark_version=3.2
+common:spark_3.5 --define spark_version=3.5
+
+# Default Spark version
+common --define spark_version=3.2
+
 build --javacopt=-Xep:DoubleBraceInitialization:OFF
 
 # Don't implicitly create __init__.py files

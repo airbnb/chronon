@@ -50,10 +50,18 @@ This project supports both Bazel and SBT. Bazel's hermetic nature simplifies set
 2. Ensure you have a `WORKSPACE` file and `BUILD` files in the appropriate directories.
 
 3. Common Bazel Commands:
-
     - Build all targets:
       ```shell
       bazel build //...
+      ```
+    - Build Specific targets:
+      ```shell
+      bazel build //module:target
+      bazel build //aggregator:aggregator
+      bazel build //api:api-lib
+      bazel build //online:online
+      bazel build //service:service
+      bazel build //spark:spark
       ```
     - Run tests:
       ```shell
@@ -62,6 +70,8 @@ This project supports both Bazel and SBT. Bazel's hermetic nature simplifies set
     - Run specific tests:
       ```shell
       bazel test //module:TestName
+      bazel test //aggregator:test
+      bazel test //api:test
       ```
     - Build a fat jar:
       ```shell
@@ -279,13 +289,13 @@ bazel build --config scala_2.12 //module:artifact_name
 Build a spark version specific artifact:
 
 ```shell
-bazel build --define spark_version=3.5 //module:artifact_name
+bazel build --config spark_3.5 //module:artifact_name
 ```
 
 Build deploy jar aka Uber jar or fat jar:
 
 ```shell
-bazel build --config scala_2.13 --define spark_version=3.5 //spark:spark-assembly_deploy.jar
+bazel build --config scala_2.13 --config spark_3.5 //spark:spark-assembly_deploy.jar
 ```
 
 

@@ -5,10 +5,10 @@ scala_library(
     srcs = glob(["src/main/scala/ai/chronon/spark/**/*.scala"]) +
            select({
                "//tools/flags/spark:spark_3_5": [
-                   "//spark/src/main/spark-3_5_plus/ai/chronon/spark:EncoderUtil.scala",
+                   "//spark/src/main/35plus/ai/chronon/spark:EncoderUtil.scala",
                ],
                "//conditions:default": [
-                   "//spark/src/main/spark-default/ai/chronon/spark:EncoderUtil.scala",
+                   "//spark/src/main/default/ai/chronon/spark:EncoderUtil.scala",
                ],
            }),
     resources = [

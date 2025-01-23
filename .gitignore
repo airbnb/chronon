@@ -44,5 +44,4 @@ mvn_settings.xml
 releases
 
 # bazel
-/bazel-*
-/user.bazelrc
+bazel-*
