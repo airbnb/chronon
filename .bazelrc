@@ -18,7 +18,7 @@ common:spark_3.2 --define spark_version=3.2
 common:spark_3.5 --define spark_version=3.5
 
 # Default Spark version
-common --define spark_version=3.2
+common --define spark_version=3.1
 
 build --javacopt=-Xep:DoubleBraceInitialization:OFF
 

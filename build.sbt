@@ -389,8 +389,8 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
     val sources = (Compile / unmanagedSources).value
     val srcDir = (Compile / sourceDirectory).value
     
-    val spark_3_5_encoder = srcDir / "spark-3_5_plus" / "ai" / "chronon" / "spark" / "EncoderUtil.scala"
-    val spark_default_encoder = srcDir / "spark-default" / "ai" / "chronon" / "spark" / "EncoderUtil.scala"
+    val spark_3_5_encoder = srcDir / "35plus" / "ai" / "chronon" / "spark" / "EncoderUtil.scala"
+    val spark_default_encoder = srcDir / "default" / "ai" / "chronon" / "spark" / "EncoderUtil.scala"
     
     val filteredSources = sources.filterNot(f => 
       f.getAbsolutePath == spark_3_5_encoder.getAbsolutePath || 
