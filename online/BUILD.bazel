@@ -1,0 +1,122 @@
+load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_scala_version")
+
+scala_library(
+    name = "online",
+    srcs = glob(["src/main/scala/ai/chronon/online/*.scala"]) +
+           select_for_scala_version(
+               between_2_12_and_2_13 = [
+                   # For Scala 2.12.x
+                   "//online/src/main/scala-2.12/ai/chronon/online:ScalaVersionSpecificCatalystHelper.scala",
+                   "//online/src/main/scala-2.12/ai/chronon/online:FutureConverters.scala",
+               ],
+               since_2_13 = [
+                   # For Scala 2.13.x
+                   "//online/src/main/scala-2.13/ai/chronon/online:ScalaVersionSpecificCatalystHelper.scala",
+                   "//online/src/main/scala-2.13/ai/chronon/online:FutureConverters.scala",
+               ],
+           ) + glob([
+        "src/main/java/ai/chronon/online/*.java",
+    ]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api:api-models",
+        "//api:api-lib",
+        "//third_party/java/spark:spark-exec",
+        "//aggregator",
+        maven_artifact("com.esotericsoftware:kryo"),
+        scala_artifact("org.json4s:json4s-core"),
+        scala_artifact("org.json4s:json4s-jackson"),
+        scala_artifact("org.json4s:json4s-ast"),
+        maven_artifact("com.datadoghq:java-dogstatsd-client"),
+        maven_artifact("com.fasterxml.jackson.core:jackson-core"),
+        maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
+        maven_artifact("org.apache.thrift:libthrift"),
+        maven_artifact("org.slf4j:slf4j-api"),
+        maven_artifact("org.slf4j:slf4j-log4j12"),
+        maven_artifact("com.google.code.gson:gson"),
+        maven_artifact("com.github.ben-manes.caffeine:caffeine"),
+        maven_artifact("org.codehaus.janino:janino"),
+        maven_artifact("org.codehaus.janino:commons-compiler"),
+        maven_artifact("com.google.guava:guava"),
+        maven_artifact("org.apache.commons:commons-lang3"),
+        maven_artifact("org.codehaus.jackson:jackson-core-asl"),
+    ] + select_for_scala_version(
+        before_2_13 = [
+            scala_artifact("org.scala-lang.modules:scala-java8-compat"),
+            scala_artifact("org.scala-lang.modules:scala-collection-compat"),
+        ],
+        since_2_13 = [
+            scala_artifact("org.scala-lang.modules:scala-parallel-collections"),
+        ],
+    ),
+)
+
+scala_library(
+    name = "test-lib",
+    srcs = glob(["src/test/scala/ai/chronon/online/**/*.scala"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//api:api-models",
+        "//api:api-lib",
+        ":online",
+        "//aggregator",
+        "//third_party/java/spark:spark-exec",
+        maven_artifact("com.esotericsoftware:kryo"),
+        scala_artifact("org.json4s:json4s-core"),
+        scala_artifact("org.json4s:json4s-jackson"),
+        scala_artifact("org.json4s:json4s-ast"),
+        maven_artifact("com.datadoghq:java-dogstatsd-client"),
+        scala_artifact("org.scala-lang.modules:scala-java8-compat"),
+        scala_artifact("org.scalatest:scalatest-matchers-core"),
+        scala_artifact("org.scalatest:scalatest-core"),
+        maven_artifact("org.scalatest:scalatest-compatible"),
+        scala_artifact("org.scalatest:scalatest-shouldmatchers"),
+        scala_artifact("org.scalactic:scalactic"),
+        scala_artifact("org.scalatestplus:mockito-3-4"),
+        maven_artifact("org.mockito:mockito-core"),
+        scala_artifact("org.mockito:mockito-scala"),
+        maven_artifact("com.fasterxml.jackson.core:jackson-core"),
+        maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
+        maven_artifact("org.apache.thrift:libthrift"),
+        scala_artifact("org.scala-lang.modules:scala-collection-compat"),
+        maven_artifact("org.slf4j:slf4j-api"),
+        maven_artifact("org.slf4j:slf4j-log4j12"),
+        maven_artifact("com.google.code.gson:gson"),
+        maven_artifact("com.github.ben-manes.caffeine:caffeine"),
+        maven_artifact("org.codehaus.janino:janino"),
+        maven_artifact("org.codehaus.janino:commons-compiler"),
+        maven_artifact("com.google.guava:guava"),
+        maven_artifact("org.apache.commons:commons-lang3"),
+        maven_artifact("org.codehaus.jackson:jackson-core-asl"),
+        maven_artifact("junit:junit"),
+        maven_artifact("com.novocode:junit-interface"),
+    ] + select_for_scala_version(
+        since_2_13 = [
+            maven_artifact("org.scala-lang.modules:scala-parallel-collections_2.13"),
+        ],
+    ),
+)
+
+scala_test_suite(
+    name = "test",
+    srcs = glob(["src/test/scala/ai/chronon/online/**/*.scala"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        ":online",
+        ":test-lib",
+        "//aggregator",
+        "//api:api-lib",
+        "//api:api-models",
+        "//third_party/java/spark:spark-exec",
+        scala_artifact("org.scalatestplus:mockito-3-4"),
+        maven_artifact("org.mockito:mockito-core"),
+        maven_artifact("org.apache.thrift:libthrift"),
+        scala_artifact("org.scala-lang.modules:scala-collection-compat"),
+        maven_artifact("org.slf4j:slf4j-api"),
+        maven_artifact("org.slf4j:slf4j-log4j12"),
+        maven_artifact("com.google.code.gson:gson"),
+        maven_artifact("com.github.ben-manes.caffeine:caffeine"),
+        maven_artifact("junit:junit"),
+        maven_artifact("com.novocode:junit-interface"),
+    ],
+)

@@ -43,3 +43,5 @@ mvn_settings.xml
 # Release folder
 releases
 
+# bazel
+bazel-*

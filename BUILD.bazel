@@ -1,0 +1,17 @@
+package(default_visibility = ["//visibility:public"])
+
+load("@rules_python//python:pip.bzl", "compile_pip_requirements")
+
+# To update py3_requirements_lock.txt, run:
+compile_pip_requirements(
+    name = "pip",
+    extra_args = [
+        "--allow-unsafe",
+        "--resolver=backtracking",
+    ],
+    requirements_in = "//:requirements.txt",
+    requirements_txt = "//:requirements_lock.txt",
+    # force this to mac-only, since that's where we expect it to run.
+    # remove + adopt requirements_[platform] arguments when we're on rules_python>=0.10.0
+    tags = ["manual"],
+)

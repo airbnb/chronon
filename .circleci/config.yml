@@ -142,14 +142,14 @@ jobs:
                   name: Run Chronon Python tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
-                      conda activate chronon_py
-                      pushd /chronon/api/
-                      thrift --gen py -out /chronon/api/py/ai/chronon\
-                         /chronon/api/thrift/api.thrift                 # Generate thrift files
-                      cd /chronon/api/py                                # Go to Python module
-                      pip install -r requirements/dev.txt               # Install latest requirements
-                      tox                                               # Run tests
-                      popd
+                    conda activate chronon_py
+                    pushd /chronon/api/
+                    thrift --gen py -out /chronon/api/py/ai/chronon\
+                       /chronon/api/thrift/api.thrift                 # Generate thrift files
+                    cd /chronon/                                      # Go to Python module
+                    pip install -r api/py/requirements/dev.txt        # Install latest requirements
+                    tox                                               # Run tests
+                    popd
             - store_artifacts:
                   path: /chronon/api/py/htmlcov
 

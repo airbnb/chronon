@@ -1,0 +1,13 @@
+"""
+    Import the translation layer here.
+"""
+
+load(
+    "//tools/build_rules:common.bzl",
+    "jar",
+    "scala_jar")
+
+load("@rules_java//java:defs.bzl", "java_library","java_binary")
+load("@io_bazel_rules_scala//scala:scala.bzl", "scala_library", "scala_binary","scala_test_suite")
+load("//tools/build_rules:maven_artifact.bzl", "maven_artifact", "scala_artifact")
+load("//tools/build_rules:jvm_binary.bzl", "jvm_binary")
