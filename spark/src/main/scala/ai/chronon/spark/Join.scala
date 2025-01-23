@@ -71,17 +71,6 @@ class Join(joinConf: api.Join,
            unsetSemanticHash: Boolean = false)
     extends JoinBase(joinConf, endPartition, tableUtils, skipFirstHole, showDf, selectedJoinParts, unsetSemanticHash) {
 
-  private def padFields(df: DataFrame, structType: sql.types.StructType): DataFrame = {
-    structType.foldLeft(df) {
-      case (df, field) =>
-        if (df.columns.contains(field.name)) {
-          df
-        } else {
-          df.withColumn(field.name, lit(null).cast(field.dataType))
-        }
-    }
-  }
-
   private def toSparkSchema(fields: Seq[StructField]): sql.types.StructType =
     SparkConversions.fromChrononSchema(StructType("", fields.toArray))
 
@@ -99,7 +88,7 @@ class Join(joinConf: api.Join,
     val contextualFields = toSparkSchema(
       bootstrapInfo.externalParts.filter(_.externalPart.isContextual).flatMap(_.keySchema))
 
-    def withNonContextualFields(df: DataFrame): DataFrame = padFields(df, nonContextualFields)
+    def withNonContextualFields(df: DataFrame): DataFrame = df.padFields(nonContextualFields)
 
     // Ensure keys and values for contextual fields are consistent even if only one of them is explicitly bootstrapped
     def withContextualFields(df: DataFrame): DataFrame =
@@ -129,7 +118,7 @@ class Join(joinConf: api.Join,
    */
   private def padGroupByFields(baseJoinDf: DataFrame, bootstrapInfo: BootstrapInfo): DataFrame = {
     val groupByFields = toSparkSchema(bootstrapInfo.joinParts.flatMap(_.valueSchema))
-    padFields(baseJoinDf, groupByFields)
+    baseJoinDf.padFields(groupByFields)
   }
 
   private def findBootstrapSetCoverings(bootstrapDf: DataFrame,

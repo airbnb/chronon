@@ -16,17 +16,19 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
-import ai.chronon.api.Constants
+import ai.chronon.api.Extensions.JoinPartOps
+import ai.chronon.api.{Constants, JoinPart}
 import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
 import org.apache.avro.Schema
-import org.apache.spark.sql.{DataFrame, Row}
+import org.apache.spark.sql
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{DataType, LongType, StructType}
+import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.util.sketch.BloomFilter
+import org.slf4j.LoggerFactory
 
 import java.util
 import scala.collection.Seq
@@ -154,10 +156,36 @@ object Extensions {
       TableUtils(df.sparkSession).insertUnPartitioned(df, tableName, tableProperties)
     }
 
-    def prefixColumnNames(prefix: String, columns: Seq[String]): DataFrame = {
-      columns.foldLeft(df) { (renamedDf, key) =>
-        renamedDf.withColumnRenamed(key, s"${prefix}_$key")
+    /**
+      * Pads fields in a dataframe according to a schema.
+      * Fields in the schema that are not present in the dataframe
+      * are filled with null values.
+      */
+    def padFields(structType: sql.types.StructType): DataFrame = {
+      val existingColumns = df.columns.toSet
+      val paddedColumns = structType
+        .filterNot(field => existingColumns.contains(field.name))
+        .map(field => lit(null).cast(field.dataType).as(field.name))
+      val columnsWithPadding = df.columns.map(col) ++ paddedColumns
+      df.select(columnsWithPadding: _*)
+    }
+
+    def renameRightColumnsForJoin(joinPart: JoinPart, timeColumns: Set[String]): DataFrame = {
+      val nonValueColumns = joinPart.rightToLeft.keys.toSet ++ timeColumns
+      val valueColumns = df.schema.names.toSet.diff(nonValueColumns)
+
+      val renamedColumns = df.columns.map { columnName =>
+        val column = col(columnName)
+        if (joinPart.rightToLeft.contains(columnName)) {
+          column.as(joinPart.rightToLeft(columnName))
+        } else if (valueColumns.contains(columnName)) {
+          column.as(s"${joinPart.fullPrefix}_$columnName")
+        } else {
+          column
+        }
       }
+
+      df.select(renamedColumns: _*)
     }
 
     def validateJoinKeys(right: DataFrame, keys: Seq[String]): Unit = {
@@ -226,23 +254,6 @@ object Extensions {
       logger.info(s"filtering nulls from columns: [${cols.mkString(", ")}]")
       // do not use != or <> operator with null, it doesn't return false ever!
       df.filter(cols.map(_ + " IS NOT NULL").mkString(" AND "))
-    }
-
-    def nullSafeJoin(right: DataFrame, keys: Seq[String], joinType: String): DataFrame = {
-      validateJoinKeys(right, keys)
-      val prefixedLeft = df.prefixColumnNames("left", keys)
-      val prefixedRight = right.prefixColumnNames("right", keys)
-      val joinExpr = keys
-        .map(key => prefixedLeft(s"left_$key") <=> prefixedRight(s"right_$key"))
-        .reduce((col1, col2) => col1.and(col2))
-      val joined = prefixedLeft.join(
-        prefixedRight,
-        joinExpr,
-        joinType = joinType
-      )
-      keys.foldLeft(joined) { (renamedJoin, key) =>
-        renamedJoin.withColumnRenamed(s"left_$key", key).drop(s"right_$key")
-      }
     }
 
     // convert a millisecond timestamp to string with the specified format
