@@ -235,9 +235,9 @@ abstract class JoinBase(joinConf: api.Join,
       return None
     }
 
-    val leftDf = leftDfWithStats.get.df
-    val rowCount = leftDfWithStats.get.count
-    val unfilledRange = leftDfWithStats.get.partitionRange
+    val statsDf = leftDfWithStats.get
+    val rowCount = statsDf.count
+    val unfilledRange = statsDf.partitionRange
 
     logger.info(
       s"\nBackfill is required for ${joinPart.groupBy.metaData.name} for $rowCount rows on range $unfilledRange")
@@ -270,7 +270,7 @@ abstract class JoinBase(joinConf: api.Join,
     lazy val partitionRangeGroupBy = genGroupBy(unfilledRange)
 
     lazy val unfilledTimeRange = {
-      val timeRange = leftDfWithStats.get.timeRange
+      val timeRange = statsDf.timeRange
       logger.info(s"left unfilled time range: $timeRange")
       timeRange
     }
@@ -280,14 +280,14 @@ abstract class JoinBase(joinConf: api.Join,
     // relevant for this join part.
     lazy val skewFilteredLeft = leftSkewFilter
       .map { sf =>
-        val filtered = leftDf.filter(sf)
+        val filtered = statsDf.df.filter(sf)
         logger.info(s"""Skew filtering left-df for
                        |GroupBy: ${joinPart.groupBy.metaData.name}
                        |filterClause: $sf
                        |""".stripMargin)
         filtered
       }
-      .getOrElse(leftDf)
+      .getOrElse(statsDf.df)
 
     /*
       For the corner case when the values of the key mapping also exist in the keys, for example:
