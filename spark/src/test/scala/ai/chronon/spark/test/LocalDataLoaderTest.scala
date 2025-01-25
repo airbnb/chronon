@@ -43,7 +43,7 @@ object LocalDataLoaderTest {
 
 class LocalDataLoaderTest {
 
-  val srcPath = "src/test/resources/local_data_csv/"
+  val srcPath = "spark/src/test/resources/local_data_csv/"
 
   def matchPath(srcPath: String, fileName: Option[String] = None): File = (new File (srcPath).exists (), fileName.isDefined) match {
       // if src/ path exists and a filename is provided

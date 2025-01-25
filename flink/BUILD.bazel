@@ -1,3 +1,5 @@
+load("//tools/build_rules:scala_junit_test_suite.bzl", "scala_junit_suite")
+
 scala_library(
     name = "flink",
     srcs = glob(["src/main/scala/ai/chronon/flink/**/*.scala"]),
@@ -6,7 +8,7 @@ scala_library(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-library",
         maven_artifact("org.apache.flink:flink-core"),
         maven_artifact("org.apache.flink:flink-metrics-core"),
         maven_artifact("org.apache.flink:flink-streaming-java"),
@@ -31,7 +33,7 @@ scala_library(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-library",
         maven_artifact("org.apache.flink:flink-core"),
         maven_artifact("org.apache.flink:flink-core-tests"),
         maven_artifact("org.apache.flink:flink-runtime-tests"),
@@ -56,9 +58,9 @@ scala_library(
     ],
 )
 
-scala_test_suite(
+scala_junit_suite(
     name = "test",
-    srcs = glob(["src/test/scala/ai/chronon/flink/**/*.scala"]),
+    srcs = glob(["src/test/scala/ai/chronon/flink/**/*Test.scala"]),
     visibility = ["//visibility:public"],
     deps = [
         ":flink",
@@ -67,7 +69,7 @@ scala_test_suite(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-library",
         maven_artifact("org.apache.flink:flink-core"),
         maven_artifact("org.apache.flink:flink-core-tests"),
         maven_artifact("org.apache.flink:flink-test-utils"),

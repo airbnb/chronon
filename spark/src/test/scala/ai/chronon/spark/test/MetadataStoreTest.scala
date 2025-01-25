@@ -12,9 +12,8 @@ import scala.concurrent.{Await, Future}
 import scala.io.Source
 
 class MetadataStoreTest extends TestCase {
-  val joinPath = "joins/team/example_join.v1"
-  val confResource = getClass.getResource(s"/$joinPath")
-  val src = Source.fromFile(confResource.getPath)
+  val joinPath = s"spark/src/test/resources/joins/team/example_join.v1"
+  val src = Source.fromFile(joinPath)
 
   val expected = {
     try src.mkString
@@ -31,7 +30,7 @@ class MetadataStoreTest extends TestCase {
     inMemoryKvStore.create(singleFileDataSet)
     inMemoryKvStore.create(NameByTeamEndPointName)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFileDirWalker = new MetadataDirWalker(confResource.getPath, acceptedEndPoints)
+    val singleFileDirWalker = new MetadataDirWalker(s"spark/src/test/resources/joins/team/example_join.v1", acceptedEndPoints)
     val singleFileKvMap = singleFileDirWalker.run
     val singleFilePut: Seq[Future[scala.collection.Seq[Boolean]]] = singleFileKvMap.toSeq.map {
       case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, endPoint)
@@ -46,7 +45,7 @@ class MetadataStoreTest extends TestCase {
 
     val teamMetadataResponse = inMemoryKvStore.getStringArray("joins/relevance", singleFileMetaDataSet, 10000)
     assert(teamMetadataResponse.get.length == 1)
-    assert(teamMetadataResponse.get.contains("joins/team/example_join.v1"))
+    assert(teamMetadataResponse.get.contains("spark/src/test/resources/joins/team/example_join.v1"))
     assertTrue(singleFileMetadataStore.validateJoinExist("relevance", "team/example_join.v1"))
     assertFalse(singleFileMetadataStore.validateJoinExist("team", "team/example_join.v1"))
 
@@ -63,7 +62,7 @@ class MetadataStoreTest extends TestCase {
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
     inMemoryKvStore.create(directoryMetadataDataSet)
-    val directoryDataDirWalker = new MetadataDirWalker(confResource.getPath.replace(s"/$joinPath", ""), acceptedEndPoints)
+    val directoryDataDirWalker = new MetadataDirWalker(joinPath, acceptedEndPoints)
     val directoryDataKvMap = directoryDataDirWalker.run
     val directoryPut = directoryDataKvMap.toSeq.map {
       case (endPoint, kvMap) => directoryMetadataStore.put(kvMap, endPoint)
@@ -76,10 +75,10 @@ class MetadataStoreTest extends TestCase {
     val dirActual = new String(dirRes.values.get.head.bytes)
     assertEquals(expected, dirActual.replaceAll("\\s+", ""))
 
-    val teamMetadataDirResponse = inMemoryKvStore.getStringArray("group_bys/team", directoryMetadataDataSet, 10000)
+    val teamMetadataDirResponse = inMemoryKvStore.getStringArray("spark/src/test/resources/group_bys/team", directoryMetadataDataSet, 10000)
     assert(teamMetadataDirResponse.get.length == 1)
     val teamMetadataDirRes = teamMetadataDirResponse.get.head
-    assert(teamMetadataDirRes.equals("group_bys/team/example_group_by.v1"))
+    assert(teamMetadataDirRes.equals("spark/src/test/resources/group_bys/team/example_group_by.v1"))
 
     assertFalse(directoryMetadataStore.validateGroupByExist("relevance", "team/example_group_by.v1"))
     assertTrue(directoryMetadataStore.validateGroupByExist("team", "team/example_group_by.v1"))

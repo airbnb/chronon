@@ -28,7 +28,7 @@ import org.mockito.Mockito.{mock, when}
 import org.rogach.scallop.ScallopConf
 
 class ResultValidationAbilityTest {
-  val confPath = "joins/team/example_join.v1"
+  val confPath = "spark/src/test/resources/joins/team/example_join.v1"
   val spark: SparkSession = SparkSessionBuilder.build("test", local = true)
   val mockTableUtils: TableUtils = mock(classOf[TableUtils])
 

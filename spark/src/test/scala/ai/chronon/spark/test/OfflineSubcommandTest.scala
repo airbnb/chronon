@@ -35,7 +35,7 @@ class OfflineSubcommandTest {
 
   @Test
   def basicIsParsedCorrectly(): Unit = {
-    val confPath = "joins/team/example_join.v1"
+    val confPath = "spark/src/test/resources/joins/team/example_join.v1"
     val args = new TestArgs(Seq("--conf-path", confPath).toArray)
     assertEquals(confPath, args.confPath())
     assertTrue(args.localTableMapping.isEmpty)
@@ -43,7 +43,7 @@ class OfflineSubcommandTest {
 
   @Test
   def localTableMappingIsParsedCorrectly(): Unit = {
-    val confPath = "joins/team/example_join.v1"
+    val confPath = "spark/src/test/resources/joins/team/example_join.v1"
     val endData = "2023-03-03"
     val argList = Seq("--local-table-mapping", "a=b", "c=d", "--conf-path", confPath, "--end-date", endData)
     val args = new TestArgs(argList.toArray)

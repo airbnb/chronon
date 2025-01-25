@@ -1,3 +1,5 @@
+load("@contrib_rules_jvm//java:defs.bzl", "java_test_suite")
+
 java_library(
     name = "service",
     srcs = glob(["src/main/java/ai/chronon/service/**/*.java"]),
@@ -24,7 +26,7 @@ java_library(
     ],
 )
 
-scala_test_suite(
+java_test_suite(
     name = "test",
     srcs = glob(["src/test/java/ai/chronon/service/handlers/*.java"]),
     visibility = ["//visibility:public"],

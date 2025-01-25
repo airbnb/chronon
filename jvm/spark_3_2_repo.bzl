@@ -1,5 +1,5 @@
 load("@rules_jvm_external//:specs.bzl", "maven")
-load(":defs.bzl", "repo")
+load(":defs.bzl", "repo", "versioned_artifacts")
 
 spark_3_2_repo = repo(
     name = "spark_3_2",
@@ -35,8 +35,14 @@ spark_3_2_repo = repo(
         "org.apache.avro:avro:1.8.2",
         "org.apache.avro:avro-mapred:1.8.2",
         "org.apache.hive:hive-metastore:2.3.9",
-        "org.apache.hive:hive-exec:3.1.2",
-
+        "org.apache.hive:hive-exec:2.3.9",
+        versioned_artifacts("2.10.5", [
+            "com.fasterxml.jackson.core:jackson-core",
+            "com.fasterxml.jackson.core:jackson-annotations",
+            "com.fasterxml.jackson.core:jackson-databind",
+            "com.fasterxml.jackson.module:jackson-module-scala_2.12",
+            "com.fasterxml.jackson.module:jackson-module-scala_2.13",
+        ]),
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
     ],

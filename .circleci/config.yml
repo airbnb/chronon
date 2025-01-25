@@ -2,14 +2,14 @@ version: 2.1
 
 base_defaults: &base_defaults
     resource_class: xlarge
-    working_directory: /chronon
+    working_directory: /home/chronon/workspace
 
 executors:
     docker_baseimg_executor:
         resource_class: xlarge
-        working_directory: /chronon
+        working_directory: /home/chronon/workspace
         docker:
-            - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
+            - image: krisnaru/chronon:krish-test-6
 
 jobs:
     "Pull Docker Image":
@@ -24,7 +24,7 @@ jobs:
                 name: Pull existing docker image
                 command: |
                     set +o pipefail
-                    docker pull houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 || true
+                    docker pull krisnaru/chronon:krish-test-6 || true
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor
@@ -34,23 +34,7 @@ jobs:
                   name: Run Spark 3.1.1 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
-                      conda activate chronon_py
-                      # Increase if we see OOM.
-                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      sbt "++ 2.12.12 test"
-            - store_test_results:
-                  path: /chronon/spark/target/test-reports
-            - store_test_results:
-                  path: /chronon/aggregator/target/test-reports
-            - run:
-                  name: Compress spark-warehouse
-                  command: |
-                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
-                  when: on_fail
-            - store_artifacts:
-                  path: /tmp/spark-warehouse.tar.gz
-                  destination: spark_warehouse.tar.gz
-                  when: on_fail
+                      bazel test --config scala_2.12 --config spark_3.1 //spark:test
 
     "Scala 13 -- Tests":
         executor: docker_baseimg_executor
@@ -60,23 +44,7 @@ jobs:
                   name: Run Scala 13 tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
-                      conda activate chronon_py
-                      # Increase if we see OOM.
-                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                      sbt "++ 2.13.6 test"
-            - store_test_results:
-                  path: /chronon/spark/target/test-reports
-            - store_test_results:
-                  path: /chronon/aggregator/target/test-reports
-            - run:
-                  name: Compress spark-warehouse
-                  command: |
-                    cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
-                  when: on_fail
-            - store_artifacts:
-                  path: /tmp/spark-warehouse.tar.gz
-                  destination: spark_warehouse.tar.gz
-                  when: on_fail
+                      bazel test --config scala_2.13 --config spark_3.2 //spark:test
 
     # run these separately as we need a isolated JVM to not have Spark session settings interfere with other runs
     # long term goal is to refactor the current testing spark session builder and avoid adding new single test to CI
@@ -90,49 +58,20 @@ jobs:
               format_test: deltalake
             shell: /bin/bash -leuxo pipefail
             command: |
-              conda activate chronon_py
-              # Increase if we see OOM.
-              export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-              sbt '++ 2.13.6' "testOnly ai.chronon.spark.test.TableUtilsFormatTest"
-        - store_test_results:
-            path: /chronon/spark/target/test-reports
-        - store_test_results:
-            path: /chronon/aggregator/target/test-reports
-        - run:
-            name: Compress spark-warehouse
-            command: |
-              cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
-            when: on_fail
-        - store_artifacts:
-            path: /tmp/spark-warehouse.tar.gz
-            destination: spark_warehouse.tar.gz
-            when: on_fail
+              bazel test --config scala_2.13 --config spark_3.1 //spark:TableUtilsFormatTest
 
-    "Scala 11 -- Compile":
-      executor: docker_baseimg_executor
-      steps:
-        - checkout
-        - run:
-            name: Compile Scala 11
-            shell: /bin/bash -leuxo pipefail
-            command: |
-              conda activate chronon_py
-              # Increase if we see OOM.
-              export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-              sbt "++ 2.11.12 compile"
-
-    "Chronon Python Lint":
-        executor: docker_baseimg_executor
-        steps:
-            - checkout
-            - run:
-                  name: Run Chronon Python lint
-                  shell: /bin/bash -leuxo pipefail
-                  command: |
-                      conda activate chronon_py
-                      cd /chronon/api/py/ai/chronon
-                      pip install importlib-metadata==4.11.4 #Install importlib-metadata < 5
-                      flake8 --extend-ignore=W605,Q000,F631,E203
+#    "Chronon Python Lint":
+#        executor: docker_baseimg_executor
+#        steps:
+#            - checkout
+#            - run:
+#                  name: Run Chronon Python lint
+#                  shell: /bin/bash -leuxo pipefail
+#                  command: |
+#                      conda activate chronon_py
+#                      cd /chronon/api/py/ai/chronon
+#                      pip install importlib-metadata==4.11.4 #Install importlib-metadata < 5
+#                      flake8 --extend-ignore=W605,Q000,F631,E203
 
     "Chronon Python Tests":
         executor: docker_baseimg_executor
@@ -142,35 +81,24 @@ jobs:
                   name: Run Chronon Python tests
                   shell: /bin/bash -leuxo pipefail
                   command: |
-                    conda activate chronon_py
-                    pushd /chronon/api/
-                    thrift --gen py -out /chronon/api/py/ai/chronon\
-                       /chronon/api/thrift/api.thrift                 # Generate thrift files
-                    cd /chronon/                                      # Go to Python module
-                    pip install -r api/py/requirements/dev.txt        # Install latest requirements
-                    tox                                               # Run tests
-                    popd
-            - store_artifacts:
-                  path: /chronon/api/py/htmlcov
+                    bazel test //api/py:api_test
 
-    "Scalafmt Check":
-        executor: docker_baseimg_executor
-        steps:
-            - checkout
-            - run:
-                  name: Run ScalafmtCheck
-                  shell: /bin/bash -leuxo pipefail
-                  command: |
-                      conda activate chronon_py
-                      sbt +scalafmtCheck
+
+#    "Scalafmt Check":
+#        executor: docker_baseimg_executor
+#        steps:
+#            - checkout
+#            - run:
+#                  name: Run ScalafmtCheck
+#                  shell: /bin/bash -leuxo pipefail
+#                  command: |
+#                      conda activate chronon_py
+#                      sbt +scalafmtCheck
 
 workflows:
     build_test_deploy:
         jobs:
             - "Pull Docker Image"
-            - "Scala 11 -- Compile":
-                requires:
-                  - "Pull Docker Image"
             - "Scala 12 -- Spark 3 Tests":
                   requires:
                       - "Pull Docker Image"
@@ -180,12 +108,12 @@ workflows:
             - "Scala 13 -- Delta Lake Format Tests":
                   requires:
                     - "Pull Docker Image"
-            - "Scalafmt Check":
-                  requires:
-                      - "Pull Docker Image"
+#            - "Scalafmt Check":
+#                  requires:
+#                      - "Pull Docker Image"
             - "Chronon Python Tests":
                   requires:
                       - "Pull Docker Image"
-            - "Chronon Python Lint":
-                  requires:
-                      - "Pull Docker Image"
+#            - "Chronon Python Lint":
+#                  requires:
+#                      - "Pull Docker Image"

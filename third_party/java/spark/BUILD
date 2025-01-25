@@ -67,6 +67,10 @@ SPARK_JARS = [
         name = "jackson-databind",
         org = "com.fasterxml.jackson.core",
     ),
+    scala_jar(
+        name = "jackson-module-scala",
+        org = "com.fasterxml.jackson.module",
+    ),
     jar(
         name = "kryo_shaded",
         org = "com.esotericsoftware",
@@ -93,7 +97,7 @@ SPARK_3_5_JARS = SPARK_JARS + [
 ]
 
 java_library(
-    name = "spark-exec",
+    name = "spark-library",
     visibility = ["//visibility:public"],
     exports = select({
         "//conditions:default": get_jars_for_repo("spark_3_2", SPARK_JARS),
@@ -107,6 +111,6 @@ java_binary(
     name = "spark",
     main_class = "None",  #hack
     runtime_deps = [
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-library",
     ],
 )

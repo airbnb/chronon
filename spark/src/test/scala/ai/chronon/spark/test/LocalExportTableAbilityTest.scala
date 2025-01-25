@@ -41,7 +41,7 @@ class LocalExportTableAbilityTest {
 
   @Test
   def localTableExporterIsNotUsedWhenNotInLocalMode(): Unit = {
-    val argList = Seq("--conf-path", "joins/team/example_join.v1", "--end-date", "2023-03-03")
+    val argList = Seq("--conf-path", "spark/src/test/resources/joins/team/example_join.v1", "--end-date", "2023-03-03")
     val args = new TestArgs(argList.toArray, mock(classOf[LocalTableExporter]))
     assertFalse(args.shouldExport())
   }
@@ -49,7 +49,7 @@ class LocalExportTableAbilityTest {
   @Test
   def localTableExporterIsNotUsedWhenNotExportPathIsNotSpecified(): Unit = {
     val argList =
-      Seq("--conf-path", "joins/team/example_join.v1", "--end-date", "2023-03-03", "--local-data-path", "somewhere")
+      Seq("--conf-path", "spark/src/test/resources/joins/team/example_join.v1", "--end-date", "2023-03-03", "--local-data-path", "somewhere")
     val args = new TestArgs(argList.toArray, mock(classOf[LocalTableExporter]))
     assertFalse(args.shouldExport())
   }
@@ -61,7 +61,7 @@ class LocalExportTableAbilityTest {
     val prefix = "test_prefix"
     val argList = Seq(
       "--conf-path",
-      "joins/team/example_join.v1",
+      "spark/src/test/resources/joins/team/example_join.v1",
       "--end-date",
       "2023-03-03",
       "--local-data-path",

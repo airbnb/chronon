@@ -1,5 +1,5 @@
 load("@rules_jvm_external//:specs.bzl", "maven")
-load(":defs.bzl", "repo")
+load(":defs.bzl", "repo", "versioned_artifacts")
 
 spark_3_5_repo = repo(
     name = "spark_3_5",
@@ -9,6 +9,8 @@ spark_3_5_repo = repo(
         "hadoop_version": "3.3.6",
     },
     artifacts = [
+        "org.apache.hadoop:hadoop-common:3.3.6",
+
         # Spark artifacts - for scala 2.12
         "org.apache.spark:spark-sql_2.12:{spark_version}",
         "org.apache.spark:spark-hive_2.12:{spark_version}",
@@ -21,7 +23,7 @@ spark_3_5_repo = repo(
 
         # Other dependencies
         "org.apache.curator:apache-curator:2.12.0",
-        "com.esotericsoftware:kryo:5.1.1",
+        #        "com.esotericsoftware:kryo:5.6.2",
         "com.yahoo.datasketches:sketches-core:0.13.4",
         "com.yahoo.datasketches:memory:0.12.2",
         "com.yahoo.datasketches:sketches-hive:0.13.0",
@@ -35,7 +37,14 @@ spark_3_5_repo = repo(
         "org.apache.avro:avro:1.8.2",
         "org.apache.avro:avro-mapred:1.8.2",
         "org.apache.hive:hive-metastore:2.3.9",
-        "org.apache.hive:hive-exec:3.1.2",
+        "org.apache.hive:hive-exec:2.3.9",
+        versioned_artifacts("2.18.2", [
+            "com.fasterxml.jackson.core:jackson-core",
+            "com.fasterxml.jackson.core:jackson-annotations",
+            "com.fasterxml.jackson.core:jackson-databind",
+            "com.fasterxml.jackson.module:jackson-module-scala_2.12",
+            "com.fasterxml.jackson.module:jackson-module-scala_2.13",
+        ]),
 
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
