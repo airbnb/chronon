@@ -32,7 +32,7 @@ import com.google.gson.Gson
 import java.util
 import scala.collection.JavaConverters._
 import scala.collection.Seq
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 // Does internal facing fetching
@@ -44,8 +44,9 @@ class FetcherBase(kvStore: KVStore,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false,
                   flagStore: FlagStore = null,
-                  disableErrorThrows: Boolean = false)
-    extends MetadataStore(kvStore, metaDataSet, timeoutMillis)
+                  disableErrorThrows: Boolean = false,
+                  executionContextOverride: ExecutionContext = null)
+    extends MetadataStore(kvStore, metaDataSet, timeoutMillis, executionContextOverride)
     with FetcherCache {
   import FetcherBase._
 
