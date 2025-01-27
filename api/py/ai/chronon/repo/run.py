@@ -153,7 +153,7 @@ def check_call(cmd):
 
 def check_output(cmd):
     print("Running command: " + cmd)
-    return subprocess.check_output(cmd.split(), bufsize=0).strip()
+    return subprocess.check_output(cmd.split(), stderr=subprocess.STDOUT, bufsize=0).strip()
 
 
 def download_only_once(url, path, skip_download=False):
