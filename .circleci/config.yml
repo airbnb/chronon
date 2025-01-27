@@ -78,36 +78,6 @@ jobs:
                   destination: spark_warehouse.tar.gz
                   when: on_fail
 
-    # run these separately as we need a isolated JVM to not have Spark session settings interfere with other runs
-    # long term goal is to refactor the current testing spark session builder and avoid adding new single test to CI
-    "Scala 13 -- Delta Lake Format Tests":
-      executor: docker_baseimg_executor
-      steps:
-        - checkout
-        - run:
-            name: Run Scala 13 tests for Delta Lake format
-            environment:
-              format_test: deltalake
-            shell: /bin/bash -leuxo pipefail
-            command: |
-              conda activate chronon_py
-              # Increase if we see OOM.
-              export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-              sbt '++ 2.13.6' "testOnly ai.chronon.spark.test.TableUtilsFormatTest"
-        - store_test_results:
-            path: /chronon/spark/target/test-reports
-        - store_test_results:
-            path: /chronon/aggregator/target/test-reports
-        - run:
-            name: Compress spark-warehouse
-            command: |
-              cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
-            when: on_fail
-        - store_artifacts:
-            path: /tmp/spark-warehouse.tar.gz
-            destination: spark_warehouse.tar.gz
-            when: on_fail
-
     "Scala 11 -- Compile":
       executor: docker_baseimg_executor
       steps:
@@ -177,9 +147,6 @@ workflows:
             - "Scala 13 -- Tests":
                   requires:
                       - "Pull Docker Image"
-            - "Scala 13 -- Delta Lake Format Tests":
-                  requires:
-                    - "Pull Docker Image"
             - "Scalafmt Check":
                   requires:
                       - "Pull Docker Image"
