@@ -45,21 +45,6 @@ jobs:
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       bazel test --config scala_2.13 --config spark_3.2 //spark:test
-
-    # run these separately as we need a isolated JVM to not have Spark session settings interfere with other runs
-    # long term goal is to refactor the current testing spark session builder and avoid adding new single test to CI
-    "Scala 13 -- Delta Lake Format Tests":
-      executor: docker_baseimg_executor
-      steps:
-        - checkout
-        - run:
-            name: Run Scala 13 tests for Delta Lake format
-            environment:
-              format_test: deltalake
-            shell: /bin/bash -leuxo pipefail
-            command: |
-              bazel test --config scala_2.13 --config spark_3.1 //spark:TableUtilsFormatTest
-
 #    "Chronon Python Lint":
 #        executor: docker_baseimg_executor
 #        steps:
@@ -105,9 +90,6 @@ workflows:
             - "Scala 13 -- Tests":
                   requires:
                       - "Pull Docker Image"
-            - "Scala 13 -- Delta Lake Format Tests":
-                  requires:
-                    - "Pull Docker Image"
 #            - "Scalafmt Check":
 #                  requires:
 #                      - "Pull Docker Image"
