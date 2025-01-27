@@ -22,7 +22,7 @@ from ai.chronon.repo import dependency_tracker
 
 @pytest.fixture
 def test_dependency_tracker():
-    return dependency_tracker.ChrononEntityDependencyTracker(chronon_root_path="test/sample/production")
+    return dependency_tracker.ChrononEntityDependencyTracker(chronon_root_path="api/py/test/sample/production")
 
 
 def test_get_group_by_dependency_names(test_dependency_tracker):

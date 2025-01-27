@@ -37,7 +37,7 @@ def _get_full_file_path(relative_path):
 def _invoke_cli_with_params(runner, input_path, flags=None):
     """Invoke the CLI command with consistent options and specified input_path."""
     command = [
-        "--chronon_root=test/sample",
+        "--chronon_root=api/py/test/sample",
         f"--input_path={input_path}",
         "--debug",
     ]
@@ -88,12 +88,12 @@ def specific_setup():
 
 def test_basic_compile():
     runner = CliRunner()
-    result = runner.invoke(extract_and_convert, ["--chronon_root=test/sample", "--input_path=joins/sample_team/"])
+    result = runner.invoke(extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/"])
     assert result.exit_code == 0
-    result = runner.invoke(extract_and_convert, ["--chronon_root=test/sample", "--input_path=joins/sample_team"])
+    result = runner.invoke(extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team"])
     assert result.exit_code == 0
     result = runner.invoke(
-        extract_and_convert, ["--chronon_root=test/sample", "--input_path=joins/sample_team/sample_join.py"]
+        extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/sample_join.py"]
     )
     assert result.exit_code == 0
 
@@ -104,7 +104,7 @@ def test_compile_group_by_deprecation():
     result = runner.invoke(
         extract_and_convert,
         [
-            "--chronon_root=test/sample",
+            "--chronon_root=api/py/test/sample",
             "--input_path=group_bys/sample_team/sample_deprecation_group_by.py",
             "--force-overwrite",
         ],
@@ -121,7 +121,7 @@ def test_compile_join_deprecation():
     result = runner.invoke(
         extract_and_convert,
         [
-            "--chronon_root=test/sample",
+            "--chronon_root=api/py/test/sample",
             "--input_path=joins/sample_team/sample_deprecation_join.py",
             "--force-overwrite",
         ],
@@ -135,7 +135,7 @@ def test_compile_join_deprecation():
 def test_debug_compile():
     runner = CliRunner()
     result = runner.invoke(
-        extract_and_convert, ["--chronon_root=test/sample", "--input_path=joins/sample_team/", "--debug"]
+        extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/", "--debug"]
     )
     assert result.exit_code == 0
 
@@ -234,7 +234,7 @@ def test_detected_dependent_joins_materialized():
     runner = CliRunner()
     result = _invoke_cli_with_params(runner, "group_bys/sample_team/event_sample_group_by.py", ["--force-overwrite"])
     assert result.exit_code == 0
-    expected_message = "Successfully wrote 8 Join objects to test/sample/production".strip().lower()
+    expected_message = "Successfully wrote 8 Join objects to api/py/test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
 
@@ -266,7 +266,7 @@ def test_detected_dependent_group_bys_materialized():
     runner = CliRunner()
     result = _invoke_cli_with_params(runner, "joins/unit_test/sample_parent_join.py", ["--force-overwrite"])
     assert result.exit_code == 0
-    expected_message = "Successfully wrote 2 GroupBy objects to test/sample/production".strip().lower()
+    expected_message = "Successfully wrote 2 GroupBy objects to api/py/test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
 
@@ -280,7 +280,7 @@ def test_detected_dependent_nested_joins():
         runner, "group_bys/unit_test/user/sample_nested_group_by.py", ["--force-overwrite"]
     )
     assert result.exit_code == 0
-    expected_message = "Successfully wrote 1 Join objects to test/sample/production".strip().lower()
+    expected_message = "Successfully wrote 1 Join objects to api/py/test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
 
@@ -341,7 +341,7 @@ def test_table_display_staging_query():
     result = runner.invoke(
         extract_and_convert,
         [
-            "--chronon_root=test/sample",
+            "--chronon_root=api/py/test/sample",
             f"--input_path={input_path}",
             "--table-display",
         ],
@@ -362,7 +362,7 @@ def test_compile_dependency_staging_query():
     input_path = f"staging_queries/sample_team/sample_staging_query.py"
     result = runner.invoke(
         extract_and_convert,
-        ["--chronon_root=test/sample", f"--input_path={input_path}"],
+        ["--chronon_root=api/py/test/sample", f"--input_path={input_path}"],
     )
 
     assert result.exit_code == 0

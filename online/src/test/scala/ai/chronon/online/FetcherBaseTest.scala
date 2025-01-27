@@ -159,7 +159,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     val batchTimedValuesSuccess = Success(Seq(TimedValue(Array(1.toByte), 2000L)))
     val kvStoreBatchResponses = BatchResponses(batchTimedValuesSuccess)
 
-    val result = fetcherBase.getServingInfo(oldServingInfo, kvStoreBatchResponses)
+    val (result, _) = fetcherBase.getServingInfo(oldServingInfo, kvStoreBatchResponses)
 
     // updateServingInfo is called
     result shouldEqual updatedServingInfo
@@ -183,7 +183,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     doReturn(groupByOpsMock).when(oldServingInfo).groupByOps
 
     val cachedBatchResponses = BatchResponses(mock[FinalBatchIr])
-    val result = fetcherBase.getServingInfo(oldServingInfo, cachedBatchResponses)
+    val (result, _) = fetcherBase.getServingInfo(oldServingInfo, cachedBatchResponses)
 
     // FetcherBase.updateServingInfo is not called, but getGroupByServingInfo.refresh() is.
     result shouldEqual oldServingInfo

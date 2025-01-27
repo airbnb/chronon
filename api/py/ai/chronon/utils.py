@@ -31,7 +31,7 @@ from ai.chronon.repo import TEAMS_FILE_PATH, teams
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
-chronon_root_path = ""  # passed from compile.py
+chronon_root_path = os.getenv("CHRONON_ROOT", "")  # passed from compile.py
 
 
 @dataclass
@@ -83,15 +83,21 @@ class JsonDiffer:
         self.old_name = "old.json"
 
     def diff(self, new_json_str: object, old_json_str: object, skipped_keys=[]) -> str:
-        new_json = {k: v for k, v in json.loads(new_json_str).items() if k not in skipped_keys}
-        old_json = {k: v for k, v in json.loads(old_json_str).items() if k not in skipped_keys}
+        new_json = {
+            k: v for k, v in json.loads(new_json_str).items() if k not in skipped_keys
+        }
+        old_json = {
+            k: v for k, v in json.loads(old_json_str).items() if k not in skipped_keys
+        }
 
         with open(os.path.join(self.temp_dir, self.old_name), mode="w") as old, open(
             os.path.join(self.temp_dir, self.new_name), mode="w"
         ) as new:
             old.write(json.dumps(old_json, sort_keys=True, indent=2))
             new.write(json.dumps(new_json, sort_keys=True, indent=2))
-        diff_str = subprocess.run(["diff", old.name, new.name], stdout=subprocess.PIPE).stdout.decode("utf-8")
+        diff_str = subprocess.run(
+            ["diff", old.name, new.name], stdout=subprocess.PIPE
+        ).stdout.decode("utf-8")
         return diff_str
 
     def clean(self):
@@ -186,7 +192,9 @@ def get_mod_name_from_gc(obj, mod_prefix):
 
 
 def __set_name(obj, cls, mod_prefix):
-    module = importlib.import_module(get_mod_name_from_gc(obj, mod_prefix))
+    module_name = get_mod_name_from_gc(obj, mod_prefix)
+    assert module_name, f"Couldn't find module name for object:\n{obj}\n"
+    module = importlib.import_module(module_name)
     eo.import_module_set_name(module, cls)
 
 
@@ -208,7 +216,11 @@ def dict_to_bash_commands(d):
         return ""
     bash_commands = []
     for key, value in d.items():
-        cmd = f"--{key.replace('_', '-')}={value}" if value else f"--{key.replace('_', '-')}"
+        cmd = (
+            f"--{key.replace('_', '-')}={value}"
+            if value
+            else f"--{key.replace('_', '-')}"
+        )
         bash_commands.append(cmd)
     return " ".join(bash_commands)
 
@@ -234,11 +246,17 @@ def output_table_name(obj, full_name: bool):
 
 def join_part_name(jp):
     if jp.groupBy is None:
-        raise NotImplementedError("Join Part names for non group bys is not implemented.")
+        raise NotImplementedError(
+            "Join Part names for non group bys is not implemented."
+        )
     if not jp.groupBy.metaData.name and isinstance(jp.groupBy, api.GroupBy):
         __set_name(jp.groupBy, api.GroupBy, "group_bys")
     return "_".join(
-        [component for component in [jp.prefix, sanitize(jp.groupBy.metaData.name)] if component is not None]
+        [
+            component
+            for component in [jp.prefix, sanitize(jp.groupBy.metaData.name)]
+            if component is not None
+        ]
     )
 
 
@@ -277,7 +295,9 @@ def log_table_name(obj, full_name: bool = False):
     return output_table_name(obj, full_name=full_name) + "_logged"
 
 
-def get_staging_query_output_table_name(staging_query: api.StagingQuery, full_name: bool = False):
+def get_staging_query_output_table_name(
+    staging_query: api.StagingQuery, full_name: bool = False
+):
     """generate output table name for staging query job"""
     __set_name(staging_query, api.StagingQuery, "staging_queries")
     return output_table_name(staging_query, full_name=full_name)
@@ -290,7 +310,9 @@ def get_join_output_table_name(join: api.Join, full_name: bool = False):
     # set output namespace
     if not join.metaData.outputNamespace:
         team_name = join.metaData.name.split(".")[0]
-        namespace = teams.get_team_conf(os.path.join(chronon_root_path, TEAMS_FILE_PATH), team_name, "namespace")
+        namespace = teams.get_team_conf(
+            os.path.join(chronon_root_path, TEAMS_FILE_PATH), team_name, "namespace"
+        )
         join.metaData.outputNamespace = namespace
     return output_table_name(join, full_name=full_name)
 
@@ -307,7 +329,10 @@ def get_dependencies(
     if meta_data is not None:
         result = [json.loads(dep) for dep in meta_data.dependencies]
     elif dependencies:
-        result = [{"name": wait_for_name(dep), "spec": dep, "start": start, "end": end} for dep in dependencies]
+        result = [
+            {"name": wait_for_name(dep), "spec": dep, "start": start, "end": end}
+            for dep in dependencies
+        ]
     else:
         if src.entities and src.entities.mutationTable:
             # Opting to use no lag for all use cases because that the "safe catch-all" case when
@@ -317,15 +342,23 @@ def get_dependencies(
                 filter(
                     None,
                     [
-                        wait_for_simple_schema(src.entities.snapshotTable, lag, start, end),
-                        wait_for_simple_schema(src.entities.mutationTable, lag, start, end),
+                        wait_for_simple_schema(
+                            src.entities.snapshotTable, lag, start, end
+                        ),
+                        wait_for_simple_schema(
+                            src.entities.mutationTable, lag, start, end
+                        ),
                     ],
                 )
             )
         elif src.entities:
-            result = [wait_for_simple_schema(src.entities.snapshotTable, lag, start, end)]
+            result = [
+                wait_for_simple_schema(src.entities.snapshotTable, lag, start, end)
+            ]
         elif src.joinSource:
-            parentJoinOutputTable = get_join_output_table_name(src.joinSource.join, True)
+            parentJoinOutputTable = get_join_output_table_name(
+                src.joinSource.join, True
+            )
             result = [wait_for_simple_schema(parentJoinOutputTable, lag, start, end)]
         else:
             result = [wait_for_simple_schema(src.events.table, lag, start, end)]
@@ -339,17 +372,31 @@ def get_bootstrap_dependencies(bootstrap_parts) -> List[str]:
     dependencies = []
     for bootstrap_part in bootstrap_parts:
         table = bootstrap_part.table
-        start = bootstrap_part.query.startPartition if bootstrap_part.query is not None else None
-        end = bootstrap_part.query.endPartition if bootstrap_part.query is not None else None
+        start = (
+            bootstrap_part.query.startPartition
+            if bootstrap_part.query is not None
+            else None
+        )
+        end = (
+            bootstrap_part.query.endPartition
+            if bootstrap_part.query is not None
+            else None
+        )
         dependencies.append(wait_for_simple_schema(table, 0, start, end))
     return [json.dumps(dep) for dep in dependencies]
 
 
 def get_label_table_dependencies(label_part) -> List[str]:
-    label_info = [(label.groupBy.sources, label.groupBy.metaData) for label in label_part.labels]
-    label_info = [(source, meta_data) for (sources, meta_data) in label_info for source in sources]
+    label_info = [
+        (label.groupBy.sources, label.groupBy.metaData) for label in label_part.labels
+    ]
+    label_info = [
+        (source, meta_data) for (sources, meta_data) in label_info for source in sources
+    ]
     label_dependencies = [
-        dep for (source, meta_data) in label_info for dep in get_dependencies(src=source, meta_data=meta_data)
+        dep
+        for (source, meta_data) in label_info
+        for dep in get_dependencies(src=source, meta_data=meta_data)
     ]
     label_dependencies.append(
         json.dumps(
@@ -369,7 +416,9 @@ def wait_for_simple_schema(table, lag, start, end):
     clean_name = table_tokens[0]
     subpartition_spec = "/".join(table_tokens[1:]) if len(table_tokens) > 1 else ""
     return {
-        "name": "wait_for_{}_ds{}".format(clean_name, "" if lag == 0 else f"_minus_{lag}"),
+        "name": "wait_for_{}_ds{}".format(
+            clean_name, "" if lag == 0 else f"_minus_{lag}"
+        ),
         "spec": "{}/ds={}{}".format(
             clean_name,
             "{{ ds }}" if lag == 0 else "{{{{ macros.ds_add(ds, -{}) }}}}".format(lag),
@@ -395,7 +444,8 @@ def dedupe_in_order(seq):
 def has_topic(group_by: api.GroupBy) -> bool:
     """Find if there's topic or mutationTopic for a source helps define streaming tasks"""
     return any(
-        (source.entities and source.entities.mutationTopic) or (source.events and source.events.topic)
+        (source.entities and source.entities.mutationTopic)
+        or (source.events and source.events.topic)
         for source in group_by.sources
     )
 
@@ -450,13 +500,19 @@ def get_modes_tables(conf: ChrononJobTypes) -> Dict[str, List[str]]:
         if requires_log_flattening_task(join):
             tables[Modes.log_flattener] = [f"{table_name}_logged"]
         if join.labelPart is not None:
-            tables[Modes.label_join] = [f"{table_name}_labels", f"{table_name}_labeled", f"{table_name}_labeled_latest"]
+            tables[Modes.label_join] = [
+                f"{table_name}_labels",
+                f"{table_name}_labeled",
+                f"{table_name}_labeled_latest",
+            ]
 
         if conf.bootstrapParts or get_offline_schedule(conf) is not None:
             tables[SubStage.bootstrap] = [f"{table_name}_bootstrap"]
 
         if conf.joinParts:
-            tables[SubStage.join_parts] = [join_part_output_table_name(conf, jp) for jp in conf.joinParts]
+            tables[SubStage.join_parts] = [
+                join_part_output_table_name(conf, jp) for jp in conf.joinParts
+            ]
     # from StagingQuery
     elif isinstance(conf, api.StagingQuery):
         tables[Modes.backfill] = [f"{table_name}"]
@@ -469,7 +525,11 @@ def get_modes_tables(conf: ChrononJobTypes) -> Dict[str, List[str]]:
 def get_applicable_modes(conf: ChrononJobTypes) -> List[str]:
     """Based on a conf and mode determine if a conf should define a task."""
     table_map = get_modes_tables(conf)
-    modes = [x for x in table_map.keys() if x not in [getattr(SubStage, field.name) for field in fields(SubStage)]]
+    modes = [
+        x
+        for x in table_map.keys()
+        if x not in [getattr(SubStage, field.name) for field in fields(SubStage)]
+    ]
     return modes
 
 

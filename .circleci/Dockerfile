@@ -34,6 +34,7 @@ RUN apt-get update && apt-get -y -q install \
     openjdk-8-jdk \
     pkg-config \
     sbt \
+    bazelisk \
     && apt-get clean
 
 # Install thrift

@@ -1,0 +1,29 @@
+## Disable remote cache completely when --config=local is passed
+build:local --remote_cache=
+
+# Scala version config flags:
+# To build with Scala 2.12, pass "--config scala_2.12" to "bazel build"
+# To set a different default Scala version, add the following to
+# user.bazelrc:
+# common --config scala_2.12
+common:scala_2.12 --repo_env=SCALA_VERSION=2.12.18
+common:scala_2.13 --repo_env=SCALA_VERSION=2.13.12
+
+# Default scala version to 2.12
+common --repo_env=SCALA_VERSION=2.12.18
+
+# Spark versions
+common:spark_3.1 --define spark_version=3.1
+common:spark_3.2 --define spark_version=3.2
+common:spark_3.5 --define spark_version=3.5
+
+# Default Spark version
+common --define spark_version=3.1
+
+build --javacopt=-Xep:DoubleBraceInitialization:OFF
+
+# Don't implicitly create __init__.py files
+build --incompatible_default_to_explicit_init_py
+
+# https://github.com/bazelbuild/bazel/issues/2377
+test --spawn_strategy=standalone

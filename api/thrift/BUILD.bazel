@@ -1,0 +1,14 @@
+load("//tools/build_rules/thrift:thrift.bzl", "thrift_java_library", "thrift_python_library")
+
+thrift_python_library(
+    name = "api-models-py",
+    srcs = ["api.thrift"],
+    namespace = "ai.chronon",
+    visibility = ["//visibility:public"],
+)
+
+thrift_java_library(
+    name = "api-models-java",
+    srcs = ["api.thrift"],
+    visibility = ["//visibility:public"],
+)

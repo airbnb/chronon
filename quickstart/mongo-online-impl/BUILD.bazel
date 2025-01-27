@@ -1,0 +1,25 @@
+scala_library(
+    name = "mongo-online-impl",
+    srcs = glob(["src/main/scala/ai/chronon/quickstart/online/*.scala"]),
+    resources = [
+        "src/main/scala/resources/logback.xml",
+    ],
+    deps = [
+        "//aggregator",
+        "//api:api-lib",
+        "//api:api-models",
+        "//online",
+        "//third_party/java/spark:spark-exec",
+        maven_artifact("org.mongodb.scala:mongo-scala-driver_2.12"),
+        maven_artifact("org.mongodb.scala:mongo-scala-bson_2.12"),
+        maven_artifact("org.mongodb:mongodb-driver-core"),
+        maven_artifact("org.mongodb:bson"),
+        maven_artifact("io.dropwizard.metrics:metrics-core"),
+        maven_artifact("org.reactivestreams:reactive-streams"),
+        maven_artifact("org.mongodb:mongodb-driver-reactivestreams"),
+        maven_artifact("org.apache.thrift:libthrift"),
+        maven_artifact("org.slf4j:slf4j-api"),
+        maven_artifact("org.slf4j:slf4j-log4j12"),
+        scala_artifact("org.scala-lang.modules:scala-collection-compat"),
+    ],
+)
