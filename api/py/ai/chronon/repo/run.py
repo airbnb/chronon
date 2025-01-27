@@ -421,6 +421,7 @@ class Runner:
                 except subprocess.CalledProcessError as e:
                     print("Failed to retrieve running apps. Error:")
                     print(e.output.decode("utf-8"))
+                    raise e
                 running_app_map = {}
                 for app in running_apps:
                     try:
