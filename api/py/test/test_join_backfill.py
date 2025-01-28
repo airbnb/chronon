@@ -19,15 +19,15 @@ from ai.chronon.repo.join_backfill import JoinBackfill
 
 class TestJoinBackfill(unittest.TestCase):
     def setUp(self):
-        conf_file = "test/sample/production/joins/sample_team/sample_join.v1"
+        conf_file = "api/py/test/sample/production/joins/sample_team/sample_join.v1"
         self.join_backfill = JoinBackfill(config_path=conf_file, start_date="2025-01-01", end_date="2025-01-01")
 
-        conf_file = "test/sample/production/joins/sample_team/sample_chaining_join.v1"
+        conf_file = "api/py/test/sample/production/joins/sample_team/sample_chaining_join.v1"
         self.channing_join_backfill = JoinBackfill(
             config_path=conf_file, start_date="2025-01-01", end_date="2025-01-01"
         )
 
-        conf_file = "test/sample/production/joins/sample_team/sample_join.v1"
+        conf_file = "api/py/test/sample/production/joins/sample_team/sample_join.v1"
         settings = {
             "default": {
                 "spark_version": "3.1.1",
