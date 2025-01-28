@@ -84,7 +84,7 @@ enablePlugins(GitVersioning, GitBranchPrompt)
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
 lazy val root = (project in file("."))
-  .aggregate(api, aggregator, online, spark_uber, spark_embedded, service)
+  .aggregate(api, aggregator, online, spark_uber, spark_embedded, service, flink)
   .settings(
     publish / skip := true,
     crossScalaVersions := Nil,
