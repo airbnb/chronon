@@ -7,8 +7,8 @@ from ai.chronon.scheduler.interfaces.node import Node
 class TestFlow(unittest.TestCase):
     def setUp(self):
         self.flow = Flow("test_flow")
-        self.node1 = Node("node1", "command1")
-        self.node2 = Node("node2", "command2")
+        self.node1 = Node("node1", "command1", {})
+        self.node2 = Node("node2", "command2", {})
 
     def test_add_node(self):
         self.flow.add_node(self.node1)

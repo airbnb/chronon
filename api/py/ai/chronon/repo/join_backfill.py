@@ -61,11 +61,18 @@ class JoinBackfill:
         The final join node will be returned to be used as a dependency.
         """
         join_name = sanitize(join.metaData.name)
+        # Merge default settings and final_join settings
+        settings = {**self.settings["default"], **self.settings.get("final_join", {})}
         final_node = Node(
             f"{TASK_PREFIX}__{sanitize(get_join_output_table_name(join, full_name=True))}",
-            self.run_final_join(join.metaData.name),
+            self.run_final_join(join.metaData.name, settings),
+            settings,
         )
-        left_node = Node(f"{TASK_PREFIX}__{join_name}__left_table", self.run_left_table(join.metaData.name))
+        # Merge default settings and left_table settings
+        settings = {**self.settings["default"], **self.settings.get("left_table", {})}
+        left_node = Node(
+            f"{TASK_PREFIX}__{join_name}__left_table", self.run_left_table(join.metaData.name, settings), settings
+        )
         flow.add_node(final_node)
         flow.add_node(left_node)
         for join_part in join.joinParts:
@@ -74,8 +81,12 @@ class JoinBackfill:
                     dep_node = self.add_join_to_flow(flow, src.joinSource.join)
                     left_node.add_dependency(dep_node)
             jp_full_name = join_part_name(join_part)
+            # Merge default settings and join_part settings
+            settings = {**self.settings["default"], **self.settings.get(jp_full_name, {})}
             jp_node = Node(
-                f"{TASK_PREFIX}__{join_name}__{jp_full_name}", self.run_join_part(join.metaData.name, jp_full_name)
+                f"{TASK_PREFIX}__{join_name}__{jp_full_name}",
+                self.run_join_part(join.metaData.name, jp_full_name, settings),
+                settings,
             )
             flow.add_node(jp_node)
             jp_node.add_dependency(left_node)
@@ -92,32 +103,26 @@ class JoinBackfill:
         return f"""run.py --conf={config_path} --ds={self.end_date} \
 {dict_to_bash_commands(extra_args)}"""
 
-    def run_join_part(self, join_name: dict, join_part: str):
+    def run_join_part(self, join_name: dict, join_part: str, settings: dict):
         args = {
             "mode": "backfill",
             "selected_join_parts": join_part,
             "use_cached_left": None,
         }
-        # Merge default settings and join_part settings
-        settings = {**self.settings["default"], **self.settings.get(join_part, {})}
         return (
             self.export_template(settings)
             + " && "
             + self.command_template(config_path=get_config_path(join_name), extra_args=args)
         )
 
-    def run_left_table(self, join_name: str):
-        # Merge default settings and left_table settings
-        settings = {**self.settings["default"], **self.settings.get("left_table", {})}
+    def run_left_table(self, join_name: str, settings: dict):
         return (
             self.export_template(settings)
             + " && "
             + self.command_template(config_path=get_config_path(join_name), extra_args={"mode": "backfill-left"})
         )
 
-    def run_final_join(self, join_name: str):
-        # Merge default settings and final_join settings
-        settings = {**self.settings["default"], **self.settings.get("final_join", {})}
+    def run_final_join(self, join_name: str, settings: dict):
         return (
             self.export_template(settings)
             + " && "
