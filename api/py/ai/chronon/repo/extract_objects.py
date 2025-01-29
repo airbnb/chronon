@@ -70,7 +70,7 @@ def from_file(root_path: str, file_path: str, cls: type, log_level=logging.INFO)
     mod = importlib.import_module(mod_qualifier)
 
     # get inline group_bys
-    inline_group_bys = [k for k in mod.__dict__.values() if isinstance(k, GroupBy)]
+    inline_group_bys = [k for k in mod.__dict__.values() if isinstance(k, GroupBy)] if cls == Join else None
 
     # the key of result dict would be `team_name.python_script_name.[group_by_name|join_name|staging_query_name]`
     # real world case: psx.reservation_status.v1
