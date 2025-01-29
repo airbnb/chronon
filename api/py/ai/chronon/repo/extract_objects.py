@@ -18,6 +18,7 @@ import importlib.util
 import logging
 import os
 
+from ai.chronon.api.ttypes import GroupBy, Join
 from ai.chronon.logger import get_logger
 
 
@@ -40,14 +41,7 @@ def from_folder(root_path: str, full_path: str, cls: type, log_level=logging.INF
     return result
 
 
-def import_module_set_all_teams(module):
-    for name, obj in list(module.__dict__.items()):
-        if hasattr(obj, "metaData") and hasattr(obj.metaData, "team"):
-            obj.metaData.team = module.__name__.split(".")[1]
-    return module
-
-
-def import_module_set_name(module, cls):
+def import_module_set_name(module, cls, inline_group_bys=None):
     """evaluate imported modules to assign object name"""
     for name, obj in list(module.__dict__.items()):
         if isinstance(obj, cls):
@@ -57,6 +51,11 @@ def import_module_set_name(module, cls):
             # obj.metaData.team=user
             obj.metaData.name = module.__name__.partition(".")[2] + "." + name
             obj.metaData.team = module.__name__.split(".")[1]
+            if isinstance(obj, Join) and inline_group_bys:
+                for jp in obj.joinParts:
+                    if jp.groupBy in inline_group_bys:
+                        jp.groupBy.metaData.team = obj.metaData.team
+
     return module
 
 
@@ -70,11 +69,12 @@ def from_file(root_path: str, file_path: str, cls: type, log_level=logging.INFO)
     mod_qualifier = file_path[len(root_path.rstrip("/")) + 1 : -3].replace("/", ".")
     mod = importlib.import_module(mod_qualifier)
 
+    # get inline group_bys
+    inline_group_bys = [k for k in mod.__dict__.values() if isinstance(k, GroupBy)]
+
     # the key of result dict would be `team_name.python_script_name.[group_by_name|join_name|staging_query_name]`
     # real world case: psx.reservation_status.v1
-    import_module_set_name(mod, cls)
-    # set team name for inline modules. E.g, a GroupBy could be declared within a Join module.
-    import_module_set_all_teams(mod)
+    import_module_set_name(mod, cls, inline_group_bys)
 
     result = {}
 
