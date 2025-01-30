@@ -355,7 +355,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val enriched = leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
-          val shouldSample = Math.random() <= 0.1
+          val shouldSample = true
           val fetcher = LocalIOCache.getOrSetFetcher { () =>
             logger.info(s"Initializing Fetcher. ${System.currentTimeMillis()}")
             context.increment("chain.fetcher.init")
@@ -385,7 +385,16 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           }
 
           if (debug && shouldSample) {
-            requests.foreach(request => logger.info(s"request: ${request.keys}, ts: ${request.atMillis}"))
+            var logMessage = s"\nShowing all ${requests.length} requests:\n"
+            requests.zipWithIndex.foreach {
+              case (request, index) =>
+                logMessage +=
+                  s"""request ${index}
+                     |payload: ${request.keys}
+                     |ts: ${request.atMillis}
+                     |""".stripMargin
+            }
+            logger.info(logMessage)
           }
 
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
@@ -394,10 +403,18 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           val responses = Await.result(responsesFuture, 5.second)
 
           if (debug && shouldSample) {
-            logger.info(s"responses/request size: ${responses.size}/${requests.size}\n  responses: ${responses}")
-            responses.foreach(response =>
-              logger.info(
-                s"request: ${response.request.keys}, ts: ${response.request.atMillis}, values: ${response.values}"))
+            logger.info(s"Request count: ${requests.length} Response count: ${responses.length}")
+            var logMessage = s"\n Showing all ${responses.length} responses:\n"
+            responses.zipWithIndex.foreach {
+              case (response, index) =>
+                logMessage +=
+                  s"""response ${index}
+                     |ts: ${response.request.atMillis}
+                     |request payload: ${response.request.keys}
+                     |response payload: ${response.values}
+                     |""".stripMargin
+            }
+            logger.info(logMessage)
           }
           responses.iterator.map { response =>
             val responseMap = response.values.get
