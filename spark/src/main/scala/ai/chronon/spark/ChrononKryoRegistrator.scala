@@ -71,7 +71,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
   // registering classes tells kryo to not send schema on the wire
   // helps shuffles and spilling to disk
   override def registerClasses(kryo: Kryo) {
-    //kryo.setWarnUnregisteredClasses(true)
+    kryo.setWarnUnregisteredClasses(true)
     val names = Seq(
       "org.apache.spark.sql.execution.joins.UnsafeHashedRelation",
       "org.apache.spark.internal.io.FileCommitProtocol$TaskCommitMessage",
@@ -156,6 +156,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
     kryo.register(classOf[Array[ItemSketchSerializable]])
     kryo.register(classOf[ItemsSketchIR[AnyRef]], new ItemsSketchKryoSerializer[AnyRef])
+    kryo.register(classOf[scala.Function0[_]])
+    kryo.register(classOf[scala.runtime.AbstractFunction0[_]])
   }
 
   def doRegister(name: String, kryo: Kryo): Unit = {
