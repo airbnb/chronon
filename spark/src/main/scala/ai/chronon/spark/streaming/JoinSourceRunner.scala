@@ -22,7 +22,7 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online._
-import ai.chronon.spark.{GenericRowHandler, TableUtils, EncoderUtil}
+import ai.chronon.spark.{EncoderUtil, GenericRowHandler, TableUtils}
 import com.google.gson.Gson
 import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
 import org.apache.spark.sql.streaming.{DataStreamWriter, Trigger}
@@ -37,6 +37,7 @@ import java.{lang, util}
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
+import scala.util.{Failure, Success}
 
 // micro batching destroys and re-creates these objects repeatedly through ForeachBatchWriter and MapFunction
 // this allows for re-use
@@ -454,8 +455,22 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             logger.info(s" Final df size to write: ${data.length}")
             logger.info(s" Size of putRequests to kv store- ${putRequests.length}")
           } else {
-            putRequests.foreach(request => emitRequestMetric(request, context.withSuffix("egress")))
-            kvStore.multiPut(putRequests)
+            val egressCtx = context.withSuffix("egress")
+            putRequests.foreach(request => emitRequestMetric(request, egressCtx))
+            val kvContext = egressCtx.withSuffix("put")
+            kvStore
+              .multiPut(putRequests)
+              .andThen {
+                case Success(results) =>
+                  results.foreach { result =>
+                    if (result) {
+                      kvContext.increment("success")
+                    } else {
+                      kvContext.increment("failure")
+                    }
+                  }
+                case Failure(exception) => kvContext.incrementException(exception)
+              }(kvStore.executionContext)
           }
         }
       }
