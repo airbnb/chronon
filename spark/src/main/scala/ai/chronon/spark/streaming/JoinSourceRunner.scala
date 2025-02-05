@@ -248,6 +248,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         (mutation != null) && (!bothNull || !bothSame)
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
+    val streamSchemaEncoder = EncoderUtil(streamSchema)
     logger.info(s"""
          | streaming source: ${groupByConf.streamingSource.get}
          | streaming dataset: ${groupByConf.streamingDataset}
@@ -259,7 +260,13 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         Seq(mutation.after, mutation.before)
           .filter(_ != null)
           .map(SparkConversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
-      }(EncoderUtil(streamSchema))
+      }(streamSchemaEncoder)
+      .map {
+        row => {
+          ingressContext.withSuffix("flatten").increment(Metrics.Name.RowCount)
+          row
+        }
+      }(streamSchemaEncoder)
     dataStream.copy(df = des)
   }
 
