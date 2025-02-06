@@ -51,7 +51,7 @@ def JoinPart(
         a user's avg_price, and you want to join the left (seller, buyer) with (seller_avg_price, buyer_avg_price) you
         would use key_mapping and prefix parameters.
     :param tags:
-        Additional metadata about the JoinPart that you wish to track. Does not effect computation.
+        Additional metadata about the JoinPart that you wish to track. Does not affect computation.
     :type tags: Dict[str, str]
     :return:
         JoinPart specifies how the left side of a join, or the query in online setting, would join with the right side
