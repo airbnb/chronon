@@ -21,7 +21,9 @@ import os
 import re
 
 import pytest
+from ai.chronon.api.ttypes import GroupBy, Join
 from ai.chronon.repo.compile import extract_and_convert
+from ai.chronon.repo.serializer import json2thrift
 from ai.chronon.utils import FeatureDisplayKeys
 from click.testing import CliRunner
 
@@ -75,9 +77,11 @@ def specific_setup():
     files_to_clean = [
         "sample/production/group_bys/unit_test/event_sample_group_by.v1",
         "sample/production/group_bys/unit_test/entity_sample_group_by.require_backfill",
+        "sample/production/group_bys/unit_test/user_inline_group_by",
         "sample/production/joins/unit_test/sample_online_join.v1",
         "sample/production/joins/unit_test/sample_join.v1",
         "sample/production/joins/unit_test/sample_online_join_with_gb_not_online.v1",
+        "sample/production/joins/unit_test/user.sample_join_inline_group_by.v1",
     ]
 
     for relative_path in files_to_clean:
@@ -88,7 +92,9 @@ def specific_setup():
 
 def test_basic_compile():
     runner = CliRunner()
-    result = runner.invoke(extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/"])
+    result = runner.invoke(
+        extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/"]
+    )
     assert result.exit_code == 0
     result = runner.invoke(extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team"])
     assert result.exit_code == 0
@@ -366,3 +372,30 @@ def test_compile_dependency_staging_query():
     )
 
     assert result.exit_code == 0
+
+
+def test_compile_inline_group_by():
+    # Test compiling an inline group by.
+    runner = CliRunner()
+    input_path = f"joins/unit_test/user/sample_join_inline_group_by.py"
+    result = runner.invoke(
+        extract_and_convert,
+        ["--chronon_root=api/py/test/sample", f"--input_path={input_path}"],
+    )
+    assert result.exit_code == 0
+
+    # Verify the inline group_by's team name is set correctly.
+    path = "sample/production/group_bys/unit_test/user_inline_group_by"
+    full_file_path = _get_full_file_path(path)
+    _assert_file_exists(full_file_path, f"Expected {os.path.basename(path)} to be materialized, but it was not.")
+    with open(full_file_path, "r") as file:
+        group_by = json2thrift(file.read(), GroupBy)
+        assert group_by.metaData.team == "unit_test"
+
+    path = "sample/production/joins/unit_test/user.sample_join_inline_group_by.v1"
+    full_file_path = _get_full_file_path(path)
+    _assert_file_exists(full_file_path, f"Expected {os.path.basename(path)} to be materialized, but it was not.")
+    with open(full_file_path, "r") as file:
+        join = json2thrift(file.read(), Join)
+        assert len(join.joinParts) == 1
+        assert join.joinParts[0].groupBy.metaData.team == "unit_test"
