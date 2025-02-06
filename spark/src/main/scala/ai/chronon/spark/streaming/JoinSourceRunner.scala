@@ -429,6 +429,11 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             val allFields = response.request.keys ++ responseMap
             Fetcher.logResponseStats(response, context)
 
+            // Instrument enrichment results
+            val rightValues = joinFields.filterNot(leftColumns.contains).map(f => allFields.getOrElse(f, null))
+            context.withSuffix("fetch.right").distribution("nulls", rightValues.count(_  == null))
+            context.withSuffix("fetch.right").distribution("lengths", rightValues.length)
+
             SparkConversions
               .toSparkRow(joinFields.map(f => allFields.getOrElse(f, null)),
                           api.StructType.from("record", joinChrononSchema))
