@@ -1,4 +1,5 @@
 load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_scala_version")
+load("@rules_jvm_external//:defs.bzl", "java_export")
 
 scala_library(
     name = "spark",
@@ -111,4 +112,13 @@ jvm_binary(
     deploy_env = ["//third_party/java/spark:spark"],
     main_class = "ai.chronon.spark.Driver",
     runtime_deps = [":spark"],
+)
+
+java_export(
+    name = "spark-assembly-export",
+    maven_coordinates = "ai.chronon:spark_uber:test",
+    tags = ["no-javadocs"],
+    runtime_deps = [
+        ":spark-assembly_deploy.jar",
+    ],
 )

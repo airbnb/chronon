@@ -1,3 +1,5 @@
+load("@rules_jvm_external//:defs.bzl", "java_export")
+
 scala_library(
     name = "flink",
     srcs = glob(["src/main/scala/ai/chronon/flink/**/*.scala"]),
@@ -89,5 +91,21 @@ scala_test_suite(
         maven_artifact("org.scalatest:scalatest-compatible"),
         scala_artifact("org.scalatest:scalatest-shouldmatchers"),
         scala_artifact("org.scala-lang.modules:scala-collection-compat"),
+    ],
+)
+
+jvm_binary(
+    name = "flink-assembly",
+    deploy_env = ["//third_party/java/flink"],
+    main_class = "ai.chronon.flink.FlinkJob",
+    runtime_deps = [":flink"],
+)
+
+java_export(
+    name = "flink-assembly-export",
+    maven_coordinates = "ai.chronon:flink_uber:test",
+    tags = ["no-javadocs"],
+    runtime_deps = [
+        ":flink-assembly_deploy.jar",
     ],
 )

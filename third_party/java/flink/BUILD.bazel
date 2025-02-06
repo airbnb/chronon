@@ -1,0 +1,19 @@
+package(default_visibility = ["//visibility:public"])
+
+java_library(
+    name = "flink-exec",
+    visibility = ["//visibility:public"],
+    exports = [
+        maven_artifact("org.apache.flink:flink-clients"),
+        maven_artifact("org.apache.flink:flink-parquet"),
+        maven_artifact("org.apache.flink:flink-streaming-java"),
+    ],
+)
+
+java_binary(
+    name = "flink",
+    main_class = "None",  #hack
+    runtime_deps = [
+        "//third_party/java/flink:flink-exec",
+    ],
+)
