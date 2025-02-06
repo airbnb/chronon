@@ -114,9 +114,10 @@ jvm_binary(
     runtime_deps = [":spark"],
 )
 
+# bazel run --define "maven_repo=file://$HOME/.m2/repository" --define "version=0.0.1" //spark:spark-assembly-export
 java_export(
     name = "spark-assembly-export",
-    maven_coordinates = "ai.chronon:spark_uber:test",
+    maven_coordinates = "ai.chronon:spark_uber:$(version)",
     tags = ["no-javadocs"],
     runtime_deps = [
         ":spark-assembly_deploy.jar",

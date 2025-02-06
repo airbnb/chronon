@@ -7,6 +7,7 @@ java_library(
         maven_artifact("org.apache.flink:flink-clients"),
         maven_artifact("org.apache.flink:flink-parquet"),
         maven_artifact("org.apache.flink:flink-streaming-java"),
+        scala_artifact(""),
     ],
 )
 
