@@ -155,6 +155,22 @@ class Join(joinConf: api.Join,
         }.toSeq
       }
 
+    val distinctBootstrapSetsWithSchema: Seq[(Seq[String], Long, Set[StructField])] =
+      distinctBootstrapSets.map {
+        case (hashes, rowCount) =>
+          if (hashes.exists(hash => !bootstrapInfo.hashToSchema.contains(hash))) {
+            logger.error(s"""Bootstrap table contains out-of-date metadata and should be cleaned up.
+                 |This is most likely caused by bootstrap table not properly archived during schema evolution. The semantic_hash may have been manually cleared to skip this.
+                 |Please remove old data from bootstrap table for this partition range.
+                 |
+                 |${leftRange.partitions.map(ds => s"ALTER TABLE ${bootstrapTable} DROP IF EXISTS PARTITION (ds='${ds}')").mkString("\n")}
+                 |""".stripMargin)
+            throw new IllegalStateException("Bootstrap table contains out-of-date metadata and should be cleaned up.")
+          }
+          val schema = hashes.toSet.flatMap(bootstrapInfo.hashToSchema.apply)
+          (hashes, rowCount, schema)
+      }
+
     val partsToCompute: Seq[JoinPartMetadata] = {
       if (selectedJoinParts.isEmpty) {
         bootstrapInfo.joinParts
@@ -171,9 +187,8 @@ class Join(joinConf: api.Join,
     val coveringSetsPerJoinPart: Seq[(JoinPartMetadata, Seq[CoveringSet])] = bootstrapInfo.joinParts
       .filter(part => selectedJoinParts.isEmpty || partsToCompute.contains(part))
       .map { joinPartMetadata =>
-        val coveringSets = distinctBootstrapSets.map {
-          case (hashes, rowCount) =>
-            val schema = hashes.toSet.flatMap(bootstrapInfo.hashToSchema.apply)
+        val coveringSets = distinctBootstrapSetsWithSchema.map {
+          case (hashes, rowCount, schema) =>
             val isCovering = joinPartMetadata.derivationDependencies
               .map {
                 case (derivedField, baseFields) =>
