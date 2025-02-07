@@ -24,9 +24,7 @@ object TileSize {
   // Get TileSize from seconds
   def fromSeconds(seconds: Long): TileSize = seconds match {
     case FiveMinutes.seconds   => FiveMinutes
-    case TwentyMinutes.seconds => TwentyMinutes
     case OneHour.seconds       => OneHour
-    case SixHours.seconds      => SixHours
     case OneDay.seconds        => OneDay
     case _ =>
       throw new IllegalArgumentException(s"Invalid tile size provided: $seconds seconds")
@@ -40,19 +38,9 @@ object TileSize {
     val keyString: String = "5m"
   }
 
-  final case object TwentyMinutes extends TileSize {
-    val seconds: Long = 1200L
-    val keyString: String = "20m"
-  }
-
   final case object OneHour extends TileSize {
     val seconds: Long = 3600L
     val keyString: String = "1h"
-  }
-
-  final case object SixHours extends TileSize {
-    val seconds: Long = 21600L
-    val keyString: String = "6h"
   }
 
   final case object OneDay extends TileSize {

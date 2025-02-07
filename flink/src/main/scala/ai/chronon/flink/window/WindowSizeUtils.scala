@@ -54,20 +54,6 @@ object WindowSizeUtils {
       flinkWindowSizes += (TileSize.OneHour -> "12")
     }
 
-    // Second optimization
-    //  - all GroupBys with 5-minute tiles should also have 20-minute tiles.
-    //  - all GroupBys with 1-hour tiles should also have 6-hour tiles.
-    lazy val shouldEnableAdditionalTwentyMinAndSixHourWindowsFlag =
-      shouldEnableAdditionalTwentyMinAndSixHourWindows()
-    val use20MinuteWindow = (smallestWindowResolutionInMillis == WindowUtils.FiveMinutes) && shouldEnableAdditionalTwentyMinAndSixHourWindowsFlag
-    if (use20MinuteWindow) {
-      flinkWindowSizes += (TileSize.TwentyMinutes -> "22")
-    }
-    val use6HourWindow = (smallestWindowResolutionInMillis <= WindowUtils.Hour.millis) && shouldEnableAdditionalTwentyMinAndSixHourWindowsFlag
-    if (use6HourWindow) {
-      flinkWindowSizes += (TileSize.SixHours -> "32")
-    }
-
     flinkWindowSizes.toMap
   }
 }
