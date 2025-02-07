@@ -20,7 +20,7 @@ scala_library(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         maven_artifact("com.esotericsoftware:kryo"),
         maven_artifact("com.fasterxml.jackson.core:jackson-core"),
         maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
@@ -56,7 +56,7 @@ scala_library(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         maven_artifact("com.google.code.gson:gson"),
         maven_artifact("org.apache.thrift:libthrift"),
         maven_artifact("com.google.guava:guava"),
@@ -91,7 +91,7 @@ scala_test_suite(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         scala_artifact("org.scala-lang.modules:scala-java8-compat"),
         maven_artifact("junit:junit"),
         maven_artifact("com.novocode:junit-interface"),
@@ -109,12 +109,12 @@ scala_test_suite(
 
 jvm_binary(
     name = "spark-assembly",
-    deploy_env = ["//third_party/java/spark:spark"],
+    deploy_env = ["//third_party/java/spark:spark-provided-env"],
     main_class = "ai.chronon.spark.Driver",
     runtime_deps = [":spark"],
 )
 
-# bazel run --define "maven_repo=file://$HOME/.m2/repository" --define "version=0.0.1" //spark:spark-assembly-export
+# bazel run --define "maven_repo=file://$HOME/.m2/repository" --define "version=0.0.1" //spark:spark-assembly-export.publish
 java_export(
     name = "spark-assembly-export",
     maven_coordinates = "ai.chronon:spark_uber:$(version)",
