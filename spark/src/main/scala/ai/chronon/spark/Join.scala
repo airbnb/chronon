@@ -161,9 +161,9 @@ class Join(joinConf: api.Join,
           if (hashes.exists(hash => !bootstrapInfo.hashToSchema.contains(hash))) {
             logger.error(s"""Bootstrap table contains out-of-date metadata and should be cleaned up.
                  |This is most likely caused by bootstrap table not properly archived during schema evolution. The semantic_hash may have been manually cleared to skip this.
-                 |Please remove old data from bootstrap table for this partition range.
+                 |Please manually archive the old bootstrap table and re-run.
                  |
-                 |${leftRange.partitions.map(ds => s"ALTER TABLE ${bootstrapTable} DROP IF EXISTS PARTITION (ds='${ds}')").mkString("\n")}
+                 |ALTER TABLE ${bootstrapTable} RENAME TO ${bootstrapTable}_<timestamp_suffix>;
                  |""".stripMargin)
             throw new IllegalStateException("Bootstrap table contains out-of-date metadata and should be cleaned up.")
           }
