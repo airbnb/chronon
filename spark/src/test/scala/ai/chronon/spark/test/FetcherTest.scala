@@ -649,7 +649,7 @@ class FetcherTest extends TestCase {
   }
 
   def testTemporalFetchJoinDerivation(): Unit = {
-    val namespace = "deterministic_fetch"
+    val namespace = "derivation_fetch"
     val joinConf = generateMutationData(namespace)
     val derivations = Seq(Builders.Derivation(name = "*", expression = "*"),
       Builders.Derivation(name = "unit_test_fetcher_mutations_gb_rating_sum_plus", expression = "unit_test_fetcher_mutations_gb_rating_sum + 1"),
