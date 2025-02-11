@@ -30,8 +30,8 @@ object OnlineDerivationUtil {
 
   def buildRenameOnlyDerivationFunction(derivationsScala: List[Derivation]): DerivationFunc = {
     {
-      case (_: Map[String, Any], values: Map[String, Any]) =>
-        reintroduceExceptions(derivationsScala.applyRenameOnlyDerivation(values), values)
+      case (keys: Map[String, Any], values: Map[String, Any]) =>
+        reintroduceExceptions(derivationsScala.applyRenameOnlyDerivation(keys, values), values)
     }
   }
 

@@ -653,13 +653,24 @@ class FetcherTest extends TestCase {
     val joinConf = generateMutationData(namespace)
     val derivations = Seq(Builders.Derivation(name = "*", expression = "*"),
       Builders.Derivation(name = "unit_test_fetcher_mutations_gb_rating_sum_plus", expression = "unit_test_fetcher_mutations_gb_rating_sum + 1"),
-      Builders.Derivation(name = "unit_test_fetcher_mutations_gb_rating_sum_same", expression = "unit_test_fetcher_mutations_gb_rating_sum"),
       Builders.Derivation(name = "listing_id_renamed", expression = "listing_id")
     )
     joinConf.setDerivations(derivations.toJava)
 
     compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
   }
+
+  def testTemporalFetchJoinDerivationRenameOnly(): Unit = {
+    val namespace = "derivation_fetch"
+    val joinConf = generateMutationData(namespace)
+    val derivations = Seq(Builders.Derivation(name = "*", expression = "*"),
+      Builders.Derivation(name = "listing_id_renamed", expression = "listing_id")
+    )
+    joinConf.setDerivations(derivations.toJava)
+
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+  }
+
 
   def testTemporalFetchJoinGenerated(): Unit = {
     val namespace = "generated_fetch"
