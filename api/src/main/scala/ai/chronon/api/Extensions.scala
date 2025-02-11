@@ -1085,7 +1085,7 @@ object Extensions {
     }
 
     // Used only during online fetching to reduce latency
-    def applyRenameOnlyDerivation(keys: Map[String,Any], values: Map[String, Any]): Map[String, Any] = {
+    def applyRenameOnlyDerivation(keys: Map[String, Any], values: Map[String, Any]): Map[String, Any] = {
       assert(
         areDerivationsRenameOnly,
         s"Derivations contain more complex expressions than simple renames: ${derivations.map(d => (d.name, d.expression))}")
@@ -1094,7 +1094,9 @@ object Extensions {
       } else {
         Map.empty[String, Any]
       }
-      wildcardDerivations ++ derivationsWithoutStar.map(d => d.name -> (keys ++ values).getOrElse(d.expression, null)).toMap
+      wildcardDerivations ++ derivationsWithoutStar
+        .map(d => d.name -> (keys ++ values).getOrElse(d.expression, null))
+        .toMap
     }
   }
 }
