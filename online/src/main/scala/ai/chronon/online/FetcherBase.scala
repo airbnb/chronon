@@ -497,8 +497,10 @@ class FetcherBase(kvStore: KVStore,
                     throw ex
                 }
               if (groupByServingInfo.groupBy.hasDerivations) {
+                // Make sure groupByResponse is not null since it will be used to calculate derivations
+                val safeGroupByResponse: Map[String, AnyRef] = Option(groupByResponse).getOrElse(Map.empty)
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
-                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, groupByResponse)
+                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, safeGroupByResponse)
                 }
                 val derivedMap = derivedMapTry match {
                   case Success(derivedMap) =>
@@ -511,7 +513,7 @@ class FetcherBase(kvStore: KVStore,
                     val renameOnlyDeriveFunction =
                       buildRenameOnlyDerivationFunction(groupByServingInfo.groupBy.derivationsScala)
                     val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
-                      renameOnlyDeriveFunction(request.keys, groupByResponse)
+                      renameOnlyDeriveFunction(request.keys, safeGroupByResponse)
                         .mapValues(_.asInstanceOf[AnyRef])
                         .toMap
                     }
