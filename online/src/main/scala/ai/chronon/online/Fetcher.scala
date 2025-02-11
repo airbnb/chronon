@@ -229,7 +229,7 @@ class Fetcher(val kvStore: KVStore,
             joinCodecTry match {
               case Success(joinCodec) =>
                 ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
-                val baseMap = internalMap ++ externalMap ++ cleanInternalRequest.keys
+                val baseMap = internalMap ++ externalMap
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
                   applyDeriveFunc(joinCodec.deriveFunc, internalResponse.request, baseMap)
                 }
