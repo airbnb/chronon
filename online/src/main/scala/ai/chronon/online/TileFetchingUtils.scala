@@ -1,7 +1,6 @@
 package ai.chronon.online
 
 import ai.chronon.aggregator.windowing.FiveMinuteResolution.getWindowResolutionMillis
-import ai.chronon.flink.window.TileSize
 
 /**
  * When using the Tiled Architecture, Chronon stores streaming data in the Key-Value
@@ -20,7 +19,7 @@ object TileFetchingUtils {
    * Example:
    *  current time: 14:33:24, window size: 01:00:00, resolution: 00:05:00 => window start rounded down: 13:30:00.
    */
-  private[kvstore] def getSawToothWindowStartMillis(
+  private[online] def getSawToothWindowStartMillis(
                                                      windowSizeMillis: Long,
                                                      currentTimeMillis: Long,
                                                      resolutionMillis: Long

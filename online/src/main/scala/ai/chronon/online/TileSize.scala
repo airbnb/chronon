@@ -1,4 +1,4 @@
-package ai.chronon.flink.window
+package ai.chronon.online
 
 /**
  * Chronon data from Flink is stored in the KV store as tiles. These tiles are of

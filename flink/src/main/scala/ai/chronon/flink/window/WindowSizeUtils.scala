@@ -2,6 +2,7 @@ package ai.chronon.flink.window
 
 import ai.chronon.aggregator.windowing.FiveMinuteResolution.getWindowResolutionMillis
 import ai.chronon.api.Extensions.{WindowOps, WindowUtils}
+import ai.chronon.online.TileSize
 
 import scala.collection.mutable.{Map => MutableMap}
 
