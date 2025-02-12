@@ -661,7 +661,7 @@ class FetcherTest extends TestCase {
   }
 
   def testTemporalFetchJoinDerivationRenameOnly(): Unit = {
-    val namespace = "derivation_fetch"
+    val namespace = "derivation_fetch_rename_only"
     val joinConf = generateMutationData(namespace)
     val derivations = Seq(Builders.Derivation(name = "*", expression = "*"),
       Builders.Derivation(name = "listing_id_renamed", expression = "listing_id")
