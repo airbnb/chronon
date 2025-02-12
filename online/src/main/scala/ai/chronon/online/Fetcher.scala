@@ -230,14 +230,18 @@ class Fetcher(val kvStore: KVStore,
               case Success(joinCodec) =>
                 ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
                 // try to fix request mistype
-                val keySchemaMap : Map[String, DataType] = joinCodec.keySchema.fields.map {
-                  field => field.name -> field.fieldType
+                val keySchemaMap: Map[String, DataType] = joinCodec.keySchema.fields.map { field =>
+                  field.name -> field.fieldType
                 }.toMap
-                val castedKeys : Map[String, AnyRef]  = internalResponse.request.keys.map {
-                  case (name, value) => name -> (if (keySchemaMap.contains(name)) ColumnAggregator.castTo(value, keySchemaMap(name)) else value)
-                  }
-                val request = Request(name = internalResponse.request.name, keys = castedKeys,
-                  atMillis = internalResponse.request.atMillis, context = internalResponse.request.context)
+                val castedKeys: Map[String, AnyRef] = internalResponse.request.keys.map {
+                  case (name, value) =>
+                    name -> (if (keySchemaMap.contains(name)) ColumnAggregator.castTo(value, keySchemaMap(name))
+                             else value)
+                }
+                val request = Request(name = internalResponse.request.name,
+                                      keys = castedKeys,
+                                      atMillis = internalResponse.request.atMillis,
+                                      context = internalResponse.request.context)
 
                 val baseMap = internalMap ++ externalMap
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
