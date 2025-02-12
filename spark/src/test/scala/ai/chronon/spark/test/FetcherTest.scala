@@ -723,7 +723,7 @@ class FetcherTest extends TestCase {
 
     // result should be "null" if the key is not found
     val expected: Map[String, AnyRef] = Map("rating_average_1d_same" -> null)
-    assert (expected == result.head.values.get)
+    assertEquals(expected, result.head.values.get)
   }
 }
 
