@@ -434,6 +434,15 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             context.withSuffix("fetch.right").distribution("nulls", rightValues.count(_  == null))
             context.withSuffix("fetch.right").distribution("lengths", rightValues.length)
 
+            // debugging
+            if (responseMap.keys.exists(_.endsWith("_exception"))) {
+              val exceptionMessage = responseMap.filter(_._1.endsWith("_exception")).map {
+                case (k, v) => s"key:${k},message:${v.toString}"
+              }
+                .mkString(",")
+              throw new RuntimeException(s"Chaining failure $exceptionMessage")
+            }
+
             SparkConversions
               .toSparkRow(joinFields.map(f => allFields.getOrElse(f, null)),
                           api.StructType.from("record", joinChrononSchema))
