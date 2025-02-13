@@ -194,6 +194,12 @@ object Driver {
         descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
       )
 
+    val disableKryoSerializer: ScallopOption[Boolean] =
+      opt[Boolean](required = false,
+        default = Some(false),
+        descr = "Disable Kryo to use JavaSerializer by default instead.")
+
+
     lazy val sparkSession: SparkSession = buildSparkSession()
 
     def endDate(): String = endDateInternal.toOption.getOrElse(buildTableUtils().partitionSpec.now)
@@ -218,7 +224,9 @@ object Driver {
         val localSession = SparkSessionBuilder.build(subcommandName(),
                                                      local = true,
                                                      localWarehouseLocation.toOption,
-                                                     additionalConfig = extraDeltaConfigs)
+                                                     additionalConfig = extraDeltaConfigs,
+                                                     enforceKryoSerializer = !disableKryoSerializer.apply()
+        )
         localTableMapping.foreach {
           case (table, filePath) =>
             val file = new File(filePath)
@@ -232,14 +240,16 @@ object Driver {
           SparkSessionBuilder.build(subcommandName(),
                                     local = true,
                                     localWarehouseLocation = localWarehouseLocation.toOption,
-                                    additionalConfig = extraDeltaConfigs)
+                                    additionalConfig = extraDeltaConfigs,
+                                    enforceKryoSerializer = !disableKryoSerializer.apply()
+          )
         LocalDataLoader.loadDataRecursively(dir, localSession)
         localSession
       } else {
         // We use the KryoSerializer for group bys and joins since we serialize the IRs.
         // But since staging query is fairly freeform, it's better to stick to the java serializer.
         SparkSessionBuilder.build(subcommandName(),
-                                  enforceKryoSerializer = !subcommandName().contains("staging_query"),
+                                  enforceKryoSerializer = !subcommandName().contains("staging_query") && !disableKryoSerializer.apply(),
                                   additionalConfig = extraDeltaConfigs)
       }
     }
