@@ -1,4 +1,5 @@
 load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_scala_version")
+load("//tools/build_rules:scala_junit_test_suite.bzl", "scala_junit_suite")
 
 scala_library(
     name = "aggregator",
@@ -56,9 +57,9 @@ scala_library(
            ]),
 )
 
-scala_test_suite(
+scala_junit_suite(
     name = "test",
-    srcs = glob(["src/test/scala/ai/chronon/aggregator/test/*.scala"]),
+    srcs = glob(["src/test/scala/ai/chronon/aggregator/test/*Test.scala"]),
     visibility = ["//visibility:public"],
     deps = [
                ":aggregator",

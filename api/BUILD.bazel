@@ -14,7 +14,7 @@ scala_library(
     visibility = ["//visibility:public"],
     deps = [
         ":api-models",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-library",
         maven_artifact("com.fasterxml.jackson.core:jackson-core"),
         maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
         maven_artifact("org.apache.thrift:libthrift"),
@@ -37,7 +37,7 @@ scala_test_suite(
     deps = [
         ":api-models",
         ":api-lib",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-library",
         maven_artifact("com.fasterxml.jackson.core:jackson-core"),
         maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
         maven_artifact("org.apache.thrift:libthrift"),

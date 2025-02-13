@@ -27,3 +27,7 @@ build --incompatible_default_to_explicit_init_py
 
 # https://github.com/bazelbuild/bazel/issues/2377
 test --spawn_strategy=standalone
+test --test_timeout=6000
+
+# Use Java 11 as the JVM for Bazel builds
+build --java_language_version=8 --java_runtime_version=remotejdk_8
