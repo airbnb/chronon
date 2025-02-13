@@ -77,10 +77,10 @@ jvm_binary(
     runtime_deps = [":flink"],
 )
 
-# bazel run --define "maven_repo=file://$HOME/.m2/repository" --define "version=0.0.1" //flink:flink-assembly-export.publish
+# bazel run --define "maven_repo=file://$HOME/.m2/repository" --define "version=0.0.1" //flink:flink-export.publish
 java_export(
-    name = "flink-assembly-export",
-    maven_coordinates = "ai.chronon:flink_uber:$(version)",
+    name = "flink-export",
+    maven_coordinates = "ai.chronon:flink_$(flink_version):$(version)",
     tags = ["no-javadocs"],
     runtime_deps = [
         ":flink-assembly_deploy.jar",

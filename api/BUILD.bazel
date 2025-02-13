@@ -1,4 +1,5 @@
 load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_scala_version")
+load("@rules_jvm_external//:defs.bzl", "java_export")
 
 scala_library(
     name = "api-lib",
@@ -64,5 +65,15 @@ java_library(
     deps = [
         maven_artifact("javax.annotation:javax.annotation.api"),
         maven_artifact("org.apache.thrift:libthrift"),
+    ],
+)
+
+# bazel run --define "maven_repo=file://$HOME/.m2/repository" --define "version=0.0.1" //api:api-export.publish
+java_export(
+    name = "api-export",
+    maven_coordinates = "ai.chronon:api_(scala_version):$(version)",
+    tags = ["no-javadocs"],
+    runtime_deps = [
+        ":api-lib_deploy.jar",
     ],
 )

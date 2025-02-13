@@ -6,11 +6,11 @@ build:local --remote_cache=
 # To set a different default Scala version, add the following to
 # user.bazelrc:
 # common --config scala_2.12
-common:scala_2.12 --repo_env=SCALA_VERSION=2.12.18
-common:scala_2.13 --repo_env=SCALA_VERSION=2.13.12
+common:scala_2.12 --repo_env=SCALA_VERSION=2.12.18 --define scala_version=2.12
+common:scala_2.13 --repo_env=SCALA_VERSION=2.13.12 --define scala_version=2.13
 
 # Default scala version to 2.12
-common --repo_env=SCALA_VERSION=2.12.18
+common --repo_env=SCALA_VERSION=2.12.18 --define scala_version=2.12
 
 # Spark versions
 common:spark_3.1 --define spark_version=3.1
@@ -21,7 +21,6 @@ common --define spark_version=3.1
 
 # Flink versions
 common:flink_1.16 --define flink_version=1.16
-common:flink_1.19 --define flink_version=1.19
 common:flink_2.0 --define flink_version=2.0
 # Default Flink version
 common --define flink_version=1.16
