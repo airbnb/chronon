@@ -36,7 +36,7 @@ class DataRangeTest {
     val testTable = s"$namespace.test_gen_scan_query"
     val viewsSchema = List(
       Column("col_1", api.StringType, 1),
-      Column("col_2", api.StringType, 1),
+      Column("col_2", api.StringType, 1)
     )
     DataFrameGen
       .events(spark, viewsSchema, count = 1000, partitions = 200)
@@ -49,7 +49,7 @@ class DataRangeTest {
         wheres = Seq("col_1 = 'TEST'"),
         timeColumn = "ts"
       ),
-      table = testTable,
+      table = testTable
     )
 
     val result: String = partitionRange.genScanQuery(
