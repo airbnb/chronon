@@ -2,7 +2,7 @@ package(default_visibility = ["//visibility:public"])
 
 load("//jvm:defs.bzl", "get_jars_for_repo")
 
-FLINK_2_0_LIBS_PROVIDED = [
+FLINK_BASE_LIBS_PROVIDED = [
     jar(
         name = "flink-core",
         org = "org.apache.flink",
@@ -41,7 +41,7 @@ FLINK_2_0_LIBS_PROVIDED = [
     ),
 ]
 
-FLINK_LIBS_PROVIDED = FLINK_2_0_LIBS_PROVIDED + [
+FLINK_PRE_2_0_LIBS_PROVIDED = FLINK_BASE_LIBS_PROVIDED + [
     scala_jar(
         name = "flink-scala",
         org = "org.apache.flink",
@@ -52,7 +52,7 @@ FLINK_LIBS_PROVIDED = FLINK_2_0_LIBS_PROVIDED + [
     ),
 ]
 
-FLINK_2_0_LIBS = FLINK_2_0_LIBS_PROVIDED + [
+FLINK_BASE_LIBS = FLINK_BASE_LIBS_PROVIDED + [
     jar(
         name = "flink-parquet",
         org = "org.apache.flink",
@@ -76,7 +76,7 @@ FLINK_2_0_LIBS = FLINK_2_0_LIBS_PROVIDED + [
     ),
 ]
 
-FLINK_LIBS = FLINK_2_0_LIBS + [
+FLINK_LIBS = FLINK_BASE_LIBS + [
     scala_jar(
         name = "flink-scala",
         org = "org.apache.flink",
@@ -92,18 +92,14 @@ java_library(
     exports = select({
         "//conditions:default": get_jars_for_repo("flink_1_16", FLINK_LIBS),
         "//tools/flags/flink:flink_1_16": get_jars_for_repo("flink_1_16", FLINK_LIBS),
-        "//tools/flags/flink:flink_1_19": get_jars_for_repo("flink_1_19", FLINK_LIBS),
-        "//tools/flags/flink:flink_2_0": get_jars_for_repo("flink_2_0", FLINK_2_0_LIBS),
     }),
 )
 
 java_library(
     name = "flink-provided-libs",
     exports = select({
-        "//conditions:default": get_jars_for_repo("flink_1_16", FLINK_LIBS_PROVIDED),
-        "//tools/flags/flink:flink_1_16": get_jars_for_repo("flink_1_16", FLINK_LIBS_PROVIDED),
-        "//tools/flags/flink:flink_1_19": get_jars_for_repo("flink_1_19", FLINK_LIBS_PROVIDED),
-        "//tools/flags/flink:flink_2_0": get_jars_for_repo("flink_2_0", FLINK_2_0_LIBS_PROVIDED),
+        "//conditions:default": get_jars_for_repo("flink_1_16", FLINK_PRE_2_0_LIBS_PROVIDED),
+        "//tools/flags/flink:flink_1_16": get_jars_for_repo("flink_1_16", FLINK_PRE_2_0_LIBS_PROVIDED),
     }),
 )
 

@@ -31,7 +31,6 @@ scala_library(
         maven_artifact("com.yahoo.datasketches:memory"),
         maven_artifact("commons.io:commons-io"),
         maven_artifact("commons.lang:commons-lang"),
-        scala_artifact("io.delta:delta-core"),
         maven_artifact("org.apache.kafka:kafka-clients"),
         maven_artifact("org.apache.thrift:libthrift"),
         scala_artifact("org.json4s:json4s-core"),

@@ -22,6 +22,7 @@ spark_3_1_repo = repo(name = "spark_3_1", artifacts = [
         "org.json4s:json4s-jackson_2.12",
     ]),
     "org.apache.hive:hive-metastore:2.3.9",
+    "io.delta:delta-core_2.12:2.0.2",
 ], excluded_artifacts = ["org.slf4j:slf4j-log4j12"])
 
 spark_3_2_repo = repo(
@@ -61,6 +62,7 @@ spark_3_2_repo = repo(
 
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
+        "io.delta:delta-core_2.12:2.0.2",
     ],
     excluded_artifacts = [
         "org.pentaho:pentaho-aggdesigner-algorithm",
@@ -104,6 +106,8 @@ spark_3_5_repo = repo(
 
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
+        "io.delta:delta-core_2.12:2.0.2",
+        "io.delta:delta-core_2.13:2.0.2",
     ],
     excluded_artifacts = [
         "org.pentaho:pentaho-aggdesigner-algorithm",

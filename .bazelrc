@@ -21,9 +21,11 @@ common --define spark_version=3.1
 
 # Flink versions
 common:flink_1.16 --define flink_version=1.16
-common:flink_2.0 --define flink_version=2.0
 # Default Flink version
 common --define flink_version=1.16
+
+# Default version to pass the builds
+common --define version=0.0.0
 
 build --javacopt=-Xep:DoubleBraceInitialization:OFF
 

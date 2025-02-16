@@ -72,8 +72,6 @@ maven_repo = repo(
         "org.json4s:json4s-ast_2.13:3.6.12",
         "com.datadoghq:java-dogstatsd-client:2.7",
         "com.esotericsoftware:kryo:5.6.2",
-        "io.delta:delta-core_2.12:2.0.2",
-        "io.delta:delta-core_2.13:2.0.2",
         "com.github.jnr:jnr-ffi:2.2.10",
         "org.apache.kafka:kafka-clients:3.7.1",
         "org.codehaus.janino:janino:3.0.9",

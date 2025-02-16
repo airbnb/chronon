@@ -79,6 +79,10 @@ SPARK_LIBS_PROVIDED = [
         name = "commons-lang3",
         org = "org.apache.commons",
     ),
+    scala_jar(
+        name = "delta-core",
+        org = "io.delta",
+    ),
 ]
 
 SPARK_3_5_LIBS_PROVIDED = SPARK_LIBS_PROVIDED + [
