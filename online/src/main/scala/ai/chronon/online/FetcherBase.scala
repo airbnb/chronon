@@ -141,11 +141,20 @@ class FetcherBase(kvStore: KVStore,
 
       val allStreamingIrDecodeStartTime = System.currentTimeMillis()
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
-        val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
+        val streamingIrs: Seq[TiledIr] = streamingResponses
           .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
           .flatMap { tVal =>
             Try(servingInfo.tiledCodec.decodeTileIr(tVal.bytes)) match {
-              case Success((tile, _)) => Array(TiledIr(tVal.millis, tile))
+              case Success((tile, _)) =>
+                val tileSize = tVal.tileSizeMillis match {
+                  case Some(size) => size
+                  case None =>
+                    throw new RuntimeException(
+                      "Encountered a TimedValue that does not have the tile size set. " +
+                        "The size is necessary when using tiling." +
+                        "Failing to construct TiledIr.")
+                }
+                Array(TiledIr(tVal.millis, tile, tileSize))
               case Failure(_) =>
                 logger.error(
                   s"Failed to decode tile ir for groupBy ${servingInfo.groupByOps.metaData.getName}" +
@@ -164,7 +173,6 @@ class FetcherBase(kvStore: KVStore,
             }
           }
           .toArray
-          .iterator
 
         context.distribution("group_by.all_streamingir_decode.latency.millis",
                              System.currentTimeMillis() - allStreamingIrDecodeStartTime)
@@ -179,8 +187,9 @@ class FetcherBase(kvStore: KVStore,
                          |""".stripMargin)
         }
 
+        val useTileLayering = true
         val aggregatorStartTime = System.currentTimeMillis()
-        val result = aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs)
+        val result = aggregator.lambdaAggregateFinalizedTiled(batchIr, streamingIrs, queryTimeMs, useTileLayering)
         context.distribution("group_by.aggregator.latency.millis", System.currentTimeMillis() - aggregatorStartTime)
         result
       } else {
