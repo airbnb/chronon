@@ -172,7 +172,6 @@ class FetcherBase(kvStore: KVStore,
                 }
             }
           }
-          .toArray
 
         context.distribution("group_by.all_streamingir_decode.latency.millis",
                              System.currentTimeMillis() - allStreamingIrDecodeStartTime)

@@ -149,7 +149,13 @@ class SawtoothOnlineAggregator(val batchEndTs: Long,
     if (useTileLayering) {
       updateIrTiledWithTileLayering(resultIr, headStreamingTiledIrs, queryTs, batchEndTs)
     } else {
-      updateIrTiled(resultIr, headStreamingTiledIrs.iterator, queryTs, batchEndTs)
+      // add streaming tiled irs
+      headStreamingTiledIrs.foreach { tiledIr =>
+        val tiledIrTs = tiledIr.ts // unbox long only once
+        if (queryTs > tiledIrTs && tiledIrTs >= batchEndTs) {
+          updateIrTiled(resultIr, tiledIr, queryTs)
+        }
+      }
     }
 
     mergeTailHops(resultIr, queryTs, batchEndTs, batchIr)
