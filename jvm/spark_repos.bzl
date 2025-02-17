@@ -15,7 +15,7 @@ spark_2_4_repo = repo(name = "spark_2_4", artifacts = [
         "org.apache.spark:spark-sql_2.11",
         "org.apache.spark:spark-streaming-kafka-0-10_2.11",
     ]),
-    versioned_artifacts("3.7.0-M5", [
+    versioned_artifacts("3.5.2", [
         "org.json4s:json4s-ast_2.11",
         "org.json4s:json4s-core_2.11",
         "org.json4s:json4s-jackson_2.11",
@@ -38,7 +38,7 @@ spark_3_1_repo = repo(name = "spark_3_1", artifacts = [
         "org.apache.spark:spark-sql_2.12",
         "org.apache.spark:spark-streaming-kafka-0-10_2.12",
     ]),
-    versioned_artifacts("3.7.0-M5", [
+    versioned_artifacts("3.5.2", [
         "org.json4s:json4s-ast_2.12",
         "org.json4s:json4s-core_2.12",
         "org.json4s:json4s-jackson_2.12",

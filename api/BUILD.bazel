@@ -71,7 +71,6 @@ java_library(
     ],
 )
 
-# bazel run --define "maven_repo=file://$HOME/.m2/repository" --define "version=0.0.1" //api:api-export.publish
 java_export(
     name = "api-export",
     maven_coordinates = "ai.chronon:api_(scala_version):$(version)",

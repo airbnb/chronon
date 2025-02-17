@@ -19,7 +19,7 @@ py_library(
 py_wheel(
     name = "chronon_ai",
     distribution = "chronon_ai",
-    version = "0.0.1",
+    version = "$(version)",
     visibility = ["//visibility:public"],
     deps = [
         ":api_py",
@@ -29,9 +29,8 @@ py_wheel(
 ## Publish the pip package
 twine_upload(
     name = "upload_chronon_ai",
-    pypirc = " /Users/knarukulla/.pypirc",
-    repository_url = "https://upload.pypi.org/legacy/",
     version = "$(version)",
+    visibility = ["//visibility:public"],
     wheel = ":chronon_ai",
 )
 

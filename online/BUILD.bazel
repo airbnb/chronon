@@ -126,7 +126,6 @@ scala_test_suite(
     ],
 )
 
-# bazel run --define "maven_repo=file://$HOME/.m2/repository" --define "version=0.0.1" --config scala_2.12 //online:online-export.publish
 java_export(
     name = "online-export",
     maven_coordinates = "ai.chronon:online_$(scala_version):$(version)",
