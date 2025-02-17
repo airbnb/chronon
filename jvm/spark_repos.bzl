@@ -1,7 +1,7 @@
 load("@rules_jvm_external//:specs.bzl", "maven")
 load(":defs.bzl", "repo", "versioned_artifacts")
 
-spark_2_4_repo = repo(name = "spark_2_4", provided = True, artifacts = [
+spark_2_4_repo = repo(name = "spark_2_4", artifacts = [
     "org.apache.avro:avro:1.8.2",
     "org.apache.curator:apache-curator:2.11.0",
     "org.apache.datasketches:datasketches-java:2.0.0",
