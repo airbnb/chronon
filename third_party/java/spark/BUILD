@@ -97,6 +97,7 @@ java_library(
     visibility = ["//visibility:public"],
     exports = select({
         "//conditions:default": get_jars_for_repo("spark_3_2", SPARK_JARS),
+        "//tools/flags/spark:spark_2_4": get_jars_for_repo("spark_2_4", SPARK_JARS),
         "//tools/flags/spark:spark_3_1": get_jars_for_repo("spark_3_1", SPARK_JARS),
         "//tools/flags/spark:spark_3_2": get_jars_for_repo("spark_3_2", SPARK_JARS),
         "//tools/flags/spark:spark_3_5": get_jars_for_repo("spark_3_5", SPARK_3_5_JARS),
