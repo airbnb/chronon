@@ -28,3 +28,7 @@ def flatten(items, max_depth = 1):
     for i in range(max_depth):
         result = flat_map(identity, result)
     return result
+
+def expand_versions(artifact, versions):
+    expanded_versions = [artifact.format(version = version) for version in versions]
+    return flatten(expanded_versions)

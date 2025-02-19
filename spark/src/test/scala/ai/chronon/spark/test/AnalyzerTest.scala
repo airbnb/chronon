@@ -452,7 +452,7 @@ class AnalyzerTest {
     val testSchema = List(
       Column("key", api.StringType, 10),
       Column("col1", api.IntType, 10),
-      Column("col2", api.IntType, 10),
+      Column("col2", api.IntType, 10)
     )
 
     val viewsTable = s"$namespace.test_table"

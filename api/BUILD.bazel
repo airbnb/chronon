@@ -4,6 +4,9 @@ scala_library(
     name = "api-lib",
     srcs = glob(["src/main/scala/ai/chronon/api/*.scala"]) +
            select_for_scala_version(
+               before_2_12 = [
+                   "//api/src/main/scala-2.11/scala/util:ScalaVersionSpecificCollectionsConverter.scala",
+               ],
                between_2_12_and_2_13 = [
                    "//api/src/main/scala-2.12/scala/util:ScalaVersionSpecificCollectionsConverter.scala",
                ],

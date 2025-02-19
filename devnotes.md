@@ -289,7 +289,8 @@ bazel build --config scala_2.12 //module:artifact_name
 Build a spark version specific artifact:
 
 ```shell
-bazel build --config spark_3.5 //module:artifact_name
+bazel build --config spark_3.5 --config scala_2.12 //module:artifact_name
+bazel build --config spark_2.4 --config scala_2.11 //module:artifact_name
 ```
 
 Build deploy jar aka Uber jar or fat jar:
