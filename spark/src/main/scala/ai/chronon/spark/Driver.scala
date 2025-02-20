@@ -35,7 +35,7 @@ import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 import org.slf4j.LoggerFactory
 
-import java.io.File
+import java.io.{File, IOException}
 import java.net.URI
 import java.nio.file.{Files, Paths}
 import scala.collection.JavaConverters._
@@ -77,22 +77,48 @@ object Driver {
     conf
   }
   def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T = {
-    val isCloudPath = confPath.startsWith("gs://") || confPath.startsWith("s3://") || confPath.startsWith("wasb://") || confPath.startsWith("abfs://")
+    val cloudPrefixes = List("gs://", "s3://", "s3a://", "wasb://", "abfs://")
+    val isCloudPath = cloudPrefixes.exists(confPath.startsWith)
 
-    val localPath = if (isCloudPath) {
-      // Use Hadoop API to download the file
-      val uri = new URI(confPath)
-      val fs = FileSystem.get(uri, createHadoopConf())
-      val tempFile = File.createTempFile("config", ".json")
+    val localPath = try {
+      if (isCloudPath) {
+        val uri = new URI(confPath)
+        val fs = FileSystem.get(uri, createHadoopConf())
+        val cloudFilePath = new Path(confPath)
 
-      fs.copyToLocalFile(new Path(confPath), new Path(tempFile.getAbsolutePath))
-      tempFile.getAbsolutePath
-    } else {
-      confPath // Use local path as-is
+        // Check if file exists in cloud storage
+        if (!fs.exists(cloudFilePath)) {
+          throw new IOException(s"Error: Cloud file not found at $confPath")
+        }
+
+        val tempFile = File.createTempFile("config", ".json")
+        try {
+          fs.copyToLocalFile(cloudFilePath, new Path(tempFile.getAbsolutePath))
+          tempFile.getAbsolutePath
+        } catch {
+          case e: IOException =>
+            tempFile.delete() // Cleanup temp file on failure
+            throw new IOException(s"Error downloading file from cloud: $confPath", e)
+        }
+      } else {
+        val localFile = new File(confPath)
+        if (!localFile.exists()) {
+          throw new IOException(s"Error: Local file not found at $confPath")
+        }
+        confPath
+      }
+    } catch {
+      case e: Exception =>
+        throw new RuntimeException(s"Failed to resolve configuration file: $confPath", e)
     }
 
-    // Now that we have a local file, parse it
-    ThriftJsonCodec.fromJsonFile[T](localPath, check = true)
+    // Parse the JSON file
+    try {
+      ThriftJsonCodec.fromJsonFile[T](localPath, check = true)
+    } catch {
+      case e: Exception =>
+        throw new RuntimeException(s"Failed to parse configuration file: $localPath", e)
+    }
   }
 
   trait JoinBackfillSubcommand {
