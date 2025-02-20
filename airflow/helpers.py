@@ -233,6 +233,12 @@ def get_extra_args(mode, conf_type, common_env, conf):
         args.update({
             "online-jar-fetch": os.path.join(constants.CHRONON_PATH, "scripts/fetch_online_staging_jar.py"),
         })
+    if conf_type in ("joins", "group_bys"):
+        # Default in run.py is ds=today for adhoc runs,
+        # but use deterministic date from airflow execution date in Airflow schedule
+        args.update({
+            "ds": "{{ ds }}",
+        })
     return args
 
 
