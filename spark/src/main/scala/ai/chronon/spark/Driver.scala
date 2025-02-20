@@ -29,7 +29,11 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{
+  QueryProgressEvent,
+  QueryStartedEvent,
+  QueryTerminatedEvent
+}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -80,37 +84,38 @@ object Driver {
     val cloudPrefixes = List("gs://", "s3://", "s3a://", "wasb://", "abfs://")
     val isCloudPath = cloudPrefixes.exists(confPath.startsWith)
 
-    val localPath = try {
-      if (isCloudPath) {
-        val uri = new URI(confPath)
-        val fs = FileSystem.get(uri, createHadoopConf())
-        val cloudFilePath = new Path(confPath)
+    val localPath =
+      try {
+        if (isCloudPath) {
+          val uri = new URI(confPath)
+          val fs = FileSystem.get(uri, createHadoopConf())
+          val cloudFilePath = new Path(confPath)
 
-        // Check if file exists in cloud storage
-        if (!fs.exists(cloudFilePath)) {
-          throw new IOException(s"Error: Cloud file not found at $confPath")
-        }
+          // Check if file exists in cloud storage
+          if (!fs.exists(cloudFilePath)) {
+            throw new IOException(s"Error: Cloud file not found at $confPath")
+          }
 
-        val tempFile = File.createTempFile("config", ".json")
-        try {
-          fs.copyToLocalFile(cloudFilePath, new Path(tempFile.getAbsolutePath))
-          tempFile.getAbsolutePath
-        } catch {
-          case e: IOException =>
-            tempFile.delete() // Cleanup temp file on failure
-            throw new IOException(s"Error downloading file from cloud: $confPath", e)
+          val tempFile = File.createTempFile("config", ".json")
+          try {
+            fs.copyToLocalFile(cloudFilePath, new Path(tempFile.getAbsolutePath))
+            tempFile.getAbsolutePath
+          } catch {
+            case e: IOException =>
+              tempFile.delete() // Cleanup temp file on failure
+              throw new IOException(s"Error downloading file from cloud: $confPath", e)
+          }
+        } else {
+          val localFile = new File(confPath)
+          if (!localFile.exists()) {
+            throw new IOException(s"Error: Local file not found at $confPath")
+          }
+          confPath
         }
-      } else {
-        val localFile = new File(confPath)
-        if (!localFile.exists()) {
-          throw new IOException(s"Error: Local file not found at $confPath")
-        }
-        confPath
+      } catch {
+        case e: Exception =>
+          throw new RuntimeException(s"Failed to resolve configuration file: $confPath", e)
       }
-    } catch {
-      case e: Exception =>
-        throw new RuntimeException(s"Failed to resolve configuration file: $confPath", e)
-    }
 
     // Parse the JSON file
     try {
