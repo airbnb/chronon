@@ -336,7 +336,7 @@ object Extensions {
     def tableToPartitionColumn: Map[String, String] = {
       partitionColumnOpt match {
         case Some(col) => Map(table -> col)
-        case None => Map.empty
+        case None      => Map.empty
       }
     }
 

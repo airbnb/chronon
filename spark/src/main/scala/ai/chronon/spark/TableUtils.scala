@@ -347,7 +347,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
 
-  def isPartitioned(tableName: String, partitionColOpt: Option[String] =None): Boolean = {
+  def isPartitioned(tableName: String, partitionColOpt: Option[String] = None): Boolean = {
     // TODO: use proper way to detect if a table is partitioned or not
     val schema = getSchemaFromTable(tableName)
     schema.fieldNames.contains(partitionColOpt.getOrElse(partitionColumn))
@@ -384,10 +384,13 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty, partitionColumnName: Option[String] = None): Seq[String] = {
+  def partitions(tableName: String,
+                 subPartitionsFilter: Map[String, String] = Map.empty,
+                 partitionColumnName: Option[String] = None): Seq[String] = {
     if (!tableExists(tableName)) return Seq.empty[String]
     val format = tableReadFormat(tableName)
-    format.primaryPartitions(tableName, partitionColumnName.getOrElse(partitionColumn), subPartitionsFilter)(sparkSession)
+    format.primaryPartitions(tableName, partitionColumnName.getOrElse(partitionColumn), subPartitionsFilter)(
+      sparkSession)
   }
 
   // Given a table and a query extract the schema of the columns involved as input.
@@ -437,7 +440,10 @@ case class TableUtils(sparkSession: SparkSession) {
     try {
       // retrieve one row from the table
       val partitionFilter = lastAvailablePartition(tableName).getOrElse(fallbackPartition)
-      sparkSession.sql(s"SELECT * FROM $tableName where ${partitionColumnName.getOrElse(partitionColumn)}='$partitionFilter' LIMIT 1").collect()
+      sparkSession
+        .sql(
+          s"SELECT * FROM $tableName where ${partitionColumnName.getOrElse(partitionColumn)}='$partitionFilter' LIMIT 1")
+        .collect()
       true
     } catch {
       case e: SparkException =>
@@ -455,10 +461,14 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty, partitionColumnName: Option[String] = None): Option[String] =
+  def lastAvailablePartition(tableName: String,
+                             subPartitionFilters: Map[String, String] = Map.empty,
+                             partitionColumnName: Option[String] = None): Option[String] =
     partitions(tableName, subPartitionFilters, partitionColumnName).reduceOption((x, y) => Ordering[String].max(x, y))
 
-  def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty, partitionColumnName: Option[String] = None): Option[String] =
+  def firstAvailablePartition(tableName: String,
+                              subPartitionFilters: Map[String, String] = Map.empty,
+                              partitionColumnName: Option[String] = None): Option[String] =
     partitions(tableName, subPartitionFilters, partitionColumnName).reduceOption((x, y) => Ordering[String].min(x, y))
 
   def insertPartitions(df: DataFrame,
@@ -766,8 +776,11 @@ case class TableUtils(sparkSession: SparkSession) {
                      skipFirstHole: Boolean = true): Option[Seq[PartitionRange]] = {
 
     val validPartitionRange = if (outputPartitionRange.start == null) { // determine partition range automatically
-      val inputStart = inputTables.flatMap(_.map(table =>
-        firstAvailablePartition(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty), partitionColumnName = inputTableToPartitionColumnsMap.get(table))).min)
+      val inputStart = inputTables.flatMap(
+        _.map(table =>
+          firstAvailablePartition(table,
+                                  inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty),
+                                  partitionColumnName = inputTableToPartitionColumnsMap.get(table))).min)
       assert(
         inputStart.isDefined,
         s"""Either partition range needs to have a valid start or
@@ -799,7 +812,9 @@ case class TableUtils(sparkSession: SparkSession) {
       .map { tables =>
         tables
           .flatMap { table =>
-            partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty), partitionColumnName=inputTableToPartitionColumnsMap.get(table))
+            partitions(table,
+                       inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty),
+                       partitionColumnName = inputTableToPartitionColumnsMap.get(table))
           }
           .map(partitionSpec.shift(_, inputToOutputShift))
       }

@@ -286,23 +286,23 @@ class Analyzer(tableUtils: TableUtils,
       val scanQuery = range.genScanQuery(leftQuery,
                                          joinConf.left.table,
                                          fillIfAbsent = Map(partitionColumn -> null),
-        partitionColumn = partitionColumn
-      )
+                                         partitionColumn = partitionColumn)
       val leftDf: DataFrame = tableUtils.sql(scanQuery)
       (analysis, leftDf)
     }
-
 
     val noAccessTables = if (validateTablePermission) {
       val rightInvalidTables = joinConf.joinParts.toScala.flatMap { part =>
         val gbTables = part.groupBy.sources.toScala.map(_.table)
         val partitionColumns = part.groupBy.sources.toScala.map(_.query).map(_.partitionColumn).toSet
         if (partitionColumns.size > 1) {
-          throw new IllegalArgumentException(s"Query from all sources should have same partition column. Found multiple $partitionColumns for ${part.groupBy.metaData.name}")
+          throw new IllegalArgumentException(
+            s"Query from all sources should have same partition column. Found multiple $partitionColumns for ${part.groupBy.metaData.name}")
         }
         runTablePermissionValidation(gbTables.toSet, Some(partitionColumns.head))
       }.toSet
-      rightInvalidTables ++ runTablePermissionValidation(Set(joinConf.left.table), Some(joinConf.left.query.partitionColumn))
+      rightInvalidTables ++ runTablePermissionValidation(Set(joinConf.left.table),
+                                                         Some(joinConf.left.query.partitionColumn))
     } else Set()
 
     if (!skipTimestampCheck) {
@@ -327,7 +327,10 @@ class Analyzer(tableUtils: TableUtils,
       JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate, historicalBackfill = joinConf.historicalBackfill)
     logger.info(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
-      .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)), inputTableToPartitionColumnsMap=joinConf.left.tableToPartitionColumn)
+      .unfilledRanges(joinConf.metaData.outputTable,
+                      rangeToFill,
+                      Some(Seq(joinConf.left.table)),
+                      inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn)
       .getOrElse(Seq.empty)
 
     joinConf.joinParts.toScala.foreach { part =>

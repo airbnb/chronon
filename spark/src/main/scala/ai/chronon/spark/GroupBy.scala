@@ -466,15 +466,14 @@ object GroupBy {
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala
       .map { source =>
-
         val df = tableUtils.sql(
-        renderDataSourceQuery(groupByConf,
-                              source,
-                              groupByConf.getKeyColumns.toScala,
-                              queryRange,
-                              tableUtils,
-                              groupByConf.maxWindow,
-                              groupByConf.inferredAccuracy)
+          renderDataSourceQuery(groupByConf,
+                                source,
+                                groupByConf.getKeyColumns.toScala,
+                                queryRange,
+                                tableUtils,
+                                groupByConf.maxWindow,
+                                groupByConf.inferredAccuracy)
         )
         val partitionColumn = Option(source.query.partitionColumn).getOrElse(tableUtils.partitionColumn)
         df.withColumnRenamed(partitionColumn, tableUtils.partitionColumn)
@@ -688,18 +687,23 @@ object GroupBy {
       .map(_.toScala)
       .orNull
     val inputTables = groupByConf.getSources.toScala.map(_.table)
-    val inputPartitionColumns = groupByConf.getSources.toScala.map(s => s.table -> Option(s.query.partitionColumn)).collect {
+    val inputPartitionColumns = groupByConf.getSources.toScala
+      .map(s => s.table -> Option(s.query.partitionColumn))
+      .collect {
         case (tbName, Some(partitionCol)) => tbName -> partitionCol
-      }.toMap
+      }
+      .toMap
 
     val isAnySourceCumulative =
       groupByConf.getSources.toScala.exists(s => s.isSetEvents() && s.getEvents().isCumulative)
     val groupByUnfilledRangesOpt =
-      tableUtils.unfilledRanges(outputTable,
-                                PartitionRange(overrideStart, endPartition)(tableUtils),
-                                if (isAnySourceCumulative) None else Some(inputTables),
-                                inputTableToPartitionColumnsMap=inputPartitionColumns,
-                                skipFirstHole = skipFirstHole)
+      tableUtils.unfilledRanges(
+        outputTable,
+        PartitionRange(overrideStart, endPartition)(tableUtils),
+        if (isAnySourceCumulative) None else Some(inputTables),
+        inputTableToPartitionColumnsMap = inputPartitionColumns,
+        skipFirstHole = skipFirstHole
+      )
 
     if (groupByUnfilledRangesOpt.isEmpty) {
       logger.info(s"""Nothing to backfill for $outputTable - given

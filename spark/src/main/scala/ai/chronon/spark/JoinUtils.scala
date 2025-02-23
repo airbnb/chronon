@@ -49,10 +49,9 @@ object JoinUtils {
     }
     val query = joinConf.left.query
     val partitionColumn = Option(query.partitionColumn).getOrElse(tableUtils.partitionColumn)
-    val scanQuery = range.genScanQuery(query,
-                                       joinConf.left.table,
-                                       fillIfAbsent = Map(partitionColumn -> null) ++ timeProjection) +
-      limit.map(num => s" LIMIT $num").getOrElse("")
+    val scanQuery =
+      range.genScanQuery(query, joinConf.left.table, fillIfAbsent = Map(partitionColumn -> null) ++ timeProjection) +
+        limit.map(num => s" LIMIT $num").getOrElse("")
     val df = tableUtils.sql(scanQuery).withColumnRenamed(partitionColumn, "ds")
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter
@@ -111,7 +110,12 @@ object JoinUtils {
       Some(endPartition)
     }
     lazy val defaultLeftStart = Option(leftSource.query.startPartition)
-      .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters, Option(leftSource.query.getPartitionColumn)).get)
+      .getOrElse(
+        tableUtils
+          .firstAvailablePartition(leftSource.table,
+                                   leftSource.subPartitionFilters,
+                                   Option(leftSource.query.getPartitionColumn))
+          .get)
     val leftStart = overrideStart.getOrElse(defaultLeftStart)
     val leftEnd = Seq(Option(leftSource.query.endPartition), Some(endPartition)).flatten.min
     PartitionRange(leftStart, leftEnd)(tableUtils)
