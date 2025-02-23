@@ -282,9 +282,12 @@ class Analyzer(tableUtils: TableUtils,
     } else {
       val analysis = ""
       val leftQuery = joinConf.left.query
+      val partitionColumn = Option(leftQuery.partitionColumn).getOrElse(tableUtils.partitionColumn)
       val scanQuery = range.genScanQuery(leftQuery,
                                          joinConf.left.table,
-                                         fillIfAbsent = Map(Option(leftQuery.partitionColumn).getOrElse(tableUtils.partitionColumn) -> null))
+                                         fillIfAbsent = Map(partitionColumn -> null),
+        partitionColumn = partitionColumn
+      )
       val leftDf: DataFrame = tableUtils.sql(scanQuery)
       (analysis, leftDf)
     }
@@ -324,7 +327,7 @@ class Analyzer(tableUtils: TableUtils,
       JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate, historicalBackfill = joinConf.historicalBackfill)
     logger.info(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
-      .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)))
+      .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)), inputTableToPartitionColumnsMap=joinConf.left.tableToPartitionColumn)
       .getOrElse(Seq.empty)
 
     joinConf.joinParts.toScala.foreach { part =>

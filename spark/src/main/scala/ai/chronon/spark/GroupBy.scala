@@ -466,6 +466,8 @@ object GroupBy {
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala
       .map { source =>
+
+        val df = tableUtils.sql(
         renderDataSourceQuery(groupByConf,
                               source,
                               groupByConf.getKeyColumns.toScala,
@@ -473,10 +475,9 @@ object GroupBy {
                               tableUtils,
                               groupByConf.maxWindow,
                               groupByConf.inferredAccuracy)
-
-      }
-      .map {
-        tableUtils.sql
+        )
+        val partitionColumn = Option(source.query.partitionColumn).getOrElse(tableUtils.partitionColumn)
+        df.withColumnRenamed(partitionColumn, tableUtils.partitionColumn)
       }
       .reduce { (df1, df2) =>
         // align the columns by name - when one source has select * the ordering might not be aligned
@@ -606,7 +607,7 @@ object GroupBy {
                             accuracy: api.Accuracy,
                             mutations: Boolean = false): String = {
 
-    val sourceTableIsPartitioned = tableUtils.isPartitioned(source.table)
+    val sourceTableIsPartitioned = tableUtils.isPartitioned(source.table, source.partitionColumnOpt)
 
     val intersectedRange: Option[PartitionRange] = if (sourceTableIsPartitioned) {
       Some(getIntersectedRange(source, queryRange, tableUtils, window))
@@ -637,7 +638,7 @@ object GroupBy {
          |""".stripMargin)
     metaColumns ++= timeMapping
 
-    val partitionConditions = intersectedRange.map(_.whereClauses()).getOrElse(Seq.empty)
+    val partitionConditions = intersectedRange.map(_.whereClauses(partitionColumn)).getOrElse(Seq.empty)
 
     logger.info(s"""
          |Rendering source query:
@@ -687,12 +688,17 @@ object GroupBy {
       .map(_.toScala)
       .orNull
     val inputTables = groupByConf.getSources.toScala.map(_.table)
+    val inputPartitionColumns = groupByConf.getSources.toScala.map(s => s.table -> Option(s.query.partitionColumn)).collect {
+        case (tbName, Some(partitionCol)) => tbName -> partitionCol
+      }.toMap
+
     val isAnySourceCumulative =
       groupByConf.getSources.toScala.exists(s => s.isSetEvents() && s.getEvents().isCumulative)
     val groupByUnfilledRangesOpt =
       tableUtils.unfilledRanges(outputTable,
                                 PartitionRange(overrideStart, endPartition)(tableUtils),
                                 if (isAnySourceCumulative) None else Some(inputTables),
+                                inputTableToPartitionColumnsMap=inputPartitionColumns,
                                 skipFirstHole = skipFirstHole)
 
     if (groupByUnfilledRangesOpt.isEmpty) {

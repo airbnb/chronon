@@ -329,6 +329,17 @@ object Extensions {
       }
     }
 
+    def partitionColumnOpt: Option[String] = {
+      Option(source.query.partitionColumn)
+    }
+
+    def tableToPartitionColumn: Map[String, String] = {
+      partitionColumnOpt match {
+        case Some(col) => Map(table -> col)
+        case None => Map.empty
+      }
+    }
+
     lazy val rootTable: String = {
       if (source.isSetEntities) {
         source.getEntities.getSnapshotTable
@@ -630,7 +641,6 @@ object Extensions {
         case DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
       }
     }
-
   }
 
   implicit class StringOps(string: String) {

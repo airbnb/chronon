@@ -1740,13 +1740,13 @@ class JoinTest {
     println(s"join start = $start")
     val expected = tableUtils.sql(s"""
                                      |WITH
-                                     |   users AS (SELECT user, ds from $usersTable where ds >= '$start' and ds <= '$end'),
+                                     |   users AS (SELECT user, $userPartitionColumn as ds from $usersTable where $userPartitionColumn >= '$start' and $userPartitionColumn <= '$end'),
                                      |   grouped_names AS (
                                      |      SELECT user,
                                      |             name as unit_test_user_names_name,
-                                     |             ds
+                                     |             $namePartitionColumn as ds
                                      |      FROM $namesTable
-                                     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore')
+                                     |      WHERE $namePartitionColumn >= '$yearAgo' and $namePartitionColumn <= '$dayAndMonthBefore')
                                      |   SELECT users.user,
                                      |        grouped_names.unit_test_user_names_name,
                                      |        users.ds
@@ -1760,7 +1760,7 @@ class JoinTest {
     println("showing query result")
     expected.show()
     println(
-      s"Left side count: ${spark.sql(s"SELECT user, ds from $namesTable where ds >= '$start' and ds <= '$end'").count()}")
+      s"Left side count: ${spark.sql(s"SELECT user, $namePartitionColumn as ds from $namesTable where $namePartitionColumn >= '$start' and $namePartitionColumn <= '$end'").count()}")
     println(s"Actual count: ${computed.count()}")
     println(s"Expected count: ${expected.count()}")
     val diff = Comparison.sideBySide(computed, expected, List("user", "ds"))
