@@ -1,11 +1,9 @@
-import sbt.Keys.*
+import sbt.Keys._
 import sbt.Test
 
 import scala.io.StdIn
-import scala.sys.process.*
-import complete.DefaultParsers.*
-
-import scala.collection.Seq
+import scala.sys.process._
+import complete.DefaultParsers._
 
 lazy val scala211 = "2.11.12"
 lazy val scala212 = "2.12.12"
@@ -16,8 +14,6 @@ lazy val spark3_2_1 = "3.2.1"
 lazy val spark3_5_3 = "3.5.3"
 lazy val tmp_warehouse = "/tmp/chronon/"
 
-ThisBuild / javacOptions ++= Seq("-source", "1.8", "-target", "1.8")
-ThisBuild / scalacOptions ++= Seq("-target:jvm-1.8")
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
 ThisBuild / scalaVersion := scala212
