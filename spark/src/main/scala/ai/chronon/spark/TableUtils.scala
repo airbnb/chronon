@@ -384,10 +384,10 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
+  def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty, partitionColumnName: Option[String] = None): Seq[String] = {
     if (!tableExists(tableName)) return Seq.empty[String]
     val format = tableReadFormat(tableName)
-    format.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)(sparkSession)
+    format.primaryPartitions(tableName, partitionColumnName.getOrElse(partitionColumn), subPartitionsFilter)(sparkSession)
   }
 
   // Given a table and a query extract the schema of the columns involved as input.
@@ -431,12 +431,13 @@ case class TableUtils(sparkSession: SparkSession) {
   // method to check if a user has access to a table
   def checkTablePermission(tableName: String,
                            fallbackPartition: String =
-                             partitionSpec.before(partitionSpec.at(System.currentTimeMillis()))): Boolean = {
+                             partitionSpec.before(partitionSpec.at(System.currentTimeMillis())),
+                           partitionColumnName: Option[String] = None): Boolean = {
     logger.info(s"Checking permission for table $tableName...")
     try {
       // retrieve one row from the table
       val partitionFilter = lastAvailablePartition(tableName).getOrElse(fallbackPartition)
-      sparkSession.sql(s"SELECT * FROM $tableName where $partitionColumn='$partitionFilter' LIMIT 1").collect()
+      sparkSession.sql(s"SELECT * FROM $tableName where ${partitionColumnName.getOrElse(partitionColumn)}='$partitionFilter' LIMIT 1").collect()
       true
     } catch {
       case e: SparkException =>
@@ -454,11 +455,11 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].max(x, y))
+  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty, partitionColumnName: Option[String] = None): Option[String] =
+    partitions(tableName, subPartitionFilters, partitionColumnName).reduceOption((x, y) => Ordering[String].max(x, y))
 
-  def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].min(x, y))
+  def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty, partitionColumnName: Option[String] = None): Option[String] =
+    partitions(tableName, subPartitionFilters, partitionColumnName).reduceOption((x, y) => Ordering[String].min(x, y))
 
   def insertPartitions(df: DataFrame,
                        tableName: String,

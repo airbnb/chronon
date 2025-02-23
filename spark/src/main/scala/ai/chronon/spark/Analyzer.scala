@@ -212,6 +212,7 @@ class Analyzer(tableUtils: TableUtils,
     val schema = if (groupByConf.isSetBackfillStartDate && groupByConf.hasDerivations) {
       // handle group by backfill mode for derivations
       // todo: add the similar logic to join derivations
+      // TODO: pipe partition colun
       val keyAndPartitionFields =
         groupBy.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
       val sparkSchema = {
@@ -280,20 +281,25 @@ class Analyzer(tableUtils: TableUtils,
       (analysis, leftDf)
     } else {
       val analysis = ""
-      val scanQuery = range.genScanQuery(joinConf.left.query,
+      val leftQuery = joinConf.left.query
+      val scanQuery = range.genScanQuery(leftQuery,
                                          joinConf.left.table,
-                                         fillIfAbsent = Map(tableUtils.partitionColumn -> null))
+                                         fillIfAbsent = Map(Option(leftQuery.partitionColumn).getOrElse(tableUtils.partitionColumn) -> null))
       val leftDf: DataFrame = tableUtils.sql(scanQuery)
       (analysis, leftDf)
     }
 
-    val gbTables = ListBuffer[String]()
-    joinConf.joinParts.toScala.foreach { part =>
-      gbTables ++= part.groupBy.sources.toScala.map(_.table)
-    }
 
     val noAccessTables = if (validateTablePermission) {
-      runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
+      val rightInvalidTables = joinConf.joinParts.toScala.flatMap { part =>
+        val gbTables = part.groupBy.sources.toScala.map(_.table)
+        val partitionColumns = part.groupBy.sources.toScala.map(_.query).map(_.partitionColumn).toSet
+        if (partitionColumns.size > 1) {
+          throw new IllegalArgumentException(s"Query from all sources should have same partition column. Found multiple $partitionColumns for ${part.groupBy.metaData.name}")
+        }
+        runTablePermissionValidation(gbTables.toSet, Some(partitionColumns.head))
+      }.toSet
+      rightInvalidTables ++ runTablePermissionValidation(Set(joinConf.left.table), Some(joinConf.left.query.partitionColumn))
     } else Set()
 
     if (!skipTimestampCheck) {
@@ -477,13 +483,13 @@ class Analyzer(tableUtils: TableUtils,
 
   // validate the table permissions for given list of tables
   // return a list of tables that the user doesn't have access to
-  def runTablePermissionValidation(sources: Set[String]): Set[String] = {
+  def runTablePermissionValidation(sources: Set[String], partitionColumnName: Option[String] = None): Set[String] = {
     logger.info(s"Validating ${sources.size} tables permissions ...")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     //todo: handle offset-by-1 depending on temporal vs snapshot accuracy
     val partitionFilter = tableUtils.partitionSpec.minus(today, new Window(2, TimeUnit.DAYS))
     sources.filter { sourceTable =>
-      !tableUtils.checkTablePermission(sourceTable, partitionFilter)
+      !tableUtils.checkTablePermission(sourceTable, partitionFilter, partitionColumnName)
     }
   }
 

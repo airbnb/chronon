@@ -612,7 +612,8 @@ object GroupBy {
       Some(getIntersectedRange(source, queryRange, tableUtils, window))
     } else None
 
-    var metaColumns: Map[String, String] = Map(tableUtils.partitionColumn -> null)
+    val partitionColumn = Option(source.query.partitionColumn).getOrElse(tableUtils.partitionColumn)
+    var metaColumns: Map[String, String] = Map(partitionColumn -> null)
     if (mutations) {
       metaColumns ++= Map(
         Constants.ReversalColumn -> source.query.reversalColumn,
@@ -626,7 +627,7 @@ object GroupBy {
         Some(Constants.TimeColumn -> source.query.timeColumn)
       } else {
         val dsBasedTimestamp = // 1 millisecond before ds + 1
-          s"(((UNIX_TIMESTAMP(${tableUtils.partitionColumn}, '${tableUtils.partitionSpec.format}') + 86400) * 1000) - 1)"
+          s"(((UNIX_TIMESTAMP($partitionColumn, '${tableUtils.partitionSpec.format}') + 86400) * 1000) - 1)"
 
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
