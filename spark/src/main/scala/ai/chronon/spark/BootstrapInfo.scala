@@ -198,6 +198,7 @@ object BootstrapInfo {
     val tableHashes = tableBootstrapParts
       .map(part => {
         val range = PartitionRange(part.startPartition, part.endPartition)(tableUtils)
+        // TODO: get query from
         val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
         val bootstrapDf = tableUtils.sql(bootstrapQuery)
         val schema = bootstrapDf.schema
