@@ -102,7 +102,6 @@ object Driver {
             tempFile.getAbsolutePath
           } catch {
             case e: IOException =>
-              tempFile.delete() // Cleanup temp file on failure
               throw new IOException(s"Error downloading file from cloud: $confPath", e)
           }
         } else {
