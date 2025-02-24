@@ -345,7 +345,7 @@ class AnalyzerTest {
   def testJoinAnalyzerInvalidTablePermissions(): Unit = {
     val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = spy(TableUtils(spark))
-    when(tableUtils.checkTablePermission(any(), any())).thenReturn(false)
+    when(tableUtils.checkTablePermission(any(), any(), any())).thenReturn(false)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     // left side
