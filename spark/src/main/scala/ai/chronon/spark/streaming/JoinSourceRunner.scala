@@ -261,8 +261,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           .filter(_ != null)
           .map(SparkConversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
       }(streamSchemaEncoder)
-      .map {
-        row => {
+      .map { row =>
+        {
           // Report flattened row count metric
           ingressContext.withSuffix("flatten").increment(Metrics.Name.RowCount)
           row
