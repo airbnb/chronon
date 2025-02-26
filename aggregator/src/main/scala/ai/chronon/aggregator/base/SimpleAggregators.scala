@@ -599,6 +599,44 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
   }
 }
 
+class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggregator[T, util.Set[T], Long] {
+  override def prepare(input: T): util.Set[T] = {
+    val result = new util.HashSet[T](k)
+    result.add(input)
+    result
+  }
+
+  override def update(ir: util.Set[T], input: T): util.Set[T] = {
+    if (ir.size() >= k) {
+      return ir
+    }
+
+    ir.add(input)
+    ir
+  }
+
+  override def outputType: DataType = LongType
+
+  override def irType: DataType = ListType(inputType)
+
+  override def merge(ir1: util.Set[T], ir2: util.Set[T]): util.Set[T] = {
+    ir2.asScala.foreach(v =>
+      if (ir1.size() < k) {
+        ir1.add(v)
+      })
+
+    ir1
+  }
+
+  override def finalize(ir: util.Set[T]): Long = ir.size()
+
+  override def clone(ir: util.Set[T]): util.Set[T] = new util.HashSet[T](ir)
+
+  override def normalize(ir: util.Set[T]): Any = new util.ArrayList[T](ir)
+
+  override def denormalize(ir: Any): util.Set[T] = new util.HashSet[T](ir.asInstanceOf[util.ArrayList[T]])
+}
+
 // Based on CPC sketch (a faster, smaller and more accurate version of HLL)
 // See: Back to the future: an even more nearly optimal cardinality estimation algorithm, 2017
 // https://arxiv.org/abs/1708.06839
