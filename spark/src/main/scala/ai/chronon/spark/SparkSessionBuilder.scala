@@ -107,6 +107,9 @@ object SparkSessionBuilder {
       baseBuilder
     }
     val spark = builder.getOrCreate()
+    // disable log spam
+    spark.sparkContext.setLogLevel("ERROR")
+
     Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
     spark
   }
@@ -132,6 +135,8 @@ object SparkSessionBuilder {
       baseBuilder
     }
     val spark = builder.getOrCreate()
+    // disable log spam
+    spark.sparkContext.setLogLevel("ERROR")
     Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
     spark
   }
