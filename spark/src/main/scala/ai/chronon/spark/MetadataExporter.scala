@@ -89,7 +89,7 @@ object MetadataExporter {
         case exception: Throwable =>
           val exceptionMessage = ExceptionUtils.getStackTrace(exception)
           logger.error(s"Exception while processing entity $path: ${exceptionMessage}")
-          configData + { "exceptions" -> exception.getMessage}
+          configData + { "exception" -> exception.getMessage}
       }
     mapper.writeValueAsString(enrichedData)
   }
