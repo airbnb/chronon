@@ -37,7 +37,13 @@ build --incompatible_default_to_explicit_init_py
 # https://github.com/bazelbuild/bazel/issues/2377
 test --spawn_strategy=standalone
 
-# Use Java 8 as the JVM for Bazel builds
-build --java_language_version=8 --java_runtime_version=remotejdk_8
+# Don't depend on a JAVA_HOME pointing at a system JDK
+# see https://github.com/bazelbuild/rules_jvm_external/issues/445
+build --repo_env=JAVA_HOME=../bazel_tools/jdk
+
+build:java_8 --java_language_version=8 --java_runtime_version=remotejdk_8
 build:java_11 --java_language_version=11 --java_runtime_version=remotejdk_11
 build:java_21 --java_language_version=21 --java_runtime_version=remotejdk_21
+
+# Use Java 8 as default for Bazel builds
+build --java_language_version=8 --java_runtime_version=remotejdk_8
