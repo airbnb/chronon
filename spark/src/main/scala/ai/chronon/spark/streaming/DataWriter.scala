@@ -20,9 +20,13 @@ import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online.Metrics.Context
 import ai.chronon.online.{Api, KVStore, Metrics}
 import org.apache.spark.sql.ForeachWriter
+import org.slf4j.LoggerFactory
+
+import scala.util.{Failure, Success}
 
 class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debug: Boolean = false)
     extends ForeachWriter[PutRequest] {
+  @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   var kvStore: KVStore = _
   @transient private lazy val localStats = new ThreadLocal[StreamingStats]() {
@@ -37,13 +41,24 @@ class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debu
   override def process(putRequest: PutRequest): Unit = {
     localStats.get().increment(putRequest)
     if (!debug) {
-      kvStore.put(putRequest)
+      val future = kvStore.put(putRequest)
       putRequest.tsMillis.foreach { ts: Long =>
         context.distribution(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
         context.increment(Metrics.Name.RowCount)
         context.distribution(Metrics.Name.ValueBytes, putRequest.valueBytes.length)
         context.distribution(Metrics.Name.KeyBytes, putRequest.keyBytes.length)
       }
+      // Report kvStore metrics
+      val kvContext = context.withSuffix("put")
+      future.andThen {
+        case Success(result) =>
+          if (result) {
+            kvContext.increment("success")
+          } else {
+            kvContext.increment("failure")
+          }
+        case Failure(exception) => kvContext.incrementException(exception)
+      }(kvStore.executionContext)
     }
   }
 
