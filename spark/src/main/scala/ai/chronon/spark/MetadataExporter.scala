@@ -20,9 +20,10 @@ import org.slf4j.LoggerFactory
 
 import java.io.{BufferedWriter, File, FileWriter}
 import ai.chronon.api
-import ai.chronon.api.{DataType, ThriftJsonCodec}
-import java.nio.file.{Files, Paths, SimpleFileVisitor, FileVisitResult}
-import java.nio.file.attribute.BasicFileAttributes
+import ai.chronon.api.ThriftJsonCodec
+import ai.chronon.online.Metrics
+import ai.chronon.online.Metrics.Environment
+import java.nio.file.{Files, Paths}
 
 import collection.mutable.ListBuffer
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -30,7 +31,7 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.lang.exception.ExceptionUtils
 
 object MetadataExporter {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
+  @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   val GROUPBY_PATH_SUFFIX = "/group_bys"
   val JOIN_PATH_SUFFIX = "/joins"
