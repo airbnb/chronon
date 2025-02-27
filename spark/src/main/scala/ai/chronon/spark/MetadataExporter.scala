@@ -85,7 +85,7 @@ object MetadataExporter {
           val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
           try {
             val featureMetadata = analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap)
-            configData + {"features" -> featureMetadata}
+            configData + { "features" -> featureMetadata }
           } catch {
             // Exception while analyzing groupBy
             case exception: Throwable =>
@@ -104,7 +104,7 @@ object MetadataExporter {
           try {
             val joinAnalysis = analyzer.analyzeJoin(join, validateTablePermission = false)
             val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
-            configData + {"features" -> featureMetadata}
+            configData + { "features" -> featureMetadata }
           } catch {
             // Exception while analyzing join
             case exception: Throwable =>
