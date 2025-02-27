@@ -119,6 +119,6 @@ java_export(
     maven_coordinates = "ai.chronon:spark_uber_$(spark_version)_$(scala_version):$(version)",
     tags = ["no-javadocs"],
     runtime_deps = [
-        ":spark-assembly_deploy.jar",
+        ":spark",
     ],
 )
