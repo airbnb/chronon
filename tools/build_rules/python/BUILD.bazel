@@ -2,3 +2,10 @@ exports_files([
     "pytest_wrapper.py",
     ".pylintrc",
 ])
+
+py_binary(
+    name = "twine_main",
+    srcs = ["twine_main.py"],  # Create your own main script
+    visibility = ["//visibility:public"],
+    deps = ["@pypi//twine"],
+)

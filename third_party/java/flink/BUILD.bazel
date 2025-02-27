@@ -1,0 +1,112 @@
+package(default_visibility = ["//visibility:public"])
+
+load("//jvm:defs.bzl", "get_jars_for_repo")
+
+FLINK_BASE_LIBS_PROVIDED = [
+    jar(
+        name = "flink-core",
+        org = "org.apache.flink",
+    ),
+    jar(
+        name = "flink-metrics-core",
+        org = "org.apache.flink",
+    ),
+    jar(
+        name = "flink-streaming-java",
+        org = "org.apache.flink",
+    ),
+    jar(
+        name = "flink-csv",
+        org = "org.apache.flink",
+    ),
+    jar(
+        name = "flink-json",
+        org = "org.apache.flink",
+    ),
+    jar(
+        name = "flink-connector-files",
+        org = "org.apache.flink",
+    ),
+    jar(
+        name = "log4j-core",
+        org = "org.apache.logging.log4j",
+    ),
+    jar(
+        name = "log4j-api",
+        org = "org.apache.logging.log4j",
+    ),
+    jar(
+        name = "log4j-slf4j-impl",
+        org = "org.apache.logging.log4j",
+    ),
+]
+
+FLINK_PRE_2_0_LIBS_PROVIDED = FLINK_BASE_LIBS_PROVIDED + [
+    scala_jar(
+        name = "flink-scala",
+        org = "org.apache.flink",
+    ),
+    scala_jar(
+        name = "flink-streaming-scala",
+        org = "org.apache.flink",
+    ),
+]
+
+FLINK_BASE_LIBS = FLINK_BASE_LIBS_PROVIDED + [
+    jar(
+        name = "flink-parquet",
+        org = "org.apache.flink",
+    ),
+    jar(
+        name = "flink-metrics-dropwizard",
+        org = "org.apache.flink",
+    ),
+    jar(
+        name = "metrics-core",
+        org = "io.dropwizard.metrics",
+    ),
+    jar(
+        name = "flink-test-utils",
+        org = "org.apache.flink",
+    ),
+    jar(
+        name = "flink-runtime",
+        classifier = "tests",
+        org = "org.apache.flink",
+    ),
+]
+
+FLINK_LIBS = FLINK_BASE_LIBS + [
+    scala_jar(
+        name = "flink-scala",
+        org = "org.apache.flink",
+    ),
+    scala_jar(
+        name = "flink-streaming-scala",
+        org = "org.apache.flink",
+    ),
+]
+
+java_library(
+    name = "flink-libs",
+    exports = select({
+        "//conditions:default": get_jars_for_repo("flink_1_16", FLINK_LIBS),
+        "//tools/flags/flink:flink_1_16": get_jars_for_repo("flink_1_16", FLINK_LIBS),
+    }),
+)
+
+java_library(
+    name = "flink-provided-libs",
+    exports = select({
+        "//conditions:default": get_jars_for_repo("flink_1_16", FLINK_PRE_2_0_LIBS_PROVIDED),
+        "//tools/flags/flink:flink_1_16": get_jars_for_repo("flink_1_16", FLINK_PRE_2_0_LIBS_PROVIDED),
+    }),
+)
+
+java_binary(
+    name = "flink-provided-env",
+    main_class = "None",  #hack
+    runtime_deps = [
+        "//third_party/java/flink:flink-provided-libs",
+    ],
+)
