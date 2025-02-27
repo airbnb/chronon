@@ -20,9 +20,10 @@ import org.slf4j.LoggerFactory
 
 import java.io.{BufferedWriter, File, FileWriter}
 import ai.chronon.api
-import ai.chronon.api.{DataType, ThriftJsonCodec}
-import java.nio.file.{Files, Paths, SimpleFileVisitor, FileVisitResult}
-import java.nio.file.attribute.BasicFileAttributes
+import ai.chronon.api.ThriftJsonCodec
+import ai.chronon.online.Metrics
+import ai.chronon.online.Metrics.Environment
+import java.nio.file.{Files, Paths}
 
 import collection.mutable.ListBuffer
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -30,7 +31,7 @@ import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.lang.exception.ExceptionUtils
 
 object MetadataExporter {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
+  @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   val GROUPBY_PATH_SUFFIX = "/group_bys"
   val JOIN_PATH_SUFFIX = "/joins"
@@ -72,24 +73,57 @@ object MetadataExporter {
   def enrichMetadata(path: String): String = {
     val configData = mapper.readValue(new File(path), classOf[Map[String, Any]])
     val analyzer = new Analyzer(tableUtils, path, yesterday, today, silenceMode = true, skipTimestampCheck = true)
-    val enrichedData: Map[String, Any] =
-      try {
-        if (path.contains(GROUPBY_PATH_SUFFIX)) {
+
+    def handleException(exception: Throwable, entityType: String): Map[String, Any] = {
+      val exceptionMessage = ExceptionUtils.getStackTrace(exception)
+      logger.error(s"Exception while processing $entityType $path: $exceptionMessage")
+      configData + ("exception" -> exception.getMessage)
+    }
+
+    val enrichedData: Map[String, Any] = path match {
+      case p if p.contains(GROUPBY_PATH_SUFFIX) =>
+        try {
           val groupBy = ThriftJsonCodec.fromJsonFile[api.GroupBy](path, check = false)
-          configData + { "features" -> analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap) }
-        } else if (path.contains(JOIN_PATH_SUFFIX)) {
-          val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
-          val joinAnalysis = analyzer.analyzeJoin(join, validateTablePermission = false)
-          val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
-          configData + { "features" -> featureMetadata }
-        } else {
-          throw new Exception(f"Unknown entity type for $path")
+          try {
+            val featureMetadata = analyzer.analyzeGroupBy(groupBy)._1.map(_.asMap)
+            configData + { "features" -> featureMetadata }
+          } catch {
+            // Exception while analyzing groupBy
+            case exception: Throwable =>
+              val context = Metrics.Context(environment = Environment.groupByMetadataExport, groupBy = groupBy)
+              context.incrementException(exception)
+              handleException(exception, "group_by")
+          }
+        } catch {
+          // Unable to parse groupBy file
+          case exception: Throwable => handleException(exception, "group_by")
         }
-      } catch {
-        case exception: Throwable =>
-          logger.error(s"Exception while processing entity $path: ${ExceptionUtils.getStackTrace(exception)}")
-          configData
-      }
+
+      case p if p.contains(JOIN_PATH_SUFFIX) =>
+        try {
+          val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
+          try {
+            val joinAnalysis = analyzer.analyzeJoin(join, validateTablePermission = false)
+            val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
+            configData + { "features" -> featureMetadata }
+          } catch {
+            // Exception while analyzing join
+            case exception: Throwable =>
+              val context = Metrics.Context(environment = Environment.joinMetadataExport, join = join)
+              context.incrementException(exception)
+              handleException(exception, "join")
+          }
+        } catch {
+          // Unable to parse join file
+          case exception: Throwable => handleException(exception, "join")
+        }
+
+      case _ =>
+        val errorMessage = s"Unknown entity type for $path"
+        logger.error(errorMessage)
+        configData + ("exception" -> errorMessage)
+    }
+
     mapper.writeValueAsString(enrichedData)
   }
 
