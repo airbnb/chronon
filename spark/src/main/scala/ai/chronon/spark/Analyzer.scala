@@ -309,7 +309,7 @@ class Analyzer(tableUtils: TableUtils,
         }
       }.toSet
       val leftNoAccessTables =
-        runTablePermissionValidation(Set(joinConf.left.table), Option(joinConf.left.query.partitionColumn))
+        runTablePermissionValidation(Set(joinConf.left.table), joinConf.left.partitionColumnOpt)
       rightNoAccessTables ++ leftNoAccessTables
     } else Set.empty
 

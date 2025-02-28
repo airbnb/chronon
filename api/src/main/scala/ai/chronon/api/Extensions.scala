@@ -433,7 +433,6 @@ object Extensions {
       query.unsetStartPartition()
       newSource
     }
-
   }
 
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
