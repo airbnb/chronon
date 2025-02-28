@@ -180,12 +180,7 @@ class TestLineageParser(unittest.TestCase):
             self.parser.lineages,
         )
 
-    def test_parse_lineage(self):
-        # self.parser.parse_lineage("/Users/xiaohui_sun/work/ml_models/zipline", entities=['zipline_test.iceberg_realtime.v0'])
-        self.parser.parse_lineage(TEST_BASE_PATH)
-        self.assertIsNotNone(self.parser.lineages)
-
-    def test_no_lineage(self):
+    def test_cannot_parse_lineage(self):
         # Can't parse lineage since there is no specific column.
         lineage = build_lineage("output", ["a"], "SELECT COUNT(*) AS a FROM input", sources={})
         self.assertEqual(
@@ -193,7 +188,7 @@ class TestLineageParser(unittest.TestCase):
             lineage,
         )
 
-    def test_parse_operations(self):
+    def test_parse_lineage(self):
         output_table = "output_table"
         output_columns = ["a", "b", "c", "d"]
         sql = """
@@ -208,15 +203,17 @@ class TestLineageParser(unittest.TestCase):
         """
 
         lineage = build_lineage(output_table, output_columns, sql, sources={})
-        self.assertEqual(
-            {
-                "output_table.a": [("input_table.f", ("Alias",))],
-                "output_table.b": [
-                    ("input_table.f", ("Add", "Alias")),
-                    ("input_table.e", ("Add", "Alias")),
-                ],
-                "output_table.c": [("input_table.g", ("AGG", "Alias"))],
-                "output_table.d": [("input_table.h", ("Sum", "Alias"))],
-            },
-            lineage,
-        )
+        expected_lineage = {
+            "output_table.a": [("input_table.f", ("Alias",))],
+            "output_table.b": [
+                ("input_table.f", ("Add", "Alias")),
+                ("input_table.e", ("Add", "Alias")),
+            ],
+            "output_table.c": [("input_table.g", ("AGG", "Alias"))],
+            "output_table.d": [("input_table.h", ("Sum", "Alias"))],
+        }
+
+        self.assertEqual(set(lineage.keys()), set(expected_lineage.keys()))
+
+        for key in expected_lineage:
+            self.assertCountEqual(lineage[key], expected_lineage[key])

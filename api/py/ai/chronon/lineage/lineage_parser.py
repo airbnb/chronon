@@ -39,7 +39,7 @@ class LineageParser:
             processed_group_by (Set[str]): Set of group-by names already processed.
             processed_join (Set[str]): Set of join names already processed.
         """
-        self.lineages: Set[Tuple[str, Tuple[str, List[str]]]] = set()
+        self.lineages: Set[Tuple[Tuple[str, Tuple[str]], str]] = set()
         self.unparsed_columns: Dict[str, List[str]] = defaultdict(list)
         self.base_path: Optional[str] = None
         self.team_conf: Optional[Dict[str, Any]] = None
@@ -49,7 +49,7 @@ class LineageParser:
 
     def parse_lineage(
         self, base_path: str, entities: Optional[Set[str]] = None
-    ) -> Set[Tuple[str, Tuple[str, List[str]]]]:
+    ) -> Set[Tuple[Tuple[str, Tuple[str]], str]]:
         """
         Parse lineage information for staging queries, group bys, and joins using the provided base path.
 
@@ -187,7 +187,10 @@ class LineageParser:
         """
         # Clean up any added quotes from select expressions.
         selects = [
-            (k.replace("`", "") if isinstance(k, str) else k, v.replace("`", "") if isinstance(v, str) else v)
+            (
+                k.replace("`", "") if isinstance(k, str) else k,
+                v.replace("`", "") if isinstance(v, str) else v,
+            )
             for k, v in selects
         ]
         sql = (
@@ -284,13 +287,13 @@ class LineageParser:
 
         return sql
 
-    def store_lineage(self, output_column: str, input_columns: List[str]) -> None:
+    def store_lineage(self, output_column: str, input_columns: Tuple[str, Tuple[str]]) -> None:
         """
         Store lineage information mapping input columns to an output column.
 
         Args:
             output_column (str): The output column name.
-            input_columns (List[str]): List of input column names.
+            input_columns (Tuple[str, Tuple[str]]): Tuple of input column names and operation paths to the output column .
 
         Returns:
             None
@@ -301,13 +304,10 @@ class LineageParser:
     @staticmethod
     def base_table_name(table: str) -> str:
         """
-        Extract the base table name from a given table string.
-
-        Args:
-            table (str): The table path (e.g., "table/subtable").
+        Extract the base table name from a given table string with sub partitions.
 
         Returns:
-            str: The base table name (portion before the first slash).
+            str: The base table name.
         """
         return table.split("/")[0]
 
@@ -609,7 +609,7 @@ def get_transform_operation(expression: Any) -> str:
 
 def build_lineage(
     output_table: str, output_columns: List[str], sql: str, sources: Dict[str, str]
-) -> Dict[str, List[Any]]:
+) -> Dict[str, Tuple[str, Tuple[str,]]]:
     """
     Build the lineage mapping from the SQL query and its source queries.
 
@@ -620,8 +620,8 @@ def build_lineage(
         sources (Dict[str, str]): Mapping of source names to SQL query strings.
 
     Returns:
-        Dict[str, List[Any]]: A dictionary mapping each output column (as "table.column")
-                              to a list of lineage information tuples.
+        Dict[str, List[Any]]: A dictionary mapping each output column
+                              to a list of input column and operations to the output column.
     """
     dialect = "spark"
     expression = maybe_parse(sql, dialect=dialect)
@@ -636,7 +636,7 @@ def build_lineage(
         schema=None,
         **{"validate_qualify_columns": False, "identify": False},
     )
-    parsed_lineages = dict()
+    parsed_lineages: Dict[str, Tuple[str, Tuple[str,]]] = {}
     scope = build_scope(expression)
     for output_column in output_columns:
         # Normalize the output column identifier.
