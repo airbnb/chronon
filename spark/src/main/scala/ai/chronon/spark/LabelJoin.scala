@@ -134,7 +134,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
           computeRange(leftDfInRange, range, sanitizedLabelDs)
             .save(outputLabelTable,
                   confTableProps,
-                  partitionColumns = Seq(Constants.LabelPartitionColumn, tableUtils.partitionColumn),
+                  Seq(Constants.LabelPartitionColumn, tableUtils.partitionColumn),
                   true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)

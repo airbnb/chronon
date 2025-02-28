@@ -54,8 +54,6 @@ object JoinUtils {
                          joinConf.left.table,
                          fillIfAbsent = Map(partitionColumn -> null) ++ timeProjection,
                          partitionColumn = partitionColumn) + limit.map(num => s" LIMIT $num").getOrElse("")
-    // To support reading various partition column names but, rename it to "ds" later
-    // for downstream DataFrame operation in join
     val df = tableUtils.sqlWithDefaultPartitionColumn(scanQuery, partitionColumn)
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter

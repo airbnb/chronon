@@ -100,7 +100,10 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
                    fillIfAbsent: Map[String, String] = Map.empty,
                    partitionColumn: String = tableUtils.partitionColumn): String = {
     val queryOpt = Option(query)
-    val partitionCol = queryOpt.flatMap(q => Option(q.getPartitionColumn)).getOrElse(partitionColumn)
+    val partitionCol = queryOpt match {
+      case Some(q) => Option(q.getPartitionColumn).getOrElse(partitionColumn)
+      case None    => partitionColumn
+    }
     val wheres =
       whereClauses(partitionCol) ++ queryOpt
         .flatMap(q => Option(q.wheres).map(_.asScala))
