@@ -72,6 +72,8 @@ class GroupByTest {
     assertEquals(0, diff.count())
   }
 
+
+
   @Test
   def testSnapshotEvents(): Unit = {
     lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
@@ -423,7 +425,7 @@ class GroupByTest {
              additionalAgg = aggs)
   }
 
-  private def createTestSource(windowSize: Int = 365, suffix: String = ""): (Source, String) = {
+  private def createTestSource(windowSize: Int = 365, suffix: String = "", partitionColOpt: Option[String] = None): (Source, String) = {
     lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
@@ -439,10 +441,16 @@ class GroupByTest {
     val sourceTable = s"$namespace.test_group_by_steps$suffix"
 
     tableUtils.createDatabase(namespace)
-    DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200).save(sourceTable)
+    val genDf = DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200, partitionColOpt=partitionColOpt)
+    partitionColOpt match {
+      case Some(partitionCol) => genDf.save(sourceTable, partitionColumns=Seq(partitionCol))
+      case None => genDf.save(sourceTable)
+    }
+
     val source = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms", "price"),
-                             startPartition = startPartition),
+                             startPartition = startPartition,
+        partitionColumn=partitionColOpt.orNull),
       table = sourceTable
     )
     (source, endPartition)
@@ -687,11 +695,35 @@ class GroupByTest {
         )
       )
     )
-    backfill(name = "unit_test_group_by_descriptive_stats",
+    val outputTable = backfill(name = "unit_test_group_by_descriptive_stats",
              source = source,
              endPartition = endPartition,
              namespace = namespace,
              tableUtils = tableUtils,
              additionalAgg = aggs)
+    val expectedInputDf = spark.sql(f"select count(*), ds from $outputTable group by ds")
+    expectedInputDf.show()
+  }
+
+  @Test
+  def testGroupByWithQueryPartitionColumn(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val queryPartitionColumn = "new_date_col"
+    val (source, endPartition) = createTestSource(suffix = "_different_names", partitionColOpt = Some(queryPartitionColumn))
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_different_names"
+
+    val outputTable = backfill(name = "unit_test_different_names",
+      source = source,
+      endPartition = endPartition,
+      namespace = namespace,
+      tableUtils = tableUtils)
+
+    // Resulting table has "ds" column
+    val expectedInputDf = spark.sql(f"select count(*) as cnt, ds from $outputTable group by ds")
+    assert(expectedInputDf.count() > 10, "Expected more than 10 rows in the result")
+    expectedInputDf.select("cnt").as[Long](Encoders.scalaLong).collect().foreach { count =>
+      assert(count > 0, s"Found a count value that is not greater than zero: $count")
+    }
   }
 }
