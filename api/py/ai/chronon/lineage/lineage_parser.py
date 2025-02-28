@@ -327,19 +327,18 @@ class LineageParser:
         if source.entities:
             table = self.base_table_name(source.entities.snapshotTable)
             wheres = source.entities.query.wheres or []
-            filter_expr = " AND ".join([f"({where})" for where in sorted(wheres)])
             selects = source.entities.query.selects or {}
         elif source.events:
             table = self.base_table_name(source.events.table)
             wheres = source.events.query.wheres or []
-            filter_expr = " AND ".join([f"({where})" for where in sorted(wheres)])
             selects = source.events.query.selects or {}
         else:
             table = self.object_table_name(source.joinSource.join)
             wheres = source.joinSource.query.wheres or []
-            filter_expr = " AND ".join([f"({where})" for where in sorted(wheres)])
             selects = source.joinSource.query.selects or {}
             self.parse_join(source.joinSource.join)
+
+        filter_expr = " AND ".join([f"({where})" for where in sorted(wheres)])
         return table, filter_expr, selects
 
     def object_table_name(self, obj: Any) -> str:
