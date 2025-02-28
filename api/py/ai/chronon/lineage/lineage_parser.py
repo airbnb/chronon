@@ -102,6 +102,7 @@ class LineageParser:
             None
         """
         group_bys_path = os.path.join(self.base_path, "production/group_bys/")
+        parsed, unparsed = 0, 0
         for root, dirs, files in os.walk(group_bys_path):
             if root.endswith("group_bys/"):
                 continue
@@ -111,12 +112,15 @@ class LineageParser:
                     if entities and group_by.metaData.name not in entities:
                         continue
                     try:
-                        logger.info(f"handle group by {group_by.metaData.name}")
+                        print(f"handle group by {group_by.metaData.name}")
                         self.parse_group_by(group_by)
+                        parsed += 1
                     except Exception as e:
                         logger.exception(
                             f"An unexpected error occurred while parsing group by {group_by.metaData.name}: {e}"
                         )
+                        unparsed += 1
+        print("here")
 
     def parse_joins(self, entities: Optional[Set[str]] = None) -> None:
         """
@@ -497,6 +501,16 @@ class LineageParser:
         """
         table_name = output_table_name(staging_query, full_name=True)
         self.staging_query_tables[table_name] = staging_query
+        expression = maybe_parse(staging_query.query)
+        try:
+            qualify.qualify(
+                expression,
+                dialect="spark",
+                schema=None,
+                **{"validate_qualify_columns": False, "identify": False},
+            )
+        except Exception:
+            print("here")
 
     def parse_group_by(self, gb: Any, extra: Optional[Set[Any]] = None) -> None:
         """

@@ -217,3 +217,7 @@ class TestLineageParser(unittest.TestCase):
 
         for key in expected_lineage:
             self.assertCountEqual(lineage[key], expected_lineage[key])
+
+    def test_parse_configs(self):
+        self.parser.parse_lineage(base_path="/Users/xiaohui_sun/work/ml_models/zipline")
+        # entities=["relevance.query_features.filter_stats_with_fallback.filter_bar_v1"])
