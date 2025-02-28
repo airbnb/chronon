@@ -107,7 +107,7 @@ class DataRangeTest {
         |  `custom_partition_date`,
         |  col_1 as `col_1`,
         |  col_2 as `col_2`
-        |FROM date_range_test_namespace_with_partition_column.test_gen_scan_query
+        |FROM date_range_test_namespace_with_partition_column.test_gen_scan_query 
         |WHERE
         |  ($customPartitionCol >= '2024-03-01') AND ($customPartitionCol <= '2024-04-01') AND (col_1 = 'TEST')"""
     assertEquals(expected.stripMargin, scanQuery.stripMargin)
