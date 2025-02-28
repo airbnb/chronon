@@ -52,10 +52,10 @@ class DataRangeTest {
       table = testTable
     )
 
-    val result: String = partitionRange.genScanQuery(
+    val (scanQuery, _) = partitionRange.scanQueryStringAndDf(
       source.getEvents.query,
       testTable,
-      Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull).toMap
+      fillIfAbsent=Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull).toMap
     )
 
     val expected: String =
@@ -66,7 +66,7 @@ class DataRangeTest {
         |FROM date_range_test_namespace.test_gen_scan_query 
         |WHERE
         |  (ds >= '2024-03-01') AND (ds <= '2024-04-01') AND (col_1 = 'TEST')"""
-    assertEquals(expected.stripMargin, result.stripMargin)
+    assertEquals(expected.stripMargin, scanQuery.stripMargin)
   }
 
   @Test
@@ -94,12 +94,12 @@ class DataRangeTest {
       table = testTable
     )
 
-    val result: String = partitionRange.genScanQuery(
+    val (scanQuery, _) = partitionRange.scanQueryStringAndDf(
       source.getEvents.query,
       testTable,
-      Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull,
+      fillIfAbsent = Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull,
         customPartitionCol -> null).toMap,
-      partitionColumn = customPartitionCol
+      partitionColOpt = Some(customPartitionCol)
     )
 
     val expected: String =
@@ -111,7 +111,7 @@ class DataRangeTest {
         |FROM date_range_test_namespace_with_partition_column.test_gen_scan_query
         |WHERE
         |  ($customPartitionCol >= '2024-03-01') AND ($customPartitionCol <= '2024-04-01') AND (col_1 = 'TEST')"""
-    assertEquals(expected.stripMargin, result.stripMargin)
+    assertEquals(expected.stripMargin, scanQuery.stripMargin)
   }
 
   @Test

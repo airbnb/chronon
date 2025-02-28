@@ -49,12 +49,13 @@ object JoinUtils {
     }
     val query = joinConf.left.query
     val partitionColumn = tableUtils.getPartitionColumn(query)
-    val scanQuery =
-      range.genScanQuery(query,
-                         joinConf.left.table,
-                         fillIfAbsent = Map(partitionColumn -> null) ++ timeProjection,
-                         partitionColumn = partitionColumn) + limit.map(num => s" LIMIT $num").getOrElse("")
-    val df = tableUtils.sqlWithDefaultPartitionColumn(scanQuery, partitionColumn)
+    val (scanQuery, df) = range.scanQueryStringAndDf(
+      query,
+      joinConf.left.table,
+      appendRawQueryString = limit.map(num => s" LIMIT $num").getOrElse(""),
+      fillIfAbsent = Map(partitionColumn -> null) ++ timeProjection,
+      partitionColOpt = Some(partitionColumn)
+    )
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter
       .map(sf => {

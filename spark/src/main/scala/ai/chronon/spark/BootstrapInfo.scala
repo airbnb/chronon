@@ -200,9 +200,11 @@ object BootstrapInfo {
       .map(part => {
         val range = PartitionRange(part.startPartition, part.endPartition)(tableUtils)
         val partitionColumn = tableUtils.getPartitionColumn(part.query)
-        val bootstrapQuery =
-          range.genScanQuery(part.query, part.table, Map(partitionColumn -> null), partitionColumn = partitionColumn)
-        val bootstrapDf = tableUtils.sqlWithDefaultPartitionColumn(bootstrapQuery, partitionColumn)
+        val (bootstrapQuery, bootstrapDf) =
+          range.scanQueryStringAndDf(part.query,
+                                     part.table,
+                                     fillIfAbsent = Map(partitionColumn -> null),
+                                     partitionColOpt = Some(partitionColumn))
         val schema = bootstrapDf.schema
         val missingKeys = part.keys(joinConf, tableUtils.partitionColumn).filterNot(schema.fieldNames.contains)
         collectException(

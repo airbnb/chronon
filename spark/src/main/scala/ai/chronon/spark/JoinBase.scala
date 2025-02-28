@@ -218,7 +218,7 @@ abstract class JoinBase(joinConf: api.Join,
         throw e
     }
     if (tableUtils.tableExists(partTable)) {
-      Some(tableUtils.sql(rightRange.genScanQuery(query = null, partTable)))
+      Some(rightRange.scanQueryDf(query = null, partTable))
     } else {
       // Happens when everything is handled by bootstrap
       None
@@ -532,7 +532,7 @@ abstract class JoinBase(joinConf: api.Join,
     //  2 - User has entity table which is cumulative and only want to run backfill for the latest partition
     val (rangeToFill, unfilledRanges) = getUnfilledRange(overrideStartPartition, outputTable)
 
-    def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
+    def finalResult: DataFrame = rangeToFill.scanQueryDf(query = null, outputTable)
     if (unfilledRanges.isEmpty) {
       logger.info(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
       if (selectedJoinParts.isDefined) {

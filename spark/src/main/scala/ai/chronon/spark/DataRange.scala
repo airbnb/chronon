@@ -19,6 +19,7 @@ package ai.chronon.spark
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.Extensions.QueryOps
 import ai.chronon.api.{Constants, Query, QueryUtils}
+import org.apache.spark.sql.DataFrame
 
 import scala.collection.JavaConverters._
 
@@ -95,10 +96,32 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
     }
   }
 
-  def genScanQuery(query: Query,
-                   table: String,
-                   fillIfAbsent: Map[String, String] = Map.empty,
-                   partitionColumn: String = tableUtils.partitionColumn): String = {
+  def scanQueryDf(query: Query,
+                  table: String,
+                  appendRawQueryString: String = "",
+                  fillIfAbsent: Map[String, String] = Map.empty,
+                  partitionColOpt: Option[String] = None): DataFrame = {
+    val (_, df) = scanQueryStringAndDf(query, table, appendRawQueryString, fillIfAbsent, partitionColOpt)
+    df
+  }
+
+  def scanQueryStringAndDf(query: Query,
+                           table: String,
+                           appendRawQueryString: String = "",
+                           fillIfAbsent: Map[String, String] = Map.empty,
+                           partitionColOpt: Option[String] = None): (String, DataFrame) = {
+    val partitionColumn = tableUtils.getPartitionColumn(partitionColOpt)
+    val genQ = genScanQuery(query, table, fillIfAbsent, partitionColumn) + appendRawQueryString
+    (genQ, tableUtils.sqlWithDefaultPartitionColumn(genQ, partitionColumn))
+  }
+
+  private def genScanQuery(query: Query,
+                           table: String,
+                           fillIfAbsent: Map[String, String] = Map.empty,
+                           partitionColumn: String = tableUtils.partitionColumn): String = {
+    // Because we allow query to specify custom partition column,
+    // it is not safe to use this method independently without renaming the column
+    // to the standard one. If you want to test gen query, use `scanQueryStringAndDf` instead.
     val queryOpt = Option(query)
     val partitionCol = queryOpt match {
       case Some(q) => Option(q.getPartitionColumn).getOrElse(partitionColumn)

@@ -294,11 +294,10 @@ class Analyzer(tableUtils: TableUtils,
       val analysis = ""
       val leftQuery = joinConf.left.query
       val partitionColumn = tableUtils.getPartitionColumn(leftQuery)
-      val scanQuery = range.genScanQuery(leftQuery,
-                                         joinConf.left.table,
-                                         fillIfAbsent = Map(partitionColumn -> null),
-                                         partitionColumn = partitionColumn)
-      val leftDf: DataFrame = tableUtils.sqlWithDefaultPartitionColumn(scanQuery, partitionColumn)
+      val leftDf: DataFrame = range.scanQueryDf(leftQuery,
+                                                joinConf.left.table,
+                                                fillIfAbsent = Map(partitionColumn -> null),
+                                                partitionColOpt = Some(partitionColumn))
       (analysis, leftDf)
     }
 
