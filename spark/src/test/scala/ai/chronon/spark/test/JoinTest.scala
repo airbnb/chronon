@@ -1697,7 +1697,7 @@ class JoinTest {
     )
     val namePartitionColumn = "name_date"
     val namesTable = s"$namespace.names"
-    DataFrameGen.entities(spark, namesSchema, 1000, partitions = 400, partitionColumnName = Some(namePartitionColumn)).save(namesTable, partitionColumns = Seq(namePartitionColumn))
+    DataFrameGen.entities(spark, namesSchema, 1000, partitions = 400, partitionColOpt = Some(namePartitionColumn)).save(namesTable, partitionColumns = Seq(namePartitionColumn))
 
     val namesSource = Builders.Source.entities(
       query =
@@ -1713,7 +1713,7 @@ class JoinTest {
     )
 
     DataFrameGen
-      .entities(spark, namesSchema, 1000, partitions = 400, partitionColumnName = Some(namePartitionColumn))
+      .entities(spark, namesSchema, 1000, partitions = 400, partitionColOpt = Some(namePartitionColumn))
       .groupBy("user", namePartitionColumn)
       .agg(Map("name" -> "max"))
       .save(namesTable, partitionColumns = Seq(namePartitionColumn))
@@ -1722,7 +1722,7 @@ class JoinTest {
     val userPartitionColumn = "user_date"
     val userSchema = List(Column("user", api.StringType, 100))
     val usersTable = s"$namespace.users"
-    DataFrameGen.entities(spark, userSchema, 1000, partitions = 400, partitionColumnName = Some(userPartitionColumn))
+    DataFrameGen.entities(spark, userSchema, 1000, partitions = 400, partitionColOpt = Some(userPartitionColumn))
       .dropDuplicates()
       .save(usersTable, partitionColumns = Seq(userPartitionColumn))
 

@@ -433,6 +433,7 @@ object Extensions {
       query.unsetStartPartition()
       newSource
     }
+
   }
 
   implicit class GroupByOps(groupBy: GroupBy) extends GroupBy(groupBy) {
@@ -639,6 +640,20 @@ object Extensions {
       groupBy.dataModel match {
         case DataModel.Entities => Seq(s"${Constants.MutationTimeColumn} is NOT NULL")
         case DataModel.Events   => Seq(s"$timeColumn is NOT NULL")
+      }
+    }
+
+    def getPartitionColumn: Option[String] = {
+      val partitionColumns = groupBy.sources.toScala.map(_.partitionColumnOpt).collect {
+        case Some(c) => c
+      }
+      if (partitionColumns.isEmpty) {
+        None
+      } else if (partitionColumns.length == groupBy.sources.size()) {
+        partitionColumns.headOption
+      } else {
+        throw new IllegalArgumentException(
+          s"Expect all queries from a given group-by to have the same partition column. All sources should have identical schemas and same partition column name. Found distinct partition columns $partitionColumns for group-by ${groupBy.metaData.name}")
       }
     }
   }

@@ -19,7 +19,7 @@ package ai.chronon.spark
 import java.io.{PrintWriter, Serializable, StringWriter}
 import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
-import ai.chronon.api.{Constants, PartitionSpec}
+import ai.chronon.api.{Constants, PartitionSpec, Query}
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
@@ -350,7 +350,7 @@ case class TableUtils(sparkSession: SparkSession) {
   def isPartitioned(tableName: String, partitionColOpt: Option[String] = None): Boolean = {
     // TODO: use proper way to detect if a table is partitioned or not
     val schema = getSchemaFromTable(tableName)
-    schema.fieldNames.contains(partitionColOpt.getOrElse(partitionColumn))
+    schema.fieldNames.contains(getPartitionColumn(partitionColOpt))
   }
 
   def createDatabase(database: String): Boolean = {
@@ -386,11 +386,10 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def partitions(tableName: String,
                  subPartitionsFilter: Map[String, String] = Map.empty,
-                 partitionColumnName: Option[String] = None): Seq[String] = {
+                 partitionColOpt: Option[String] = None): Seq[String] = {
     if (!tableExists(tableName)) return Seq.empty[String]
     val format = tableReadFormat(tableName)
-    format.primaryPartitions(tableName, partitionColumnName.getOrElse(partitionColumn), subPartitionsFilter)(
-      sparkSession)
+    format.primaryPartitions(tableName, getPartitionColumn(partitionColOpt), subPartitionsFilter)(sparkSession)
   }
 
   // Given a table and a query extract the schema of the columns involved as input.
@@ -435,14 +434,13 @@ case class TableUtils(sparkSession: SparkSession) {
   def checkTablePermission(tableName: String,
                            fallbackPartition: String =
                              partitionSpec.before(partitionSpec.at(System.currentTimeMillis())),
-                           partitionColumnName: Option[String] = None): Boolean = {
+                           partitionColOpt: Option[String] = None): Boolean = {
     logger.info(s"Checking permission for table $tableName...")
     try {
       // retrieve one row from the table
       val partitionFilter = lastAvailablePartition(tableName).getOrElse(fallbackPartition)
       sparkSession
-        .sql(
-          s"SELECT * FROM $tableName where ${partitionColumnName.getOrElse(partitionColumn)}='$partitionFilter' LIMIT 1")
+        .sql(s"SELECT * FROM $tableName where ${getPartitionColumn(partitionColOpt)}='$partitionFilter' LIMIT 1")
         .collect()
       true
     } catch {
@@ -463,13 +461,13 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def lastAvailablePartition(tableName: String,
                              subPartitionFilters: Map[String, String] = Map.empty,
-                             partitionColumnName: Option[String] = None): Option[String] =
-    partitions(tableName, subPartitionFilters, partitionColumnName).reduceOption((x, y) => Ordering[String].max(x, y))
+                             partitionColOpt: Option[String] = None): Option[String] =
+    partitions(tableName, subPartitionFilters, partitionColOpt).reduceOption((x, y) => Ordering[String].max(x, y))
 
   def firstAvailablePartition(tableName: String,
                               subPartitionFilters: Map[String, String] = Map.empty,
-                              partitionColumnName: Option[String] = None): Option[String] =
-    partitions(tableName, subPartitionFilters, partitionColumnName).reduceOption((x, y) => Ordering[String].min(x, y))
+                              partitionColOpt: Option[String] = None): Option[String] =
+    partitions(tableName, subPartitionFilters, partitionColOpt).reduceOption((x, y) => Ordering[String].min(x, y))
 
   def insertPartitions(df: DataFrame,
                        tableName: String,
@@ -617,15 +615,24 @@ case class TableUtils(sparkSession: SparkSession) {
     }.get
   }
 
+  def getPartitionColumn(q: Query): String = {
+    Option(q.partitionColumn).getOrElse(partitionColumn)
+  }
+
+  def getPartitionColumn(columnOpt: Option[String] = None): String = {
+    columnOpt.getOrElse(partitionColumn)
+  }
+
   private def repartitionAndWriteInternal(df: DataFrame,
                                           tableName: String,
                                           saveMode: SaveMode,
                                           stats: Option[DfStats],
                                           sortByCols: Seq[String] = Seq.empty,
                                           partitionCols: Seq[String] = Seq.empty): Unit = {
-    val partitionCol = partitionCols.headOption.getOrElse(partitionColumn)
     // get row count and table partition count statistics
-
+    // to determine shuffle parallelism, count only top-level/first partition column
+    // assumed to be the date partition. If not given, use default
+    val partitionCol = partitionCols.headOption.getOrElse(partitionColumn)
     val (rowCount: Long, tablePartitionCount: Int) =
       if (df.schema.fieldNames.contains(partitionCol)) {
         if (stats.isDefined && stats.get.partitionRange.wellDefined) {
@@ -780,7 +787,7 @@ case class TableUtils(sparkSession: SparkSession) {
         _.map(table =>
           firstAvailablePartition(table,
                                   inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty),
-                                  partitionColumnName = inputTableToPartitionColumnsMap.get(table))).min)
+                                  partitionColOpt = inputTableToPartitionColumnsMap.get(table))).min)
       assert(
         inputStart.isDefined,
         s"""Either partition range needs to have a valid start or
@@ -814,7 +821,7 @@ case class TableUtils(sparkSession: SparkSession) {
           .flatMap { table =>
             partitions(table,
                        inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty),
-                       partitionColumnName = inputTableToPartitionColumnsMap.get(table))
+                       partitionColOpt = inputTableToPartitionColumnsMap.get(table))
           }
           .map(partitionSpec.shift(_, inputToOutputShift))
       }

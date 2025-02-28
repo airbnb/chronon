@@ -71,6 +71,7 @@ abstract class JoinBase(joinConf: api.Join,
     val partLeftKeys = joinPart.rightToLeft.values.toArray
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
+    // At dataframe, we already renamed various partition column names to the common default
     val additionalKeys: Seq[String] = {
       if (joinConf.left.dataModel == Entities) {
         Seq(tableUtils.partitionColumn)
