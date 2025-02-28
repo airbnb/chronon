@@ -79,40 +79,6 @@ maven_repo = repo(
         # Proto
         "com.google.protobuf:protobuf-java:3.21.7",
 
-        # Flink
-        versioned_artifacts("1.19.0", [
-            "org.apache.flink:flink-clients",
-            "org.apache.flink:flink-connector-files",
-            "org.apache.flink:flink-connector-hive_2.12",
-            "org.apache.flink:flink-csv",
-            "org.apache.flink:flink-json",
-            "org.apache.flink:flink-metrics-core",
-            "org.apache.flink:flink-metrics-prometheus:jar",
-            "org.apache.flink:flink-orc",
-            "org.apache.flink:flink-parquet",
-            "org.apache.flink:flink-protobuf",
-            "org.apache.flink:flink-scala_2.12",
-            "org.apache.flink:flink-sql-gateway-api",
-            "org.apache.flink:flink-streaming-java",
-            "org.apache.flink:flink-streaming-scala_2.12",
-            "org.apache.flink:flink-table-api-java",
-            "org.apache.flink:flink-table-planner_2.12",
-            "org.apache.flink:flink-test-utils",
-            "org.apache.flink:flink-streaming-java:jar:tests",
-            "org.apache.flink:flink-metrics-dropwizard",
-        ]),
-        maven.artifact(
-            group = "org.apache.flink",
-            artifact = "flink-core",
-            version = "1.19.0",
-            classifier = "tests",
-        ),
-        maven.artifact(
-            group = "org.apache.flink",
-            artifact = "flink-runtime",
-            version = "1.19.0",
-            classifier = "tests",
-        ),
         # MongoDB Scala Driver and dependencies
         "org.mongodb.scala:mongo-scala-driver_2.12:4.11.1",
         "org.mongodb.scala:mongo-scala-bson_2.12:4.11.1",

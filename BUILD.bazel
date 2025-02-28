@@ -15,3 +15,7 @@ compile_pip_requirements(
     # remove + adopt requirements_[platform] arguments when we're on rules_python>=0.10.0
     tags = ["manual"],
 )
+
+exports_files(
+    ["pom.xml.tpl"],
+)
