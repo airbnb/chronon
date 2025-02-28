@@ -40,7 +40,6 @@ class DataRangeTest {
     )
     DataFrameGen
       .events(spark, viewsSchema, count = 1000, partitions = 200)
-      .drop("ds")
       .save(testTable, partitionColumns = Seq())
     val partitionRange: PartitionRange = PartitionRange("2024-03-01", "2024-04-01")(tableUtils)
     val source: Source = Builders.Source.events(

@@ -118,7 +118,7 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
   private def genScanQuery(query: Query,
                            table: String,
                            fillIfAbsent: Map[String, String] = Map.empty,
-                           partitionColumn: String = tableUtils.partitionColumn): String = {
+                           partitionColumn: String): String = {
     // Because we allow query to specify custom partition column,
     // it is not safe to use this method independently without renaming the column
     // to the standard one. If you want to test gen query, use `scanQueryStringAndDf` instead.
