@@ -30,8 +30,8 @@ object OnlineDerivationUtil {
 
   def buildRenameOnlyDerivationFunction(derivationsScala: List[Derivation]): DerivationFunc = {
     {
-      case (_: Map[String, Any], values: Map[String, Any]) =>
-        reintroduceExceptions(derivationsScala.applyRenameOnlyDerivation(values), values)
+      case (keys: Map[String, Any], values: Map[String, Any]) =>
+        reintroduceExceptions(derivationsScala.applyRenameOnlyDerivation(keys, values), values)
     }
   }
 
@@ -104,12 +104,13 @@ object OnlineDerivationUtil {
       }
       val expressions: Seq[StructField] = baseExpressions ++ derivationsScala.derivationsWithoutStar.map { d =>
         {
-          if (baseValueSchema.typeOf(d.expression).isEmpty) {
+          val allSchema = StructType("all", (keySchema ++ baseValueSchema).toArray)
+          if (allSchema.typeOf(d.expression).isEmpty) {
             throw new IllegalArgumentException(
               s"Failed to run expression ${d.expression} for ${d.name}. Please ensure the derivation is " +
                 s"correct.")
           } else {
-            StructField(d.name, baseValueSchema.typeOf(d.expression).get)
+            StructField(d.name, allSchema.typeOf(d.expression).get)
           }
         }
       }
