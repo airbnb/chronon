@@ -70,6 +70,51 @@ class DataRangeTest {
   }
 
   @Test
+  def testGenScanQueryWithPartitionColumn(): Unit = {
+    val namespace = "date_range_test_namespace_with_partition_column"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    val customPartitionCol = "custom_partition_date"
+    val testTable = s"$namespace.test_gen_scan_query"
+    val viewsSchema = List(
+      Column("col_1", api.StringType, 1),
+      Column("col_2", api.StringType, 1),
+      Column(customPartitionCol, api.StringType, 1)
+    )
+    DataFrameGen
+      .events(spark, viewsSchema, count = 1000, partitions = 200)
+      .save(testTable, partitionColumns = Seq(customPartitionCol))
+    val partitionRange: PartitionRange = PartitionRange("2024-03-01", "2024-04-01")(tableUtils)
+    val source: Source = Builders.Source.events(
+      query = Builders.Query(
+        selects = Builders.Selects("col_1", "col_2"),
+        wheres = Seq("col_1 = 'TEST'"),
+        timeColumn = "ts",
+        partitionColumn = customPartitionCol
+      ),
+      table = testTable
+    )
+
+    val result: String = partitionRange.genScanQuery(
+      source.getEvents.query,
+      testTable,
+      Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull,
+        customPartitionCol -> null).toMap,
+      partitionColumn = customPartitionCol
+    )
+
+    val expected: String =
+      s"""SELECT
+        |  ts as `ts`,
+        |  `custom_partition_date`,
+        |  col_1 as `col_1`,
+        |  col_2 as `col_2`
+        |FROM date_range_test_namespace_with_partition_column.test_gen_scan_query
+        |WHERE
+        |  ($customPartitionCol >= '2024-03-01') AND ($customPartitionCol <= '2024-04-01') AND (col_1 = 'TEST')"""
+    assertEquals(expected.stripMargin, result.stripMargin)
+  }
+
+  @Test
   def testIntersect(): Unit = {
     val range1 = PartitionRange(null, null)(tableUtils)
     val range2 = PartitionRange("2023-01-01", "2023-01-02")(tableUtils)

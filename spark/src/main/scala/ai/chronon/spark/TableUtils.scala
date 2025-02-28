@@ -553,6 +553,12 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
+  def sqlWithDefaultPartitionColumn(query: String, existingPartitionColumn: String): DataFrame = {
+    // To support joining table sources with various partition column name,
+    // we rename partition column back to the default
+    sql(query).withColumnRenamed(existingPartitionColumn, partitionColumn)
+  }
+
   def insertUnPartitioned(df: DataFrame,
                           tableName: String,
                           tableProperties: Map[String, String] = null,

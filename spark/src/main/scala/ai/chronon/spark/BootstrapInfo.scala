@@ -85,13 +85,12 @@ object BootstrapInfo {
       .map(part => {
         // set computeDependency to False as we compute dependency upstream
         val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency)
-        val partitionColumn = tableUtils.getPartitionColumn(part.groupBy.getPartitionColumn)
         val keySchema = SparkConversions
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
 
         val keyAndPartitionFields =
-          gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(partitionColumn, StringType))
+          gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
         // todo: this change is only valid for offline use case
         // we need to revisit logic for the logging part to make sure the derived columns are also logged
         // to make bootstrap continue to work
@@ -203,7 +202,7 @@ object BootstrapInfo {
         val partitionColumn = tableUtils.getPartitionColumn(part.query)
         val bootstrapQuery =
           range.genScanQuery(part.query, part.table, Map(partitionColumn -> null), partitionColumn = partitionColumn)
-        val bootstrapDf = tableUtils.sql(bootstrapQuery).withColumnRenamed(partitionColumn, tableUtils.partitionColumn)
+        val bootstrapDf = tableUtils.sqlWithDefaultPartitionColumn(bootstrapQuery, partitionColumn)
         val schema = bootstrapDf.schema
         val missingKeys = part.keys(joinConf, tableUtils.partitionColumn).filterNot(schema.fieldNames.contains)
         collectException(

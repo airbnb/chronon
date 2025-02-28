@@ -559,8 +559,13 @@ class Join(joinConf: api.Join,
               logger.info(s"partition range of bootstrap table ${part.table} is beyond unfilled range")
               partialDf
             } else {
-              var bootstrapDf = tableUtils.sql(
-                bootstrapRange.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
+              val partitionColumn = tableUtils.getPartitionColumn(part.query)
+              var bootstrapDf = tableUtils.sqlWithDefaultPartitionColumn(
+                bootstrapRange.genScanQuery(part.query,
+                                            part.table,
+                                            Map(partitionColumn -> null),
+                                            partitionColumn = partitionColumn),
+                existingPartitionColumn = partitionColumn
               )
 
               // attach semantic_hash for either log or regular table bootstrap

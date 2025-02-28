@@ -298,7 +298,7 @@ class Analyzer(tableUtils: TableUtils,
                                          joinConf.left.table,
                                          fillIfAbsent = Map(partitionColumn -> null),
                                          partitionColumn = partitionColumn)
-      val leftDf: DataFrame = tableUtils.sql(scanQuery)
+      val leftDf: DataFrame = tableUtils.sqlWithDefaultPartitionColumn(scanQuery, partitionColumn)
       (analysis, leftDf)
     }
 
