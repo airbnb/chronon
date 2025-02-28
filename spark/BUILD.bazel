@@ -138,7 +138,6 @@ java_export(
     name = "spark-export",
     maven_coordinates = "ai.chronon:spark_uber_$(spark_version)_$(scala_version):$(version)",
     pom_template = ":generate_pom",
-    tags = ["no-javadocs"],
     runtime_deps = [
         ":spark",
     ],
