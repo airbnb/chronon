@@ -72,8 +72,6 @@ class GroupByTest {
     assertEquals(0, diff.count())
   }
 
-
-
   @Test
   def testSnapshotEvents(): Unit = {
     lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
