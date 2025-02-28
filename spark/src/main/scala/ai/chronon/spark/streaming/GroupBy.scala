@@ -115,6 +115,7 @@ class GroupBy(inputStream: DataFrame,
         mutation != null && (!(mutation.before != null && mutation.after != null) || !(mutation.before sameElements mutation.after)))
 
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
+    val streamSchemaEncoder = EncoderUtil(streamSchema)
     logger.info(s"""
         | group by serving info: $groupByServingInfo
         | Streaming source: $streamingSource
@@ -128,7 +129,14 @@ class GroupBy(inputStream: DataFrame,
         Seq(mutation.after, mutation.before)
           .filter(_ != null)
           .map(SparkConversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
-      }(EncoderUtil(streamSchema))
+      }(streamSchemaEncoder)
+      .map { row =>
+        {
+          // Report flattened row count metric
+          ingressContext.withSuffix("flatten").increment(Metrics.Name.RowCount)
+          row
+        }
+      }(streamSchemaEncoder)
 
     des.createOrReplaceTempView(streamingTable)
 
