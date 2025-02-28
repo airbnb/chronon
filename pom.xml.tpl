@@ -15,6 +15,7 @@
 			<distribution>repo</distribution>
 		</license>
 	</licenses>
+	<name>{name}</name>
 	<organization>
 		<name>chronon</name>
 		<url>https://github.com/airbnb/chronon</url>

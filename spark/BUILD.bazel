@@ -114,6 +114,17 @@ jvm_binary(
     runtime_deps = [":spark"],
 )
 
+genrule(
+    name = "generate_pom",
+    srcs = ["//:pom.xml.tpl"],
+    outs = ["spark-export-pom.tpl"],
+    cmd = """
+    cat $(location //:pom.xml.tpl) \\
+        | sed 's/{name}/spark_uber/g' \\
+        > $@
+    """,
+)
+
 java_export(
     name = "spark-assembly-export",
     maven_coordinates = "ai.chronon:spark_uber_$(spark_version)_$(scala_version):$(version)",
@@ -126,7 +137,7 @@ java_export(
 java_export(
     name = "spark-export",
     maven_coordinates = "ai.chronon:spark_uber_$(spark_version)_$(scala_version):$(version)",
-    pom_template = "//:pom.xml.tpl",
+    pom_template = ":generate_pom",
     tags = ["no-javadocs"],
     runtime_deps = [
         ":spark",
