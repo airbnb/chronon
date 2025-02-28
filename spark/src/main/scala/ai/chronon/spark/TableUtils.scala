@@ -616,7 +616,7 @@ case class TableUtils(sparkSession: SparkSession) {
   }
 
   def getPartitionColumn(q: Query): String = {
-    Option(q.partitionColumn).getOrElse(partitionColumn)
+    Option(q).map(_.partitionColumn).filter(_ != null).getOrElse(partitionColumn)
   }
 
   def getPartitionColumn(columnOpt: Option[String] = None): String = {
