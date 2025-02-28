@@ -466,17 +466,20 @@ object GroupBy {
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala
       .map { source =>
-        val df = tableUtils.sql(
-          renderDataSourceQuery(groupByConf,
-                                source,
-                                groupByConf.getKeyColumns.toScala,
-                                queryRange,
-                                tableUtils,
-                                groupByConf.maxWindow,
-                                groupByConf.inferredAccuracy)
+        val partitionColumn = tableUtils.getPartitionColumn(source.query)
+        tableUtils.sqlWithDefaultPartitionColumn(
+          renderDataSourceQuery(
+            groupByConf,
+            source,
+            groupByConf.getKeyColumns.toScala,
+            queryRange,
+            tableUtils,
+            groupByConf.maxWindow,
+            groupByConf.inferredAccuracy,
+            partitionColumn = partitionColumn
+          ),
+          existingPartitionColumn = partitionColumn
         )
-        val partitionColumn = Option(source.query.partitionColumn).getOrElse(tableUtils.partitionColumn)
-        df.withColumnRenamed(partitionColumn, tableUtils.partitionColumn)
       }
       .reduce { (df1, df2) =>
         // align the columns by name - when one source has select * the ordering might not be aligned
@@ -521,16 +524,21 @@ object GroupBy {
     def mutationDfFn(): DataFrame = {
       val df: DataFrame = if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
         val mutationDf = mutationSources
-          .map(ms =>
-            renderDataSourceQuery(groupByConf,
-                                  ms,
-                                  groupByConf.getKeyColumns.toScala,
-                                  queryRange.shift(1),
-                                  tableUtils,
-                                  groupByConf.maxWindow,
-                                  groupByConf.inferredAccuracy,
-                                  mutations = true))
-          .map { tableUtils.sql }
+          .map { ms =>
+            val partitionColumn = tableUtils.getPartitionColumn(ms.query)
+            val query = renderDataSourceQuery(
+              groupByConf,
+              ms,
+              groupByConf.getKeyColumns.toScala,
+              queryRange.shift(1),
+              tableUtils,
+              groupByConf.maxWindow,
+              groupByConf.inferredAccuracy,
+              partitionColumn = partitionColumn,
+              mutations = true
+            )
+            tableUtils.sqlWithDefaultPartitionColumn(query, partitionColumn)
+          }
           .reduce { (df1, df2) =>
             val columns1 = df1.schema.fields.map(_.name)
             df1.union(df2.selectExpr(columns1: _*))
@@ -604,6 +612,7 @@ object GroupBy {
                             tableUtils: TableUtils,
                             window: Option[api.Window],
                             accuracy: api.Accuracy,
+                            partitionColumn: String,
                             mutations: Boolean = false): String = {
 
     val sourceTableIsPartitioned = tableUtils.isPartitioned(source.table, source.partitionColumnOpt)
@@ -612,7 +621,6 @@ object GroupBy {
       Some(getIntersectedRange(source, queryRange, tableUtils, window))
     } else None
 
-    val partitionColumn = Option(source.query.partitionColumn).getOrElse(tableUtils.partitionColumn)
     var metaColumns: Map[String, String] = Map(partitionColumn -> null)
     if (mutations) {
       metaColumns ++= Map(

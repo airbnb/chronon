@@ -720,7 +720,8 @@ class JoinTest {
       PartitionRange("2021-02-23", "2021-05-03")(tableUtils),
       tableUtils,
       None,
-      viewsGroupByCumulative.inferredAccuracy
+      viewsGroupByCumulative.inferredAccuracy,
+      tableUtils.partitionColumn
     )
     // Only checking that the date logic is correct in the query
     assert(renderedCumulative.contains(s"(ds >= '${today}') AND (ds <= '${today}')"))
@@ -734,7 +735,8 @@ class JoinTest {
       PartitionRange("2021-01-01", "2021-01-01")(tableUtils),
       tableUtils,
       None,
-      viewsGroupByCumulative.inferredAccuracy
+      viewsGroupByCumulative.inferredAccuracy,
+      tableUtils.partitionColumn
     )
     println(renderedIncremental)
     assert(renderedIncremental.contains(s"(ds >= '2021-01-01') AND (ds <= '2021-01-01')"))
