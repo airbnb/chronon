@@ -25,6 +25,7 @@ def Query(
     setups: List[str] = [],
     mutation_time_column: str = None,
     reversal_column: str = None,
+    partition_column: str = None,
 ) -> api.Query:
     """
     Create a query object that is used to scan data from various data sources.
@@ -68,7 +69,11 @@ def Query(
         inserts only have is_before = false (just the new value).
         deletes only have is_before = true (just the old value).
         This is not necessary for event sources.
-    :param reversal_column: str, optional (defaults to "is_before")
+    :type reversal_column: str, optional (defaults to "is_before")
+    :param partition_column: str, optional
+        Name of date partition column for the source table (not an expression derived from other columns)
+        Default value is "ds". This name does not concern the output table partitioning column.
+    :type partition_column: str, optional
     :return: A Query object that Chronon can use to scan just the necessary data efficiently.
     """
     return api.Query(
@@ -80,6 +85,7 @@ def Query(
         setups,
         mutation_time_column,
         reversal_column,
+        partition_column,
     )
 
 

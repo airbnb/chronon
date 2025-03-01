@@ -33,15 +33,15 @@ class LabelJoinTest {
   private val labelDS = "2022-10-30"
   private val tableUtils = TableUtils(spark)
 
-  def createViewsGroupBy(namespace: String): GroupByTestSuite = {
-    TestUtils.createViewsGroupBy(namespace, spark)
+  def createViewsGroupBy(namespace: String, partitionColOpt: Option[String] = None): GroupByTestSuite = {
+    TestUtils.createViewsGroupBy(namespace, spark, partitionColOpt=partitionColOpt)
   }
   @Test
   def testLabelJoin(): Unit = {
     val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
-      tableUtils.createDatabase(namespace)
-       val viewsGroupBy = createViewsGroupBy(namespace)
-       val left = viewsGroupBy.groupByConf.sources.get(0)
+    tableUtils.createDatabase(namespace)
+    val viewsGroupBy = createViewsGroupBy(namespace)
+    val left = viewsGroupBy.groupByConf.sources.get(0)
     val labelGroupBy = TestUtils.createRoomTypeGroupBy(namespace, spark, "listing_attributes").groupByConf
     val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy))
     val joinConf = Builders.Join(
@@ -116,6 +116,67 @@ class LabelJoinTest {
                                      |  SELECT listing_id, dim_reservations
                                      |  FROM ${namespace}.listing_attributes_reservation
                                      |  WHERE ds = '2022-10-30'
+                                     |) b
+                                     |ON aa.listing = b.listing_id
+                                    """.stripMargin)
+    logger.info(" == Expected == ")
+    expected.show()
+    assertEquals(computed.count(), expected.count())
+    assertEquals(computed.select("label_ds").first().get(0), labelDS)
+
+    val diff = Comparison.sideBySide(computed, expected, List("listing", "ds"))
+    if (diff.count() > 0) {
+      logger.info(s"Actual count: ${computed.count()}")
+      logger.info(s"Expected count: ${expected.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testLabelJoinMultiLabelsWithDifferentPartitionColumns(): Unit = {
+    val namespace = "label_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewPartitionCol = "view_date"
+    val viewsGroupBy = createViewsGroupBy(namespace, partitionColOpt = Some(viewPartitionCol))
+    val left = viewsGroupBy.groupByConf.sources.get(0)
+
+    val roomTypePartitionCol = "room_date"
+    val labelGroupBy1 = TestUtils.createRoomTypeGroupBy(namespace, spark, partitionColOpt=Some(roomTypePartitionCol)).groupByConf
+    val resTypePartitionCol = "res_date"
+    val labelGroupBy2 = TestUtils.createReservationGroupBy(namespace, spark, partitionColOpt = Some(resTypePartitionCol)).groupByConf
+    val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy1, labelGroupBy2))
+    val joinConf = Builders.Join(
+      Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
+      left,
+      joinParts = Seq.empty,
+      labelPart = labelJoinConf
+    )
+    val runner = new LabelJoin(joinConf, tableUtils, labelDS)
+    val computed = runner.computeLabelJoin(skipFinalJoin = true)
+    logger.info(" == Computed == ")
+    computed.show()
+    val expected = tableUtils.sql(s"""
+                                     |SELECT listing,
+                                     |       listing_attributes_room_dim_room_type,
+                                     |       b.dim_reservations as listing_attributes_reservation_dim_reservations,
+                                     |       label_ds,
+                                     |       aa.ds
+                                     |FROM (
+                                     |  SELECT v.listing_id as listing,
+                                     |         dim_room_type as listing_attributes_room_dim_room_type,
+                                     |         a.$roomTypePartitionCol as label_ds,
+                                     |         v.$viewPartitionCol as ds
+                                     |  FROM ${namespace}.listing_views as v
+                                     |  LEFT OUTER JOIN ${namespace}.listing_attributes_room as a
+                                     |  ON v.listing_id = a.listing_id
+                                     |  WHERE a.$roomTypePartitionCol = '2022-10-30'
+                                     |) aa
+                                     |LEFT OUTER JOIN (
+                                     |  SELECT listing_id, dim_reservations
+                                     |  FROM ${namespace}.listing_attributes_reservation
+                                     |  WHERE $resTypePartitionCol = '2022-10-30'
                                      |) b
                                      |ON aa.listing = b.listing_id
                                     """.stripMargin)

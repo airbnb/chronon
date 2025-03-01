@@ -329,6 +329,17 @@ object Extensions {
       }
     }
 
+    def partitionColumnOpt: Option[String] = {
+      Option(source.query.partitionColumn)
+    }
+
+    def tableToPartitionColumn: Map[String, String] = {
+      partitionColumnOpt match {
+        case Some(col) => Map(table -> col)
+        case None      => Map.empty
+      }
+    }
+
     lazy val rootTable: String = {
       if (source.isSetEntities) {
         source.getEntities.getSnapshotTable
@@ -631,6 +642,19 @@ object Extensions {
       }
     }
 
+    def getPartitionColumn: Option[String] = {
+      val partitionColumns = groupBy.sources.toScala.map(_.partitionColumnOpt).collect {
+        case Some(c) => c
+      }
+      if (partitionColumns.isEmpty) {
+        None
+      } else if (partitionColumns.length == groupBy.sources.size()) {
+        partitionColumns.headOption
+      } else {
+        throw new IllegalArgumentException(
+          s"Expect all queries from a given group-by to have the same partition column. All sources should have identical schemas and same partition column name. Found distinct partition columns $partitionColumns for group-by ${groupBy.metaData.name}")
+      }
+    }
   }
 
   implicit class StringOps(string: String) {

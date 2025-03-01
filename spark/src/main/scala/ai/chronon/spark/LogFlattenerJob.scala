@@ -211,8 +211,7 @@ class LogFlattenerJob(session: SparkSession,
     val start = System.currentTimeMillis()
     val columnBeforeCount = columnCount()
     val rowCounts = unfilledRanges.map { unfilled =>
-      val rawTableScan = unfilled.genScanQuery(null, logTable)
-      val rawDf = tableUtils.sql(rawTableScan).where(col("name") === joinName)
+      val rawDf = unfilled.scanQueryDf(null, logTable).where(col("name") === joinName)
       val schemaHashes = rawDf.select(col(Constants.SchemaHash)).distinct().collect().map(_.getString(0)).toSeq
       val schemaStringsMap = fetchSchemas(schemaHashes)
 
@@ -231,7 +230,7 @@ class LogFlattenerJob(session: SparkSession,
 
       val inputRowCount = rawDf.count()
       // read from output table to avoid recomputation
-      val outputRowCount = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.loggedTable)).count()
+      val outputRowCount = unfilled.scanQueryDf(query = null, joinConf.metaData.loggedTable).count()
 
       (inputRowCount, outputRowCount)
     }

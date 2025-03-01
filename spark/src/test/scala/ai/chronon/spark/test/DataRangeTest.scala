@@ -40,7 +40,6 @@ class DataRangeTest {
     )
     DataFrameGen
       .events(spark, viewsSchema, count = 1000, partitions = 200)
-      .drop("ds")
       .save(testTable, partitionColumns = Seq())
     val partitionRange: PartitionRange = PartitionRange("2024-03-01", "2024-04-01")(tableUtils)
     val source: Source = Builders.Source.events(
@@ -52,10 +51,10 @@ class DataRangeTest {
       table = testTable
     )
 
-    val result: String = partitionRange.genScanQuery(
+    val (scanQuery, _) = partitionRange.scanQueryStringAndDf(
       source.getEvents.query,
       testTable,
-      Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull).toMap
+      fillIfAbsent=Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull).toMap
     )
 
     val expected: String =
@@ -66,7 +65,52 @@ class DataRangeTest {
         |FROM date_range_test_namespace.test_gen_scan_query 
         |WHERE
         |  (ds >= '2024-03-01') AND (ds <= '2024-04-01') AND (col_1 = 'TEST')"""
-    assertEquals(expected.stripMargin, result.stripMargin)
+    assertEquals(expected.stripMargin, scanQuery.stripMargin)
+  }
+
+  @Test
+  def testGenScanQueryWithPartitionColumn(): Unit = {
+    val namespace = "date_range_test_namespace_with_partition_column"
+    spark.sql(s"CREATE DATABASE IF NOT EXISTS $namespace")
+    val customPartitionCol = "custom_partition_date"
+    val testTable = s"$namespace.test_gen_scan_query"
+    val viewsSchema = List(
+      Column("col_1", api.StringType, 1),
+      Column("col_2", api.StringType, 1),
+      Column(customPartitionCol, api.StringType, 1)
+    )
+    DataFrameGen
+      .events(spark, viewsSchema, count = 1000, partitions = 200)
+      .save(testTable, partitionColumns = Seq(customPartitionCol))
+    val partitionRange: PartitionRange = PartitionRange("2024-03-01", "2024-04-01")(tableUtils)
+    val source: Source = Builders.Source.events(
+      query = Builders.Query(
+        selects = Builders.Selects("col_1", "col_2"),
+        wheres = Seq("col_1 = 'TEST'"),
+        timeColumn = "ts",
+        partitionColumn = customPartitionCol
+      ),
+      table = testTable
+    )
+
+    val (scanQuery, _) = partitionRange.scanQueryStringAndDf(
+      source.getEvents.query,
+      testTable,
+      fillIfAbsent = Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull,
+        customPartitionCol -> null).toMap,
+      partitionColOpt = Some(customPartitionCol)
+    )
+
+    val expected: String =
+      s"""SELECT
+        |  ts as `ts`,
+        |  `custom_partition_date`,
+        |  col_1 as `col_1`,
+        |  col_2 as `col_2`
+        |FROM date_range_test_namespace_with_partition_column.test_gen_scan_query 
+        |WHERE
+        |  ($customPartitionCol >= '2024-03-01') AND ($customPartitionCol <= '2024-04-01') AND (col_1 = 'TEST')"""
+    assertEquals(expected.stripMargin, scanQuery.stripMargin)
   }
 
   @Test

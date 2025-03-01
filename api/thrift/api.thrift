@@ -13,6 +13,7 @@ struct Query {
     6: optional list<string> setups = []
     7: optional string mutationTimeColumn
     8: optional string reversalColumn
+    9: optional string partitionColumn
 }
 
 /**

@@ -45,7 +45,8 @@ object Builders {
               timeColumn: String = null,
               setups: Seq[String] = null,
               mutationTimeColumn: String = null,
-              reversalColumn: String = null): Query = {
+              reversalColumn: String = null,
+              partitionColumn: String = null): Query = {
       val result = new Query()
       if (selects != null)
         result.setSelects(selects.toJava)
@@ -58,6 +59,7 @@ object Builders {
         result.setSetups(setups.toJava)
       result.setMutationTimeColumn(mutationTimeColumn)
       result.setReversalColumn(reversalColumn)
+      result.setPartitionColumn(partitionColumn)
       result
     }
   }

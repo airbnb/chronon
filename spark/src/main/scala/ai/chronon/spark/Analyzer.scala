@@ -187,20 +187,30 @@ class Analyzer(tableUtils: TableUtils,
     AggregationMetadata(columnName, columnType, operation, "Unbounded", columnName)
   }
 
-  def analyzeGroupBy(
-      groupByConf: api.GroupBy,
-      prefix: String = "",
-      includeOutputTableName: Boolean = false,
-      enableHitter: Boolean = false,
-      skipTimestampCheck: Boolean = skipTimestampCheck): (Array[AggregationMetadata], Map[String, DataType]) = {
+  def analyzeGroupBy(groupByConf: api.GroupBy,
+                     prefix: String = "",
+                     includeOutputTableName: Boolean = false,
+                     enableHitter: Boolean = false,
+                     skipTimestampCheck: Boolean = skipTimestampCheck,
+                     validateTablePermission: Boolean = true): (Array[AggregationMetadata], Map[String, DataType]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
 
+    val noAccessTables = if (validateTablePermission) {
+      groupByConf.sources.toScala.flatMap { s =>
+        runTablePermissionValidation(Set(s.table), s.partitionColumnOpt)
+      }
+    } else Set.empty
+
     if (!skipTimestampCheck) {
-      val timestampChecks = runTimestampChecks(groupBy.inputDf)
-      validateTimestampChecks(timestampChecks, "GroupBy", name)
+      if (noAccessTables.isEmpty) {
+        val timestampChecks = runTimestampChecks(groupBy.inputDf)
+        validateTimestampChecks(timestampChecks, "GroupBy", name)
+      } else {
+        logger.warn(s"skipping the timestamp checks due to permission errors in ${noAccessTables.size} tables")
+      }
     }
 
     val analysis =
@@ -213,7 +223,9 @@ class Analyzer(tableUtils: TableUtils,
       // handle group by backfill mode for derivations
       // todo: add the similar logic to join derivations
       val keyAndPartitionFields =
-        groupBy.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
+        groupBy.keySchema.fields ++ Seq(
+          org.apache.spark.sql.types
+            .StructField(tableUtils.getPartitionColumn(groupByConf.getPartitionColumn), StringType))
       val sparkSchema = {
         StructType(SparkConversions.fromChrononSchema(groupBy.outputSchema).fields ++ keyAndPartitionFields)
       }
@@ -280,21 +292,26 @@ class Analyzer(tableUtils: TableUtils,
       (analysis, leftDf)
     } else {
       val analysis = ""
-      val scanQuery = range.genScanQuery(joinConf.left.query,
-                                         joinConf.left.table,
-                                         fillIfAbsent = Map(tableUtils.partitionColumn -> null))
-      val leftDf: DataFrame = tableUtils.sql(scanQuery)
+      val leftQuery = joinConf.left.query
+      val partitionColumn = tableUtils.getPartitionColumn(leftQuery)
+      val leftDf: DataFrame = range.scanQueryDf(leftQuery,
+                                                joinConf.left.table,
+                                                fillIfAbsent = Map(partitionColumn -> null),
+                                                partitionColOpt = Some(partitionColumn),
+                                                renamePartitionCol = true)
       (analysis, leftDf)
     }
 
-    val gbTables = ListBuffer[String]()
-    joinConf.joinParts.toScala.foreach { part =>
-      gbTables ++= part.groupBy.sources.toScala.map(_.table)
-    }
-
     val noAccessTables = if (validateTablePermission) {
-      runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
-    } else Set()
+      val rightNoAccessTables = joinConf.joinParts.toScala.flatMap { part =>
+        part.groupBy.sources.toScala.flatMap { s =>
+          runTablePermissionValidation(Set(s.table), s.partitionColumnOpt)
+        }
+      }.toSet
+      val leftNoAccessTables =
+        runTablePermissionValidation(Set(joinConf.left.table), joinConf.left.partitionColumnOpt)
+      rightNoAccessTables ++ leftNoAccessTables
+    } else Set.empty
 
     if (!skipTimestampCheck) {
       if (noAccessTables.isEmpty) {
@@ -318,7 +335,10 @@ class Analyzer(tableUtils: TableUtils,
       JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate, historicalBackfill = joinConf.historicalBackfill)
     logger.info(s"Join range to fill $rangeToFill")
     val unfilledRanges = tableUtils
-      .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)))
+      .unfilledRanges(joinConf.metaData.outputTable,
+                      rangeToFill,
+                      Some(Seq(joinConf.left.table)),
+                      inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn)
       .getOrElse(Seq.empty)
 
     joinConf.joinParts.toScala.foreach { part =>
@@ -477,13 +497,13 @@ class Analyzer(tableUtils: TableUtils,
 
   // validate the table permissions for given list of tables
   // return a list of tables that the user doesn't have access to
-  def runTablePermissionValidation(sources: Set[String]): Set[String] = {
+  def runTablePermissionValidation(sources: Set[String], partitionColOpt: Option[String] = None): Set[String] = {
     logger.info(s"Validating ${sources.size} tables permissions ...")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     //todo: handle offset-by-1 depending on temporal vs snapshot accuracy
     val partitionFilter = tableUtils.partitionSpec.minus(today, new Window(2, TimeUnit.DAYS))
     sources.filter { sourceTable =>
-      !tableUtils.checkTablePermission(sourceTable, partitionFilter)
+      !tableUtils.checkTablePermission(sourceTable, partitionFilter, partitionColOpt)
     }
   }
 

@@ -239,8 +239,7 @@ class Join(joinConf: api.Join,
   }
 
   override def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit = {
-    val bootstrapDf =
-      tableUtils.sql(leftRange.genScanQuery(query = null, table = bootstrapTable)).addTimebasedColIfExists()
+    val bootstrapDf = leftRange.scanQueryDf(query = null, table = bootstrapTable).addTimebasedColIfExists()
     val rightPartsData = getRightPartsData(leftRange)
     val joinedDfTry =
       try {
@@ -559,10 +558,12 @@ class Join(joinConf: api.Join,
               logger.info(s"partition range of bootstrap table ${part.table} is beyond unfilled range")
               partialDf
             } else {
-              var bootstrapDf = tableUtils.sql(
-                bootstrapRange.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
-              )
-
+              val partitionColumn = tableUtils.getPartitionColumn(part.query)
+              var bootstrapDf = bootstrapRange.scanQueryDf(part.query,
+                                                           part.table,
+                                                           fillIfAbsent = Map(partitionColumn -> null),
+                                                           partitionColOpt = Some(partitionColumn),
+                                                           renamePartitionCol = true)
               // attach semantic_hash for either log or regular table bootstrap
               validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
               if (bootstrapDf.columns.contains(Constants.SchemaHash)) {
@@ -604,7 +605,7 @@ class Join(joinConf: api.Join,
     val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
     logger.info(s"Finished computing bootstrap table ${joinConf.metaData.bootstrapTable} in ${elapsedMins} minutes")
 
-    tableUtils.sql(range.genScanQuery(query = null, table = bootstrapTable))
+    range.scanQueryDf(query = null, table = bootstrapTable)
   }
 
   /*

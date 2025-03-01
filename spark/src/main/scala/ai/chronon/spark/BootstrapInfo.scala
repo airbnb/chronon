@@ -198,8 +198,8 @@ object BootstrapInfo {
     val tableHashes = tableBootstrapParts
       .map(part => {
         val range = PartitionRange(part.startPartition, part.endPartition)(tableUtils)
-        val bootstrapQuery = range.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
-        val bootstrapDf = tableUtils.sql(bootstrapQuery)
+        val (bootstrapQuery, bootstrapDf) =
+          range.scanQueryStringAndDf(part.query, part.table, fillIfAbsent = Map(tableUtils.partitionColumn -> null))
         val schema = bootstrapDf.schema
         val missingKeys = part.keys(joinConf, tableUtils.partitionColumn).filterNot(schema.fieldNames.contains)
         collectException(

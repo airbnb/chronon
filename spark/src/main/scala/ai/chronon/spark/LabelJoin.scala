@@ -119,7 +119,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val sanitizedLabelDs = labelDS.getOrElse(today)
     logger.info(s"Label join range to fill $leftRange")
-    def finalResult = tableUtils.sql(leftRange.genScanQuery(null, outputLabelTable))
+    def finalResult = leftRange.scanQueryDf(query = null, outputLabelTable)
 
     val leftFeatureRange = leftRange
     stepDays.foreach(metrics.gauge("step_days", _))
@@ -189,8 +189,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
                 s"${joinConf.metaData.name}/${labelJoinPart.groupBy.getMetaData.getName}")
             throw e
         }
-        tableUtils.sql(
-          labelOutputRange.genScanQuery(query = null, partTable, partitionColumn = Constants.LabelPartitionColumn))
+        labelOutputRange.scanQueryDf(query = null, partTable, partitionColOpt = Some(Constants.LabelPartitionColumn))
       }
     }
 

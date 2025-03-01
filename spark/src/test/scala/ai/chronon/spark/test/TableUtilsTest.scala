@@ -340,11 +340,11 @@ class TableUtilsTest {
                       PartitionRange("2022-10-05", "2022-10-05")(tableUtils)))
   }
 
-  private def prepareTestDataWithSubPartitions(tableName: String): Unit = {
+  private def prepareTestDataWithSubPartitions(tableName: String, partitionColOpt: Option[String] = None): Unit = {
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
     val columns1 = Array(
       StructField("long_field", LongType),
-      StructField("ds", StringType),
+      StructField(partitionColOpt.getOrElse("ds"), StringType),
       StructField("label_ds", StringType)
     )
     val df1 = makeDf(
@@ -364,7 +364,8 @@ class TableUtilsTest {
     )
     tableUtils.insertPartitions(df1,
                                 tableName,
-                                partitionColumns = Seq(tableUtils.partitionColumn, Constants.LabelPartitionColumn))
+                                partitionColumns = Seq(partitionColOpt.getOrElse(tableUtils.partitionColumn),
+                                  Constants.LabelPartitionColumn))
 
   }
 
@@ -458,5 +459,20 @@ class TableUtilsTest {
     val tblPropsAfter = tableUtils.sql(s"SHOW TBLPROPERTIES $tableName").collect()
     val mapValAfter = readTblPropertiesMap(tblPropsAfter)
     assert(mapValAfter.getOrElse("chronon_archived","false") == "false")
+  }
+
+  @Test
+  def testSqlWithDefaultPartitionColumn(): Unit = {
+    val tableName = "db.test_sql_with_partition_column_renamed"
+    val partitionCol = "custom_partition_date"
+    prepareTestDataWithSubPartitions(tableName, partitionColOpt = Some(partitionCol))
+
+    val query = s"select * from $tableName"
+
+    def hasPartitionCol(_df: DataFrame) = {
+      _df.schema.fields.map(_.name).contains(partitionCol)
+    }
+    assert(hasPartitionCol(tableUtils.sql(query)))
+    assert(!hasPartitionCol(tableUtils.sqlWithDefaultPartitionColumn(query, partitionCol)))
   }
 }

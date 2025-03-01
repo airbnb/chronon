@@ -107,9 +107,8 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) return null
     val allMetrics = unfilledRanges.map { unfilled =>
-      val comparisonDf = tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.comparisonTable))
-      val loggedDf =
-        tableUtils.sql(unfilled.genScanQuery(null, joinConf.metaData.loggedTable)).drop(Constants.SchemaHash)
+      val comparisonDf = unfilled.scanQueryDf(null, joinConf.metaData.comparisonTable)
+      val loggedDf = unfilled.scanQueryDf(null, joinConf.metaData.loggedTable).drop(Constants.SchemaHash)
       // there could be external columns that are logged during online env, therefore they could not be used for computing OOC
       val loggedDfNoExternalCols = loggedDf.select(comparisonDf.columns.map(org.apache.spark.sql.functions.col): _*)
       logger.info("Starting compare job for stats")
