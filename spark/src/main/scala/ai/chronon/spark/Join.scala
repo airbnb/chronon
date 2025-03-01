@@ -562,7 +562,8 @@ class Join(joinConf: api.Join,
               var bootstrapDf = bootstrapRange.scanQueryDf(part.query,
                                                            part.table,
                                                            fillIfAbsent = Map(partitionColumn -> null),
-                                                           partitionColOpt = Some(partitionColumn))
+                                                           partitionColOpt = Some(partitionColumn),
+                                                           renamePartitionCol = true)
               // attach semantic_hash for either log or regular table bootstrap
               validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
               if (bootstrapDf.columns.contains(Constants.SchemaHash)) {

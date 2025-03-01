@@ -297,7 +297,8 @@ class Analyzer(tableUtils: TableUtils,
       val leftDf: DataFrame = range.scanQueryDf(leftQuery,
                                                 joinConf.left.table,
                                                 fillIfAbsent = Map(partitionColumn -> null),
-                                                partitionColOpt = Some(partitionColumn))
+                                                partitionColOpt = Some(partitionColumn),
+                                                renamePartitionCol = true)
       (analysis, leftDf)
     }
 
