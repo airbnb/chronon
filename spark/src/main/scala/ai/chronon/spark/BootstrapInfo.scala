@@ -177,8 +177,7 @@ object BootstrapInfo {
       .foreach(part => {
         // practically there should only be one logBootstrapPart per Join, but nevertheless we will loop here
         val schema = tableUtils.getSchemaFromTable(part.table)
-        val partitionColumn = tableUtils.getPartitionColumn(part.query)
-        val missingKeys = part.keys(joinConf, partitionColumn).filterNot(schema.fieldNames.contains)
+        val missingKeys = part.keys(joinConf, tableUtils.partitionColumn).filterNot(schema.fieldNames.contains)
         collectException(
           assert(
             missingKeys.isEmpty,
@@ -199,12 +198,8 @@ object BootstrapInfo {
     val tableHashes = tableBootstrapParts
       .map(part => {
         val range = PartitionRange(part.startPartition, part.endPartition)(tableUtils)
-        val partitionColumn = tableUtils.getPartitionColumn(part.query)
         val (bootstrapQuery, bootstrapDf) =
-          range.scanQueryStringAndDf(part.query,
-                                     part.table,
-                                     fillIfAbsent = Map(partitionColumn -> null),
-                                     partitionColOpt = Some(partitionColumn))
+          range.scanQueryStringAndDf(part.query, part.table, fillIfAbsent = Map(tableUtils.partitionColumn -> null))
         val schema = bootstrapDf.schema
         val missingKeys = part.keys(joinConf, tableUtils.partitionColumn).filterNot(schema.fieldNames.contains)
         collectException(
