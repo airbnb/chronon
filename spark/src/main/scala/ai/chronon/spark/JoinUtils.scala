@@ -54,7 +54,8 @@ object JoinUtils {
       joinConf.left.table,
       appendRawQueryString = limit.map(num => s" LIMIT $num").getOrElse(""),
       fillIfAbsent = Map(partitionColumn -> null) ++ timeProjection,
-      partitionColOpt = Some(partitionColumn)
+      partitionColOpt = Some(partitionColumn),
+      renamePartitionCol = true
     )
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter
