@@ -13,7 +13,7 @@ def versioned_artifacts(version, artifacts, exclusions = None):
 
 SUPPORTED_SCALA_VERSIONS = ["2.12", "2.13"]
 
-def repo(name, pinned = True, artifacts = [], overrides = {}, provided = False, vars = {}, excluded_artifacts = []):
+def repo(name, pinned = True, artifacts = [], overrides = {}, vars = {}, excluded_artifacts = []):
     final_artifacts = []
     flat_artifacts = flatten(artifacts)
     for artifact in parse.parse_artifact_spec_list(flat_artifacts):
@@ -27,7 +27,6 @@ def repo(name, pinned = True, artifacts = [], overrides = {}, provided = False, 
         pinned = pinned,
         artifacts = final_artifacts,
         overrides = overrides,
-        provided = provided,
         vars = vars,
         excluded_artifacts = excluded_artifacts,
     )

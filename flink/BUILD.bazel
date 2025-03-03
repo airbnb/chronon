@@ -1,3 +1,5 @@
+load("@rules_jvm_external//:defs.bzl", "java_export")
+
 scala_library(
     name = "flink",
     srcs = glob(["src/main/scala/ai/chronon/flink/**/*.scala"]),
@@ -6,15 +8,8 @@ scala_library(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
-        maven_artifact("org.apache.flink:flink-core"),
-        maven_artifact("org.apache.flink:flink-metrics-core"),
-        maven_artifact("org.apache.flink:flink-streaming-java"),
-        scala_artifact("org.apache.flink:flink-scala"),
-        scala_artifact("org.apache.flink:flink-streaming-scala"),
-        maven_artifact("org.apache.flink:flink-metrics-dropwizard"),
-        maven_artifact("io.dropwizard.metrics:metrics-core"),
-        maven_artifact("org.apache.thrift:libthrift"),
+        "//third_party/java/flink:flink-libs",
+        "//third_party/java/spark:spark-libs",
         maven_artifact("org.slf4j:slf4j-api"),
         maven_artifact("org.slf4j:slf4j-log4j12"),
         scala_artifact("org.scala-lang.modules:scala-collection-compat"),
@@ -31,19 +26,9 @@ scala_library(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
-        maven_artifact("org.apache.flink:flink-core"),
-        maven_artifact("org.apache.flink:flink-core-tests"),
-        maven_artifact("org.apache.flink:flink-runtime-tests"),
-        maven_artifact("org.apache.flink:flink-test-utils"),
-        maven_artifact("org.apache.flink:flink-metrics-core"),
-        maven_artifact("org.apache.flink:flink-streaming-java"),
-        scala_artifact("org.apache.flink:flink-scala"),
-        scala_artifact("org.apache.flink:flink-streaming-scala"),
+        "//third_party/java/flink:flink-libs",
+        "//third_party/java/spark:spark-libs",
         scala_artifact("org.scalatestplus:mockito-3-4"),
-        maven_artifact("org.apache.flink:flink-metrics-dropwizard"),
-        maven_artifact("io.dropwizard.metrics:metrics-core"),
-        maven_artifact("org.apache.thrift:libthrift"),
         maven_artifact("junit:junit"),
         maven_artifact("org.slf4j:slf4j-api"),
         maven_artifact("org.slf4j:slf4j-log4j12"),
@@ -67,19 +52,9 @@ scala_test_suite(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
-        maven_artifact("org.apache.flink:flink-core"),
-        maven_artifact("org.apache.flink:flink-core-tests"),
-        maven_artifact("org.apache.flink:flink-test-utils"),
-        maven_artifact("org.apache.flink:flink-runtime-tests"),
-        maven_artifact("org.apache.flink:flink-metrics-core"),
-        maven_artifact("org.apache.flink:flink-streaming-java"),
-        scala_artifact("org.apache.flink:flink-scala"),
-        scala_artifact("org.apache.flink:flink-streaming-scala"),
+        "//third_party/java/flink:flink-libs",
+        "//third_party/java/spark:spark-libs",
         scala_artifact("org.scalatestplus:mockito-3-4"),
-        maven_artifact("org.apache.flink:flink-metrics-dropwizard"),
-        maven_artifact("io.dropwizard.metrics:metrics-core"),
-        maven_artifact("org.apache.thrift:libthrift"),
         maven_artifact("junit:junit"),
         maven_artifact("org.slf4j:slf4j-api"),
         maven_artifact("org.slf4j:slf4j-log4j12"),
@@ -89,5 +64,32 @@ scala_test_suite(
         maven_artifact("org.scalatest:scalatest-compatible"),
         scala_artifact("org.scalatest:scalatest-shouldmatchers"),
         scala_artifact("org.scala-lang.modules:scala-collection-compat"),
+    ],
+)
+
+genrule(
+    name = "generate_pom",
+    srcs = ["//:pom.xml.tpl"],
+    outs = ["spark-export-pom.tpl"],
+    cmd = """
+    cat $(location //:pom.xml.tpl) \\
+        | sed 's/{name}/flink/g' \\
+        > $@
+    """,
+)
+
+jvm_binary(
+    name = "flink-assembly",
+    deploy_env = ["//third_party/java/flink:flink-provided-env"],
+    main_class = "ai.chronon.flink.FlinkJob",
+    runtime_deps = [":flink"],
+)
+
+java_export(
+    name = "flink-export",
+    maven_coordinates = "ai.chronon:flink_$(flink_version)_$(scala_version):$(version)",
+    pom_template = ":generate_pom",
+    runtime_deps = [
+        ":flink",
     ],
 )
