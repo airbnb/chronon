@@ -229,9 +229,23 @@ class Fetcher(val kvStore: KVStore,
             joinCodecTry match {
               case Success(joinCodec) =>
                 ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
+                // try to fix request mistype
+                val keySchemaMap: Map[String, DataType] = joinCodec.keySchema.fields.map { field =>
+                  field.name -> field.fieldType
+                }.toMap
+                val castedKeys: Map[String, AnyRef] = internalResponse.request.keys.map {
+                  case (name, value) =>
+                    name -> (if (keySchemaMap.contains(name)) ColumnAggregator.castTo(value, keySchemaMap(name))
+                             else value)
+                }
+                val request = Request(name = internalResponse.request.name,
+                                      keys = castedKeys,
+                                      atMillis = internalResponse.request.atMillis,
+                                      context = internalResponse.request.context)
+
                 val baseMap = internalMap ++ externalMap
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
-                  applyDeriveFunc(joinCodec.deriveFunc, internalResponse.request, baseMap)
+                  applyDeriveFunc(joinCodec.deriveFunc, request, baseMap)
                 }
                 val derivedMap: Map[String, AnyRef] = derivedMapTry match {
                   case Success(derivedMap) => derivedMap
@@ -260,7 +274,7 @@ class Fetcher(val kvStore: KVStore,
                 val requestEndTs = System.currentTimeMillis()
                 ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
                 ctx.distribution("overall.latency.millis", requestEndTs - ts)
-                ResponseWithContext(internalResponse.request, finalizedDerivedMap, baseMap)
+                ResponseWithContext(request, finalizedDerivedMap, baseMap)
               case Failure(exception) =>
                 // more validation logic will be covered in compile.py to avoid this case
                 ctx.incrementException(exception)
