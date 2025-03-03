@@ -71,11 +71,22 @@ java_library(
     ],
 )
 
+genrule(
+    name = "generate_pom",
+    srcs = ["//:pom.xml.tpl"],
+    outs = ["export-pom.tpl"],
+    cmd = """
+    cat $(location //:pom.xml.tpl) \\
+        | sed 's/{name}/api/g' \\
+        > $@
+    """,
+)
+
 java_export(
     name = "api-export",
     maven_coordinates = "ai.chronon:api_(scala_version):$(version)",
-    tags = ["no-javadocs"],
+    pom_template = ":generate_pom",
     runtime_deps = [
-        ":api-lib_deploy.jar",
+        ":api-lib",
     ],
 )

@@ -126,11 +126,22 @@ scala_test_suite(
     ],
 )
 
+genrule(
+    name = "generate_pom",
+    srcs = ["//:pom.xml.tpl"],
+    outs = ["export-pom.tpl"],
+    cmd = """
+    cat $(location //:pom.xml.tpl) \\
+        | sed 's/{name}/online/g' \\
+        > $@
+    """,
+)
+
 java_export(
     name = "online-export",
     maven_coordinates = "ai.chronon:online_$(scala_version):$(version)",
-    tags = ["no-javadocs"],
+    pom_template = ":generate_pom",
     runtime_deps = [
-        ":online_deploy.jar",
+        ":online",
     ],
 )

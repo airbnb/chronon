@@ -67,6 +67,17 @@ scala_test_suite(
     ],
 )
 
+genrule(
+    name = "generate_pom",
+    srcs = ["//:pom.xml.tpl"],
+    outs = ["spark-export-pom.tpl"],
+    cmd = """
+    cat $(location //:pom.xml.tpl) \\
+        | sed 's/{name}/flink/g' \\
+        > $@
+    """,
+)
+
 jvm_binary(
     name = "flink-assembly",
     deploy_env = ["//third_party/java/flink:flink-provided-env"],
@@ -76,9 +87,9 @@ jvm_binary(
 
 java_export(
     name = "flink-export",
-    maven_coordinates = "ai.chronon:flink_$(flink_version):$(version)",
-    tags = ["no-javadocs"],
+    maven_coordinates = "ai.chronon:flink_$(flink_version)_$(scala_version):$(version)",
+    pom_template = ":generate_pom",
     runtime_deps = [
-        ":flink-assembly_deploy.jar",
+        ":flink",
     ],
 )
