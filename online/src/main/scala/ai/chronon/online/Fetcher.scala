@@ -64,9 +64,9 @@ object Fetcher {
     var exceptions = 0
     var nulls = 0
     responseMap.foreach {
-      case (_, v) =>
+      case (k, v) =>
         if (v == null) nulls += 1
-        else if (v.isInstanceOf[Throwable]) exceptions += 1
+        else if (v.isInstanceOf[Throwable] || k.endsWith("_exception")) exceptions += 1
     }
     context.distribution(Metrics.Name.FetchNulls, nulls)
     context.distribution(Metrics.Name.FetchExceptions, exceptions)
