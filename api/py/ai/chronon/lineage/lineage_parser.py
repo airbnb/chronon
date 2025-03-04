@@ -3,6 +3,7 @@ import logging
 import os
 import typing
 from collections import defaultdict
+from enum import Enum
 from functools import reduce
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -25,6 +26,38 @@ from sqlglot.optimizer import build_scope, normalize_identifiers, qualify
 logger = logging.getLogger(__name__)
 
 
+class TableType(str, Enum):
+    GROUP_BY_UPLOAD = "group_by_upload"
+    GROUP_BY_BACKFILL = "group_by_backfill"
+    JOIN_BOOTSTRAP = "join_bootstrap"
+    JOIN_PART = "join_part"
+    JOIN = "join"
+    STAGING_QUERY = "staging_query"
+    OTHER = "other"
+
+
+class Table:
+    def __init__(self, table_name, table_type) -> None:
+        self.columns = set()
+        self.table_name = table_name
+        self.table_type = table_type
+
+
+class Feature:
+    def __init__(self, entity_name, feature_name, column=None) -> None:
+        self.entity_name = entity_name
+        self.feature_name = feature_name
+        self.column = column
+
+
+class MetaData:
+    def __init__(self) -> None:
+        # input_column, output_column, operation
+        self.lineages: Set[Tuple[str, str, str]] = set()
+        self.tables: Dict[str, Table] = dict()
+        self.features: Dict[str, Feature] = dict()
+
+
 class LineageParser:
     def __init__(self) -> None:
         """
@@ -37,11 +70,11 @@ class LineageParser:
             team_conf (Optional[Dict[str, Any]]): Team configuration loaded from JSON.
             staging_query_tables (Dict[str, Any]): Mapping of staging query table names to their configuration.
         """
-        self.lineages: Set[Tuple[Tuple[str, Tuple[str]], str]] = set()
         self.unparsed_columns: Dict[str, List[str]] = defaultdict(list)
         self.base_path: Optional[str] = None
         self.team_conf: Optional[Dict[str, Any]] = None
         self.staging_query_tables: Dict[str, Any] = {}
+        self.metadata: MetaData = MetaData()
 
     def parse_lineage(
         self, base_path: str, entities: Optional[Set[str]] = None
@@ -65,7 +98,7 @@ class LineageParser:
         self.parse_group_bys(entities)
         self.parse_joins(entities)
 
-        return self.lineages
+        return self.metadata
 
     def parse_staging_queries(self) -> None:
         """
@@ -200,14 +233,18 @@ class LineageParser:
 
     @staticmethod
     def build_aggregate_sql(
-        table: str, selects: List[Tuple[Any, Any]], filter_expr: Optional[Any] = None
+        table: str,
+        key_columns: List[Tuple[Any, Any]],
+        agg_columns: List[Tuple[Any, Any]],
+        filter_expr: Optional[Any] = None,
     ) -> exp.Select:
         """
         Build a SQL aggregate statement applying AGG() on specified columns.
 
         Args:
             table (str): The table name.
-            selects (List[Tuple[Any, Any]]): A list of tuples representing aggregate expressions (alias, column).
+            key_columns (List[Tuple[Any, Any]]): A list of tuples representing key columns.
+            agg_columns (List[Tuple[Any, Any]]): A list of tuples representing aggregate expressions (alias, column).
             filter_expr (Optional[Any]): An optional filter expression for the WHERE clause.
 
         Returns:
@@ -215,7 +252,7 @@ class LineageParser:
         """
         sql = (
             exp.Select(
-                expressions=[f"AGG({v}) AS {k}" for k, v in selects],
+                expressions=[f"{v} AS {k}" for k, v in key_columns] + [f"AGG({v}) AS {k}" for k, v in agg_columns],
             )
             .from_(table)
             .where(filter_expr)
@@ -386,6 +423,11 @@ class LineageParser:
         if self.check_source_select_non_empty(join.left):
             left_table_columns.update(get_pre_derived_source_keys(join.left))
 
+        # ts is not in join outputs
+        if "ts" in left_table_columns:
+            left_table_columns.remove("ts")
+            left_table_columns.add("ds")
+
         join_table = self.object_table_name(join)
         join_table_alias = sanitize(join.metaData.name)
         bootstrap_table = f"{join_table}_bootstrap"
@@ -398,10 +440,14 @@ class LineageParser:
             group_by_columns = get_group_by_output_columns(gb)
             prefix = jp.prefix + "_" if jp.prefix else ""
             join_part_table = f"{prefix}{gb_name}"
-            group_by_selects = []
+
+            group_by_selects = [(key_column, key_column) for key_column in gb.keyColumns]
+            # rename column from join part table to join table by adding the prefix of the join parts
             for column in group_by_columns:
-                group_by_selects.append((f"{join_part_table}_{column}", f"{join_part_table}_{column}"))
-            group_by_selects.extend([(key_column, key_column) for key_column in gb.keyColumns])
+                if column not in gb.keyColumns:
+                    group_by_selects.append((f"{join_part_table}_{column}", f"{column}"))
+
+            # select from the join part table
             gb_sql = self.build_select_sql(f"{join_table}_{join_part_table}", group_by_selects)
             conditions = []
             join_expression = []
@@ -428,13 +474,39 @@ class LineageParser:
             )
         return sql
 
+    # store column into tables
+    def store_column(self, column):
+        table_name = ".".join(column.split(".")[:-1])
+        column_name = column.split(".")[-1]
+        if table_name not in self.metadata.tables:
+            self.metadata.tables[table_name] = Table(table_name, TableType.OTHER)
+        self.metadata.tables[table_name].columns.add(column_name)
+
+    def store_feature(self, entity_name, feature_name, output_table):
+        feature_name = f"{entity_name}_{feature_name}"
+        if output_table:
+            column = f"{output_table}.{feature_name}"
+            self.metadata.features[feature_name] = Feature(entity_name, feature_name, column)
+        else:
+            self.metadata.features[feature_name] = Feature(entity_name, feature_name)
+
+    def store_table(self, table_name, table_type):
+        if table_name not in self.metadata.tables:
+            self.metadata.tables[table_name] = Table(table_name, table_type)
+
+    def store_group_by_feature(self, entity_name, feature_name):
+        feature_name = f"{entity_name}.{feature_name}"
+        self.metadata.features[feature_name] = Feature(entity_name, feature_name)
+
     def store_lineage(self, parsed_lineages, table_name):
         for output_column, input_columns in parsed_lineages.items():
+            self.store_column(output_column)
             if not input_columns:
                 self.unparsed_columns[table_name].append(output_column)
                 continue
-            for input_column in input_columns:
-                self.lineages.add((input_column, output_column))
+            for input_column, operation in input_columns:
+                self.store_column(input_column)
+                self.metadata.lineages.add(tuple([input_column, output_column, combine_operations(operation)]))
 
     def parse_join(self, join: Any) -> dict[str, str | Any] | None:
         """
@@ -461,6 +533,7 @@ class LineageParser:
         bootstrap_table = f"{output_table}_bootstrap"
         bootstrap_sql = bootstrap_sql.sql(dialect="spark", pretty=True)
         lineages = build_lineage(bootstrap_table, bootstrap_sql, sources={})
+        self.store_table(bootstrap_table, TableType.JOIN_BOOTSTRAP)
         self.store_lineage(lineages, output_table)
 
         # Handle join part tables
@@ -469,7 +542,7 @@ class LineageParser:
             gb_table_name = sanitize(gb.metaData.name)
             prefix = jp.prefix + "_" if jp.prefix else ""
             join_part_table = f"{output_table}_{prefix}{gb_table_name}"
-            self.parse_group_by(gb, join_part_table=join_part_table)
+            self.parse_group_by(gb, join_part_table=join_part_table, join_entity_name=join.metaData.name)
 
         # Build lineage for join
         join_sql = self.build_join_sql(join)
@@ -483,6 +556,7 @@ class LineageParser:
             sources["join_table"] = join_sql.sql(dialect="spark", pretty=True)
 
         parsed_lineages = build_lineage(output_table, sql, sources)
+        self.store_table(output_table, TableType.JOIN)
         self.store_lineage(parsed_lineages, output_table)
 
         return sources
@@ -499,8 +573,11 @@ class LineageParser:
         """
         table_name = output_table_name(staging_query, full_name=True)
         self.staging_query_tables[table_name] = staging_query
+        self.store_table(table_name, TableType.STAGING_QUERY)
 
-    def parse_group_by(self, gb: Any, join_part_table: str = None) -> dict[str, str | Any] | None:
+    def parse_group_by(
+        self, gb: Any, join_part_table: str = None, join_entity_name: str = None
+    ) -> dict[str, str | Any] | None:
         """
         Parse a group-by configuration and build lineage.
 
@@ -512,12 +589,21 @@ class LineageParser:
             None
         """
 
+        # use the join entity name if we are parsing a join part table
+        entity_name = join_entity_name or gb.metaData.name
+
         # If join_part_table is defined, then it generates a join part table.
         # If gb.backfill_start_date is defined, then it generates a backfill table.
         # If gb.online is True and SNAPSHOT accuracy, then it generates an upload table.
         # If gb.online is True and TEMPORAL accuracy, then no need to track lineage since the output table stores IR only.
-        if not (join_part_table or gb.backfillStartDate or (gb.metaData.online and gb.accuracy == Accuracy.SNAPSHOT)):
-            return
+        output_table = None
+        if join_part_table:
+            output_table = join_part_table
+            self.store_table(output_table, TableType.JOIN_PART)
+        elif gb.metaData.online and gb.accuracy == Accuracy.SNAPSHOT:
+            output_table = f"{self.object_table_name(gb)}_upload"
+        elif gb.backfillStartDate:
+            output_table = self.object_table_name(gb)
 
         # source tables used to build lineage
         sources = {}
@@ -534,22 +620,25 @@ class LineageParser:
         select_sql = reduce(exp.union, select_sqls)
 
         # Build aggregation SQL.
-        agg_columns = [("ds", "ds")]
+        key_columns = [("ds", "ds")]
+        agg_columns = []
         if gb.aggregations:
             for agg in gb.aggregations:
                 all_agg_exprs = self.get_all_agg_exprs(agg)
                 for agg_expr in all_agg_exprs:
                     aggregation = f"{agg.inputColumn}_{agg_expr}"
                     agg_columns.append((aggregation, agg.inputColumn))
+                    self.store_feature(entity_name, aggregation, output_table)
         else:
             for input_column_name, input_column_expr in selects.items():
                 agg_columns.append((input_column_name, input_column_name))
+                self.store_feature(entity_name, input_column_name, output_table)
 
         # Add key columns.
         for key_column in gb.keyColumns:
-            agg_columns.append((key_column, key_column))
+            key_columns.append((key_column, key_column))
 
-        agg_sql = self.build_aggregate_sql("select_table", agg_columns)
+        agg_sql = self.build_aggregate_sql("select_table", key_columns, agg_columns)
 
         # Build derivation SQL if derivations exist.
         derive_sql = self.build_gb_derive_sql("aggregate_table", gb) if gb.derivations else None
@@ -561,18 +650,10 @@ class LineageParser:
             sources["aggregate_table"] = sql
             sql = derive_sql.sql(pretty=True)
 
-        if join_part_table:
-            parsed_lineages = build_lineage(join_part_table, sql, sources)
-            self.store_lineage(parsed_lineages, join_part_table)
-        else:
-            output_table = self.object_table_name(gb)
-            if gb.backfillStartDate:
-                parsed_lineages = build_lineage(output_table, sql, sources)
-                self.store_lineage(parsed_lineages, output_table)
-            if gb.metaData.online and gb.accuracy == Accuracy.SNAPSHOT:
-                output_table = f"{output_table}_upload"
-                parsed_lineages = build_lineage(output_table, sql, sources)
-                self.store_lineage(parsed_lineages, output_table)
+        if output_table:
+            parsed_lineages = build_lineage(output_table, sql, sources)
+            self.store_table(output_table, TableType.GROUP_BY_UPLOAD)
+            self.store_lineage(parsed_lineages, output_table)
 
         return sources
 
@@ -595,6 +676,10 @@ def _get_col_node_name(node: Node) -> str:
         table_exp.args["alias"] = None
         return f"{table_exp.sql(pretty=False, identify=False)}.{real_column_name}".replace('"', "")
     return f"{node.name}"
+
+
+def combine_operations(operations):
+    return ",".join([operation for operation in operations if operation != "Alias"])
 
 
 def get_transform_operation(expression: Any) -> str:

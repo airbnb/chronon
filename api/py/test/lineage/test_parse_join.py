@@ -13,8 +13,6 @@ TEST_BASE_PATH = os.path.join(os.path.dirname(__file__), "../sample")
 
 class TestParseJoin(unittest.TestCase):
     def setUp(self):
-        self.parser = LineageParser()
-
         gb_event_source = ttypes.EventSource(
             table="gb_table",
             topic=None,
@@ -64,50 +62,47 @@ class TestParseJoin(unittest.TestCase):
             right_parts=[api.JoinPart(self.gb)],
         )
         self.join.metaData.name = "test_join"
-        self.parser.parse_join(self.join)
-
-    def output_table_columns(self, output_table):
-        return {to_ for from_, to_ in self.parser.lineages if ".".join(to_.split(".")[:-1]) == output_table}
 
     def test_bootstrap_table(self):
-        # check boostrap table
-        bootstrap_table_columns = self.output_table_columns("test_db.test_join_bootstrap")
+        parser = LineageParser()
+        parser.parse_join(self.join)
+
         self.assertEqual(
-            {
-                "test_db.test_join_bootstrap.event_id",
-                "test_db.test_join_bootstrap.subject",
-                "test_db.test_join_bootstrap.ts",
-            },
-            set(bootstrap_table_columns),
+            {"subject", "ts", "event_id", "ds"},
+            parser.metadata.tables["test_db.test_join_bootstrap"].columns,
         )
 
     def test_join_part_table(self):
-        # check join part table
-        join_part_table_columns = self.output_table_columns("test_db.test_join_test_group_by")
+        parser = LineageParser()
+        parser.parse_join(self.join)
+
         self.assertEqual(
             {
-                "test_db.test_join_test_group_by.event_id_sum_plus_one",
-                "test_db.test_join_test_group_by.event_id_last_renamed",
-                "test_db.test_join_test_group_by.subject",
-                "test_db.test_join_test_group_by.event_id_sum",
-                "test_db.test_join_test_group_by.event_id_approx_percentile",
+                "cnt_count",
+                "ds",
+                "event_id_approx_percentile",
+                "event_id_last_renamed",
+                "event_id_sum",
+                "event_id_sum_plus_one",
+                "subject",
             },
-            set(join_part_table_columns),
+            parser.metadata.tables["test_db.test_join_test_group_by"].columns,
         )
 
     def test_join_table(self):
-        # check join table
-        join_table_columns = self.output_table_columns("test_db.test_join")
+        parser = LineageParser()
+        parser.parse_join(self.join)
+
         self.assertEqual(
             {
-                "test_db.test_join.ts",
-                "test_db.test_join.test_group_by_event_id_approx_percentile",
-                "test_db.test_join.test_group_by_event_id_last_renamed",
-                "test_db.test_join.subject",
-                "test_db.test_join.test_group_by_event_id_sum",
-                "test_db.test_join.test_group_by_cnt_count",
-                "test_db.test_join.test_group_by_event_id_sum_plus_one",
-                "test_db.test_join.event_id",
+                "ds",
+                "event_id",
+                "subject",
+                "test_group_by_cnt_count",
+                "test_group_by_event_id_approx_percentile",
+                "test_group_by_event_id_last_renamed",
+                "test_group_by_event_id_sum",
+                "test_group_by_event_id_sum_plus_one",
             },
-            set(join_table_columns),
+            parser.metadata.tables["test_db.test_join"].columns,
         )
