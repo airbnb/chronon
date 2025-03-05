@@ -51,8 +51,8 @@ class TestParseJoin(unittest.TestCase):
                     query=api.Query(
                         startPartition="2020-04-09",
                         selects={
-                            "subject": "subject_sql",
-                            "event_id": "event_sql",
+                            "subject": "subject",
+                            "event_id": "event",
                         },
                         timeColumn="CAST(ts AS DOUBLE)",
                     ),
@@ -70,6 +70,16 @@ class TestParseJoin(unittest.TestCase):
         self.assertEqual(
             {"subject", "ts", "event_id", "ds"},
             parser.metadata.tables["test_db.test_join_bootstrap"].columns,
+        )
+        lineages = parser.metadata.filter_lineages(output_table="test_db.test_join_bootstrap")
+        self.assertEqual(
+            {
+                ("join_event_table.ds", "test_db.test_join_bootstrap.ds", ""),
+                ("join_event_table.ts", "test_db.test_join_bootstrap.ts", "TryCast"),
+                ("join_event_table.event", "test_db.test_join_bootstrap.event_id", ""),
+                ("join_event_table.subject", "test_db.test_join_bootstrap.subject", ""),
+            },
+            lineages,
         )
 
     def test_join_part_table(self):
@@ -89,6 +99,34 @@ class TestParseJoin(unittest.TestCase):
             parser.metadata.tables["test_db.test_join_test_group_by"].columns,
         )
 
+        lineages = parser.metadata.filter_lineages(output_table="test_db.test_join_test_group_by")
+        self.assertEqual(
+            {
+                (
+                    "gb_table.event",
+                    "test_db.test_join_test_group_by.event_id_sum_plus_one",
+                    "AGG,Add",
+                ),
+                (
+                    "gb_table.event",
+                    "test_db.test_join_test_group_by.event_id_approx_percentile",
+                    "AGG",
+                ),
+                ("gb_table.subject", "test_db.test_join_test_group_by.subject", ""),
+                (
+                    "gb_table.event",
+                    "test_db.test_join_test_group_by.event_id_sum",
+                    "AGG",
+                ),
+                (
+                    "gb_table.event",
+                    "test_db.test_join_test_group_by.event_id_last_renamed",
+                    "AGG",
+                ),
+            },
+            lineages,
+        )
+
     def test_join_table(self):
         parser = LineageParser()
         parser.parse_join(self.join)
@@ -105,4 +143,66 @@ class TestParseJoin(unittest.TestCase):
                 "test_group_by_event_id_sum_plus_one",
             },
             parser.metadata.tables["test_db.test_join"].columns,
+        )
+        lineages = parser.metadata.filter_lineages(output_table="test_db.test_join")
+        self.assertEqual(
+            {
+                (
+                    "test_db.test_join_test_group_by.event_id_approx_percentile",
+                    "test_db.test_join.test_group_by_event_id_approx_percentile",
+                    "",
+                ),
+                ("test_db.test_join_bootstrap.ds", "test_db.test_join.ds", ""),
+                (
+                    "test_db.test_join_test_group_by.cnt_count",
+                    "test_db.test_join.test_group_by_cnt_count",
+                    "",
+                ),
+                (
+                    "test_db.test_join_test_group_by.subject",
+                    "test_db.test_join.subject",
+                    "",
+                ),
+                (
+                    "test_db.test_join_bootstrap.event_id",
+                    "test_db.test_join.event_id",
+                    "",
+                ),
+                (
+                    "test_db.test_join_test_group_by.event_id_last_renamed",
+                    "test_db.test_join.test_group_by_event_id_last_renamed",
+                    "",
+                ),
+                (
+                    "test_db.test_join_test_group_by.event_id_sum",
+                    "test_db.test_join.test_group_by_event_id_sum",
+                    "",
+                ),
+                (
+                    "test_db.test_join_test_group_by.event_id_sum_plus_one",
+                    "test_db.test_join.test_group_by_event_id_sum_plus_one",
+                    "",
+                ),
+            },
+            lineages,
+        )
+
+    def test_parse_features(self):
+        parser = LineageParser()
+        parser.parse_join(self.join)
+        self.assertEqual(
+            {
+                "test_group_by.cnt_count",
+                "test_join.test_group_by_event_id_sum_plus_one",
+                "test_group_by.event_id_approx_percentile",
+                "test_group_by.event_id_sum_plus_one",
+                "test_join.test_group_by_cnt_count",
+                "test_join.test_group_by_event_id_approx_percentile",
+                "test_join.test_group_by_event_id_sum",
+                "test_group_by.event_id_sum",
+                "test_group_by.event_id_last_renamed",
+                "test_group_by.event_id_last",
+                "test_join.test_group_by_event_id_last_renamed",
+            },
+            set(parser.metadata.features.keys()),
         )
