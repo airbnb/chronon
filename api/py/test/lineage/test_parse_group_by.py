@@ -1,3 +1,17 @@
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import unittest
 
 from ai.chronon import group_by
@@ -89,54 +103,29 @@ class TestParseGroupBy(unittest.TestCase):
     def test_backfill_table(self):
         parser = LineageParser()
         parser.parse_group_by(self.gb_multiple_source)
+
+        backfill_table_name = "test_db.test_group_by_multiple_source"
+        self.assertTrue(backfill_table_name in parser.metadata.tables)
+        self.assertEqual(
+            TableType.GROUP_BY_BACKFILL,
+            parser.metadata.tables[backfill_table_name].table_type,
+        )
+        self.assertEqual({"subject"}, parser.metadata.tables[backfill_table_name].key_columns)
+        self.assertEqual(
+            {
+                "cnt_count",
+                "event_id_approx_percentile",
+                "event_id_last",
+                "event_id_sum",
+                "subject",
+            },
+            parser.metadata.tables[backfill_table_name].columns,
+        )
+        lineages = parser.metadata.filter_lineages(output_table=backfill_table_name)
+
         self.assertEqual(
             {
                 (
-                    "source.gb_table1.subject",
-                    "test_db.test_group_by_multiple_source_upload.subject",
-                    "",
-                ),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source_upload.event_id_sum",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source.event_id_last",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source_upload.event_id_last",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source_upload.event_id_approx_percentile",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source_upload.event_id_approx_percentile",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source_upload.event_id_sum",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table1.subject",
-                    "test_db.test_group_by_multiple_source.subject",
-                    "",
-                ),
-                (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source.event_id_last",
-                    "AGG",
-                ),
-                (
                     "source.gb_table1.event",
                     "test_db.test_group_by_multiple_source.event_id_approx_percentile",
                     "AGG",
@@ -148,8 +137,13 @@ class TestParseGroupBy(unittest.TestCase):
                 ),
                 (
                     "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source.event_id_approx_percentile",
+                    "test_db.test_group_by_multiple_source.event_id_last",
                     "AGG",
+                ),
+                (
+                    "source.gb_table1.subject",
+                    "test_db.test_group_by_multiple_source.subject",
+                    "",
                 ),
                 (
                     "source.gb_table.subject",
@@ -158,51 +152,75 @@ class TestParseGroupBy(unittest.TestCase):
                 ),
                 (
                     "source.gb_table.event",
+                    "test_db.test_group_by_multiple_source.event_id_approx_percentile",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table.event",
                     "test_db.test_group_by_multiple_source.event_id_sum",
                     "AGG",
                 ),
                 (
                     "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source_upload.event_id_last",
+                    "test_db.test_group_by_multiple_source.event_id_last",
                     "AGG",
-                ),
-                (
-                    "source.gb_table.subject",
-                    "test_db.test_group_by_multiple_source_upload.subject",
-                    "",
                 ),
             },
-            parser.metadata.lineages,
+            lineages,
         )
 
     def test_join_part_table(self):
         parser = LineageParser()
-        parser.parse_group_by(self.gb, join_part_table="test_join_jp_test_group_by")
+        parser.parse_group_by(self.gb, join_part_table="test_db.test_join_jp_test_group_by")
+
+        backfill_table_name = "test_db.test_join_jp_test_group_by"
+        self.assertTrue(backfill_table_name in parser.metadata.tables)
+        self.assertEqual(
+            TableType.JOIN_PART,
+            parser.metadata.tables[backfill_table_name].table_type,
+        )
+        self.assertEqual({"subject"}, parser.metadata.tables[backfill_table_name].key_columns)
+        self.assertEqual(
+            {
+                "cnt_count",
+                "event_id_approx_percentile",
+                "event_id_last_renamed",
+                "event_id_sum",
+                "event_id_sum_plus_one",
+                "subject",
+            },
+            parser.metadata.tables[backfill_table_name].columns,
+        )
+        lineages = parser.metadata.filter_lineages(output_table=backfill_table_name)
         self.assertEqual(
             {
                 (
-                    "source.gb_table.event",
-                    "test_join_jp_test_group_by.event_id_sum",
-                    "AGG",
-                ),
-                ("source.gb_table.subject", "test_join_jp_test_group_by.subject", ""),
-                (
-                    "source.gb_table.event",
-                    "test_join_jp_test_group_by.event_id_last_renamed",
-                    "AGG",
+                    "source.gb_table.subject",
+                    "test_db.test_join_jp_test_group_by.subject",
+                    "",
                 ),
                 (
                     "source.gb_table.event",
-                    "test_join_jp_test_group_by.event_id_sum_plus_one",
+                    "test_db.test_join_jp_test_group_by.event_id_approx_percentile",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table.event",
+                    "test_db.test_join_jp_test_group_by.event_id_sum_plus_one",
                     "AGG,Add",
                 ),
                 (
                     "source.gb_table.event",
-                    "test_join_jp_test_group_by.event_id_approx_percentile",
+                    "test_db.test_join_jp_test_group_by.event_id_last_renamed",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table.event",
+                    "test_db.test_join_jp_test_group_by.event_id_sum",
                     "AGG",
                 ),
             },
-            parser.metadata.lineages,
+            lineages,
         )
 
     def test_parse_features(self):
@@ -233,22 +251,32 @@ class TestParseGroupBy(unittest.TestCase):
             set(parser.metadata.features.keys()),
         )
 
-    def test_parse_tables(self):
-        parser = LineageParser()
-        parser.parse_group_by(self.gb_multiple_source)
-        self.assertEqual(
-            {
-                "source.gb_table",
-                "source.gb_table1",
-                "test_db.test_group_by_multiple_source",
-                "test_db.test_group_by_multiple_source_upload",
-            },
-            set(parser.metadata.tables.keys()),
+    def test_build_aggregate_sql(self):
+        agg_columns = []
+        for agg in self.gb.aggregations:
+            all_agg_exprs = LineageParser.get_all_agg_exprs(agg)
+            for agg_expr in all_agg_exprs:
+                aggregation = f"{agg.inputColumn}_{agg_expr}"
+                agg_columns.append((aggregation, agg.inputColumn))
+
+        actual_sql = LineageParser.build_aggregate_sql("agg_table", self.gb.keyColumns, agg_columns).sql(
+            dialect="spark", pretty=True
         )
-        self.assertEqual(
-            TableType.GROUP_BY_BACKFILL, parser.metadata.tables["test_db.test_group_by_multiple_source"].table_type
-        )
-        self.assertEqual(
-            TableType.GROUP_BY_UPLOAD, parser.metadata.tables["test_db.test_group_by_multiple_source_upload"].table_type
-        )
-        self.assertEqual({"ds", "subject"}, parser.metadata.tables["test_db.test_group_by_multiple_source"].key_columns)
+        with open("group_by_sqls/aggregate.sql", "r") as infile:
+            expected_sql = infile.read()
+            self.assertEqual(expected_sql, actual_sql)
+
+    def test_build_derive_sql(self):
+        actual_sql = LineageParser.build_gb_derive_sql("derive_table", self.gb).sql(dialect="spark", pretty=True)
+        with open("group_by_sqls/derive.sql", "r") as infile:
+            expected_sql = infile.read()
+            self.assertEqual(expected_sql, actual_sql)
+
+    def validate_sql(self, file_name, actual_sql):
+        with open(file_name, "r") as infile:
+            expected_sql = infile.read()
+            try:
+                self.assertEqual(expected_sql, actual_sql)
+            except AssertionError:
+                print(f"expected\n--------\n{expected_sql}\n\nactual\n------\n{actual_sql}")
+                raise

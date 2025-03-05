@@ -1,3 +1,17 @@
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import json
 import logging
 import os
@@ -220,6 +234,8 @@ class LineageParser:
         Returns:
             exp.Select: The built SQLGlot aggregate SELECT expression.
         """
+        key_columns.sort()
+        agg_columns.sort()
         sql = (
             exp.Select(
                 expressions=key_columns + [f"AGG({v}) AS {k}" for k, v in agg_columns],
@@ -242,8 +258,11 @@ class LineageParser:
             exp.Select: The SQLGlot SELECT expression for group-by derivations.
         """
         pre_derived_columns = get_pre_derived_group_by_columns(gb)
+        pre_derived_columns.sort()
+
         output_columns = get_group_by_output_columns(gb)
-        output_columns.append("ds")
+        output_columns.sort()
+
         derivation_columns = set(d.name for d in gb.derivations)
 
         base_sql = exp.Select(expressions=[exp.Column(this=column) for column in pre_derived_columns]).from_(table)
@@ -251,25 +270,27 @@ class LineageParser:
         sql = exp.subquery(base_sql, table).select()
 
         for derivation in gb.derivations:
-            sql = sql.select(exp.alias_(derivation.expression, derivation.name))
+            if derivation.name != "*":
+                sql = sql.select(exp.alias_(derivation.expression, derivation.name))
         for column in [c for c in output_columns if c not in derivation_columns]:
             sql = sql.select(column)
 
         return sql
 
     @staticmethod
-    def build_join_derive_sql(join: Any) -> exp.Select:
+    def build_join_derive_sql(table: str, join: Any) -> exp.Select:
         """
         Build the SQL derivation query for a join configuration.
 
         Args:
+            table (str): The base table name.
             join (Any): The join configuration object.
 
         Returns:
             exp.Select: The SQLGlot SELECT expression for join derivations.
         """
-        pre_derived_columns = {value for values in get_pre_derived_join_features(join).values() for value in values}
-        pre_derived_columns.update(get_pre_derived_source_keys(join.left))
+        pre_derived_columns = [value for values in get_pre_derived_join_features(join).values() for value in values]
+        pre_derived_columns.extend(get_pre_derived_source_keys(join.left))
         output_columns = get_join_output_columns(join)
         output_columns = (
             output_columns[FeatureDisplayKeys.SOURCE_KEYS] + output_columns[FeatureDisplayKeys.DERIVED_COLUMNS]
@@ -277,19 +298,21 @@ class LineageParser:
 
         derivation_columns = set(d.name for d in join.derivations)
 
+        pre_derived_columns.sort()
+        output_columns.sort()
+
         base_sql = exp.Select()
         for column in pre_derived_columns:
             base_sql = base_sql.select(column)
-            base_sql = base_sql.from_("join_table")
+            base_sql = base_sql.from_(table)
 
-        sql = exp.subquery(base_sql, "join_table").select()
+        sql = exp.subquery(base_sql, table).select()
 
         for derivation in join.derivations:
-            if derivation.name not in ("ds", "*"):
+            if derivation.name != "*":
                 sql = sql.select(exp.alias_(derivation.expression, derivation.name))
         for column in [c for c in output_columns if c not in derivation_columns]:
-            if column != "ds":
-                sql = sql.select(column)
+            sql = sql.select(column)
 
         return sql
 
@@ -337,10 +360,27 @@ class LineageParser:
         filter_expr = " AND ".join([f"({where})" for where in sorted(wheres)])
         return table, filter_expr, table_type, selects
 
-    def get_team(self, metadata):
+    def get_team(self, metadata: Dict[str, Any]) -> str:
+        """
+        Extract the team name from the given metadata.
+
+        The function retrieves the default team name from the 'team' key.
+        If a custom JSON configuration is present and contains a 'team_override',
+        the override value is used instead of the default.
+
+        Args:
+            metadata (Dict[str, Any]): Dictionary containing team information and optional custom JSON.
+
+        Returns:
+            str: The effective team name, possibly overridden by custom configuration.
+        """
+        # Retrieve the default team name from metadata.
         team = metadata["team"]
+
+        # If 'customJson' is present and contains a 'team_override', use the override.
         if "customJson" in metadata and "team_override" in json.loads(metadata["customJson"]):
             team = json.loads(metadata["customJson"])["team_override"]
+
         return team
 
     def object_table_name(self, obj: Any) -> str:
@@ -392,18 +432,15 @@ class LineageParser:
         Returns:
             exp.Select: The built SQLGlot SELECT expression representing the left join.
         """
-        left_table_columns = {value for values in get_pre_derived_join_features(join).values() for value in values}
+        left_table_columns = [value for values in get_pre_derived_join_features(join).values() for value in values]
         if self.check_source_select_non_empty(join.left):
-            left_table_columns.update(get_pre_derived_source_keys(join.left))
-
-        # ts is not in join outputs
-        if "ts" in left_table_columns:
-            left_table_columns.remove("ts")
-            left_table_columns.add("ds")
+            left_table_columns.extend(get_pre_derived_source_keys(join.left))
 
         join_table = self.object_table_name(join)
         join_table_alias = sanitize(join.metaData.name)
         bootstrap_table = f"{join_table}_bootstrap"
+
+        left_table_columns.sort()
         sql = exp.Select(expressions=[exp.Column(this=column) for column in left_table_columns]).from_(
             f"{bootstrap_table} AS {join_table_alias}"
         )
@@ -419,6 +456,9 @@ class LineageParser:
             for column in group_by_columns:
                 if column not in gb.keyColumns:
                     group_by_selects.append((f"{join_part_table}_{column}", f"{column}"))
+
+            # sort the column to make the order deterministic
+            group_by_selects.sort()
 
             # select from the join part table
             gb_sql = self.build_select_sql(f"{join_table}_{join_part_table}", group_by_selects)
@@ -470,7 +510,6 @@ class LineageParser:
 
         # Build lineage for source table --> boostrap table
         bootstrap_selects = [(k, v) for k, v in selects.items()]
-        bootstrap_selects.append(("ds", "ds"))
         bootstrap_sql = self.build_select_sql(table, bootstrap_selects, filter_expr)
         bootstrap_table = f"{output_table}_bootstrap"
         bootstrap_sql = bootstrap_sql.sql(dialect="spark", pretty=True)
@@ -505,7 +544,7 @@ class LineageParser:
             else:
                 features = derived_features
 
-            derive_sql = self.build_join_derive_sql(join)
+            derive_sql = self.build_join_derive_sql("join_table", join)
             sql = derive_sql.sql(dialect="spark", pretty=True)
             sources["derive_table"] = sql
 
@@ -566,7 +605,7 @@ class LineageParser:
         select_sql = reduce(exp.union, select_sqls)
 
         # Build aggregation SQL.
-        key_columns = ["ds"]
+        key_columns = []
         agg_columns = []
         if gb.aggregations:
             for agg in gb.aggregations:
@@ -578,10 +617,7 @@ class LineageParser:
             for input_column_name, input_column_expr in selects.items():
                 agg_columns.append((input_column_name, input_column_name))
 
-        # Add key columns.
-        for key_column in gb.keyColumns:
-            key_columns.append(key_column)
-
+        key_columns.extend(gb.keyColumns)
         agg_sql = self.build_aggregate_sql("select_table", key_columns, agg_columns)
 
         sql = agg_sql.sql(pretty=True)

@@ -1,3 +1,17 @@
+#     Copyright (C) 2023 The Chronon Authors.
+#
+#     Licensed under the Apache License, Version 2.0 (the "License");
+#     you may not use this file except in compliance with the License.
+#     You may obtain a copy of the License at
+#
+#         http://www.apache.org/licenses/LICENSE-2.0
+#
+#     Unless required by applicable law or agreed to in writing, software
+#     distributed under the License is distributed on an "AS IS" BASIS,
+#     WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#     See the License for the specific language governing permissions and
+#     limitations under the License.
+
 import os
 import unittest
 
@@ -53,12 +67,11 @@ class TestParseLineage(unittest.TestCase):
         for key in expected_lineage:
             self.assertCountEqual(lineage[key], expected_lineage[key])
 
-    def test_parse_all(self):
-        BASE_PATH = "/Users/xiaohui_sun/work/ml_models/zipline"
-        parser = LineageParser()
-        parser.parse_lineage(BASE_PATH, entities=["cs_ds.guest.dynamic_coupon_features.v1"])
-        metadata = parser.metadata
-        lineages = metadata.filter_lineages(
-            output_table="china_search.china_outbound_search_pricing_booking_price_features_v1_relevance_query_features_geo_market_v1"
+    def test_build_select_sql(self):
+        sql = LineageParser.build_select_sql(
+            "input_table", [("guest", "guest_id"), ("host", "host_id")], "ds = '2025-01-01'"
         )
-        self.assertTrue(lineages)
+        self.assertEqual(
+            "SELECT guest_id AS guest, host_id AS host FROM input_table WHERE ds = '2025-01-01'",
+            sql.sql(dialect="spark"),
+        )
