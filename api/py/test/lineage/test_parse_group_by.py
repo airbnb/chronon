@@ -3,6 +3,7 @@ import unittest
 from ai.chronon import group_by
 from ai.chronon.api import ttypes
 from ai.chronon.group_by import Accuracy, Derivation
+from ai.chronon.lineage.lineage_metadata import TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
 
 
@@ -51,9 +52,12 @@ class TestParseGroupBy(unittest.TestCase):
 
         self.gb_multiple_source = group_by.GroupBy(
             name="test_group_by_multiple_source",
+            online=True,
             sources=[gb_event_source, gb_event_source1],
             keys=["subject"],
+            backfill_start_date="2025-01-01",
             output_namespace="test_db",
+            accuracy=Accuracy.SNAPSHOT,
             aggregations=group_by.Aggregations(
                 random=ttypes.Aggregation(inputColumn="event_id", operation=ttypes.Operation.SUM),
                 event_id=ttypes.Aggregation(operation=ttypes.Operation.LAST),
@@ -83,59 +87,89 @@ class TestParseGroupBy(unittest.TestCase):
         )
 
     def test_backfill_table(self):
-        self.gb.backfillStartDate = "2025-01-01"
         parser = LineageParser()
-        parser.parse_group_by(self.gb)
+        parser.parse_group_by(self.gb_multiple_source)
         self.assertEqual(
             {
-                ("source.gb_table.subject", "test_db.test_group_by.subject", ""),
-                ("source.gb_table.event", "test_db.test_group_by.event_id_sum", "AGG"),
+                (
+                    "source.gb_table1.subject",
+                    "test_db.test_group_by_multiple_source_upload.subject",
+                    "",
+                ),
                 (
                     "source.gb_table.event",
-                    "test_db.test_group_by.event_id_last_renamed",
+                    "test_db.test_group_by_multiple_source_upload.event_id_sum",
                     "AGG",
                 ),
                 (
                     "source.gb_table.event",
-                    "test_db.test_group_by.event_id_approx_percentile",
+                    "test_db.test_group_by_multiple_source.event_id_last",
                     "AGG",
                 ),
                 (
                     "source.gb_table.event",
-                    "test_db.test_group_by.event_id_sum_plus_one",
-                    "AGG,Add",
-                ),
-            },
-            parser.metadata.lineages,
-        )
-
-    def test_upload_table(self):
-        self.gb.metaData.online = True
-        self.gb.accuracy = Accuracy.SNAPSHOT
-        parser = LineageParser()
-        parser.parse_group_by(self.gb)
-        self.assertEqual(
-            {
-                ("source.gb_table.subject", "test_db.test_group_by_upload.subject", ""),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_upload.event_id_sum_plus_one",
-                    "AGG,Add",
-                ),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_upload.event_id_last_renamed",
+                    "test_db.test_group_by_multiple_source_upload.event_id_last",
                     "AGG",
                 ),
                 (
                     "source.gb_table.event",
-                    "test_db.test_group_by_upload.event_id_approx_percentile",
+                    "test_db.test_group_by_multiple_source_upload.event_id_approx_percentile",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table1.event",
+                    "test_db.test_group_by_multiple_source_upload.event_id_approx_percentile",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table1.event",
+                    "test_db.test_group_by_multiple_source_upload.event_id_sum",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table1.subject",
+                    "test_db.test_group_by_multiple_source.subject",
+                    "",
+                ),
+                (
+                    "source.gb_table1.event",
+                    "test_db.test_group_by_multiple_source.event_id_last",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table1.event",
+                    "test_db.test_group_by_multiple_source.event_id_approx_percentile",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table1.event",
+                    "test_db.test_group_by_multiple_source.event_id_sum",
                     "AGG",
                 ),
                 (
                     "source.gb_table.event",
-                    "test_db.test_group_by_upload.event_id_sum",
+                    "test_db.test_group_by_multiple_source.event_id_approx_percentile",
                     "AGG",
+                ),
+                (
+                    "source.gb_table.subject",
+                    "test_db.test_group_by_multiple_source.subject",
+                    "",
+                ),
+                (
+                    "source.gb_table.event",
+                    "test_db.test_group_by_multiple_source.event_id_sum",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table1.event",
+                    "test_db.test_group_by_multiple_source_upload.event_id_last",
+                    "AGG",
+                ),
+                (
+                    "source.gb_table.subject",
+                    "test_db.test_group_by_multiple_source_upload.subject",
+                    "",
                 ),
             },
             parser.metadata.lineages,
@@ -171,56 +205,6 @@ class TestParseGroupBy(unittest.TestCase):
             parser.metadata.lineages,
         )
 
-    def test_multiple_sources(self):
-        self.gb_multiple_source.backfillStartDate = "2025-01-01"
-        parser = LineageParser()
-        parser.parse_group_by(self.gb_multiple_source)
-        self.assertEqual(
-            {
-                (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source.event_id_approx_percentile",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source.event_id_last",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source.event_id_sum",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table.subject",
-                    "test_db.test_group_by_multiple_source.subject",
-                    "",
-                ),
-                (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source.event_id_approx_percentile",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source.event_id_last",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source.event_id_sum",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table1.subject",
-                    "test_db.test_group_by_multiple_source.subject",
-                    "",
-                ),
-            },
-            parser.metadata.lineages,
-        )
-
     def test_parse_features(self):
         parser = LineageParser()
         parser.parse_group_by(self.gb_multiple_source)
@@ -248,3 +232,23 @@ class TestParseGroupBy(unittest.TestCase):
             },
             set(parser.metadata.features.keys()),
         )
+
+    def test_parse_tables(self):
+        parser = LineageParser()
+        parser.parse_group_by(self.gb_multiple_source)
+        self.assertEqual(
+            {
+                "source.gb_table",
+                "source.gb_table1",
+                "test_db.test_group_by_multiple_source",
+                "test_db.test_group_by_multiple_source_upload",
+            },
+            set(parser.metadata.tables.keys()),
+        )
+        self.assertEqual(
+            TableType.GROUP_BY_BACKFILL, parser.metadata.tables["test_db.test_group_by_multiple_source"].table_type
+        )
+        self.assertEqual(
+            TableType.GROUP_BY_UPLOAD, parser.metadata.tables["test_db.test_group_by_multiple_source_upload"].table_type
+        )
+        self.assertEqual({"ds", "subject"}, parser.metadata.tables["test_db.test_group_by_multiple_source"].key_columns)

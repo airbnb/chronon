@@ -7,6 +7,15 @@ TEST_BASE_PATH = os.path.join(os.path.dirname(__file__), "../sample")
 
 
 class TestParseLineage(unittest.TestCase):
+    def test_parse_all_configs(self):
+        parser = LineageParser()
+        parser.parse_lineage(TEST_BASE_PATH)
+        metadata = parser.metadata
+        self.assertIsNotNone(metadata.features)
+        self.assertIsNotNone(metadata.tables)
+        self.assertIsNotNone(metadata.lineages)
+        self.assertIsNotNone(metadata.unparsed_columns)
+
     def test_cannot_parse_lineage(self):
         # Can't parse lineage since there is no specific column.
         lineage = build_lineage("output", "SELECT COUNT(*) AS a FROM input", sources={})
@@ -47,7 +56,7 @@ class TestParseLineage(unittest.TestCase):
     def test_parse_all(self):
         BASE_PATH = "/Users/xiaohui_sun/work/ml_models/zipline"
         parser = LineageParser()
-        parser.parse_lineage(BASE_PATH, entities=["relevance.query_features.filter_stats_by_locale.filter_bar_v2"])
+        parser.parse_lineage(BASE_PATH, entities=["cs_ds.guest.dynamic_coupon_features.v1"])
         metadata = parser.metadata
         lineages = metadata.filter_lineages(
             output_table="china_search.china_outbound_search_pricing_booking_price_features_v1_relevance_query_features_geo_market_v1"

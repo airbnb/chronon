@@ -19,6 +19,7 @@ class TableType(str, Enum):
 class Table:
     def __init__(self, table_name, table_type) -> None:
         self.columns = set()  # Set to hold column names for this table.
+        self.key_columns = set()
         self.table_name = table_name
         self.table_type = table_type
 
@@ -57,7 +58,7 @@ class LineageMetaData:
         # Add the column name to the table's columns set.
         self.tables[table_name].columns.add(column_name)
 
-    def store_feature(self, entity_name, feature_name, output_table):
+    def store_feature(self, entity_name, feature_name, output_table=None):
         """
         Create and store a Feature object based on the entity and feature names.
         If an output table is provided, the feature's column is constructed accordingly.

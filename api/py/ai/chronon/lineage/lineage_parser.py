@@ -12,6 +12,7 @@ from ai.chronon.repo.validator import (
     extract_json_confs,
     get_group_by_output_columns,
     get_join_output_columns,
+    get_pre_derived_external_features,
     get_pre_derived_group_by_columns,
     get_pre_derived_group_by_features,
     get_pre_derived_join_features,
@@ -203,7 +204,7 @@ class LineageParser:
     @staticmethod
     def build_aggregate_sql(
         table: str,
-        key_columns: List[Tuple[Any, Any]],
+        key_columns: List[str],
         agg_columns: List[Tuple[Any, Any]],
         filter_expr: Optional[Any] = None,
     ) -> exp.Select:
@@ -221,7 +222,7 @@ class LineageParser:
         """
         sql = (
             exp.Select(
-                expressions=[f"{v} AS {k}" for k, v in key_columns] + [f"AGG({v}) AS {k}" for k, v in agg_columns],
+                expressions=key_columns + [f"AGG({v}) AS {k}" for k, v in agg_columns],
             )
             .from_(table)
             .where(filter_expr)
@@ -463,6 +464,7 @@ class LineageParser:
 
         # build select sql for left
         table, filter_expr, table_type, selects = self.parse_source(join.left)
+        source_keys = get_pre_derived_source_keys(join.left)
         if table in self.staging_query_tables:
             sources[table] = self.staging_query_tables[table].query
 
@@ -475,9 +477,9 @@ class LineageParser:
         sources["bootstrap_table"] = bootstrap_sql
         lineages = build_lineage(bootstrap_table, bootstrap_sql, sources={})
         self.metadata.store_table(bootstrap_table, TableType.JOIN_BOOTSTRAP)
+        self.metadata.tables[bootstrap_table].key_columns = set(source_keys)
         self.metadata.store_lineage(lineages, output_table)
 
-        # Handle join part tables
         for jp in join.joinParts:
             gb = jp.groupBy
             gb_table_name = sanitize(gb.metaData.name)
@@ -492,6 +494,7 @@ class LineageParser:
         sources["join_table"] = sql
 
         features = get_pre_derived_join_internal_features(join)
+
         # Build derivation SQL if derivations exist.
         if join.derivations:
             derived_features = [derivation.name for derivation in join.derivations]
@@ -506,12 +509,21 @@ class LineageParser:
             sql = derive_sql.sql(dialect="spark", pretty=True)
             sources["derive_table"] = sql
 
-        parsed_lineages = build_lineage(output_table, sql, sources)
-        self.metadata.store_table(output_table, TableType.JOIN)
-        self.metadata.store_lineage(parsed_lineages, output_table)
-
+        # store feature
         for feature in features:
             self.metadata.store_feature(join.metaData.name, feature, output_table)
+        # no column lineage for external features
+        external_features = get_pre_derived_external_features(join)
+        for feature in external_features:
+            self.metadata.store_feature(join.metaData.name, feature)
+
+        # store table
+        self.metadata.store_table(output_table, TableType.JOIN)
+        self.metadata.tables[output_table].key_columns = set(source_keys)
+
+        # store lineage
+        parsed_lineages = build_lineage(output_table, sql, sources)
+        self.metadata.store_lineage(parsed_lineages, output_table)
 
     def handle_staging_query(self, staging_query: Any) -> None:
         """
@@ -539,19 +551,6 @@ class LineageParser:
             None
         """
 
-        # If join_part_table is defined, then it generates a join part table.
-        # If gb.backfill_start_date is defined, then it generates a backfill table.
-        # If gb.online is True and SNAPSHOT accuracy, then it generates an upload table.
-        # If gb.online is True and TEMPORAL accuracy, then no need to track lineage since the output table stores IR only.
-        output_table = None
-        if join_part_table:
-            output_table = join_part_table
-            self.metadata.store_table(output_table, TableType.JOIN_PART)
-        elif gb.metaData.online and gb.accuracy == Accuracy.SNAPSHOT:
-            output_table = f"{self.object_table_name(gb)}_upload"
-        elif gb.backfillStartDate:
-            output_table = self.object_table_name(gb)
-
         # source tables used to build lineage
         sources = {}
 
@@ -567,7 +566,7 @@ class LineageParser:
         select_sql = reduce(exp.union, select_sqls)
 
         # Build aggregation SQL.
-        key_columns = [("ds", "ds")]
+        key_columns = ["ds"]
         agg_columns = []
         if gb.aggregations:
             for agg in gb.aggregations:
@@ -581,7 +580,7 @@ class LineageParser:
 
         # Add key columns.
         for key_column in gb.keyColumns:
-            key_columns.append((key_column, key_column))
+            key_columns.append(key_column)
 
         agg_sql = self.build_aggregate_sql("select_table", key_columns, agg_columns)
 
@@ -602,13 +601,49 @@ class LineageParser:
             sources["aggregate_table"] = sql
             sql = derive_sql.sql(pretty=True)
 
-        if output_table:
-            parsed_lineages = build_lineage(output_table, sql, sources)
-            self.metadata.store_table(output_table, TableType.GROUP_BY_UPLOAD)
-            self.metadata.store_lineage(parsed_lineages, output_table)
+        # If join_part_table is defined, then it generates a join part table.
+        # If gb.backfill_start_date is defined, then it generates a backfill table.
+        # If gb.online is True and SNAPSHOT accuracy, then it generates an upload table.
+        # If gb.online is True and TEMPORAL accuracy, then no need to track lineage since the output table stores IR only.
+        if join_part_table:
+            # store feature
+            for feature in features:
+                self.metadata.store_feature(gb.metaData.name, feature, join_part_table)
 
-        for feature in features:
-            self.metadata.store_feature(gb.metaData.name, feature, output_table)
+            # store table
+            self.metadata.store_table(join_part_table, TableType.JOIN_PART)
+            self.metadata.tables[join_part_table].key_columns = set(key_columns)
+
+            # store lineage
+            parsed_lineages = build_lineage(join_part_table, sql, sources)
+            self.metadata.store_lineage(parsed_lineages, join_part_table)
+        else:
+            output_table = None
+            if gb.metaData.online and gb.accuracy == Accuracy.SNAPSHOT:
+                output_table = f"{self.object_table_name(gb)}_upload"
+
+                # store table
+                self.metadata.store_table(output_table, TableType.GROUP_BY_UPLOAD)
+                self.metadata.tables[output_table].key_columns = set(key_columns)
+
+                # store lineage
+                parsed_lineages = build_lineage(output_table, sql, sources)
+                self.metadata.store_lineage(parsed_lineages, output_table)
+            # track feature lineage to the backfill table if it is defined
+            if gb.backfillStartDate:
+                output_table = self.object_table_name(gb)
+
+                # store table
+                self.metadata.store_table(output_table, TableType.GROUP_BY_BACKFILL)
+                self.metadata.tables[output_table].key_columns = set(key_columns)
+
+                # store lineage
+                parsed_lineages = build_lineage(output_table, sql, sources)
+                self.metadata.store_lineage(parsed_lineages, output_table)
+
+            # store feature
+            for feature in features:
+                self.metadata.store_feature(gb.metaData.name, feature, output_table)
 
 
 def _get_col_node_name(node: Node) -> str:

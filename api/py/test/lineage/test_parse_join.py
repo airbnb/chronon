@@ -1,4 +1,3 @@
-import os
 import unittest
 
 from ai.chronon import group_by
@@ -7,8 +6,6 @@ from ai.chronon.api import ttypes as api
 from ai.chronon.group_by import Derivation
 from ai.chronon.join import Join
 from ai.chronon.lineage.lineage_parser import LineageParser
-
-TEST_BASE_PATH = os.path.join(os.path.dirname(__file__), "../sample")
 
 
 class TestParseJoin(unittest.TestCase):
