@@ -707,11 +707,11 @@ class GroupByTest {
   def testGroupByWithQueryPartitionColumn(): Unit = {
     lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val queryPartitionColumn = "new_date_col"
-    val (source, endPartition) = createTestSource(suffix = "_different_names", partitionColOpt = Some(queryPartitionColumn))
+    val (source, endPartition) = createTestSource(suffix = "_custom_p_cols", partitionColOpt = Some(queryPartitionColumn))
     val tableUtils = TableUtils(spark)
-    val namespace = "test_different_names"
+    val namespace = "test_custom_p_cols"
 
-    val outputTable = backfill(name = "unit_test_different_names",
+    val outputTable = backfill(name = "unit_test_custom_p_cols",
       source = source,
       endPartition = endPartition,
       namespace = namespace,

@@ -49,6 +49,7 @@ object JoinUtils {
     }
     val query = joinConf.left.query
     val partitionColumn = tableUtils.getPartitionColumn(query)
+
     val (scanQuery, df) = range.scanQueryStringAndDf(
       query,
       joinConf.left.table,
@@ -57,6 +58,7 @@ object JoinUtils {
       partitionColOpt = Some(partitionColumn),
       renamePartitionCol = true
     )
+
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter
       .map(sf => {

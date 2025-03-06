@@ -644,14 +644,11 @@ object Extensions {
 
     def getPartitionColumn: Option[String] = {
       val partitionColumns = groupBy.sources.toScala.flatMap(_.partitionColumnOpt).distinct
-      if (partitionColumns.isEmpty) {
-        None
-      } else if (partitionColumns.length == 1) {
-        partitionColumns.headOption
-      } else {
-        throw new IllegalArgumentException(
-          s"Expect all queries from a given group-by to have the same partition column. All sources should have identical schemas and same partition column name. Found distinct partition columns $partitionColumns for group-by ${groupBy.metaData.name}")
-      }
+      require(
+        partitionColumns.length < 2,
+        s"Expect all queries from a given group-by to have the same partition column. All sources should have identical schemas and same partition column name. Found distinct partition columns $partitionColumns for group-by ${groupBy.metaData.name}"
+      )
+      partitionColumns.headOption
     }
   }
 
