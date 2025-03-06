@@ -187,7 +187,11 @@ class FetcherTest extends TestCase {
         )
       ),
       accuracy = Accuracy.TEMPORAL,
-      metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_gb", namespace = namespace, team = "chronon")
+      metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_gb", namespace = namespace, team = "chronon"),
+      derivations=Seq(
+        Builders.Derivation(name = "*", expression = "*"),
+        Builders.Derivation(name = "rating_average_1d_same", expression = "rating_average_1d")
+      )
     )
 
     val joinConf = Builders.Join(
@@ -648,6 +652,30 @@ class FetcherTest extends TestCase {
     compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
   }
 
+  def testTemporalFetchJoinDerivation(): Unit = {
+    val namespace = "derivation_fetch"
+    val joinConf = generateMutationData(namespace)
+    val derivations = Seq(Builders.Derivation(name = "*", expression = "*"),
+      Builders.Derivation(name = "unit_test_fetcher_mutations_gb_rating_sum_plus", expression = "unit_test_fetcher_mutations_gb_rating_sum + 1"),
+      Builders.Derivation(name = "listing_id_renamed", expression = "listing_id")
+    )
+    joinConf.setDerivations(derivations.toJava)
+
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+  }
+
+  def testTemporalFetchJoinDerivationRenameOnly(): Unit = {
+    val namespace = "derivation_fetch_rename_only"
+    val joinConf = generateMutationData(namespace)
+    val derivations = Seq(Builders.Derivation(name = "*", expression = "*"),
+      Builders.Derivation(name = "listing_id_renamed", expression = "listing_id")
+    )
+    joinConf.setDerivations(derivations.toJava)
+
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+  }
+
+
   def testTemporalFetchJoinGenerated(): Unit = {
     val namespace = "generated_fetch"
     val joinConf = generateRandomData(namespace)
@@ -688,6 +716,38 @@ class FetcherTest extends TestCase {
     val derivationExceptionTypes = Seq("derivation_fetch_exception", "derivation_rename_exception")
     assertEquals(joinConf.joinParts.size() + derivationExceptionTypes.size, responseMap.size)
     assertTrue(responseMap.keys.forall(_.endsWith("_exception")))
+  }
+
+  def testTemporalFetchGroupByNonExistKey(): Unit = {
+    val namespace = "non_exist_key_group_by_fetch"
+    val joinConf = generateMutationData(namespace)
+    val endDs = "2021-04-10"
+    val spark: SparkSession = SparkSessionBuilder.build(sessionName + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val inMemoryKvStore = kvStoreFunc()
+    val mockApi = new MockApi(kvStoreFunc, namespace)
+    @transient lazy val fetcher = mockApi.buildFetcher(debug=false)
+
+    joinConf.joinParts.toScala.foreach(jp =>
+      OnlineUtils.serve(tableUtils,
+        inMemoryKvStore,
+        kvStoreFunc,
+        namespace,
+        endDs,
+        jp.groupBy,
+        dropDsOnWrite = true))
+
+    // a random key that doesn't exist
+    val nonExistKey = 123L
+    val request = Request("unit_test/fetcher_mutations_gb",
+      Map("listing_id" -> nonExistKey.asInstanceOf[AnyRef]))
+    val response = fetcher.fetchGroupBys(Seq(request))
+    val result = Await.result(response, Duration(10, SECONDS))
+
+    // result should be "null" if the key is not found
+    val expected: Map[String, AnyRef] = Map("rating_average_1d_same" -> null)
+    assertEquals(expected, result.head.values.get)
   }
 }
 

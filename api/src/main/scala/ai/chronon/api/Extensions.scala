@@ -1085,17 +1085,18 @@ object Extensions {
     }
 
     // Used only during online fetching to reduce latency
-    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
+    def applyRenameOnlyDerivation(keys: Map[String, Any], values: Map[String, Any]): Map[String, Any] = {
       assert(
         areDerivationsRenameOnly,
         s"Derivations contain more complex expressions than simple renames: ${derivations.map(d => (d.name, d.expression))}")
       val wildcardDerivations = if (derivationsContainStar) {
-        baseColumns.filterNot(derivationExpressionSet contains _._1)
+        values.filterNot(derivationExpressionSet contains _._1)
       } else {
         Map.empty[String, Any]
       }
-
-      wildcardDerivations ++ derivationsWithoutStar.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
+      wildcardDerivations ++ derivationsWithoutStar
+        .map(d => d.name -> (keys ++ values).getOrElse(d.expression, null))
+        .toMap
     }
   }
 }
