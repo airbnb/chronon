@@ -208,7 +208,7 @@ case object Iceberg extends Format {
       throw new NotImplementedError(s"subPartitionsFilter is not supported on this format")
     }
 
-    getIcebergPartitions(tableName)
+    getIcebergPartitions(tableName, partitionColumn)
   }
 
   override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
@@ -217,21 +217,22 @@ case object Iceberg extends Format {
         "For single partition retrieval, please use 'partition' method.")
   }
 
-  private def getIcebergPartitions(tableName: String)(implicit sparkSession: SparkSession): Seq[String] = {
+  private def getIcebergPartitions(tableName: String, partitionColumn: String)(implicit
+      sparkSession: SparkSession): Seq[String] = {
     val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
     val index = partitionsDf.schema.fieldIndex("partition")
     if (partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
       // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
       // so we collect and then filter.
       partitionsDf
-        .select("partition.ds", "partition.hr")
+        .select(s"partition.$partitionColumn", "partition.hr")
         .collect()
         .filter(_.get(1) == null)
         .map(_.getString(0))
         .toSeq
     } else {
       partitionsDf
-        .select("partition.ds")
+        .select(s"partition.$partitionColumn")
         .collect()
         .map(_.getString(0))
         .toSeq
