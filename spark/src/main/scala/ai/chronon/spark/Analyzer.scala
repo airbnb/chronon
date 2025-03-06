@@ -187,12 +187,13 @@ class Analyzer(tableUtils: TableUtils,
     AggregationMetadata(columnName, columnType, operation, "Unbounded", columnName)
   }
 
-  def analyzeGroupBy(groupByConf: api.GroupBy,
-                     prefix: String = "",
-                     includeOutputTableName: Boolean = false,
-                     enableHitter: Boolean = false,
-                     skipTimestampCheck: Boolean = skipTimestampCheck,
-                     validateTablePermission: Boolean = true): (Array[AggregationMetadata], Map[String, DataType]) = {
+  def analyzeGroupBy(
+      groupByConf: api.GroupBy,
+      prefix: String = "",
+      includeOutputTableName: Boolean = false,
+      enableHitter: Boolean = false,
+      skipTimestampCheck: Boolean = skipTimestampCheck,
+      validateTablePermission: Boolean = false): (Array[AggregationMetadata], Map[String, DataType], Set[String]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -201,8 +202,8 @@ class Analyzer(tableUtils: TableUtils,
     val noAccessTables = if (validateTablePermission) {
       groupByConf.sources.toScala.flatMap { s =>
         runTablePermissionValidation(Set(s.table), s.partitionColumnOpt)
-      }
-    } else Set.empty
+      }.toSet
+    } else Set.empty[String]
 
     if (!skipTimestampCheck) {
       if (noAccessTables.isEmpty) {
@@ -271,7 +272,7 @@ class Analyzer(tableUtils: TableUtils,
     val keySchemaMap = groupBy.keySchema.map { field =>
       field.name -> SparkConversions.toChrononType(field.name, field.dataType)
     }.toMap
-    (aggMetadata, keySchemaMap)
+    (aggMetadata, keySchemaMap, noAccessTables)
 
   }
 
@@ -302,23 +303,16 @@ class Analyzer(tableUtils: TableUtils,
       (analysis, leftDf)
     }
 
-    val noAccessTables = if (validateTablePermission) {
-      val rightNoAccessTables = joinConf.joinParts.toScala.flatMap { part =>
-        part.groupBy.sources.toScala.flatMap { s =>
-          runTablePermissionValidation(Set(s.table), s.partitionColumnOpt)
-        }
-      }.toSet
-      val leftNoAccessTables =
-        runTablePermissionValidation(Set(joinConf.left.table), joinConf.left.partitionColumnOpt)
-      rightNoAccessTables ++ leftNoAccessTables
+    val leftNoAccessTables = if (validateTablePermission) {
+      runTablePermissionValidation(Set(joinConf.left.table), joinConf.left.partitionColumnOpt)
     } else Set.empty
 
     if (!skipTimestampCheck) {
-      if (noAccessTables.isEmpty) {
+      if (leftNoAccessTables.isEmpty) {
         val timestampChecks = runTimestampChecks(leftDf)
         validateTimestampChecks(timestampChecks, "Join", name)
       } else {
-        logger.warn(s"skipping the timestamp checks due to permission errors in ${noAccessTables.size} tables")
+        logger.warn(s"skipping the timestamp checks due to permission errors in ${leftNoAccessTables.size} tables")
       }
     }
 
@@ -328,6 +322,7 @@ class Analyzer(tableUtils: TableUtils,
     val joinIntermediateValuesMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbStartPartitions = mutable.Map[String, List[String]]()
+    val noAccessTables = mutable.Set[String]() ++= leftNoAccessTables
     // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
 
@@ -342,12 +337,15 @@ class Analyzer(tableUtils: TableUtils,
       .getOrElse(Seq.empty)
 
     joinConf.joinParts.toScala.foreach { part =>
-      val (aggMetadata, gbKeySchema) =
-        analyzeGroupBy(part.groupBy,
-                       part.fullPrefix,
-                       includeOutputTableName = true,
-                       enableHitter = enableHitter,
-                       skipTimestampCheck = skipTimestampCheck || noAccessTables.nonEmpty)
+      val (aggMetadata, gbKeySchema, rightNoAccessTables) =
+        analyzeGroupBy(
+          part.groupBy,
+          part.fullPrefix,
+          includeOutputTableName = true,
+          enableHitter = enableHitter,
+          skipTimestampCheck = skipTimestampCheck || leftNoAccessTables.nonEmpty,
+          validateTablePermission = true
+        )
       joinIntermediateValuesMetadata ++= aggMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
@@ -359,6 +357,7 @@ class Analyzer(tableUtils: TableUtils,
       // Run validation checks.
       keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
       dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel, part.groupBy, unfilledRanges)
+      noAccessTables ++= rightNoAccessTables
       // list any startPartition dates for conflict checks
       val gbStartPartition = part.groupBy.sources.toScala
         .map(_.query.startPartition)

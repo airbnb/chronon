@@ -643,12 +643,10 @@ object Extensions {
     }
 
     def getPartitionColumn: Option[String] = {
-      val partitionColumns = groupBy.sources.toScala.map(_.partitionColumnOpt).collect {
-        case Some(c) => c
-      }
+      val partitionColumns = groupBy.sources.toScala.flatMap(_.partitionColumnOpt).distinct
       if (partitionColumns.isEmpty) {
         None
-      } else if (partitionColumns.length == groupBy.sources.size()) {
+      } else if (partitionColumns.length == 1) {
         partitionColumns.headOption
       } else {
         throw new IllegalArgumentException(
