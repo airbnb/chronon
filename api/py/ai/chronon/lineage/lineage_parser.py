@@ -45,14 +45,11 @@ logger = logging.getLogger(__name__)
 class LineageParser:
     def __init__(self) -> None:
         """
-        Initialize the LineageParser with empty lineage sets, configuration, and staging query storage.
+        Take configurations and generate the following:
+         1. Column-level lineage details.
+         2. Output tables along with their associated columns.
+         3. Feature with corresponding column mappings.
 
-        Attributes:
-            lineages (Set[Tuple[str, Tuple[str, List[str]]]]): Set of lineage mappings as (input_column, (output_column, operation list)).
-            unparsed_columns (Dict[str, List[str]]): Dictionary for columns where lineage could not be determined.
-            base_path (Optional[str]): The base directory path for configuration files.
-            team_conf (Optional[Dict[str, Any]]): Team configuration loaded from JSON.
-            staging_query_tables (Dict[str, Any]): Mapping of staging query table names to their configuration.
         """
 
         self.base_path: Optional[str] = None
@@ -124,7 +121,6 @@ class LineageParser:
                     if entities and group_by.metaData.name not in entities:
                         continue
                     try:
-                        print(f"handle group by {group_by.metaData.name}")
                         self.parse_group_by(group_by)
                     except Exception as e:
                         logger.exception(

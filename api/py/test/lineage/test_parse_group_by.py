@@ -271,12 +271,3 @@ class TestParseGroupBy(unittest.TestCase):
         with open("group_by_sqls/derive.sql", "r") as infile:
             expected_sql = infile.read()
             self.assertEqual(expected_sql, actual_sql)
-
-    def validate_sql(self, file_name, actual_sql):
-        with open(file_name, "r") as infile:
-            expected_sql = infile.read()
-            try:
-                self.assertEqual(expected_sql, actual_sql)
-            except AssertionError:
-                print(f"expected\n--------\n{expected_sql}\n\nactual\n------\n{actual_sql}")
-                raise
