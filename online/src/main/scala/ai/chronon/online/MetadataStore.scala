@@ -135,7 +135,7 @@ class MetadataStore(kvStore: KVStore,
         else Metrics.Context(Metrics.Environment.MetaDataFetching, join = name)
       // Throw exception after metrics. No join metadata is bound to be a critical failure.
       if (result.isFailure) {
-        context.withSuffix("join").increment(Metrics.Name.Exception)
+        context.withSuffix("join").incrementException(result.failed.get)
         throw result.failed.get
       }
       context.withSuffix("join").distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
@@ -225,6 +225,10 @@ class MetadataStore(kvStore: KVStore,
           }
         logger.info(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset")
         if (metaData.isFailure) {
+          Metrics
+            .Context(Metrics.Environment.MetaDataFetching, groupBy = name)
+            .withSuffix("group_by")
+            .incrementException(metaData.failed.get)
           Failure(
             new RuntimeException(s"Couldn't fetch group by serving info for $batchDataset, " +
                                    s"please make sure a batch upload was successful",
