@@ -12,6 +12,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+import os
 import unittest
 
 from ai.chronon import group_by
@@ -247,14 +248,16 @@ class TestParseJoin(unittest.TestCase):
         )
 
     def test_build_join_sql(self):
+        expected_sql_path = os.path.join(os.path.dirname(__file__), "join_sqls/join.sql")
         parser = LineageParser()
         actual_sql = parser.build_join_sql(self.join).sql(dialect="spark", pretty=True)
-        with open("join_sqls/join.sql", "r") as infile:
+        with open(expected_sql_path, "r") as infile:
             expected_sql = infile.read()
             self.assertEqual(expected_sql, actual_sql)
 
     def test_build_derive_sql(self):
+        expected_sql_path = os.path.join(os.path.dirname(__file__), "join_sqls/derive.sql")
         actual_sql = LineageParser.build_join_derive_sql("derive_table", self.join).sql(dialect="spark", pretty=True)
-        with open("join_sqls/derive.sql", "r") as infile:
+        with open(expected_sql_path, "r") as infile:
             expected_sql = infile.read()
             self.assertEqual(expected_sql, actual_sql)

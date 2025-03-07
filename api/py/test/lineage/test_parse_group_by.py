@@ -12,6 +12,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+import os
 import unittest
 
 from ai.chronon import group_by
@@ -262,12 +263,14 @@ class TestParseGroupBy(unittest.TestCase):
         actual_sql = LineageParser.build_aggregate_sql("agg_table", self.gb.keyColumns, agg_columns).sql(
             dialect="spark", pretty=True
         )
-        with open("group_by_sqls/aggregate.sql", "r") as infile:
+        expected_sql_path = os.path.join(os.path.dirname(__file__), "group_by_sqls/aggregate.sql")
+        with open(expected_sql_path, "r") as infile:
             expected_sql = infile.read()
             self.assertEqual(expected_sql, actual_sql)
 
     def test_build_derive_sql(self):
+        expected_sql_path = os.path.join(os.path.dirname(__file__), "group_by_sqls/derive.sql")
         actual_sql = LineageParser.build_gb_derive_sql("derive_table", self.gb).sql(dialect="spark", pretty=True)
-        with open("group_by_sqls/derive.sql", "r") as infile:
+        with open(expected_sql_path, "r") as infile:
             expected_sql = infile.read()
             self.assertEqual(expected_sql, actual_sql)
