@@ -17,7 +17,7 @@ import logging
 import os
 import typing
 from functools import reduce
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from ai.chronon.api import ttypes
 from ai.chronon.group_by import Accuracy, _get_op_suffix
@@ -483,7 +483,7 @@ class LineageParser:
             )
         return sql
 
-    def parse_join(self, join: Any) -> dict[str, str | Any] | None:
+    def parse_join(self, join: Any) -> Optional[Dict[str, Any]]:
         """
         Parse a join configuration and build lineage based on its SQL.
 
@@ -574,7 +574,7 @@ class LineageParser:
         self.staging_query_tables[table_name] = staging_query
         self.metadata.store_table(table_name, TableType.STAGING_QUERY)
 
-    def parse_group_by(self, gb: Any, join_part_table: str = None) -> dict[str, str | Any] | None:
+    def parse_group_by(self, gb: Any, join_part_table: Optional[str] = None) -> Optional[Dict[str, Union[str, Any]]]:
         """
         Parse a group-by configuration and build lineage.
 
