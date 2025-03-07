@@ -19,7 +19,15 @@ package ai.chronon.online
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, GroupByOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
+import ai.chronon.api.Extensions.{
+  ExternalPartOps,
+  GroupByOps,
+  JoinOps,
+  JoinPartOps,
+  MetadataOps,
+  StringOps,
+  ThrowableOps
+}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
@@ -109,49 +117,57 @@ class Fetcher(val kvStore: KVStore,
   // run during initialization
   reportCallerNameFetcherVersion()
 
+  private def buildJoinPartCodec(
+      joinPart: JoinPartOps,
+      servingInfo: GroupByServingInfoParsed): (Iterable[StructField], Iterable[StructField]) = {
+    val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
+    val joinKeyFields = joinPart.leftToRight
+      .map {
+        case (leftKey, rightKey) =>
+          StructField(leftKey, keySchema.fields.find(_.name == rightKey).get.fieldType)
+      }
+
+    val baseValueSchema: StructType = if (servingInfo.groupBy.aggregations == null) {
+      servingInfo.selectedChrononSchema
+    } else {
+      servingInfo.outputChrononSchema
+    }
+    val valueFields = if (!servingInfo.groupBy.hasDerivations) {
+      baseValueSchema.fields
+    } else {
+      buildDerivedFields(servingInfo.groupBy.derivationsScala, keySchema, baseValueSchema).toArray
+    }
+    val joinValueFields = valueFields.map(joinPart.constructJoinPartSchema)
+
+    (joinKeyFields, joinValueFields)
+  }
+
   def buildJoinCodec(joinConf: Join, refreshOnFail: Boolean): (JoinCodec, Boolean) = {
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
     var hasPartialFailure = false
     // collect keyFields and valueFields from joinParts/GroupBys
     joinConf.joinPartOps.foreach { joinPart =>
-      val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
-      if (servingInfoTry.isSuccess) {
-        val servingInfo = servingInfoTry.get
-        val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
-        joinPart.leftToRight
-          .mapValues(right => keySchema.fields.find(_.name == right).get.fieldType)
-          .foreach {
-            case (name, dType) =>
-              val keyField = StructField(name, dType)
-              keyFields.add(keyField)
+      getGroupByServingInfo(joinPart.groupBy.metaData.getName)
+        .map { servingInfo =>
+          val (keys, values) = buildJoinPartCodec(joinPart, servingInfo)
+          keys.foreach(k => keyFields.add(k))
+          values.foreach(v => valueFields.append(v))
+        }
+        .recoverWith {
+          case exception: Throwable => {
+            if (refreshOnFail) {
+              getGroupByServingInfo.refresh(joinPart.groupBy.metaData.getName)
+              hasPartialFailure = true
+              Success(())
+            } else {
+              Failure(new Exception(
+                s"Failure to build join codec for join ${joinConf.metaData.name} due to bad groupBy serving info for ${joinPart.groupBy.metaData.name}",
+                exception))
+            }
           }
-        val groupBySchemaBeforeDerivation: StructType = if (servingInfo.groupBy.aggregations == null) {
-          servingInfo.selectedChrononSchema
-        } else {
-          servingInfo.outputChrononSchema
         }
-        val baseValueSchema: StructType = if (!servingInfo.groupBy.hasDerivations) {
-          groupBySchemaBeforeDerivation
-        } else {
-          val fields =
-            buildDerivedFields(servingInfo.groupBy.derivationsScala, keySchema, groupBySchemaBeforeDerivation)
-          StructType(s"groupby_derived_${servingInfo.groupBy.metaData.cleanName}", fields.toArray)
-        }
-        baseValueSchema.fields.foreach { sf =>
-          valueFields.append(joinPart.constructJoinPartSchema(sf))
-        }
-      } else {
-        if (refreshOnFail) {
-          getGroupByServingInfo.refresh(joinPart.groupBy.metaData.getName)
-          hasPartialFailure = true
-        } else {
-          throw new Exception(
-            s"Failure to build join codec for join ${joinConf.metaData.name} due to bad groupBy serving info for ${joinPart.groupBy.metaData.name}",
-            servingInfoTry.failed.get)
-        }
-
-      }
+        .get
     }
 
     // gather key schema and value schema from external sources.
