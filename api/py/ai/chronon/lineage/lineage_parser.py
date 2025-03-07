@@ -636,7 +636,7 @@ class LineageParser:
         # If join_part_table is defined, then it generates a join part table.
         # If gb.backfill_start_date is defined, then it generates a backfill table.
         # If gb.online is True and SNAPSHOT accuracy, then it generates an upload table.
-        # If gb.online is True and TEMPORAL accuracy, then no need to track lineage since the output table stores IR only.
+        # If gb.online is True and TEMPORAL accuracy, then no need to track lineage and the output table stores IR only.
         if join_part_table:
             # store feature
             for feature in features:
@@ -715,7 +715,7 @@ def get_transform_operation(expression: Any) -> str:
     return expression.this.__class__.__name__
 
 
-def build_lineage(output_table: str, sql: str, sources: Dict[str, str]) -> Dict[str, Tuple[str, Tuple[str,]]]:
+def build_lineage(output_table: str, sql: str, sources: Dict[str, str]):
     """
     Build the lineage mapping from the SQL query and its source queries.
 
@@ -741,7 +741,7 @@ def build_lineage(output_table: str, sql: str, sources: Dict[str, str]) -> Dict[
         schema=None,
         **{"validate_qualify_columns": False, "identify": False},
     )
-    parsed_lineages: Dict[str, Tuple[str, Tuple[str,]]] = {}
+    parsed_lineages = dict()
     scope = build_scope(expression)
     for output_column in [exp.alias_or_name for exp in scope.expression.expressions if exp.alias_or_name != "*"]:
         # Normalize the output column identifier.
