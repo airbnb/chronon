@@ -1,4 +1,5 @@
 load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_scala_version")
+load("@rules_jvm_external//:defs.bzl", "java_export")
 
 scala_library(
     name = "online",
@@ -25,7 +26,7 @@ scala_library(
     deps = [
         "//api:api-models",
         "//api:api-lib",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         "//aggregator",
         maven_artifact("com.esotericsoftware:kryo"),
         scala_artifact("org.json4s:json4s-core"),
@@ -64,7 +65,7 @@ scala_library(
         "//api:api-lib",
         ":online",
         "//aggregator",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         maven_artifact("com.esotericsoftware:kryo"),
         scala_artifact("org.json4s:json4s-core"),
         scala_artifact("org.json4s:json4s-jackson"),
@@ -111,7 +112,7 @@ scala_test_suite(
         "//aggregator",
         "//api:api-lib",
         "//api:api-models",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         scala_artifact("org.scalatestplus:mockito-3-4"),
         maven_artifact("org.mockito:mockito-core"),
         maven_artifact("org.apache.thrift:libthrift"),
@@ -122,5 +123,25 @@ scala_test_suite(
         maven_artifact("com.github.ben-manes.caffeine:caffeine"),
         maven_artifact("junit:junit"),
         maven_artifact("com.novocode:junit-interface"),
+    ],
+)
+
+genrule(
+    name = "generate_pom",
+    srcs = ["//:pom.xml.tpl"],
+    outs = ["export-pom.tpl"],
+    cmd = """
+    cat $(location //:pom.xml.tpl) \\
+        | sed 's/{name}/online/g' \\
+        > $@
+    """,
+)
+
+java_export(
+    name = "online-export",
+    maven_coordinates = "ai.chronon:online_$(scala_version):$(version)",
+    pom_template = ":generate_pom",
+    runtime_deps = [
+        ":online",
     ],
 )

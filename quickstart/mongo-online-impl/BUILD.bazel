@@ -9,7 +9,7 @@ scala_library(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         maven_artifact("org.mongodb.scala:mongo-scala-driver_2.12"),
         maven_artifact("org.mongodb.scala:mongo-scala-bson_2.12"),
         maven_artifact("org.mongodb:mongodb-driver-core"),
