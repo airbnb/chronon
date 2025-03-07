@@ -343,29 +343,29 @@ def get_dependencies(
                     None,
                     [
                         wait_for_simple_schema(
-                            src.entities.snapshotTable, lag, start, end
+                            src.entities.snapshotTable, lag, start, end, query=src.entities.query
                         ),
                         wait_for_simple_schema(
-                            src.entities.mutationTable, lag, start, end
+                            src.entities.mutationTable, lag, start, end, query=src.entities.query
                         ),
                     ],
                 )
             )
         elif src.entities:
             result = [
-                wait_for_simple_schema(src.entities.snapshotTable, lag, start, end)
+                wait_for_simple_schema(src.entities.snapshotTable, lag, start, end, query=src.entities.query)
             ]
         elif src.joinSource:
             parentJoinOutputTable = get_join_output_table_name(
                 src.joinSource.join, True
             )
-            result = [wait_for_simple_schema(parentJoinOutputTable, lag, start, end)]
+            result = [wait_for_simple_schema(parentJoinOutputTable, lag, start, end, query=src.joinSource.query)]
         else:
-            result = [wait_for_simple_schema(src.events.table, lag, start, end)]
+            result = [wait_for_simple_schema(src.events.table, lag, start, end, query=src.events.query)]
     return [json.dumps(res) for res in result]
 
 
-def get_bootstrap_dependencies(bootstrap_parts) -> List[str]:
+def get_bootstrap_dependencies(bootstrap_parts: List[api.BootstrapPart]) -> List[str]:
     if bootstrap_parts is None:
         return []
 
@@ -382,7 +382,7 @@ def get_bootstrap_dependencies(bootstrap_parts) -> List[str]:
             if bootstrap_part.query is not None
             else None
         )
-        dependencies.append(wait_for_simple_schema(table, 0, start, end))
+        dependencies.append(wait_for_simple_schema(table, 0, start, end, query=bootstrap_part.query))
     return [json.dumps(dep) for dep in dependencies]
 
 
@@ -409,18 +409,22 @@ def get_label_table_dependencies(label_part) -> List[str]:
     return label_dependencies
 
 
-def wait_for_simple_schema(table, lag, start, end):
+def wait_for_simple_schema(table, lag, start, end, query=None):
     if not table:
         return None
     table_tokens = table.split("/")
     clean_name = table_tokens[0]
     subpartition_spec = "/".join(table_tokens[1:]) if len(table_tokens) > 1 else ""
+    partition_col = "ds" if not query else (query.partitionColumn or "ds")
     return {
-        "name": "wait_for_{}_ds{}".format(
-            clean_name, "" if lag == 0 else f"_minus_{lag}"
-        ),
-        "spec": "{}/ds={}{}".format(
+        "name": "wait_for_{}_{}{}".format(
             clean_name,
+            partition_col,
+            "" if lag == 0 else f"_minus_{lag}"
+        ),
+        "spec": "{}/{}={}{}".format(
+            clean_name,
+            partition_col,
             "{{ ds }}" if lag == 0 else "{{{{ macros.ds_add(ds, -{}) }}}}".format(lag),
             "/{}".format(subpartition_spec) if subpartition_spec else "",
         ),

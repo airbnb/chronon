@@ -31,14 +31,15 @@ object TestUtils {
   def createViewsGroupBy(namespace: String,
                          spark: SparkSession,
                          tableName: String = "listing_views",
-                         customRows: List[Row] = List.empty): GroupByTestSuite = {
+                         customRows: List[Row] = List.empty,
+                         partitionColOpt: Option[String] = None): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
         StructField("listing_id", LongType),
         StructField("m_views", LongType),
         StructField("ts", StringType),
-        StructField("ds", StringType)
+        StructField(partitionColOpt.getOrElse("ds"), StringType)
       )
     )
     val rows =
@@ -58,11 +59,12 @@ object TestUtils {
           "listing" -> "listing_id",
           "m_views" -> "m_views"
         ),
-        timeColumn = "UNIX_TIMESTAMP(ts) * 1000"
+        timeColumn = "UNIX_TIMESTAMP(ts) * 1000",
+        partitionColumn = partitionColOpt.orNull,
       ),
       table = s"${namespace}.${tableName}",
       topic = null,
-      isCumulative = false
+      isCumulative = false,
     )
     val conf = Builders.GroupBy(
       sources = Seq(source),
@@ -79,7 +81,7 @@ object TestUtils {
     )
     spark.sql(s"DROP TABLE IF EXISTS $tableName")
     val df = makeDf(spark, schema, rows)
-    df.save(s"${namespace}.${tableName}")
+    saveOnPartitionOpt(df, s"$namespace.$tableName", partitionColOpt)
     GroupByTestSuite(
       tableName,
       conf,
@@ -89,13 +91,14 @@ object TestUtils {
 
   def createRoomTypeGroupBy(namespace: String,
                             spark: SparkSession,
-                            tableName: String = "listing_attributes_room"): GroupByTestSuite = {
+                            tableName: String = "listing_attributes_room",
+                            partitionColOpt: Option[String] = None): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
         StructField("listing_id", LongType),
         StructField("dim_room_type", StringType),
-        StructField("ds", StringType)
+        StructField(partitionColOpt.getOrElse("ds"), StringType)
       )
     )
     val rows = List(
@@ -113,7 +116,8 @@ object TestUtils {
         selects = Map(
           "listing" -> "listing_id",
           "dim_room_type" -> "dim_room_type"
-        )
+        ),
+        partitionColumn=partitionColOpt.orNull
       ),
       snapshotTable = s"${namespace}.${tableName}"
     )
@@ -126,7 +130,7 @@ object TestUtils {
     )
     spark.sql(s"DROP TABLE IF EXISTS $tableName")
     val df = makeDf(spark, schema, rows)
-    df.save(s"${namespace}.${tableName}")
+    saveOnPartitionOpt(df, s"$namespace.$tableName", partitionColOpt)
     GroupByTestSuite(
       tableName,
       conf,
@@ -136,13 +140,14 @@ object TestUtils {
 
   def createReservationGroupBy(namespace: String,
                                spark: SparkSession,
-                               tableName: String = "listing_attributes_reservation"): GroupByTestSuite = {
+                               tableName: String = "listing_attributes_reservation",
+                               partitionColOpt: Option[String] = None): GroupByTestSuite = {
     val schema = StructType(
       tableName,
       Array(
         StructField("listing_id", LongType),
         StructField("dim_reservations", IntType),
-        StructField("ds", StringType)
+        StructField(partitionColOpt.getOrElse("ds"), StringType)
       )
     )
     val rows = List(
@@ -160,7 +165,8 @@ object TestUtils {
         selects = Map(
           "listing" -> "listing_id",
           "dim_reservations" -> "dim_reservations"
-        )
+        ),
+        partitionColumn = partitionColOpt.orNull
       ),
       snapshotTable = s"${namespace}.${tableName}"
     )
@@ -175,7 +181,7 @@ object TestUtils {
       rows.toJava,
       SparkConversions.fromChrononSchema(schema)
     )
-    df.save(s"${namespace}.${tableName}")
+    saveOnPartitionOpt(df, s"$namespace.$tableName", partitionColOpt)
     GroupByTestSuite(
       tableName,
       conf,
@@ -450,5 +456,12 @@ object TestUtils {
       metaData = Builders.MetaData(name = name, namespace = namespace),
       accuracy = Accuracy.TEMPORAL
     )
+  }
+
+  def saveOnPartitionOpt(df: DataFrame, outputTable: String, partitionColOpt: Option[String]): Unit = {
+    partitionColOpt match {
+      case Some(pCol) => df.save(outputTable, partitionColumns = Seq(pCol))
+      case None => df.save(outputTable)
+    }
   }
 }

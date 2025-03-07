@@ -19,6 +19,7 @@ package ai.chronon.spark
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.Extensions.QueryOps
 import ai.chronon.api.{Constants, Query, QueryUtils}
+import org.apache.spark.sql.DataFrame
 
 import scala.collection.JavaConverters._
 
@@ -95,13 +96,62 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
     }
   }
 
-  def genScanQuery(query: Query,
-                   table: String,
-                   fillIfAbsent: Map[String, String] = Map.empty,
-                   partitionColumn: String = tableUtils.partitionColumn): String = {
+  /**
+    * Executes a scan query on the specified table and returns the resulting DataFrame.
+    *
+    * @param query                the object containing select clauses and where conditions
+    * @param table                the name of the table from which to scan data
+    * @param appendRawQueryString an optional raw string to append to the generated query
+    * @param fillIfAbsent         a map of column names to default values for filling in absent columns
+    * @param partitionColOpt      an optional override for the partition column; if not provided, the default partition
+    *                             column from [[tableUtils]] is used
+    * @param renamePartitionCol   if true, the partition column in the resulting DataFrame will be renamed to
+    *                             the standard column name; otherwise, the original column name is retained
+    * @return Dataframe containing the result of executing the constructed scan query
+    */
+  def scanQueryDf(query: Query,
+                  table: String,
+                  appendRawQueryString: String = "",
+                  fillIfAbsent: Map[String, String] = Map.empty,
+                  partitionColOpt: Option[String] = None,
+                  renamePartitionCol: Boolean = false): DataFrame = {
+    val (_, df) =
+      scanQueryStringAndDf(query, table, appendRawQueryString, fillIfAbsent, partitionColOpt, renamePartitionCol)
+    df
+  }
+
+  /**
+    * Identical to `scanQueryDf` except for exposing the query string for testing or logging.
+    */
+  def scanQueryStringAndDf(query: Query,
+                           table: String,
+                           appendRawQueryString: String = "",
+                           fillIfAbsent: Map[String, String] = Map.empty,
+                           partitionColOpt: Option[String] = None,
+                           renamePartitionCol: Boolean = false): (String, DataFrame) = {
+    val partitionColumn = tableUtils.getPartitionColumn(partitionColOpt)
+    val genQ = genScanQuery(query, table, fillIfAbsent, partitionColumn) + appendRawQueryString
+    if (renamePartitionCol) {
+      (genQ, tableUtils.sqlWithDefaultPartitionColumn(genQ, partitionColumn))
+    } else {
+      (genQ, tableUtils.sql(genQ))
+    }
+  }
+
+  private def genScanQuery(query: Query,
+                           table: String,
+                           fillIfAbsent: Map[String, String] = Map.empty,
+                           partitionColumn: String): String = {
+    // Because we allow query to specify custom partition column,
+    // it is not safe to use this method independently without renaming the column
+    // to the standard one. If you want to test gen query, use `scanQueryStringAndDf` instead.
     val queryOpt = Option(query)
+    val partitionCol = queryOpt match {
+      case Some(q) => Option(q.getPartitionColumn).getOrElse(partitionColumn)
+      case None    => partitionColumn
+    }
     val wheres =
-      whereClauses(partitionColumn) ++ queryOpt
+      whereClauses(partitionCol) ++ queryOpt
         .flatMap(q => Option(q.wheres).map(_.asScala))
         .getOrElse(Seq.empty[String])
     QueryUtils.build(selects = queryOpt.map(_.getQuerySelects).orNull,

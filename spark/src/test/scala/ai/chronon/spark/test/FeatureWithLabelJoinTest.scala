@@ -40,9 +40,8 @@ class FeatureWithLabelJoinTest {
     tableUtils.createDatabase(namespace)
     val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark)
     val left = viewsGroupBy.groupByConf.sources.get(0)
-    // create test feature join table
-    val featureTable = s"${namespace}.${tableName}"
-    createTestFeatureTable().write.saveAsTable(featureTable)
+    // Create feature to be joned
+    createTestFeatureTable(namespace, tableName = tableName)
 
     val labelJoinConf = createTestLabelJoin(50, 20,namespace=namespace)
     val joinConf = Builders.Join(
@@ -102,12 +101,46 @@ class FeatureWithLabelJoinTest {
   }
 
   @Test
+  def testFinalViewsGroupByDifferentPartitionColumn(): Unit = {
+    val namespace = "final_join" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val viewPartitionCol = "view_date"
+    val viewsGroupBy = TestUtils.createViewsGroupBy(namespace, spark, partitionColOpt = Some(viewPartitionCol))
+    val left = viewsGroupBy.groupByConf.sources.get(0)
+    // Create feature to be joined
+    createTestFeatureTable(namespace, tableName = tableName)
+
+    val labelJoinConf = createTestLabelJoin(50, 20,namespace=namespace)
+    val joinConf = Builders.Join(
+      Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
+      left,
+      joinParts = Seq.empty,
+      labelPart = labelJoinConf
+    )
+
+    val runner = new LabelJoin(joinConf, tableUtils, labelDS)
+    val labelDf = runner.computeLabelJoin()
+    logger.info(" == First Run Label version 2022-10-30 == ")
+    prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn))
+      .show()
+    val featureDf = tableUtils.sparkSession.table(joinConf.metaData.outputTable)
+    logger.info(" == Features == ")
+    featureDf.show()
+    val computed = tableUtils.sql(s"select * from ${joinConf.metaData.outputFinalView}")
+    val expectedFinal = featureDf.join(
+      prefixColumnName(labelDf, exceptions = labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn)),
+      labelJoinConf.rowIdentifier(null, tableUtils.partitionColumn),
+      "left_outer"
+    )
+    assertResult(computed, expectedFinal)
+  }
+
+  @Test
   def testFinalViewsWithAggLabel(): Unit = {
     val namespace = "final_join" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     // create test feature join table
     val tableName = "label_agg_table"
-    val featureTable = s"${namespace}.${tableName}"
     val featureRows = List(
       Row(1L, 24L, "US", "2022-10-02", "2022-10-02 16:00:00"),
       Row(1L, 20L, "US", "2022-10-03", "2022-10-03 10:00:00"),
@@ -116,7 +149,7 @@ class FeatureWithLabelJoinTest {
       Row(3L, 19L, "CA", "2022-10-03", "2022-10-03 08:00:00"),
       Row(4L, 2L, "MX", "2022-10-02", "2022-10-02 18:00:00")
     )
-    createTestFeatureTable(tableName, featureRows).write.saveAsTable(featureTable)
+    createTestFeatureTable(namespace, tableName, featureRows)
 
     val rows = List(
       Row(1L, 20L, "2022-10-02 11:00:00", "2022-10-02"),
@@ -242,7 +275,7 @@ class FeatureWithLabelJoinTest {
     )
   }
 
-  def createTestFeatureTable(tableName: String = tableName, customRows: List[Row] = List.empty): DataFrame = {
+  def createTestFeatureTable(namespace: String, tableName: String = tableName, customRows: List[Row] = List.empty): String = {
     val schema = StructType(
       tableName,
       Array(
@@ -263,6 +296,9 @@ class FeatureWithLabelJoinTest {
         Row(1L, 24L, "US", "2022-10-02", "2022-10-02 16:00:00")
       )
     } else customRows
-    TestUtils.makeDf(spark, schema, rows)
+    val df = TestUtils.makeDf(spark, schema, rows)
+    val fullTableName = s"$namespace.$tableName"
+    TestUtils.saveOnPartitionOpt(df, fullTableName, None)
+    fullTableName
   }
 }
