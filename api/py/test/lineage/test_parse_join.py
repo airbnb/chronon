@@ -14,14 +14,13 @@
 
 import os
 import unittest
-from test.lineage.mixins import LineageTestMixin
 
 from ai.chronon import group_by
 from ai.chronon.api import ttypes
 from ai.chronon.api import ttypes as api
 from ai.chronon.group_by import Derivation
 from ai.chronon.join import Join
-from ai.chronon.lineage.lineage_metadata import TableType
+from ai.chronon.lineage.lineage_metadata import ColumnTransform, TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
 
 
@@ -250,3 +249,12 @@ class TestParseJoin(unittest.TestCase, LineageTestMixin):
         with open(expected_sql_path, "r") as infile:
             expected_sql = infile.read()
             self.assertEqual(expected_sql, actual_sql)
+
+    def compare_lineages(self, expected, actual):
+        expected = sorted(expected)
+        actual = sorted(actual, key=lambda t: (t.input_column, t.output_column, t.transforms))
+        self.assertEqual(len(actual), len(expected))
+        for lineage_expected, lineage_actual in zip(expected, actual):
+            self.assertEqual(
+                ColumnTransform(lineage_expected[0], lineage_expected[1], lineage_expected[2]), lineage_actual
+            )
