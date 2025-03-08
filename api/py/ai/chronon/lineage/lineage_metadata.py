@@ -13,6 +13,7 @@
 #     limitations under the License.
 
 from collections import defaultdict
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Set, Tuple
 
@@ -31,32 +32,26 @@ class TableType(str, Enum):
     OTHER = "other"
 
 
+@dataclass
 class Table:
-    def __init__(self, table_name: str, table_type: TableType) -> None:
-        """
-        Instance initializer for the Table class.
-
-        :param table_name: The name of the table.
-        :param table_type: The type of the table as defined in TableType.
-        """
-        self.columns: Set[str] = set()  # Set to hold column names for this table.
-        self.key_columns: Set[str] = set()  # Set to hold key column names.
-        self.table_name: str = table_name
-        self.table_type: TableType = table_type
+    table_name: str
+    table_type: TableType
+    key_columns: Set[str] = None
+    columns: Set[str] = field(default_factory=set)
 
 
+@dataclass(frozen=True)
 class Feature:
-    def __init__(self, entity_name: str, feature_name: str, column: Optional[str] = None) -> None:
-        """
-        Instance initializer for the Feature class.
+    entity_name: str
+    feature_name: str
+    column: Optional[str] = None
 
-        :param entity_name: Name of the entity.
-        :param feature_name: Name of the feature.
-        :param column: Optional fully qualified column name if available.
-        """
-        self.entity_name: str = entity_name
-        self.feature_name: str = feature_name
-        self.column: Optional[str] = column
+
+@dataclass(frozen=True)
+class ColumnTransform:
+    input_column: str
+    output_column: str
+    transforms: Tuple[str]
 
 
 class LineageMetaData:
@@ -70,7 +65,7 @@ class LineageMetaData:
           - A mapping of feature identifiers to Feature objects.
           - A mapping of tables to lists of unparsed column names.
         """
-        self.lineages: Set[Tuple[str, str, str]] = set()
+        self.lineages: Set[ColumnTransform] = set()
         self.tables: Dict[str, Table] = {}
         self.features: Dict[str, Feature] = {}
         self.unparsed_columns: Dict[str, List[str]] = defaultdict(list)
@@ -116,15 +111,16 @@ class LineageMetaData:
         else:
             self.features[feature_identifier] = Feature(entity_name, feature_identifier)
 
-    def store_table(self, table_name: str, table_type: TableType) -> None:
+    def store_table(self, table_name: str, table_type: TableType, key_columns: Set[str] = None) -> None:
         """
         Instance method to create and store a Table if it does not already exist.
 
         :param table_name: Name of the table.
         :param table_type: The type of the table as defined in TableType.
+        :param key_columns: The key columns used to join with other tables.
         """
         if table_name not in self.tables:
-            self.tables[table_name] = Table(table_name, table_type)
+            self.tables[table_name] = Table(table_name, table_type, key_columns)
 
     def store_group_by_feature(self, entity_name: str, feature_name: str) -> None:
         """
@@ -149,20 +145,19 @@ class LineageMetaData:
         :param parsed_lineages: Dictionary mapping output columns to lists of tuples (input_column, operations).
         :param table_name: Table name to associate unparsed columns.
         """
-        for output_column, input_columns in parsed_lineages.items():
+        for output_column, input_column_transforms in parsed_lineages.items():
             # Store the output column in its table.
             self.store_column(output_column)
 
             # If there are no input columns, record the output column as unparsed.
-            if not input_columns:
+            if not input_column_transforms:
                 self.unparsed_columns[table_name].append(output_column)
                 continue
 
             # Process each input column along with its operations.
-            for input_column, operations in input_columns:
+            for input_column, transforms in input_column_transforms:
                 self.store_column(input_column)
-                combined_ops = combine_operations(operations)
-                self.lineages.add((input_column, output_column, combined_ops))
+                self.lineages.add(ColumnTransform(input_column, output_column, transforms))
 
     def filter_lineages(
         self, input_table: Optional[str] = None, output_table: Optional[str] = None
@@ -181,29 +176,17 @@ class LineageMetaData:
 
         # Filter by input table if provided.
         if input_table:
-            filtered_lineages = {lineage for lineage in filtered_lineages if table_name(lineage[0]) == input_table}
+            filtered_lineages = {
+                lineage for lineage in filtered_lineages if table_name(lineage.input_column) == input_table
+            }
 
         # Filter by output table if provided.
         if output_table:
-            filtered_lineages = {lineage for lineage in filtered_lineages if table_name(lineage[1]) == output_table}
+            filtered_lineages = {
+                lineage for lineage in filtered_lineages if table_name(lineage.output_column) == output_table
+            }
 
         return filtered_lineages
-
-
-def combine_operations(operations: List[str]) -> str:
-    """
-    Utility function to combine a list of operations into a single comma-separated string.
-
-    It excludes any operation named "Alias" and reverses the list to preserve the intended order.
-
-    :param operations: List of operation names.
-    :return: A comma-separated string of the filtered and reversed operations.
-    """
-    # Exclude operations that are "Alias".
-    filtered_operations = [op for op in operations if op != "Alias"]
-    # Reverse the order of operations to maintain the proper sequence.
-    filtered_operations.reverse()
-    return ",".join(filtered_operations)
 
 
 def table_name(column_name: str) -> str:

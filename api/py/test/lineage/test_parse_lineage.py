@@ -34,7 +34,7 @@ class TestParseLineage(unittest.TestCase):
         # Can't parse lineage since there is no specific column.
         lineage = build_lineage("output", "SELECT COUNT(*) AS a FROM input", sources={})
         self.assertEqual(
-            {"output.a": []},
+            {"output.a": set()},
             lineage,
         )
 
@@ -52,24 +52,24 @@ class TestParseLineage(unittest.TestCase):
         """
 
         lineage = build_lineage(output_table, sql, sources={})
-        expected_lineage = {
-            "output_table.a": [("input_table.f", ("Alias",))],
-            "output_table.b": [
-                ("input_table.f", ("Add", "Alias")),
-                ("input_table.e", ("Add", "Alias")),
-            ],
-            "output_table.c": [("input_table.g", ("AGG", "Alias"))],
-            "output_table.d": [("input_table.h", ("Sum", "Alias"))],
-        }
-
-        self.assertEqual(set(lineage.keys()), set(expected_lineage.keys()))
-
-        for key in expected_lineage:
-            self.assertCountEqual(lineage[key], expected_lineage[key])
+        self.assertEqual(
+            {
+                "output_table.a": {("input_table.f", ())},
+                "output_table.b": {
+                    ("input_table.e", ("Add",)),
+                    ("input_table.f", ("Add",)),
+                },
+                "output_table.c": {("input_table.g", ("AGG",))},
+                "output_table.d": {("input_table.h", ("Sum",))},
+            },
+            lineage,
+        )
 
     def test_build_select_sql(self):
         sql = LineageParser.build_select_sql(
-            "input_table", [("guest", "guest_id"), ("host", "host_id")], "ds = '2025-01-01'"
+            "input_table",
+            [("guest", "guest_id"), ("host", "host_id")],
+            "ds = '2025-01-01'",
         )
         self.assertEqual(
             "SELECT guest_id AS guest, host_id AS host FROM input_table WHERE ds = '2025-01-01'",

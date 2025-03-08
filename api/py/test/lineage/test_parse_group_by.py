@@ -14,6 +14,7 @@
 
 import os
 import unittest
+from test.lineage.mixins import LineageTestMixin
 
 from ai.chronon import group_by
 from ai.chronon.api import ttypes
@@ -22,7 +23,7 @@ from ai.chronon.lineage.lineage_metadata import TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
 
 
-class TestParseGroupBy(unittest.TestCase):
+class TestParseGroupBy(unittest.TestCase, LineageTestMixin):
     def setUp(self):
         gb_event_source = ttypes.EventSource(
             table="source.gb_table",
@@ -41,6 +42,7 @@ class TestParseGroupBy(unittest.TestCase):
                 startPartition="2024-01-01",
                 selects={"subject": "subject", "event_id": "event", "cnt": 1},
                 timeColumn="CAST(ts AS DOUBLE)",
+                partitionColumn="ds",
             ),
         )
 
@@ -124,47 +126,47 @@ class TestParseGroupBy(unittest.TestCase):
         )
         lineages = parser.metadata.filter_lineages(output_table=backfill_table_name)
 
-        self.assertEqual(
+        self.compare_lineages(
             {
                 (
                     "source.gb_table1.event",
                     "test_db.test_group_by_multiple_source.event_id_approx_percentile",
-                    "AGG",
+                    ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
                     "source.gb_table1.event",
                     "test_db.test_group_by_multiple_source.event_id_sum",
-                    "AGG",
+                    ("AGG_SUM",),
                 ),
                 (
                     "source.gb_table.event",
                     "test_db.test_group_by_multiple_source.event_id_last",
-                    "AGG",
+                    ("AGG_LAST",),
                 ),
                 (
                     "source.gb_table1.subject",
                     "test_db.test_group_by_multiple_source.subject",
-                    "",
+                    (),
                 ),
                 (
                     "source.gb_table.subject",
                     "test_db.test_group_by_multiple_source.subject",
-                    "",
+                    (),
                 ),
                 (
                     "source.gb_table.event",
                     "test_db.test_group_by_multiple_source.event_id_approx_percentile",
-                    "AGG",
+                    ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
                     "source.gb_table.event",
                     "test_db.test_group_by_multiple_source.event_id_sum",
-                    "AGG",
+                    ("AGG_SUM",),
                 ),
                 (
                     "source.gb_table1.event",
                     "test_db.test_group_by_multiple_source.event_id_last",
-                    "AGG",
+                    ("AGG_LAST",),
                 ),
             },
             lineages,
@@ -193,33 +195,25 @@ class TestParseGroupBy(unittest.TestCase):
             parser.metadata.tables[backfill_table_name].columns,
         )
         lineages = parser.metadata.filter_lineages(output_table=backfill_table_name)
-        self.assertEqual(
+        self.compare_lineages(
             {
                 (
                     "source.gb_table.subject",
                     "test_db.test_join_jp_test_group_by.subject",
-                    "",
+                    (),
                 ),
                 (
                     "source.gb_table.event",
                     "test_db.test_join_jp_test_group_by.event_id_approx_percentile",
-                    "AGG",
+                    ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
                     "source.gb_table.event",
                     "test_db.test_join_jp_test_group_by.event_id_sum_plus_one",
-                    "AGG,Add",
+                    ("Add", "AGG_SUM"),
                 ),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_join_jp_test_group_by.event_id_last_renamed",
-                    "AGG",
-                ),
-                (
-                    "source.gb_table.event",
-                    "test_db.test_join_jp_test_group_by.event_id_sum",
-                    "AGG",
-                ),
+                ("source.gb_table.event", "test_db.test_join_jp_test_group_by.event_id_last_renamed", ("AGG_LAST",)),
+                ("source.gb_table.event", "test_db.test_join_jp_test_group_by.event_id_sum", ("AGG_SUM",)),
             },
             lineages,
         )
@@ -253,16 +247,8 @@ class TestParseGroupBy(unittest.TestCase):
         )
 
     def test_build_aggregate_sql(self):
-        agg_columns = []
-        for agg in self.gb.aggregations:
-            all_agg_exprs = LineageParser.get_all_agg_exprs(agg)
-            for agg_expr in all_agg_exprs:
-                aggregation = f"{agg.inputColumn}_{agg_expr}"
-                agg_columns.append((aggregation, agg.inputColumn))
-
-        actual_sql = LineageParser.build_aggregate_sql("agg_table", self.gb.keyColumns, agg_columns).sql(
-            dialect="spark", pretty=True
-        )
+        parser = LineageParser()
+        actual_sql = parser.build_aggregate_sql("agg_table", self.gb).sql(dialect="spark", pretty=True)
         expected_sql_path = os.path.join(os.path.dirname(__file__), "group_by_sqls/aggregate.sql")
         with open(expected_sql_path, "r") as infile:
             expected_sql = infile.read()
