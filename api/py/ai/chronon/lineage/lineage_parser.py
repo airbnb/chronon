@@ -325,7 +325,7 @@ class LineageParser:
         """
         Extract the team name from the given metadata.
 
-        Retrieves the default team name from the 'team' key, and uses the 'team_override' from custom JSON configuration if available.
+        Retrieves the default team name from the 'team' key, and uses the 'team_override' if available.
 
         :param metadata: Dictionary containing team information and optional custom JSON.
         :return: The effective team name, possibly overridden by custom configuration.
