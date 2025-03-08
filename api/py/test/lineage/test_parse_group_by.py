@@ -22,7 +22,7 @@ from ai.chronon.lineage.lineage_metadata import ColumnTransform, TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
 
 
-class TestParseGroupBy(unittest.TestCase, LineageTestMixin):
+class TestParseGroupBy(unittest.TestCase):
     def setUp(self):
         gb_event_source = ttypes.EventSource(
             table="source.gb_table",

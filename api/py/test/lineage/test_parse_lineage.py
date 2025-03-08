@@ -32,7 +32,7 @@ class TestParseLineage(unittest.TestCase):
 
     def test_cannot_parse_lineage(self):
         # Can't parse lineage since there is no specific column.
-        lineage = build_lineage("output", "SELECT COUNT(*) AS a FROM input", sources={})
+        lineage = build_lineage("output", "SELECT COUNT(*) AS a FROM input")
         self.assertEqual(
             {"output.a": set()},
             lineage,
@@ -51,7 +51,7 @@ class TestParseLineage(unittest.TestCase):
             )
         """
 
-        lineage = build_lineage(output_table, sql, sources={})
+        lineage = build_lineage(output_table, sql)
         self.assertEqual(
             {
                 "output_table.a": {("input_table.f", ())},

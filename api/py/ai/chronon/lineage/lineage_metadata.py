@@ -132,7 +132,7 @@ class LineageMetaData:
         feature_identifier = f"{entity_name}.{feature_name}"
         self.features[feature_identifier] = Feature(entity_name, feature_identifier)
 
-    def store_lineage(self, parsed_lineages: Dict[str, List[Tuple[str, List[str]]]], table_name: str) -> None:
+    def store_lineage(self, parsed_lineages: Dict[str, Set[Tuple[str, Tuple[str]]]], table_name: str) -> None:
         """
         Instance method to record lineage information by mapping input columns to output columns with operations.
 

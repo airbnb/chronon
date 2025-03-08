@@ -17,7 +17,7 @@ import logging
 import os
 import typing
 from functools import reduce
-from typing import Any, Dict, List, Optional, Set, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ai.chronon.api import ttypes
 from ai.chronon.group_by import Accuracy, _get_op_suffix
@@ -54,7 +54,7 @@ class LineageParser:
 
         self.base_path: Optional[str] = None
         self.team_conf: Optional[Dict[str, Any]] = None
-        self.staging_query_tables: Dict[str, Any] = {}
+        self.staging_queries: Dict[str, Any] = {}
         self.metadata: LineageMetaData = LineageMetaData()
 
     def parse_lineage(self, base_path: str, module_names: Optional[Set[str]] = None) -> LineageMetaData:
@@ -449,8 +449,8 @@ class LineageParser:
         # build select sql for left
         table, filter_expr, selects = self.parse_source(join.left)
         source_keys = get_pre_derived_source_keys(join.left)
-        if table in self.staging_query_tables:
-            sources[table] = self.staging_query_tables[table].query
+        if table in self.staging_queries:
+            sources[table] = self.staging_queries[table].query
 
         # Build lineage for source table --> boostrap table
         bootstrap_selects = [(k, v) for k, v in selects.items()]
@@ -458,7 +458,7 @@ class LineageParser:
         bootstrap_table = f"{output_table}_bootstrap"
         bootstrap_sql = bootstrap_sql.sql(dialect="spark", pretty=True)
         sources["bootstrap_table"] = bootstrap_sql
-        lineages = build_lineage(bootstrap_table, bootstrap_sql, sources={})
+        lineages = build_lineage(bootstrap_table, bootstrap_sql)
         self.metadata.store_table(bootstrap_table, TableType.JOIN_BOOTSTRAP, set(source_keys))
         self.metadata.store_lineage(lineages, output_table)
 
@@ -514,16 +514,29 @@ class LineageParser:
         :return: None
         """
         table_name = output_table_name(staging_query, full_name=True)
-        self.staging_query_tables[table_name] = staging_query
-        self.metadata.store_table(table_name, TableType.STAGING_QUERY)
+        self.staging_queries[table_name] = staging_query
 
-    def parse_group_by(self, gb: Any, join_part_table: Optional[str] = None) -> Optional[Dict[str, Union[str, Any]]]:
+    def parse_staging_query(self, staging_query: Any) -> None:
+        """
+        Parse a staging query configuration and build its lineage.
+
+        :param staging_query: The staging query configuration object.
+        :return: None
+        """
+        table_name = output_table_name(staging_query, full_name=True)
+
+        if table_name not in self.metadata.tables:
+            parsed_lineages = build_lineage(table_name, staging_query.query)
+            self.metadata.store_table(table_name, TableType.STAGING_QUERY)
+            self.metadata.store_lineage(parsed_lineages, table_name)
+
+    def parse_group_by(self, gb: Any, join_part_table: Optional[str] = None) -> None:
         """
         Parse a group-by configuration and build lineage.
 
         :param gb: The group-by configuration object.
         :param join_part_table: The join part table name for the group by.
-        :return: A dictionary containing lineage details, or None if not applicable.
+        :return: None
         """
         # source tables used to build lineage
         sources = {}
@@ -532,8 +545,8 @@ class LineageParser:
         select_sqls = []
         for source in gb.sources:
             table, filter_expr, selects = self.parse_source(source)
-            if table in self.staging_query_tables:
-                sources[table] = self.staging_query_tables[table].query
+            if table in self.staging_queries:
+                self.parse_staging_query(self.staging_queries[table])
             sql = self.build_select_sql(table, selects.items(), filter_expr)
             select_sqls.append(sql)
 
@@ -646,7 +659,9 @@ def append_transform(transforms: List[str], transform: str) -> List[str]:
     return transforms
 
 
-def build_lineage(output_table: str, sql: str, sources: Dict[str, str]):
+def build_lineage(
+    output_table: str, sql: str, sources: Dict[str, str] = None
+) -> Dict[str, Set[Tuple[str, Tuple[str]]]]:
     """
     Build the lineage mapping from the SQL query and its source queries.
 
@@ -657,11 +672,12 @@ def build_lineage(output_table: str, sql: str, sources: Dict[str, str]):
     """
     dialect = "spark"
     expression = maybe_parse(sql, dialect=dialect)
-    expression = exp.expand(
-        expression,
-        {k: typing.cast(exp.Query, maybe_parse(v, dialect=dialect)) for k, v in sources.items()},
-        dialect=dialect,
-    )
+    if sources:
+        expression = exp.expand(
+            expression,
+            {k: typing.cast(exp.Query, maybe_parse(v, dialect=dialect)) for k, v in sources.items()},
+            dialect=dialect,
+        )
     expression = qualify.qualify(
         expression,
         dialect="spark",
