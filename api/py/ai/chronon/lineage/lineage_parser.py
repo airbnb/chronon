@@ -20,7 +20,7 @@ from functools import reduce
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from ai.chronon.api import ttypes
-from ai.chronon.group_by import Accuracy, _get_op_suffix
+from ai.chronon.group_by import Accuracy, get_output_col_names
 from ai.chronon.lineage.lineage_metadata import LineageMetaData, TableType
 from ai.chronon.repo.validator import (
     extract_json_confs,
@@ -140,33 +140,6 @@ class LineageParser:
                         logger.exception(f"An unexpected error occurred while parsing join {join.metaData.name}: {e}")
 
     @staticmethod
-    def get_all_agg_exprs(aggregation: Any) -> List[str]:
-        """
-        Generate all aggregate expression names based on the aggregation's windows and buckets.
-
-        :param aggregation: The aggregation configuration object.
-        :return: A list of aggregate expression names.
-        """
-        base_name = f"{_get_op_suffix(aggregation.operation, aggregation.argMap)}"
-        windowed_names: List[str] = []
-        if aggregation.windows:
-            for window in aggregation.windows:
-                unit = ttypes.TimeUnit._VALUES_TO_NAMES[window.timeUnit].lower()[0]
-                window_suffix = f"{window.length}{unit}"
-                windowed_names.append(f"{base_name}_{window_suffix}")
-        else:
-            windowed_names = [base_name]
-
-        bucketed_names = []
-        if aggregation.buckets:
-            for bucket in aggregation.buckets:
-                bucketed_names.extend([f"{name}_by_{bucket}" for name in windowed_names])
-        else:
-            bucketed_names = windowed_names
-
-        return bucketed_names
-
-    @staticmethod
     def build_select_sql(table: str, selects: List[Tuple[Any, Any]], filter_expr: Optional[Any] = None) -> exp.Select:
         """
         Build a SQL SELECT statement.
@@ -206,11 +179,10 @@ class LineageParser:
         expressions.extend(gb.keyColumns)
         if gb.aggregations:
             for agg in gb.aggregations:
-                all_agg_exprs = self.get_all_agg_exprs(agg)
                 op_name = ttypes.Operation._VALUES_TO_NAMES[agg.operation]
-                for agg_expr in all_agg_exprs:
-                    aggregation = f"{agg.inputColumn}_{agg_expr}"
-                    expressions.append(f"AGG_{op_name}({agg.inputColumn}) AS {aggregation}")
+                agg_names = get_output_col_names(agg)
+                for agg_name in agg_names:
+                    expressions.append(f"AGG_{op_name}({agg.inputColumn}) AS {agg_name}")
         elif selects:
             for input_column_name, input_column_expr in selects:
                 expressions.append(input_column_name)
