@@ -3,27 +3,27 @@ package ai.chronon.online
 import ai.chronon.aggregator.windowing.FiveMinuteResolution.getWindowResolutionMillis
 
 /**
- * When using the Tiled Architecture, Chronon stores streaming data in the Key-Value
- * store as tiles that contain the intermediate results for a given time range.
- *
- * This utility contains the code that calculates what tiles are need to serve a certain
- * GroupBy, at a specific time.
- *
- * Related: "The Tiled Architecture" https://chronon.ai/Tiled_Architecture.html
- */
+  * When using the Tiled Architecture, Chronon stores streaming data in the Key-Value
+  * store as tiles that contain the intermediate results for a given time range.
+  *
+  * This utility contains the code that calculates what tiles are need to serve a certain
+  * GroupBy, at a specific time.
+  *
+  * Related: "The Tiled Architecture" https://chronon.ai/Tiled_Architecture.html
+  */
 object TileFetchingUtils {
 
   /**
-   * Given a GroupBy Window and the current time in millis, return the start of the saw-tooth window in millis.
-   *
-   * Example:
-   *  current time: 14:33:24, window size: 01:00:00, resolution: 00:05:00 => window start rounded down: 13:30:00.
-   */
+    * Given a GroupBy Window and the current time in millis, return the start of the saw-tooth window in millis.
+    *
+    * Example:
+    *  current time: 14:33:24, window size: 01:00:00, resolution: 00:05:00 => window start rounded down: 13:30:00.
+    */
   private[online] def getSawToothWindowStartMillis(
-                                                     windowSizeMillis: Long,
-                                                     currentTimeMillis: Long,
-                                                     resolutionMillis: Long
-                                                   ) = {
+      windowSizeMillis: Long,
+      currentTimeMillis: Long,
+      resolutionMillis: Long
+  ) = {
     // It does not make sense for any of these parameters to be zero.
     require(
       (windowSizeMillis > 0 && currentTimeMillis > 0 && resolutionMillis > 0),
@@ -37,18 +37,18 @@ object TileFetchingUtils {
   }
 
   /**
-   * Given a list of windows in a GroupBy, the current time in millis, and the tile sizes available, return the tiles
-   * needed to be fetched from the KV store to "fill" or compute the windows as a set of (tile start: millis,
-   * tile size: millis) tuples.
-   *
-   * The algorithm will only select tiles after `startTsMillis`, even if the windows provided start before that time.
-   */
+    * Given a list of windows in a GroupBy, the current time in millis, and the tile sizes available, return the tiles
+    * needed to be fetched from the KV store to "fill" or compute the windows as a set of (tile start: millis,
+    * tile size: millis) tuples.
+    *
+    * The algorithm will only select tiles after `startTsMillis`, even if the windows provided start before that time.
+    */
   def getTilesForWindows(
-                          windowSizesMillis: Seq[Long],
-                          startTsMillis: Long,
-                          currentTimeMillis: Long,
-                          tileSizesAvailable: IndexedSeq[TileSize]
-                        ): Set[(Long, Long)] = {
+      windowSizesMillis: Seq[Long],
+      startTsMillis: Long,
+      currentTimeMillis: Long,
+      tileSizesAvailable: IndexedSeq[TileSize]
+  ): Set[(Long, Long)] = {
     if (startTsMillis > currentTimeMillis)
       throw new IllegalStateException(
         s"Invalid range: startTsMillis ($startTsMillis) must be less than currentTimeMillis ($currentTimeMillis)."
@@ -69,39 +69,39 @@ object TileFetchingUtils {
   }
 
   /**
-   * Given a GroupBy Window, the current time in millis, and the tile sizes available, return the list of tiles needed
-   * to "fill" or compute the Window. The tiles are returned as a set of (tile start: millis, tile size: millis) tuples.
-   *
-   * Example: We want to fetch tiles for a GroupBy Window of 6 hours. The tile sizes available are 6 hours, 1 hour,
-   * 20 minutes, and 5 minutes. The current time is 08:38:00
-   *
-   * Execution: getTilesForWindow(6hr, [6hr, 1hr, 20m, 5m], 08:38:00) is invoked and calls getTilesForRangeInWindow
-   * - First invocation of getTilesForRangeInWindow:
-   *      getTilesForRangeInWindow([2:35, 8:38], 6hr)
-   *      range to fill: [2:35, 8:38]
-   *      algorithm allocates one tile: [6:00, 12:00).
-   * - Second, recursive invocation:
-   *      getTilesForRangeInWindow([2:35, 6:00], 1hr)
-   *      range to fill: [2:35, 6:00]
-   *      algorithm allocates three tiles: [3:00, 4:00), [4:00, 5:00), [5:00, 6:00).
-   * - Third, recursive invocation:
-   *      getTilesForRangeInWindow([2:35, 3:00], 20m)
-   *      range to fill: [2:35, 3:00]
-   *      algorithm allocates one tile: [2:40, 3:00)
-   * - Fourth, recursive invocation:
-   *      getTilesForRangeInWindow([2:35, 2:40], 5m)
-   *      range to fill: [2:35, 2:40]
-   *      algorithm allocates one tile: [2:35, 2:40)
-   *
-   *  Result: the following tiles are needed:
-   *      [6:00, 12:00), [3:00, 4:00), [4:00, 5:00), [5:00, 6:00), [2:40, 3:00), [2:35, 2:40)
-   */
+    * Given a GroupBy Window, the current time in millis, and the tile sizes available, return the list of tiles needed
+    * to "fill" or compute the Window. The tiles are returned as a set of (tile start: millis, tile size: millis) tuples.
+    *
+    * Example: We want to fetch tiles for a GroupBy Window of 6 hours. The tile sizes available are 6 hours, 1 hour,
+    * 20 minutes, and 5 minutes. The current time is 08:38:00
+    *
+    * Execution: getTilesForWindow(6hr, [6hr, 1hr, 20m, 5m], 08:38:00) is invoked and calls getTilesForRangeInWindow
+    * - First invocation of getTilesForRangeInWindow:
+    *      getTilesForRangeInWindow([2:35, 8:38], 6hr)
+    *      range to fill: [2:35, 8:38]
+    *      algorithm allocates one tile: [6:00, 12:00).
+    * - Second, recursive invocation:
+    *      getTilesForRangeInWindow([2:35, 6:00], 1hr)
+    *      range to fill: [2:35, 6:00]
+    *      algorithm allocates three tiles: [3:00, 4:00), [4:00, 5:00), [5:00, 6:00).
+    * - Third, recursive invocation:
+    *      getTilesForRangeInWindow([2:35, 3:00], 20m)
+    *      range to fill: [2:35, 3:00]
+    *      algorithm allocates one tile: [2:40, 3:00)
+    * - Fourth, recursive invocation:
+    *      getTilesForRangeInWindow([2:35, 2:40], 5m)
+    *      range to fill: [2:35, 2:40]
+    *      algorithm allocates one tile: [2:35, 2:40)
+    *
+    *  Result: the following tiles are needed:
+    *      [6:00, 12:00), [3:00, 4:00), [4:00, 5:00), [5:00, 6:00), [2:40, 3:00), [2:35, 2:40)
+    */
   private def getTilesForWindow(
-                                 windowSizeMillis: Long,
-                                 currentTimeMillis: Long,
-                                 startTsMillis: Long,
-                                 tileSizesAvailableForThisChrononWindowSortedDescending: IndexedSeq[TileSize]
-                               ): Set[(Long, Long)] = {
+      windowSizeMillis: Long,
+      currentTimeMillis: Long,
+      startTsMillis: Long,
+      tileSizesAvailableForThisChrononWindowSortedDescending: IndexedSeq[TileSize]
+  ): Set[(Long, Long)] = {
     val windowResolution = getWindowResolutionMillis(windowSizeMillis)
 
     // We only need to fetch tiles that are after the startTsMillis. (It's assumed that the tiles before this time
@@ -125,19 +125,19 @@ object TileFetchingUtils {
   }
 
   /**
-   * Given a range return the Epoch-aligned tiles that need to be fetched.
-   *
-   * @param canExceedRangeEnd If true, the algorithm can fetch tiles that exceed the range end. For example, if the
-   *                          range is [14:35, 19:30) and tile size is 06:00, it's ok for us to fetch the
-   *                          partially-complete [18:00, 00:00) tile, so canExceedRangeEnd should be True.
-   */
+    * Given a range return the Epoch-aligned tiles that need to be fetched.
+    *
+    * @param canExceedRangeEnd If true, the algorithm can fetch tiles that exceed the range end. For example, if the
+    *                          range is [14:35, 19:30) and tile size is 06:00, it's ok for us to fetch the
+    *                          partially-complete [18:00, 00:00) tile, so canExceedRangeEnd should be True.
+    */
   private def getTilesForRangeInWindow(
-                                        rangeStartInclusiveMillis: Long,
-                                        rangeEndExclusiveMillis: Long,
-                                        currentTileSize: TileSize,
-                                        tileSizesAvailableForThisChrononWindowSortedDescending: IndexedSeq[TileSize],
-                                        canExceedRangeEnd: Boolean = false
-                                      ): Set[(Long, TileSize)] = {
+      rangeStartInclusiveMillis: Long,
+      rangeEndExclusiveMillis: Long,
+      currentTileSize: TileSize,
+      tileSizesAvailableForThisChrononWindowSortedDescending: IndexedSeq[TileSize],
+      canExceedRangeEnd: Boolean = false
+  ): Set[(Long, TileSize)] = {
     // Find the first possible tile start within the range.
     // Example: range: [14:35, 16:00), tile size: 00:20 => first possible tile start = 14:40.
     val firstPossibleTileStartAlignedWithEpoch = rangeStartInclusiveMillis +
@@ -213,8 +213,10 @@ object TileFetchingUtils {
       val isThereUnfilledRangeOnTheRight = unfilledRangeStartRight < unfilledRangeEndRight
 
       // if tile size is the smallest available, and we haven't filled the entire range, something is very wrong.
-      if (currentTileSize == tileSizesAvailableForThisChrononWindowSortedDescending.last
-        && (isThereUnfilledRangeOnTheLeft || isThereUnfilledRangeOnTheRight)) {
+      if (
+        currentTileSize == tileSizesAvailableForThisChrononWindowSortedDescending.last
+        && (isThereUnfilledRangeOnTheLeft || isThereUnfilledRangeOnTheRight)
+      ) {
         throw new IllegalStateException(
           s"Could not fill a Chronon Window defined in a GroupBy with the tile sizes currently available from " +
             s"Flink. Smallest tile size: $currentTileSize Range: [$rangeStartInclusiveMillis, $rangeEndExclusiveMillis)."
