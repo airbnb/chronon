@@ -1,8 +1,9 @@
 package ai.chronon.flink
 
 import ai.chronon.aggregator.windowing.ResolutionUtils
-import ai.chronon.api.{DataType}
-import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
+import ai.chronon.api.DataType
+import ai.chronon.api.Extensions.{GroupByOps, SourceOps, WindowOps}
+import ai.chronon.flink.window.WindowSizeUtils.getFlinkWindowSizesAndWindowIds
 import ai.chronon.flink.window.{
   AlwaysFireOnElementTrigger,
   FlinkRowAggProcessFunction,
@@ -10,9 +11,9 @@ import ai.chronon.flink.window.{
   KeySelector,
   TimestampedTile
 }
-import ai.chronon.online.{GroupByServingInfoParsed, SparkConversions}
+import ai.chronon.online.{GroupByServingInfoParsed, SparkConversions, TileSize}
 import ai.chronon.online.KVStore.PutRequest
-import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment}
+import org.apache.flink.streaming.api.scala.{DataStream, KeyedStream, OutputTag, StreamExecutionEnvironment}
 import org.apache.spark.sql.Encoder
 import org.apache.flink.api.scala._
 import org.apache.flink.streaming.api.functions.async.RichAsyncFunction
@@ -20,6 +21,8 @@ import org.apache.flink.streaming.api.windowing.assigners.{TumblingEventTimeWind
 import org.apache.flink.streaming.api.windowing.time.Time
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 import org.slf4j.LoggerFactory
+
+import scala.jdk.CollectionConverters.asScalaBufferConverter
 
 /**
   * Flink job that processes a single streaming GroupBy and writes out the results to the KV store.
@@ -118,9 +121,6 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
       f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}. " +
         f"Tiling is enabled.")
 
-    val tilingWindowSizeInMillis: Option[Long] =
-      ResolutionUtils.getSmallestWindowResolutionInMillis(groupByServingInfoParsed.groupBy)
-
     val sourceStream: DataStream[T] =
       eventSrc
         .getDataStream(kafkaTopic, featureGroupName)(env, parallelism)
@@ -131,64 +131,78 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
       .name(s"Spark expression eval for $featureGroupName")
       .setParallelism(sourceStream.parallelism) // Use same parallelism as previous operator
 
-    val inputSchema: Seq[(String, DataType)] =
-      exprEval.getOutputSchema.fields
-        .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
-        .toSeq
+    val keyedSparkExprEvalStream: KeyedStream[Map[String, Any], List[Any]] = sparkExprEvalDS
+      .keyBy(KeySelector.getKeySelectionFunction(groupByServingInfoParsed.groupBy))
 
-    val window = TumblingEventTimeWindows
-      .of(Time.milliseconds(tilingWindowSizeInMillis.get))
-      .asInstanceOf[WindowAssigner[Map[String, Any], TimeWindow]]
+    // Fork the stream into overlapping windows of different sizes.
+    val windowsAndAvroConversions =
+      getFlinkWindowSizesAndWindowIds(
+        groupByServingInfoParsed.groupBy.getAggregations.asScala
+          .flatMap(_.getWindows.asScala)
+          .map(_.millis) // All window sizes in the GroupBy, in millis
+      ).map {
+          case (windowSize: TileSize, windowId: String) =>
+            val inputSchema: Seq[(String, DataType)] =
+              exprEval.getOutputSchema.fields
+                .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
+                .toSeq
 
-    // An alternative to AlwaysFireOnElementTrigger can be used: BufferedProcessingTimeTrigger.
-    // The latter will buffer writes so they happen at most every X milliseconds per GroupBy & key.
-    val trigger = new AlwaysFireOnElementTrigger()
+            val window = TumblingEventTimeWindows
+              .of(Time.milliseconds(windowSize.millis))
+              .asInstanceOf[WindowAssigner[Map[String, Any], TimeWindow]]
 
-    // We use Flink "Side Outputs" to track any late events that aren't computed.
-    val tilingLateEventsTag = OutputTag[Map[String, Any]]("tiling-late-events")
+            // An alternative to AlwaysFireOnElementTrigger can be used: BufferedProcessingTimeTrigger.
+            // The latter will buffer writes so they happen at most every X milliseconds per GroupBy & key.
+            val trigger = new AlwaysFireOnElementTrigger()
 
-    // The tiling operator works the following way:
-    // 1. Input: Spark expression eval (previous operator)
-    // 2. Key by the entity key(s) defined in the groupby
-    // 3. Window by a tumbling window
-    // 4. Use our custom trigger that will "FIRE" on every element
-    // 5. the AggregationFunction merges each incoming element with the current IRs which are kept in state
-    //    - Each time a "FIRE" is triggered (i.e. on every event), getResult() is called and the current IRs are emitted
-    // 6. A process window function does additional processing each time the AggregationFunction emits results
-    //    - The only purpose of this window function is to mark tiles as closed so we can do client-side caching in SFS
-    // 7. Output: TimestampedTile, containing the current IRs (Avro encoded) and the timestamp of the current element
-    val tilingDS: DataStream[TimestampedTile] =
-      sparkExprEvalDS
-        .keyBy(KeySelector.getKeySelectionFunction(groupByServingInfoParsed.groupBy))
-        .window(window)
-        .trigger(trigger)
-        .sideOutputLateData(tilingLateEventsTag)
-        .aggregate(
-          // See Flink's "ProcessWindowFunction with Incremental Aggregation"
-          preAggregator = new FlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema),
-          windowFunction = new FlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema)
-        )
-        .uid(s"tiling-01-$featureGroupName")
-        .name(s"Tiling for $featureGroupName")
-        .setParallelism(sourceStream.parallelism)
+            // We use Flink "Side Outputs" to track any late events that aren't computed.
+            val tilingLateEventsTag = OutputTag[Map[String, Any]]("tiling-late-events")
 
-    // Track late events
-    val sideOutputStream: DataStream[Map[String, Any]] =
-      tilingDS
-        .getSideOutput(tilingLateEventsTag)
-        .flatMap(new LateEventCounter(featureGroupName))
-        .uid(s"tiling-side-output-01-$featureGroupName")
-        .name(s"Tiling Side Output Late Data for $featureGroupName")
-        .setParallelism(sourceStream.parallelism)
+            // The tiling operator works the following way:
+            // 1. Input: Spark expression eval (previous operator)
+            // 2. Key by the entity key(s) defined in the groupby
+            // 3. Window by a tumbling window
+            // 4. Use our custom trigger that will "FIRE" on every element
+            // 5. the AggregationFunction merges each incoming element with the current IRs which are kept in state
+            //    - Each time a "FIRE" is triggered (i.e. on every event), getResult() is called and the current IRs are emitted
+            // 6. A process window function does additional processing each time the AggregationFunction emits results
+            //    - The only purpose of this window function is to mark tiles as closed so we can do client-side caching in SFS
+            // 7. Output: TimestampedTile, containing the current IRs (Avro encoded) and the timestamp of the current element
+            val tilingDS: DataStream[TimestampedTile] =
+              keyedSparkExprEvalStream
+                .window(window)
+                .trigger(trigger)
+                .sideOutputLateData(tilingLateEventsTag)
+                .aggregate(
+                  // See Flink's "ProcessWindowFunction with Incremental Aggregation"
+                  preAggregator = new FlinkRowAggregationFunction(groupByServingInfoParsed.groupBy, inputSchema),
+                  windowFunction = new FlinkRowAggProcessFunction(groupByServingInfoParsed.groupBy, inputSchema)
+                )
+                .uid(s"tiling-$windowId-$featureGroupName")
+                .name(s"Tiling for $featureGroupName size $windowSize")
+                .setParallelism(sourceStream.parallelism)
 
-    val putRecordDS: DataStream[PutRequest] = tilingDS
-      .flatMap(new TiledAvroCodecFn[T](groupByServingInfoParsed))
-      .uid(s"avro-conversion-01-$featureGroupName")
-      .name(s"Avro conversion for $featureGroupName")
-      .setParallelism(sourceStream.parallelism)
+            // Track late events
+            val sideOutputStream: DataStream[Map[String, Any]] =
+              tilingDS
+                .getSideOutput(tilingLateEventsTag)
+                .flatMap(new LateEventCounter(featureGroupName))
+                .uid(s"tiling-side-output-$windowId-$featureGroupName")
+                .name(s"Tiling Side Output Late Data for $featureGroupName size $windowSize")
+                .setParallelism(sourceStream.parallelism)
+
+            val putRecordDS: DataStream[PutRequest] = tilingDS
+              .flatMap(new TiledAvroCodecFn[T](groupByServingInfoParsed))
+              .uid(s"avro-conversion-$windowId-$featureGroupName")
+              .name(s"Avro conversion for $featureGroupName size $windowSize")
+              .setParallelism(sourceStream.parallelism)
+            
+            putRecordDS
+        }
+        .reduce(_.union(_))
 
     AsyncKVStoreWriter.withUnorderedWaits(
-      putRecordDS,
+      windowsAndAvroConversions,
       sinkFn,
       featureGroupName
     )
