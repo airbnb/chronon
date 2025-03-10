@@ -239,7 +239,7 @@ class FetcherBase(kvStore: KVStore,
     }
 
     context.distribution("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
-    Some(responseMap)
+    Option(responseMap)
   }
 
   def reportKvResponse(ctx: Metrics.Context,
