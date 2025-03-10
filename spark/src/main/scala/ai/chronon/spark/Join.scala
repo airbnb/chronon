@@ -569,7 +569,7 @@ class Join(joinConf: api.Join,
               val dedupedBootstrap = dropDuplicatesUsingJoinShuffle(
                 bootstrapDf,
                 partialDf,
-                part.keys(joinConf, tableUtils.partitionColumn)
+                part.keys(joinConf, tableUtils.partitionColumn).toSeq
               )
 
               coalescedJoin(partialDf, dedupedBootstrap, part.keys(joinConf, tableUtils.partitionColumn).toSeq)
