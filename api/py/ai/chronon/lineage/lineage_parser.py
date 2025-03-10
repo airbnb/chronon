@@ -118,7 +118,8 @@ class LineageParser:
                     )
 
         logger.info(
-            f"Total {len(modules)} modules for {module_type}. Unparsed modules = {len(self.metadata.unparsed_modules[module_type])}."
+            f"Total {len(modules)} modules for {module_type}."
+            f"Unparsed = {len(self.metadata.unparsed_modules[module_type])}."
         )
         for name in self.metadata.unparsed_modules[module_type]:
             logger.info(f"Unparsed module: {name}")

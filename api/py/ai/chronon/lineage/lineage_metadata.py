@@ -81,9 +81,12 @@ class LineageMetaData:
         table_name = ".".join(parts[:-1])
         column_name = parts[-1]
 
+        # Create a new Table if one does not exist for the extracted table name.
+        if table_name not in self.tables:
+            self.tables[table_name] = Table(table_name, TableType.OTHER)
+
         # Add the column name to the table's set of columns.
-        if table_name in self.tables:
-            self.tables[table_name].columns.add(column_name)
+        self.tables[table_name].columns.add(column_name)
 
     def store_feature(self, entity_name: str, feature_name: str, output_table: Optional[str] = None) -> None:
         """
