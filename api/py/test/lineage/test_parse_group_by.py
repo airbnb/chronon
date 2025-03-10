@@ -20,6 +20,7 @@ from ai.chronon.api import ttypes
 from ai.chronon.group_by import Accuracy, Derivation
 from ai.chronon.lineage.lineage_metadata import ColumnTransform, TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
+from helper import compare_lineages
 
 
 class TestParseGroupBy(unittest.TestCase):
@@ -125,7 +126,8 @@ class TestParseGroupBy(unittest.TestCase):
         )
         lineages = parser.metadata.filter_lineages(output_table=backfill_table_name)
 
-        self.compare_lineages(
+        compare_lineages(
+            self,
             {
                 (
                     "source.gb_table1.event",

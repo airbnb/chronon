@@ -20,8 +20,9 @@ from ai.chronon.api import ttypes
 from ai.chronon.api import ttypes as api
 from ai.chronon.group_by import Derivation
 from ai.chronon.join import Join
-from ai.chronon.lineage.lineage_metadata import ColumnTransform, TableType
+from ai.chronon.lineage.lineage_metadata import TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
+from helper import compare_lineages
 
 
 class TestParseJoin(unittest.TestCase):
@@ -99,7 +100,8 @@ class TestParseJoin(unittest.TestCase):
             parser.metadata.tables[bootstrap_table_name].columns,
         )
         lineages = parser.metadata.filter_lineages(output_table=bootstrap_table_name)
-        self.compare_lineages(
+        compare_lineages(
+            self,
             {
                 ("join_event_table.ts", "test_db.test_join_bootstrap.ts", ("TryCast",)),
                 ("join_event_table.event", "test_db.test_join_bootstrap.event_id", ()),
@@ -130,7 +132,8 @@ class TestParseJoin(unittest.TestCase):
         )
 
         lineages = parser.metadata.filter_lineages(output_table=join_part_table_name)
-        self.compare_lineages(
+        compare_lineages(
+            self,
             {
                 ("gb_table.event", "test_db.test_join_test_group_by.event_id_sum_plus_one", ("Add", "AGG_SUM")),
                 (
@@ -172,7 +175,8 @@ class TestParseJoin(unittest.TestCase):
             parser.metadata.tables[join_table_name].columns,
         )
         lineages = parser.metadata.filter_lineages(output_table=join_table_name)
-        self.compare_lineages(
+        compare_lineages(
+            self,
             {
                 (
                     "test_db.test_join_test_group_by.event_id_sum",
@@ -249,12 +253,3 @@ class TestParseJoin(unittest.TestCase):
         with open(expected_sql_path, "r") as infile:
             expected_sql = infile.read()
             self.assertEqual(expected_sql, actual_sql)
-
-    def compare_lineages(self, expected, actual):
-        expected = sorted(expected)
-        actual = sorted(actual, key=lambda t: (t.input_column, t.output_column, t.transforms))
-        self.assertEqual(len(actual), len(expected))
-        for lineage_expected, lineage_actual in zip(expected, actual):
-            self.assertEqual(
-                ColumnTransform(lineage_expected[0], lineage_expected[1], lineage_expected[2]), lineage_actual
-            )

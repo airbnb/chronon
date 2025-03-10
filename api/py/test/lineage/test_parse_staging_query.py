@@ -13,10 +13,12 @@
 #     limitations under the License.
 
 import unittest
+from unittest.mock import MagicMock
 
 from ai.chronon.api import ttypes
-from ai.chronon.lineage.lineage_metadata import ColumnTransform, TableType
+from ai.chronon.lineage.lineage_metadata import TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
+from helper import compare_lineages
 
 
 class TestParseStagingQuery(unittest.TestCase):
@@ -56,7 +58,8 @@ class TestParseStagingQuery(unittest.TestCase):
             parser.metadata.tables["test.staging_table"].columns,
         )
 
-        self.compare_lineages(
+        compare_lineages(
+            self,
             {
                 (
                     "staging_query_input.raw_subject",
@@ -72,12 +75,43 @@ class TestParseStagingQuery(unittest.TestCase):
             parser.metadata.lineages,
         )
 
-    def compare_lineages(self, expected, actual):
-        expected = sorted(expected)
-        actual = sorted(actual, key=lambda t: (t.input_column, t.output_column, t.transforms))
-        self.assertEqual(len(actual), len(expected))
-        for lineage_expected, lineage_actual in zip(expected, actual):
-            self.assertEqual(
-                ColumnTransform(lineage_expected[0], lineage_expected[1], lineage_expected[2]),
-                lineage_actual,
+    def test_staging_query_with_schema(self):
+        query = """
+            SELECT
+                raw_subject, raw_event_id
+            FROM
+            (
+                SELECT * FROM
+                   staging_query_input
             )
+        """
+        base_table = ttypes.StagingQuery(
+            query=query,
+            startPartition="2020-03-01",
+            metaData=ttypes.MetaData(name="staging_table", outputNamespace="test"),
+        )
+        mock_schema_provider = MagicMock(
+            return_value={
+                "raw_subject": "INT",
+                "raw_event_id": "INT",
+                "other_column": "INT",
+            }
+        )
+        parser = LineageParser(schema_provider=mock_schema_provider)
+        parser.parse_staging_query(base_table)
+        compare_lineages(
+            self,
+            {
+                (
+                    "staging_query_input.raw_subject",
+                    "test.staging_table.raw_subject",
+                    (),
+                ),
+                (
+                    "staging_query_input.raw_event_id",
+                    "test.staging_table.raw_event_id",
+                    (),
+                ),
+            },
+            parser.metadata.lineages,
+        )

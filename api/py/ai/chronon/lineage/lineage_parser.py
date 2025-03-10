@@ -17,7 +17,7 @@ import logging
 import os
 import typing
 from functools import reduce
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from ai.chronon.api import ttypes
 from ai.chronon.group_by import Accuracy, get_output_col_names
@@ -43,26 +43,28 @@ logger = logging.getLogger(__name__)
 
 
 class LineageParser:
-    def __init__(self) -> None:
+    def __init__(self, schema_provider: Optional[Callable[[str], Dict[str, str]]] = None) -> None:
         """
         Take configurations and generate the following:
          1. Column-level lineage details.
          2. Output tables along with their associated columns.
          3. Feature with corresponding column mappings.
 
+        :param schema_provider: A function that returns a schema dict given a table name.
         """
 
         self.base_path: Optional[str] = None
         self.team_conf: Optional[Dict[str, Any]] = None
         self.staging_queries: Dict[str, Any] = {}
         self.metadata: LineageMetaData = LineageMetaData()
+        self.schema_provider = schema_provider
 
-    def parse_lineage(self, base_path: str, module_names: Optional[Set[str]] = None) -> LineageMetaData:
+    def parse_lineage(self, base_path: str, module_filter: Optional[Set[str]] = None) -> LineageMetaData:
         """
         Parse lineage information for staging queries, group bys, and joins using the provided base path.
 
         :param base_path: Base directory path where configuration files reside.
-        :param module_names: Set of specific module names to process; if None, all are processed.
+        :param module_filter: Set of specific module names to process; if None, all are processed.
         :return: The parsed lineage metadata.
         """
         self.base_path = base_path
@@ -70,74 +72,56 @@ class LineageParser:
         with open(teams_config) as team_infile:
             self.team_conf = json.load(team_infile)
 
-        self.parse_staging_queries()
-        self.parse_group_bys(module_names)
-        self.parse_joins(module_names)
+        # Staging queries are lazily parsed when they are used.
+        self.parse_modules(self.handle_staging_query, "production/staging_queries", ttypes.StagingQuery, module_filter)
+
+        # Parse all group bys and joins.
+        self.parse_modules(self.parse_group_by, "production/group_bys", ttypes.GroupBy, module_filter)
+        self.parse_modules(self.parse_join, "production/joins", ttypes.Join, module_filter)
 
         return self.metadata
 
-    def parse_staging_queries(self) -> None:
+    def parse_modules(
+        self,
+        parser: Callable[[Any], None],
+        module_path: str,
+        module_ttype: ttypes,
+        module_filter: Optional[List[str]] = None,
+    ) -> None:
         """
-        Process staging queries in the staging_queries directory.
+        Parse modules from a directory and process each using the provided parser.
 
-        :return: None
+        :param parser: Function to process a module.
+        :param module_path: Relative path where configs are stored.
+        :param module_ttype: Expected type of module objects.
+        :param module_filter: Optional list of module names to include.
         """
-        staging_queries_path = os.path.join(self.base_path, "production/staging_queries/")
-        for root, dirs, files in os.walk(staging_queries_path):
-            if root.endswith("staging_queries/"):
+        path = os.path.join(self.base_path, module_path)
+        module_type = module_path.split("/")[-1]
+        modules = []
+        for root, dirs, files in os.walk(path):
+            if root.endswith(module_path):
                 continue
-            staging_queries = extract_json_confs(ttypes.StagingQuery, root)
-            for staging_query in staging_queries:
+            modules.extend(extract_json_confs(module_ttype, root))
+
+        for index, module in enumerate(modules):
+            if isinstance(module, module_ttype):
+                if module_filter and module.metaData.name not in module_filter:
+                    continue
                 try:
-                    self.handle_staging_query(staging_query)
+                    logger.info(f"({index}/{len(modules)}): Parse {module_type} {module.metaData.name} ...")
+                    parser(module)
                 except Exception as e:
+                    self.metadata.unparsed_modules[module_type].append(module.metaData.name)
                     logger.exception(
-                        f"An unexpected error occurred while parsing group by {staging_query.metaData.name}: {e}"
+                        f"An unexpected error occurred while parsing {module_type} {module.metaData.name}: {e}"
                     )
 
-    def parse_group_bys(self, module_names: Optional[Set[str]] = None) -> None:
-        """
-        Process group-by configurations in the group_bys directory.
-
-        :param module_names: Set of specific group-by names to process.
-        :return: None
-        """
-        group_bys_path = os.path.join(self.base_path, "production/group_bys/")
-        for root, dirs, files in os.walk(group_bys_path):
-            if root.endswith("group_bys/"):
-                continue
-            all_group_bys = extract_json_confs(ttypes.GroupBy, root)
-            for group_by in all_group_bys:
-                if isinstance(group_by, ttypes.GroupBy):
-                    if module_names and group_by.metaData.name not in module_names:
-                        continue
-                    try:
-                        self.parse_group_by(group_by)
-                    except Exception as e:
-                        logger.exception(
-                            f"An unexpected error occurred while parsing group by {group_by.metaData.name}: {e}"
-                        )
-
-    def parse_joins(self, module_names: Optional[Set[str]] = None) -> None:
-        """
-        Process join configurations in the joins directory.
-
-        :param module_names: Set of specific join names to process.
-        :return: None
-        """
-        joins_path = os.path.join(self.base_path, "production/joins/")
-        for root, dirs, files in os.walk(joins_path):
-            if root.endswith("joins/"):
-                continue
-            all_joins = extract_json_confs(ttypes.Join, root)
-            for join in all_joins:
-                if isinstance(join, ttypes.Join):
-                    if module_names and join.metaData.name not in module_names:
-                        continue
-                    try:
-                        self.parse_join(join)
-                    except Exception as e:
-                        logger.exception(f"An unexpected error occurred while parsing join {join.metaData.name}: {e}")
+        logger.info(
+            f"Total {len(modules)} modules for {module_type}. Unparsed modules = {len(self.metadata.unparsed_modules[module_type])}."
+        )
+        for name in self.metadata.unparsed_modules[module_type]:
+            logger.info(f"Unparsed module: {name}")
 
     @staticmethod
     def build_select_sql(table: str, selects: List[Tuple[Any, Any]], filter_expr: Optional[Any] = None) -> exp.Select:
@@ -415,14 +399,13 @@ class LineageParser:
         """
         # source tables used to build lineage
         sources = dict()
-
         output_table = self.object_table_name(join)
 
         # build select sql for left
         table, filter_expr, selects = self.parse_source(join.left)
         source_keys = get_pre_derived_source_keys(join.left)
         if table in self.staging_queries:
-            sources[table] = self.staging_queries[table].query
+            self.parse_staging_query(self.staging_queries[table])
 
         # Build lineage for source table --> boostrap table
         bootstrap_selects = [(k, v) for k, v in selects.items()]
@@ -480,7 +463,7 @@ class LineageParser:
 
     def handle_staging_query(self, staging_query: Any) -> None:
         """
-        Handle and store a staging query configuration.
+        Store a staging query configuration.
 
         :param staging_query: The staging query configuration object.
         :return: None
@@ -492,15 +475,39 @@ class LineageParser:
         """
         Parse a staging query configuration and build its lineage.
 
-        :param staging_query: The staging query configuration object.
+        :param query: The staging query configuration object.
         :return: None
         """
+        schema = dict()
+        if self.schema_provider:
+            tables = self.find_all_tables(staging_query.query)
+            for table in tables:
+                schema[table] = self.schema_provider(table)
+
         table_name = output_table_name(staging_query, full_name=True)
 
         if table_name not in self.metadata.tables:
-            parsed_lineages = build_lineage(table_name, staging_query.query)
+            parsed_lineages = build_lineage(table_name, staging_query.query, schema=schema)
             self.metadata.store_table(table_name, TableType.STAGING_QUERY)
             self.metadata.store_lineage(parsed_lineages, table_name)
+
+    @staticmethod
+    def find_all_tables(sql):
+        """
+        Find references to physical tables in an expression.
+
+        :param sql: The SQL expression to analyze.
+        :return: A set of table names.
+        """
+        sql = exp.maybe_parse(sql)
+
+        root = build_scope(sql)
+        return {
+            source.name
+            for scope in root.traverse()
+            for source in scope.sources.values()
+            if isinstance(source, exp.Table)
+        }
 
     def parse_group_by(self, gb: Any, join_part_table: Optional[str] = None) -> None:
         """
@@ -519,6 +526,7 @@ class LineageParser:
             table, filter_expr, selects = self.parse_source(source)
             if table in self.staging_queries:
                 self.parse_staging_query(self.staging_queries[table])
+            self.metadata.store_table(table, table_type=TableType.OTHER)
             sql = self.build_select_sql(table, selects.items(), filter_expr)
             select_sqls.append(sql)
 
@@ -571,6 +579,7 @@ class LineageParser:
                 # store lineage
                 parsed_lineages = build_lineage(output_table, sql, sources)
                 self.metadata.store_lineage(parsed_lineages, output_table)
+
             # track feature lineage to the backfill table if it is defined
             if gb.backfillStartDate:
                 output_table = self.object_table_name(gb)
@@ -587,21 +596,23 @@ class LineageParser:
                 self.metadata.store_feature(gb.metaData.name, feature, output_table)
 
 
-def _get_col_node_name(node: Node) -> str:
+def _get_col_node_name(node: Node, parent_node: Node) -> str:
     """
     Get the fully qualified column name from a SQLGlot Node.
 
     :param node: A SQLGlot Node object representing a column.
+    :param node: A SQLGlot Node object representing the parent node.
     :return: The fully qualified column name.
     """
-    if isinstance(node.expression, exp.Table):
-        # Strip table alias from column if present.
-        real_column_name = node.name.split(".")[-1]
+    # Use parent.expression if it is a complex type
+    if isinstance(parent_node.expression.this, exp.Dot):
+        return parent_node.expression.this.sql(pretty=False, identify=False)
+    else:
+        column_name = node.name.split(".")[-1]
         # Strip table alias from table expression if present.
         table_exp: exp.Expression = node.expression.copy()
         table_exp.args["alias"] = None
-        return f"{table_exp.sql(pretty=False, identify=False)}.{real_column_name}".replace('"', "")
-    return f"{node.name}"
+        return f"{table_exp.sql(pretty=False, identify=False)}.{column_name}".replace('"', "")
 
 
 def get_transform(expression: Any) -> Optional[str]:
@@ -611,6 +622,8 @@ def get_transform(expression: Any) -> Optional[str]:
     :param expression: A SQLGlot expression.
     :return: The transformation operation name, or None if the expression is an "Alias" operation.
     """
+    if not expression.this:
+        return None
     if expression.this.__class__.__name__ == "Anonymous":
         return expression.this.alias_or_name
     elif expression.this.__class__.__name__ == "Column":
@@ -632,7 +645,7 @@ def append_transform(transforms: List[str], transform: str) -> List[str]:
 
 
 def build_lineage(
-    output_table: str, sql: str, sources: Dict[str, str] = None
+    output_table: str, sql: str, sources: Dict[str, str] = None, schema: Dict[str, str] = None
 ) -> Dict[str, Set[Tuple[str, Tuple[str]]]]:
     """
     Build the lineage mapping from the SQL query and its source queries.
@@ -640,6 +653,7 @@ def build_lineage(
     :param output_table: The fully qualified output table name.
     :param sql: The SQL query string.
     :param sources: Mapping of source names to SQL query strings.
+    :param schema: Mapping of source names to source schema.
     :return: A dictionary mapping each output column to a list of input columns and operations to the output column.
     """
     dialect = "spark"
@@ -653,7 +667,7 @@ def build_lineage(
     expression = qualify.qualify(
         expression,
         dialect="spark",
-        schema=None,
+        schema=schema,
         **{"validate_qualify_columns": False, "identify": False},
     )
     parsed_lineages = dict()
@@ -661,16 +675,17 @@ def build_lineage(
     for output_column in [exp.alias_or_name for exp in scope.expression.expressions if exp.alias_or_name != "*"]:
         # Normalize the output column identifier.
         column = normalize_identifiers.normalize_identifiers(output_column, dialect=dialect).name
-        column_lineage = to_node(column, scope, dialect, trim_selects=False)
+        column_node = to_node(column, scope, dialect, trim_selects=False)
         input_columns = set()
-        transform = get_transform(column_lineage.expression)
+        transform = get_transform(column_node.expression)
         transforms = [transform] if transform else []
-        queue = [(column_lineage, transforms)]
+        queue = [(column_node, transforms)]
         while queue:
             parent, transforms = queue.pop(0)
             for child in parent.downstream:
                 if isinstance(child.expression, exp.Table):
-                    input_columns.add((_get_col_node_name(child), tuple(transforms)))
-                queue.append((child, append_transform(transforms, get_transform(child.expression))))
+                    input_columns.add((_get_col_node_name(child, parent), tuple(transforms)))
+                child_transform = get_transform(child.expression)
+                queue.append((child, append_transform(transforms, child_transform)))
         parsed_lineages[f"{output_table}.{output_column}"] = input_columns
     return parsed_lineages

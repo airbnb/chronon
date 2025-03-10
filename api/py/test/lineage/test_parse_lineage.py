@@ -23,7 +23,7 @@ TEST_BASE_PATH = os.path.join(os.path.dirname(__file__), "../sample")
 class TestParseLineage(unittest.TestCase):
     def test_parse_all_configs(self):
         parser = LineageParser()
-        parser.parse_lineage(TEST_BASE_PATH)
+        parser.parse_lineage("/Users/xiaohui_sun/work/ml_models/zipline")
         metadata = parser.metadata
         self.assertIsNotNone(metadata.features)
         self.assertIsNotNone(metadata.tables)
@@ -75,3 +75,89 @@ class TestParseLineage(unittest.TestCase):
             "SELECT guest_id AS guest, host_id AS host FROM input_table WHERE ds = '2025-01-01'",
             sql.sql(dialect="spark"),
         )
+
+    def test_parse_lineage_complex_columns(self):
+        output_table = "output_table"
+        sql = """
+            SELECT
+             country AS country,
+             address.city AS city,
+             address.zipcode AS zipcode
+            FROM
+                input_table
+        """
+
+        lineage = build_lineage(output_table, sql)
+        self.assertEqual(
+            {
+                "output_table.city": {("input_table.address.city", ("Dot",))},
+                "output_table.country": {("input_table.country", ())},
+                "output_table.zipcode": {("input_table.address.zipcode", ("Dot",))},
+            },
+            lineage,
+        )
+
+    def test_parse_lineage_without_schema(self):
+        output_table = "output_table"
+        sql = """
+            SELECT
+             a, b, c
+            FROM
+            (
+                SELECT * FROM input_table
+            )
+        """
+
+        lineage = build_lineage(output_table, sql)
+        self.assertEqual(
+            {
+                "output_table.a": {("input_table.*", ())},
+                "output_table.b": {("input_table.*", ())},
+                "output_table.c": {("input_table.*", ())},
+            },
+            lineage,
+        )
+
+    def test_parse_lineage_with_schema(self):
+        output_table = "output_table"
+        sql = """
+            SELECT
+             a, b, c
+            FROM
+            (
+                SELECT * FROM input_table
+            )
+        """
+
+        lineage = build_lineage(
+            output_table,
+            sql,
+            schema={"input_table": {"a": "INT", "b": "INT", "c": "INT", "d": "INT"}},
+        )
+        self.assertEqual(
+            {
+                "output_table.a": {("input_table.a", ())},
+                "output_table.b": {("input_table.b", ())},
+                "output_table.c": {("input_table.c", ())},
+            },
+            lineage,
+        )
+
+    def test_find_all_tables(self):
+        sql = """
+            SELECT
+             a,
+             b,
+             c,
+             d
+            FROM (
+                SELECT input_table1.id, a, b, c FROM input_table1
+                INNER JOIN input_table2
+                ON input_table1.id = input_table2.id
+            ) input_table3
+            INNER JOIN
+            input_table4
+            ON input_table3.id = input_table4.id
+        """
+        tables = LineageParser.find_all_tables(sql)
+        self.assertEqual({"input_table1", "input_table2", "input_table4"}, tables)

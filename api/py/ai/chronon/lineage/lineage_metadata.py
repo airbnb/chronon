@@ -59,15 +59,11 @@ class LineageMetaData:
         """
         Initializes a new instance of LineageMetaData for storing data lineage information.
 
-        This class maintains:
-          - A set of lineage tuples: (input_column, output_column, combined_operations).
-          - A mapping of table names to Table objects.
-          - A mapping of feature identifiers to Feature objects.
-          - A mapping of tables to lists of unparsed column names.
         """
         self.lineages: Set[ColumnTransform] = set()
         self.tables: Dict[str, Table] = {}
         self.features: Dict[str, Feature] = {}
+        self.unparsed_modules: Dict[str, List[str]] = defaultdict(list)
         self.unparsed_columns: Dict[str, List[str]] = defaultdict(list)
 
     def store_column(self, column: str) -> None:
@@ -85,12 +81,9 @@ class LineageMetaData:
         table_name = ".".join(parts[:-1])
         column_name = parts[-1]
 
-        # Create a new Table if one does not exist for the extracted table name.
-        if table_name not in self.tables:
-            self.tables[table_name] = Table(table_name, TableType.OTHER)
-
         # Add the column name to the table's set of columns.
-        self.tables[table_name].columns.add(column_name)
+        if table_name in self.tables:
+            self.tables[table_name].columns.add(column_name)
 
     def store_feature(self, entity_name: str, feature_name: str, output_table: Optional[str] = None) -> None:
         """
@@ -121,6 +114,12 @@ class LineageMetaData:
         """
         if table_name not in self.tables:
             self.tables[table_name] = Table(table_name, table_type, key_columns)
+        else:
+            # replace existing table with new parsed table type
+            existing_table = self.tables[table_name]
+            if existing_table.table_type == TableType.OTHER and table_type != TableType.OTHER:
+                self.tables[table_name].table_type = table_type
+                self.tables[table_name].key_columns = key_columns
 
     def store_group_by_feature(self, entity_name: str, feature_name: str) -> None:
         """
