@@ -23,7 +23,7 @@ TEST_BASE_PATH = os.path.join(os.path.dirname(__file__), "../sample")
 class TestParseLineage(unittest.TestCase):
     def test_parse_all_configs(self):
         parser = LineageParser()
-        parser.parse_lineage("/Users/xiaohui_sun/work/ml_models/zipline")
+        parser.parse_lineage(TEST_BASE_PATH)
         metadata = parser.metadata
         self.assertIsNotNone(metadata.features)
         self.assertIsNotNone(metadata.tables)
