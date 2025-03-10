@@ -391,6 +391,26 @@ class LineageParser:
             )
         return sql
 
+    @staticmethod
+    def get_join_key_columns(join: Any) -> Set[str]:
+        """
+        Parse a join configuration and get the key columns for join output tables.
+
+        :param join: The join configuration object.
+        :return: Set of key columns.
+        """
+        key_columns = set()
+        for jp in join.joinParts:
+            gb = jp.groupBy
+            for key_column in gb.keyColumns:
+                if jp.keyMapping:
+                    for select_key, gp_key in jp.keyMapping.items():
+                        if key_column == gp_key:
+                            key_columns.add(select_key)
+                else:
+                    key_columns.add(key_column)
+        return key_columns
+
     def parse_join(self, join: Any) -> None:
         """
         Parse a join configuration and build lineage based on its SQL.
@@ -404,7 +424,7 @@ class LineageParser:
 
         # build select sql for left
         table, filter_expr, selects = self.parse_source(join.left)
-        source_keys = get_pre_derived_source_keys(join.left)
+        source_keys = self.get_join_key_columns(join)
         if table in self.staging_queries:
             self.parse_staging_query(self.staging_queries[table])
 

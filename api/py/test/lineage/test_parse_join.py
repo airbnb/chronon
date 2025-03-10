@@ -92,7 +92,7 @@ class TestParseJoin(unittest.TestCase):
             parser.metadata.tables[bootstrap_table_name].table_type,
         )
         self.assertEqual(
-            {"event_id", "subject", "ts"},
+            {"subject"},
             parser.metadata.tables[bootstrap_table_name].key_columns,
         )
         self.assertEqual(
@@ -156,7 +156,7 @@ class TestParseJoin(unittest.TestCase):
         self.assertTrue(join_table_name in parser.metadata.tables)
         self.assertEqual(TableType.JOIN, parser.metadata.tables[join_table_name].table_type)
         self.assertEqual(
-            {"event_id", "subject", "ts"},
+            {"subject"},
             parser.metadata.tables[join_table_name].key_columns,
         )
 
