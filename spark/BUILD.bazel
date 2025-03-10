@@ -1,4 +1,5 @@
 load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_scala_version")
+load("@rules_jvm_external//:defs.bzl", "java_export")
 
 scala_library(
     name = "spark",
@@ -19,7 +20,7 @@ scala_library(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         maven_artifact("com.esotericsoftware:kryo"),
         maven_artifact("com.fasterxml.jackson.core:jackson-core"),
         maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
@@ -30,7 +31,6 @@ scala_library(
         maven_artifact("com.yahoo.datasketches:memory"),
         maven_artifact("commons.io:commons-io"),
         maven_artifact("commons.lang:commons-lang"),
-        scala_artifact("io.delta:delta-core"),
         maven_artifact("org.apache.kafka:kafka-clients"),
         maven_artifact("org.apache.thrift:libthrift"),
         scala_artifact("org.json4s:json4s-core"),
@@ -56,7 +56,7 @@ scala_library(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         maven_artifact("com.google.code.gson:gson"),
         maven_artifact("org.apache.thrift:libthrift"),
         maven_artifact("com.google.guava:guava"),
@@ -91,7 +91,7 @@ scala_test_suite(
         "//api:api-lib",
         "//api:api-models",
         "//online",
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-libs",
         scala_artifact("org.scala-lang.modules:scala-java8-compat"),
         maven_artifact("junit:junit"),
         maven_artifact("com.novocode:junit-interface"),
@@ -109,7 +109,36 @@ scala_test_suite(
 
 jvm_binary(
     name = "spark-assembly",
-    deploy_env = ["//third_party/java/spark:spark"],
+    deploy_env = ["//third_party/java/spark:spark-provided-env"],
     main_class = "ai.chronon.spark.Driver",
     runtime_deps = [":spark"],
+)
+
+genrule(
+    name = "generate_pom",
+    srcs = ["//:pom.xml.tpl"],
+    outs = ["spark-export-pom.tpl"],
+    cmd = """
+    cat $(location //:pom.xml.tpl) \\
+        | sed 's/{name}/spark_uber/g' \\
+        > $@
+    """,
+)
+
+java_export(
+    name = "spark-assembly-export",
+    maven_coordinates = "ai.chronon:spark_uber_$(spark_version)_$(scala_version):$(version)",
+    tags = ["no-javadocs"],
+    runtime_deps = [
+        ":spark-assembly_deploy.jar",
+    ],
+)
+
+java_export(
+    name = "spark-export",
+    maven_coordinates = "ai.chronon:spark_uber_$(spark_version)_$(scala_version):$(version)",
+    pom_template = ":generate_pom",
+    runtime_deps = [
+        ":spark",
+    ],
 )

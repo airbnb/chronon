@@ -2,7 +2,7 @@ package(default_visibility = ["//visibility:public"])
 
 load("//jvm:defs.bzl", "get_jars_for_repo")
 
-SPARK_JARS = [
+SPARK_LIBS_PROVIDED = [
     scala_jar(
         name = "spark-core",
         org = "org.apache.spark",
@@ -79,9 +79,13 @@ SPARK_JARS = [
         name = "commons-lang3",
         org = "org.apache.commons",
     ),
+    scala_jar(
+        name = "delta-core",
+        org = "io.delta",
+    ),
 ]
 
-SPARK_3_5_JARS = SPARK_JARS + [
+SPARK_3_5_LIBS_PROVIDED = SPARK_LIBS_PROVIDED + [
     scala_jar(
         name = "spark-common-utils",
         org = "org.apache.spark",
@@ -93,21 +97,33 @@ SPARK_3_5_JARS = SPARK_JARS + [
 ]
 
 java_library(
-    name = "spark-exec",
+    name = "spark-libs",
     visibility = ["//visibility:public"],
     exports = select({
-        "//conditions:default": get_jars_for_repo("spark_3_2", SPARK_JARS),
-        "//tools/flags/spark:spark_2_4": get_jars_for_repo("spark_2_4", SPARK_JARS),
-        "//tools/flags/spark:spark_3_1": get_jars_for_repo("spark_3_1", SPARK_JARS),
-        "//tools/flags/spark:spark_3_2": get_jars_for_repo("spark_3_2", SPARK_JARS),
-        "//tools/flags/spark:spark_3_5": get_jars_for_repo("spark_3_5", SPARK_3_5_JARS),
+        "//conditions:default": get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_1": get_jars_for_repo("spark_3_1", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_2": get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_5": get_jars_for_repo("spark_3_5", SPARK_3_5_LIBS_PROVIDED),
+    }),
+)
+
+# Usually spark provided jars are subset of all jars
+java_library(
+    name = "spark-provided-libs",
+    visibility = ["//visibility:public"],
+    exports = select({
+        "//conditions:default": get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_2_4": get_jars_for_repo("spark_2_4", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_1": get_jars_for_repo("spark_3_1", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_2": get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_5": get_jars_for_repo("spark_3_5", SPARK_3_5_LIBS_PROVIDED),
     }),
 )
 
 java_binary(
-    name = "spark",
+    name = "spark-provided-env",
     main_class = "None",  #hack
     runtime_deps = [
-        "//third_party/java/spark:spark-exec",
+        "//third_party/java/spark:spark-provided-libs",
     ],
 )

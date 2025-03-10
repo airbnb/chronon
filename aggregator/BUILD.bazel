@@ -1,4 +1,5 @@
 load("@io_bazel_rules_scala//scala:scala_cross_version_select.bzl", "select_for_scala_version")
+load("@rules_jvm_external//:defs.bzl", "java_export")
 
 scala_library(
     name = "aggregator",
@@ -84,4 +85,24 @@ scala_test_suite(
            select_for_scala_version(after_2_12 = [
                maven_artifact("org.scala-lang.modules:scala-parallel-collections_2.13"),
            ]),
+)
+
+genrule(
+    name = "generate_pom",
+    srcs = ["//:pom.xml.tpl"],
+    outs = ["export-pom.tpl"],
+    cmd = """
+    cat $(location //:pom.xml.tpl) \\
+        | sed 's/{name}/aggregator/g' \\
+        > $@
+    """,
+)
+
+java_export(
+    name = "aggregator-export",
+    maven_coordinates = "ai.chronon:aggregator_(scala_version):$(version)",
+    pom_template = ":generate_pom",
+    runtime_deps = [
+        ":aggregator",
+    ],
 )
