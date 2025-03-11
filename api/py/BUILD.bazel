@@ -2,6 +2,7 @@ load("@rules_python//python:py_test.bzl", "py_test")
 load("@pypi//:requirements.bzl", "requirement")
 load("//tools/build_rules/python:pytest_suite.bzl", "pytest_suite")
 load("@rules_python//python:packaging.bzl", "py_wheel")
+load("//tools/build_rules/python:twine_upload.bzl", "twine_upload")
 
 py_library(
     name = "api_py",
@@ -18,11 +19,19 @@ py_library(
 py_wheel(
     name = "chronon_ai",
     distribution = "chronon_ai",
-    version = "0.0.1",
+    version = "$(version)",
     visibility = ["//visibility:public"],
     deps = [
         ":api_py",
     ],
+)
+
+## Publish the pip package
+twine_upload(
+    name = "upload_chronon_ai",
+    version = "$(version)",
+    visibility = ["//visibility:public"],
+    wheel = ":chronon_ai",
 )
 
 pytest_suite(

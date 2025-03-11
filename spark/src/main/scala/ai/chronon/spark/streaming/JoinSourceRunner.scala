@@ -192,7 +192,13 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val leftSourceSchema: StructType = outputSchema(leftStreamSchema, enrichQuery(left.query)) // apply same thing
 
     // joinSchema = leftSourceSchema ++ joinCodec.valueSchema
-    val joinCodec: JoinCodec = apiImpl.buildFetcher(debug).buildJoinCodec(joinSource.getJoin)
+    val joinCodec: JoinCodec = apiImpl
+      .buildFetcher(debug)
+      .buildJoinCodec(
+        joinSource.getJoin,
+        refreshOnFail = false // immediately fails if the codec has partial error to avoid using stale codec
+      )
+      ._1
     val joinValueSchema: StructType = SparkConversions.fromChrononSchema(joinCodec.valueSchema)
     val joinSchema: StructType = StructType(leftSourceSchema ++ joinValueSchema)
     val joinSourceSchema: StructType = outputSchema(joinSchema, enrichQuery(joinSource.query))
