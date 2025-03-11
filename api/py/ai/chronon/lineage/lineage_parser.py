@@ -21,7 +21,12 @@ from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from ai.chronon.api import ttypes
 from ai.chronon.group_by import Accuracy, get_output_col_names
-from ai.chronon.lineage.lineage_metadata import LineageMetaData, TableType
+from ai.chronon.lineage.lineage_metadata import (
+    LineageMetaData,
+    Module,
+    ModuleType,
+    TableType,
+)
 from ai.chronon.repo.validator import (
     extract_json_confs,
     get_group_by_output_columns,
@@ -418,6 +423,11 @@ class LineageParser:
         :param join: The join configuration object.
         :return: None
         """
+        # store module
+        module_name = join.metaData.name
+        module = Module(module_name, ModuleType.JOIN, join)
+        self.metadata.modules[module_name] = module
+
         # source tables used to build lineage
         sources = dict()
         output_table = self.object_table_name(join)
@@ -435,7 +445,7 @@ class LineageParser:
         bootstrap_sql = bootstrap_sql.sql(dialect="spark", pretty=True)
         sources["bootstrap_table"] = bootstrap_sql
         lineages = build_lineage(bootstrap_table, bootstrap_sql)
-        self.metadata.store_table(bootstrap_table, TableType.JOIN_BOOTSTRAP, set(source_keys))
+        self.metadata.store_table(module_name, bootstrap_table, TableType.JOIN_BOOTSTRAP, set(source_keys))
         self.metadata.store_lineage(lineages, output_table)
 
         for jp in join.joinParts:
@@ -476,7 +486,7 @@ class LineageParser:
             self.metadata.store_feature(join.metaData.name, feature)
 
         # store table
-        self.metadata.store_table(output_table, TableType.JOIN, set(source_keys))
+        self.metadata.store_table(module_name, output_table, TableType.JOIN, set(source_keys))
 
         # store lineage
         parsed_lineages = build_lineage(output_table, sql, sources)
@@ -499,6 +509,11 @@ class LineageParser:
         :param query: The staging query configuration object.
         :return: None
         """
+        # store module
+        module_name = staging_query.metaData.name
+        module = Module(module_name, ModuleType.STAGING_QUERY, staging_query)
+        self.metadata.modules[module_name] = module
+
         schema = dict()
         if self.schema_provider:
             tables = self.find_all_tables(staging_query.query)
@@ -509,7 +524,7 @@ class LineageParser:
 
         if table_name not in self.metadata.tables:
             parsed_lineages = build_lineage(table_name, staging_query.query, schema=schema)
-            self.metadata.store_table(table_name, TableType.STAGING_QUERY)
+            self.metadata.store_table(module_name, table_name, TableType.STAGING_QUERY)
             self.metadata.store_lineage(parsed_lineages, table_name)
 
     @staticmethod
@@ -538,6 +553,11 @@ class LineageParser:
         :param join_part_table: The join part table name for the group by.
         :return: None
         """
+        # store module
+        module_name = gb.metaData.name
+        module = Module(module_name, ModuleType.GROUP_BY, gb)
+        self.metadata.modules[module_name] = module
+
         # source tables used to build lineage
         sources = {}
 
@@ -547,7 +567,7 @@ class LineageParser:
             table, filter_expr, selects = self.parse_source(source)
             if table in self.staging_queries:
                 self.parse_staging_query(self.staging_queries[table])
-            self.metadata.store_table(table, table_type=TableType.OTHER)
+            self.metadata.store_table(module_name, table, table_type=TableType.OTHER)
             sql = self.build_select_sql(table, selects.items(), filter_expr)
             select_sqls.append(sql)
 
@@ -584,7 +604,7 @@ class LineageParser:
                 self.metadata.store_feature(gb.metaData.name, feature, join_part_table)
 
             # store table
-            self.metadata.store_table(join_part_table, TableType.JOIN_PART, set(key_columns))
+            self.metadata.store_table(module_name, join_part_table, TableType.JOIN_PART, set(key_columns))
 
             # store lineage
             parsed_lineages = build_lineage(join_part_table, sql, sources)
@@ -595,7 +615,7 @@ class LineageParser:
                 output_table = f"{self.object_table_name(gb)}_upload"
 
                 # store table
-                self.metadata.store_table(output_table, TableType.GROUP_BY_UPLOAD, set(key_columns))
+                self.metadata.store_table(module_name, output_table, TableType.GROUP_BY_UPLOAD, set(key_columns))
 
                 # store lineage
                 parsed_lineages = build_lineage(output_table, sql, sources)
@@ -606,7 +626,7 @@ class LineageParser:
                 output_table = self.object_table_name(gb)
 
                 # store table
-                self.metadata.store_table(output_table, TableType.GROUP_BY_BACKFILL, set(key_columns))
+                self.metadata.store_table(module_name, output_table, TableType.GROUP_BY_BACKFILL, set(key_columns))
 
                 # store lineage
                 parsed_lineages = build_lineage(output_table, sql, sources)

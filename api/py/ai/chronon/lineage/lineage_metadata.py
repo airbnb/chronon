@@ -15,7 +15,7 @@
 from collections import defaultdict
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 
 class TableType(str, Enum):
@@ -34,6 +34,7 @@ class TableType(str, Enum):
 
 @dataclass
 class Table:
+    module_name: str
     table_name: str
     table_type: TableType
     key_columns: Set[str] = None
@@ -42,7 +43,7 @@ class Table:
 
 @dataclass(frozen=True)
 class Feature:
-    entity_name: str
+    module_name: str
     feature_name: str
     column: Optional[str] = None
 
@@ -54,6 +55,25 @@ class ColumnTransform:
     transforms: Tuple[str]
 
 
+class ModuleType(str, Enum):
+    """
+    Enum representing the various types of module.
+    """
+
+    GROUP_BY = "group_by"
+    JOIN = "join"
+    STAGING_QUERY = "staging_query"
+
+
+@dataclass
+class Module:
+    module_name: str
+    module_type: ModuleType
+    t_object: Any
+    tables: Dict[str, Table] = field(default_factory=defaultdict)
+    features: Dict[str, Feature] = field(default_factory=defaultdict)
+
+
 class LineageMetaData:
     def __init__(self) -> None:
         """
@@ -63,6 +83,8 @@ class LineageMetaData:
         self.lineages: Set[ColumnTransform] = set()
         self.tables: Dict[str, Table] = {}
         self.features: Dict[str, Feature] = {}
+        self.modules: Dict[str, Module] = {}
+
         self.unparsed_modules: Dict[str, List[str]] = defaultdict(list)
         self.unparsed_columns: Dict[str, List[str]] = defaultdict(list)
 
@@ -83,56 +105,54 @@ class LineageMetaData:
 
         # Create a new Table if one does not exist for the extracted table name.
         if table_name not in self.tables:
-            self.tables[table_name] = Table(table_name, TableType.OTHER)
+            self.tables[table_name] = Table("", table_name, TableType.OTHER)
 
         # Add the column name to the table's set of columns.
         self.tables[table_name].columns.add(column_name)
 
-    def store_feature(self, entity_name: str, feature_name: str, output_table: Optional[str] = None) -> None:
+    def store_feature(self, module_name: str, feature_name: str, output_table: Optional[str] = None) -> None:
         """
         Instance method to create and store a Feature.
 
         Builds a feature identifier by combining the entity and feature names.
         If an output table is provided, it constructs a fully qualified column name.
 
-        :param entity_name: Name of the entity.
+        :param module_name: Name of the module.
         :param feature_name: Name of the feature.
         :param output_table: Optional table name where the feature is stored.
         """
-        feature_identifier = f"{entity_name}.{feature_name}"
+        feature = f"{module_name}.{feature_name}"
         if output_table:
             # If an output table is provided, construct the full column name.
-            column = f"{output_table}.{feature_identifier}"
-            self.features[feature_identifier] = Feature(entity_name, feature_identifier, column)
+            column = f"{output_table}.{feature}"
+            self.features[feature] = Feature(module_name, feature, column)
         else:
-            self.features[feature_identifier] = Feature(entity_name, feature_identifier)
+            self.features[feature] = Feature(module_name, feature)
 
-    def store_table(self, table_name: str, table_type: TableType, key_columns: Set[str] = None) -> None:
+        self.modules[module_name].features[feature] = self.features[feature]
+
+    def store_table(
+        self, module_name: str, table_name: str, table_type: TableType, key_columns: Set[str] = None
+    ) -> None:
         """
         Instance method to create and store a Table if it does not already exist.
 
+        :param module_name: Name of the module.
         :param table_name: Name of the table.
         :param table_type: The type of the table as defined in TableType.
         :param key_columns: The key columns used to join with other tables.
         """
         if table_name not in self.tables:
-            self.tables[table_name] = Table(table_name, table_type, key_columns)
+            self.tables[table_name] = Table(module_name, table_name, table_type, key_columns)
         else:
             # replace existing table with new parsed table type
             existing_table = self.tables[table_name]
             if existing_table.table_type == TableType.OTHER and table_type != TableType.OTHER:
                 self.tables[table_name].table_type = table_type
+                self.tables[table_name].module_name = module_name
                 self.tables[table_name].key_columns = key_columns
 
-    def store_group_by_feature(self, entity_name: str, feature_name: str) -> None:
-        """
-        Instance method to store a group-by feature without linking it to an output table.
-
-        :param entity_name: Name of the entity.
-        :param feature_name: Name of the feature.
-        """
-        feature_identifier = f"{entity_name}.{feature_name}"
-        self.features[feature_identifier] = Feature(entity_name, feature_identifier)
+        self.modules[module_name].tables[table_name] = self.tables[table_name]
 
     def store_lineage(self, parsed_lineages: Dict[str, Set[Tuple[str, Tuple[str]]]], table_name: str) -> None:
         """

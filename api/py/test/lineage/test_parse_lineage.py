@@ -25,10 +25,9 @@ class TestParseLineage(unittest.TestCase):
         parser = LineageParser()
         parser.parse_lineage(TEST_BASE_PATH)
         metadata = parser.metadata
-        self.assertIsNotNone(metadata.features)
-        self.assertIsNotNone(metadata.tables)
-        self.assertIsNotNone(metadata.lineages)
-        self.assertIsNotNone(metadata.unparsed_columns)
+        attributes = ["modules", "tables", "features", "lineages"]
+        for attr in attributes:
+            self.assertGreater(len(getattr(metadata, attr)), 0, f"{attr} should not be empty")
 
     def test_cannot_parse_lineage(self):
         # Can't parse lineage since there is no specific column.
