@@ -598,7 +598,7 @@ class LineageParser:
             sql = derive_sql.sql(pretty=True)
 
         # If join_part_table is defined, then it generates a join part table.
-        # If gb.backfill_start_date is defined, then it generates a backfill table.
+        # If gb.backfill_start_date is defined, then it generates a group by backfill table.
         # If gb.online is True, then it generates an upload table.
         if join_part_table:
             # store feature
@@ -634,7 +634,7 @@ class LineageParser:
                 }
                 self.metadata.store_lineage(lineages, output_table)
 
-            # track feature lineage to the backfill table if it is defined
+            # track feature lineage to the group by backfill table if it is defined
             if gb.backfillStartDate:
                 output_table = self.object_table_name(gb)
 
