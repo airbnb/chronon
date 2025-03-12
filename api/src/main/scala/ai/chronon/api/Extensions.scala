@@ -329,6 +329,17 @@ object Extensions {
       }
     }
 
+    def partitionColumnOpt: Option[String] = {
+      Option(source.query.partitionColumn)
+    }
+
+    def tableToPartitionColumn: Map[String, String] = {
+      partitionColumnOpt match {
+        case Some(col) => Map(table -> col)
+        case None      => Map.empty
+      }
+    }
+
     lazy val rootTable: String = {
       if (source.isSetEntities) {
         source.getEntities.getSnapshotTable
@@ -631,6 +642,14 @@ object Extensions {
       }
     }
 
+    def getPartitionColumn: Option[String] = {
+      val partitionColumns = groupBy.sources.toScala.flatMap(_.partitionColumnOpt).distinct
+      require(
+        partitionColumns.length < 2,
+        s"Expect all queries from a given group-by to have the same partition column. All sources should have identical schemas and same partition column name. Found distinct partition columns $partitionColumns for group-by ${groupBy.metaData.name}"
+      )
+      partitionColumns.headOption
+    }
   }
 
   implicit class StringOps(string: String) {
@@ -1085,17 +1104,18 @@ object Extensions {
     }
 
     // Used only during online fetching to reduce latency
-    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
+    def applyRenameOnlyDerivation(keys: Map[String, Any], values: Map[String, Any]): Map[String, Any] = {
       assert(
         areDerivationsRenameOnly,
         s"Derivations contain more complex expressions than simple renames: ${derivations.map(d => (d.name, d.expression))}")
       val wildcardDerivations = if (derivationsContainStar) {
-        baseColumns.filterNot(derivationExpressionSet contains _._1)
+        values.filterNot(derivationExpressionSet contains _._1)
       } else {
         Map.empty[String, Any]
       }
-
-      wildcardDerivations ++ derivationsWithoutStar.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
+      wildcardDerivations ++ derivationsWithoutStar
+        .map(d => d.name -> (keys ++ values).getOrElse(d.expression, null))
+        .toMap
     }
   }
 }

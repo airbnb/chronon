@@ -6,21 +6,28 @@ build:local --remote_cache=
 # To set a different default Scala version, add the following to
 # user.bazelrc:
 # common --config scala_2.12
-common:scala_2.11 --repo_env=SCALA_VERSION=2.11.12
-common:scala_2.12 --repo_env=SCALA_VERSION=2.12.18
-common:scala_2.13 --repo_env=SCALA_VERSION=2.13.12
+common:scala_2.11 --repo_env=SCALA_VERSION=2.11.12 --define scala_version=2.11
+common:scala_2.12 --repo_env=SCALA_VERSION=2.12.18 --define scala_version=2.12
+common:scala_2.13 --repo_env=SCALA_VERSION=2.13.12 --define scala_version=2.13
 
 # Default scala version to 2.12
-common --repo_env=SCALA_VERSION=2.12.18
+common --repo_env=SCALA_VERSION=2.12.18 --define scala_version=2.12
 
 # Spark versions
 common:spark_2.4 --define spark_version=2.4
 common:spark_3.1 --define spark_version=3.1
 common:spark_3.2 --define spark_version=3.2
 common:spark_3.5 --define spark_version=3.5
-
 # Default Spark version
 common --define spark_version=3.1
+
+# Flink versions
+common:flink_1.16 --define flink_version=1.16
+# Default Flink version
+common --define flink_version=1.16
+
+# Default version to pass the builds
+common --define version=0.0.0
 
 build --javacopt=-Xep:DoubleBraceInitialization:OFF
 
@@ -29,3 +36,14 @@ build --incompatible_default_to_explicit_init_py
 
 # https://github.com/bazelbuild/bazel/issues/2377
 test --spawn_strategy=standalone
+
+# Don't depend on a JAVA_HOME pointing at a system JDK
+# see https://github.com/bazelbuild/rules_jvm_external/issues/445
+build --repo_env=JAVA_HOME=../bazel_tools/jdk
+
+build:java_8 --java_language_version=8 --java_runtime_version=remotejdk_8
+build:java_11 --java_language_version=11 --java_runtime_version=remotejdk_11
+build:java_21 --java_language_version=21 --java_runtime_version=remotejdk_21
+
+# Use Java 8 as default for Bazel builds
+build --java_language_version=8 --java_runtime_version=remotejdk_8

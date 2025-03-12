@@ -19,7 +19,15 @@ package ai.chronon.online
 import ai.chronon.aggregator.row.{ColumnAggregator, StatsGenerator}
 import ai.chronon.api
 import ai.chronon.api.Constants.UTF8
-import ai.chronon.api.Extensions.{ExternalPartOps, GroupByOps, JoinOps, MetadataOps, StringOps, ThrowableOps}
+import ai.chronon.api.Extensions.{
+  ExternalPartOps,
+  GroupByOps,
+  JoinOps,
+  JoinPartOps,
+  MetadataOps,
+  StringOps,
+  ThrowableOps
+}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
@@ -64,9 +72,9 @@ object Fetcher {
     var exceptions = 0
     var nulls = 0
     responseMap.foreach {
-      case (_, v) =>
+      case (k, v) =>
         if (v == null) nulls += 1
-        else if (v.isInstanceOf[Throwable]) exceptions += 1
+        else if (v.isInstanceOf[Throwable] || k.endsWith("_exception")) exceptions += 1
     }
     context.distribution(Metrics.Name.FetchNulls, nulls)
     context.distribution(Metrics.Name.FetchExceptions, exceptions)
@@ -109,38 +117,57 @@ class Fetcher(val kvStore: KVStore,
   // run during initialization
   reportCallerNameFetcherVersion()
 
-  def buildJoinCodec(joinConf: Join): JoinCodec = {
+  private def buildJoinPartCodec(
+      joinPart: JoinPartOps,
+      servingInfo: GroupByServingInfoParsed): (Iterable[StructField], Iterable[StructField]) = {
+    val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
+    val joinKeyFields = joinPart.leftToRight
+      .map {
+        case (leftKey, rightKey) =>
+          StructField(leftKey, keySchema.fields.find(_.name == rightKey).get.fieldType)
+      }
+
+    val baseValueSchema: StructType = if (servingInfo.groupBy.aggregations == null) {
+      servingInfo.selectedChrononSchema
+    } else {
+      servingInfo.outputChrononSchema
+    }
+    val valueFields = if (!servingInfo.groupBy.hasDerivations) {
+      baseValueSchema.fields
+    } else {
+      buildDerivedFields(servingInfo.groupBy.derivationsScala, keySchema, baseValueSchema).toArray
+    }
+    val joinValueFields = valueFields.map(joinPart.constructJoinPartSchema)
+
+    (joinKeyFields, joinValueFields)
+  }
+
+  def buildJoinCodec(joinConf: Join, refreshOnFail: Boolean): (JoinCodec, Boolean) = {
     val keyFields = new mutable.LinkedHashSet[StructField]
     val valueFields = new mutable.ListBuffer[StructField]
+    var hasPartialFailure = false
     // collect keyFields and valueFields from joinParts/GroupBys
     joinConf.joinPartOps.foreach { joinPart =>
-      val servingInfoTry = getGroupByServingInfo(joinPart.groupBy.metaData.getName)
-      servingInfoTry
+      getGroupByServingInfo(joinPart.groupBy.metaData.getName)
         .map { servingInfo =>
-          val keySchema = servingInfo.keyCodec.chrononSchema.asInstanceOf[StructType]
-          joinPart.leftToRight
-            .mapValues(right => keySchema.fields.find(_.name == right).get.fieldType)
-            .foreach {
-              case (name, dType) =>
-                val keyField = StructField(name, dType)
-                keyFields.add(keyField)
+          val (keys, values) = buildJoinPartCodec(joinPart, servingInfo)
+          keys.foreach(k => keyFields.add(k))
+          values.foreach(v => valueFields.append(v))
+        }
+        .recoverWith {
+          case exception: Throwable => {
+            if (refreshOnFail) {
+              getGroupByServingInfo.refresh(joinPart.groupBy.metaData.getName)
+              hasPartialFailure = true
+              Success(())
+            } else {
+              Failure(new Exception(
+                s"Failure to build join codec for join ${joinConf.metaData.name} due to bad groupBy serving info for ${joinPart.groupBy.metaData.name}",
+                exception))
             }
-          val groupBySchemaBeforeDerivation: StructType = if (servingInfo.groupBy.aggregations == null) {
-            servingInfo.selectedChrononSchema
-          } else {
-            servingInfo.outputChrononSchema
-          }
-          val baseValueSchema: StructType = if (!servingInfo.groupBy.hasDerivations) {
-            groupBySchemaBeforeDerivation
-          } else {
-            val fields =
-              buildDerivedFields(servingInfo.groupBy.derivationsScala, keySchema, groupBySchemaBeforeDerivation)
-            StructType(s"groupby_derived_${servingInfo.groupBy.metaData.cleanName}", fields.toArray)
-          }
-          baseValueSchema.fields.foreach { sf =>
-            valueFields.append(joinPart.constructJoinPartSchema(sf))
           }
         }
+        .get
     }
 
     // gather key schema and value schema from external sources.
@@ -169,15 +196,16 @@ class Fetcher(val kvStore: KVStore,
     val baseValueSchema = StructType(s"${joinName.sanitize}_value", valueFields.toArray)
     val joinCodec = JoinCodec(joinConf, keySchema, baseValueSchema)
     logControlEvent(joinCodec)
-    joinCodec
+    (joinCodec, hasPartialFailure)
   }
 
   // key and value schemas
-  lazy val getJoinCodecs = new TTLCache[String, Try[JoinCodec]](
+  lazy val getJoinCodecs = new TTLCache[String, Try[(JoinCodec, Boolean)]](
     { joinName: String =>
-      getJoinConf(joinName)
+      val startTimeMs = System.currentTimeMillis()
+      val result: Try[(JoinCodec, Boolean)] = getJoinConf(joinName)
         .map(_.join)
-        .map(buildJoinCodec)
+        .map(join => buildJoinCodec(join, refreshOnFail = true))
         .recoverWith {
           case th: Throwable =>
             Failure(
@@ -186,6 +214,13 @@ class Fetcher(val kvStore: KVStore,
                 th
               ))
         }
+      val context = Metrics.Context(Metrics.Environment.MetaDataFetching, join = joinName).withSuffix("join_codec")
+      if (result.isFailure) {
+        context.incrementException(result.failed.get)
+      } else {
+        context.distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
+      }
+      result
     },
     { join: String => Metrics.Context(environment = "join.codec.fetch", join = join) })
 
@@ -227,11 +262,25 @@ class Fetcher(val kvStore: KVStore,
             val ctx = Metrics.Context(Environment.JoinFetching, join = joinName)
             val joinCodecTry = getJoinCodecs(internalResponse.request.name)
             joinCodecTry match {
-              case Success(joinCodec) =>
+              case Success((joinCodec, hasPartialFailure)) =>
                 ctx.distribution("derivation_codec.latency.millis", System.currentTimeMillis() - derivationStartTs)
+                // try to fix request mistype
+                val keySchemaMap: Map[String, DataType] = joinCodec.keySchema.fields.map { field =>
+                  field.name -> field.fieldType
+                }.toMap
+                val castedKeys: Map[String, AnyRef] = internalResponse.request.keys.map {
+                  case (name, value) =>
+                    name -> (if (keySchemaMap.contains(name)) ColumnAggregator.castTo(value, keySchemaMap(name))
+                             else value)
+                }
+                val request = Request(name = internalResponse.request.name,
+                                      keys = castedKeys,
+                                      atMillis = internalResponse.request.atMillis,
+                                      context = internalResponse.request.context)
+
                 val baseMap = internalMap ++ externalMap
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
-                  applyDeriveFunc(joinCodec.deriveFunc, internalResponse.request, baseMap)
+                  applyDeriveFunc(joinCodec.deriveFunc, request, baseMap)
                 }
                 val derivedMap: Map[String, AnyRef] = derivedMapTry match {
                   case Success(derivedMap) => derivedMap
@@ -260,7 +309,12 @@ class Fetcher(val kvStore: KVStore,
                 val requestEndTs = System.currentTimeMillis()
                 ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
                 ctx.distribution("overall.latency.millis", requestEndTs - ts)
-                ResponseWithContext(internalResponse.request, finalizedDerivedMap, baseMap)
+                val response = ResponseWithContext(request, finalizedDerivedMap, baseMap)
+                // Refresh joinCodec if it has partial failure
+                if (hasPartialFailure) {
+                  getJoinCodecs.refresh(joinName)
+                }
+                response
               case Failure(exception) =>
                 // more validation logic will be covered in compile.py to avoid this case
                 ctx.incrementException(exception)
@@ -318,83 +372,85 @@ class Fetcher(val kvStore: KVStore,
     val loggingTs = resp.request.atMillis.getOrElse(ts)
     val joinCodecTry = getJoinCodecs(resp.request.name)
 
-    val loggingTry: Try[Unit] = joinCodecTry.map(codec => {
-      val metaData = codec.conf.join.metaData
-      val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
+    val loggingTry: Try[Unit] = joinCodecTry
+      .map(_._1)
+      .map(codec => {
+        val metaData = codec.conf.join.metaData
+        val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
 
-      // Exit early if sample percent is 0
-      if (samplePercent == 0) {
-        return Response(resp.request, Success(resp.derivedValues))
-      }
-
-      val keyBytesTry: Try[Array[Byte]] = encode(loggingContext.map(_.withSuffix("encode_key")),
-                                                 codec.keySchema,
-                                                 codec.keyCodec,
-                                                 resp.request.keys,
-                                                 cast = true)
-      if (keyBytesTry.isFailure) {
-        loggingContext.foreach(_.withSuffix("encode_key").incrementException(keyBytesTry.failed.get))
-        throw keyBytesTry.failed.get
-      }
-      val keyBytes = keyBytesTry.get
-      val hash = if (samplePercent > 0) {
-        Math.abs(HashUtils.md5Long(keyBytes))
-      } else {
-        -1
-      }
-      val shouldPublishLog = (hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))
-      if (shouldPublishLog || debug) {
-        val values = if (codec.conf.join.logFullValues) {
-          resp.combinedValues
-        } else {
-          resp.derivedValues
+        // Exit early if sample percent is 0
+        if (samplePercent == 0) {
+          return Response(resp.request, Success(resp.derivedValues))
         }
 
-        if (debug) {
-          logger.info(s"Logging ${resp.request.keys} : ${hash % 100000}: $samplePercent")
-          val gson = new Gson()
-          val valuesFormatted = values.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
-          logger.info(s"""Sampled join fetch
+        val keyBytesTry: Try[Array[Byte]] = encode(loggingContext.map(_.withSuffix("encode_key")),
+                                                   codec.keySchema,
+                                                   codec.keyCodec,
+                                                   resp.request.keys,
+                                                   cast = true)
+        if (keyBytesTry.isFailure) {
+          loggingContext.foreach(_.withSuffix("encode_key").incrementException(keyBytesTry.failed.get))
+          throw keyBytesTry.failed.get
+        }
+        val keyBytes = keyBytesTry.get
+        val hash = if (samplePercent > 0) {
+          Math.abs(HashUtils.md5Long(keyBytes))
+        } else {
+          -1
+        }
+        val shouldPublishLog = (hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))
+        if (shouldPublishLog || debug) {
+          val values = if (codec.conf.join.logFullValues) {
+            resp.combinedValues
+          } else {
+            resp.derivedValues
+          }
+
+          if (debug) {
+            logger.info(s"Logging ${resp.request.keys} : ${hash % 100000}: $samplePercent")
+            val gson = new Gson()
+            val valuesFormatted = values.map { case (k, v) => s"$k -> ${gson.toJson(v)}" }.mkString(", ")
+            logger.info(s"""Sampled join fetch
                |Key Map: ${resp.request.keys}
                |Value Map: [${valuesFormatted}]
                |""".stripMargin)
-        }
+          }
 
-        val valueBytesTry: Try[Array[Byte]] =
-          encode(loggingContext.map(_.withSuffix("encode_value")), codec.valueSchema, codec.valueCodec, values)
-        if (valueBytesTry.isFailure) {
-          loggingContext.foreach(_.withSuffix("encode_value").incrementException(valueBytesTry.failed.get))
-          throw valueBytesTry.failed.get
-        }
-        val valueBytes = valueBytesTry.get
+          val valueBytesTry: Try[Array[Byte]] =
+            encode(loggingContext.map(_.withSuffix("encode_value")), codec.valueSchema, codec.valueCodec, values)
+          if (valueBytesTry.isFailure) {
+            loggingContext.foreach(_.withSuffix("encode_value").incrementException(valueBytesTry.failed.get))
+            throw valueBytesTry.failed.get
+          }
+          val valueBytes = valueBytesTry.get
 
-        val loggableResponse = LoggableResponse(
-          keyBytes,
-          valueBytes,
-          resp.request.name,
-          loggingTs,
-          codec.loggingSchemaHash
-        )
-        if (logFunc != null) {
-          logFunc.accept(loggableResponse)
-          loggingContext.foreach(context => context.increment("count"))
-          loggingContext.foreach(context =>
-            context.distribution("latency.millis", System.currentTimeMillis() - loggingStartTs))
-          loggingContext.foreach(context =>
-            context.distribution("overall.latency.millis", System.currentTimeMillis() - ts))
+          val loggableResponse = LoggableResponse(
+            keyBytes,
+            valueBytes,
+            resp.request.name,
+            loggingTs,
+            codec.loggingSchemaHash
+          )
+          if (logFunc != null) {
+            logFunc.accept(loggableResponse)
+            loggingContext.foreach(context => context.increment("count"))
+            loggingContext.foreach(context =>
+              context.distribution("latency.millis", System.currentTimeMillis() - loggingStartTs))
+            loggingContext.foreach(context =>
+              context.distribution("overall.latency.millis", System.currentTimeMillis() - ts))
 
-          if (debug) {
-            logger.info(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
+            if (debug) {
+              logger.info(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
+            }
           }
         }
-      }
-    })
+      })
     loggingTry.failed.map { exception =>
       // Publish logging failure metrics before codec refresh in case of another exception
       loggingContext.foreach(_.incrementException(exception)(logger))
 
       // to handle GroupByServingInfo staleness that results in encoding failure
-      val refreshedJoinCodec = getJoinCodecs.refresh(resp.request.name)
+      val refreshedJoinCodec = getJoinCodecs.refresh(resp.request.name).map(_._1)
       if (debug) {
         val rand = new Random
         val number = rand.nextDouble
@@ -415,6 +471,9 @@ class Fetcher(val kvStore: KVStore,
           }
         }
       }
+    }
+    if (joinCodecTry.isSuccess && joinCodecTry.get._2) {
+      getJoinCodecs.refresh(resp.request.name)
     }
     Response(resp.request, Success(resp.derivedValues))
   }

@@ -25,6 +25,8 @@ import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.io.FileUtils
+import org.apache.hadoop.conf.Configuration
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
 import org.apache.spark.sql.streaming.StreamingQueryListener.{
@@ -37,7 +39,8 @@ import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 import org.slf4j.LoggerFactory
 
-import java.io.File
+import java.io.{File, IOException}
+import java.net.URI
 import java.nio.file.{Files, Paths}
 import scala.collection.JavaConverters._
 import scala.collection.mutable
@@ -58,8 +61,69 @@ class DummyExtensions extends (SparkSessionExtensions => Unit) {
 object Driver {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
-  def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T =
-    ThriftJsonCodec.fromJsonFile[T](confPath, check = true)
+  def createHadoopConf(): Configuration = {
+    val conf = new Configuration()
+
+    // ✅ Add support for Google Cloud Storage (GCS)
+    conf.set("fs.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFileSystem")
+    conf.set("fs.AbstractFileSystem.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS")
+
+    // ✅ Add support for Amazon S3
+    conf.set("fs.s3a.impl", "org.apache.hadoop.fs.s3a.S3AFileSystem")
+    conf.set("fs.s3a.connection.ssl.enabled", "true")
+    conf.set("fs.s3a.path.style.access", "true") // Required for some S3-compatible storage
+
+    // ✅ Add support for Azure Blob Storage
+    conf.set("fs.wasb.impl", "org.apache.hadoop.fs.azure.NativeAzureFileSystem")
+    conf.set("fs.wasbs.impl", "org.apache.hadoop.fs.azure.NativeAzureFileSystem")
+    conf.set("fs.abfs.impl", "org.apache.hadoop.fs.azurebfs.AzureBlobFileSystem")
+
+    conf
+  }
+  def parseConf[T <: TBase[_, _]: Manifest: ClassTag](confPath: String): T = {
+    val cloudPrefixes = List("gs://", "s3://", "s3a://", "wasb://", "abfs://")
+    val isCloudPath = cloudPrefixes.exists(confPath.startsWith)
+
+    val localPath =
+      try {
+        if (isCloudPath) {
+          val uri = new URI(confPath)
+          val fs = FileSystem.get(uri, createHadoopConf())
+          val cloudFilePath = new Path(confPath)
+
+          // Check if file exists in cloud storage
+          if (!fs.exists(cloudFilePath)) {
+            throw new IOException(s"Error: Cloud file not found at $confPath")
+          }
+
+          val tempFile = File.createTempFile("config", ".json")
+          try {
+            fs.copyToLocalFile(cloudFilePath, new Path(tempFile.getAbsolutePath))
+            tempFile.getAbsolutePath
+          } catch {
+            case e: IOException =>
+              throw new IOException(s"Error downloading file from cloud: $confPath", e)
+          }
+        } else {
+          val localFile = new File(confPath)
+          if (!localFile.exists()) {
+            throw new IOException(s"Error: Local file not found at $confPath")
+          }
+          confPath
+        }
+      } catch {
+        case e: Exception =>
+          throw new RuntimeException(s"Failed to resolve configuration file: $confPath", e)
+      }
+
+    // Parse the JSON file
+    try {
+      ThriftJsonCodec.fromJsonFile[T](localPath, check = true)
+    } catch {
+      case e: Exception =>
+        throw new RuntimeException(s"Failed to parse configuration file: $localPath", e)
+    }
+  }
 
   trait JoinBackfillSubcommand {
     this: ScallopConf =>

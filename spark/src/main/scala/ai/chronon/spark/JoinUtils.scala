@@ -47,11 +47,18 @@ object JoinUtils {
     } else {
       Seq()
     }
-    val scanQuery = range.genScanQuery(joinConf.left.query,
-                                       joinConf.left.table,
-                                       fillIfAbsent = Map(tableUtils.partitionColumn -> null) ++ timeProjection) +
-      limit.map(num => s" LIMIT $num").getOrElse("")
-    val df = tableUtils.sql(scanQuery)
+    val query = joinConf.left.query
+    val partitionColumn = tableUtils.getPartitionColumn(query)
+
+    val (scanQuery, df) = range.scanQueryStringAndDf(
+      query,
+      joinConf.left.table,
+      appendRawQueryString = limit.map(num => s" LIMIT $num").getOrElse(""),
+      fillIfAbsent = Map(partitionColumn -> null) ++ timeProjection,
+      partitionColOpt = Some(partitionColumn),
+      renamePartitionCol = true
+    )
+
     val skewFilter = joinConf.skewFilter()
     val result = skewFilter
       .map(sf => {
@@ -109,7 +116,10 @@ object JoinUtils {
       Some(endPartition)
     }
     lazy val defaultLeftStart = Option(leftSource.query.startPartition)
-      .getOrElse(tableUtils.firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters).get)
+      .getOrElse(
+        tableUtils
+          .firstAvailablePartition(leftSource.table, leftSource.subPartitionFilters, leftSource.partitionColumnOpt)
+          .get)
     val leftStart = overrideStart.getOrElse(defaultLeftStart)
     val leftEnd = Seq(Option(leftSource.query.endPartition), Some(endPartition)).flatten.min
     PartitionRange(leftStart, leftEnd)(tableUtils)

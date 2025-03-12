@@ -63,7 +63,7 @@ class FetcherBase(kvStore: KVStore,
                                        context: Metrics.Context,
                                        totalResponseValueBytes: Int,
                                        keys: Map[String, Any] // The keys are used only for caching
-  ): Map[String, AnyRef] = {
+  ): Option[Map[String, AnyRef]] = {
     val (servingInfo, batchResponseMaxTs) = getServingInfo(oldServingInfo, batchResponses)
 
     // Batch metrics
@@ -114,7 +114,7 @@ class FetcherBase(kvStore: KVStore,
       ) {
         if (debug) logger.info("Both batch and streaming data are null")
         context.distribution("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
-        return null
+        return None
       }
 
       // Streaming metrics
@@ -220,6 +220,7 @@ class FetcherBase(kvStore: KVStore,
           logger.info(s"""
                          |batch ir: ${gson.toJson(batchIr)}
                          |streamingRows: ${gson.toJson(streamingRows)}
+                         |streamingRowsCount: ${streamingRows.length}
                          |batchEnd in millis: ${servingInfo.batchEndTsMillis}
                          |queryTime in millis: $queryTimeMs
                          |""".stripMargin)
@@ -238,7 +239,7 @@ class FetcherBase(kvStore: KVStore,
     }
 
     context.distribution("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
-    responseMap
+    Option(responseMap)
   }
 
   def reportKvResponse(ctx: Metrics.Context,
@@ -487,7 +488,7 @@ class FetcherBase(kvStore: KVStore,
                                            multiGetMillis,
                                            context,
                                            totalResponseValueBytes,
-                                           request.keys)
+                                           request.keys).getOrElse(Map.empty)
                 } catch {
                   case ex: Exception =>
                     // not all exceptions are due to stale schema, so we want to control how often we hit kv store

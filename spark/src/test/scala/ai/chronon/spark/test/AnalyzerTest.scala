@@ -23,7 +23,7 @@ import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{col, lit}
-import org.junit.Assert.assertTrue
+import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{never, spy, verify, when}
@@ -345,7 +345,7 @@ class AnalyzerTest {
   def testJoinAnalyzerInvalidTablePermissions(): Unit = {
     val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = spy(TableUtils(spark))
-    when(tableUtils.checkTablePermission(any(), any())).thenReturn(false)
+    when(tableUtils.checkTablePermission(any(), any(), any())).thenReturn(false)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     // left side
@@ -423,6 +423,28 @@ class AnalyzerTest {
     //run analyzer and trigger assertion error when timestamps are all NULL
     val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
     analyzer.analyzeGroupBy(tableGroupBy)
+  }
+
+  @Test
+  def testGroupByAnalyzerInvalidTablePermissions(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = spy(TableUtils(spark))
+    when(tableUtils.checkTablePermission(any(), any(), any())).thenReturn(false)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(getTestGBSourceWithTs(namespace=namespace)),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test.test_3", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+    val (_, _, noAccessTables) = analyzer.analyzeGroupBy(tableGroupBy, validateTablePermission = true)
+    assertEquals(1, noAccessTables.size)
   }
 
   @Test(expected = classOf[java.lang.AssertionError])

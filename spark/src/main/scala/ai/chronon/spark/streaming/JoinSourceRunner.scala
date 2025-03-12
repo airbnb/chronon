@@ -22,7 +22,7 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online._
-import ai.chronon.spark.{GenericRowHandler, TableUtils, EncoderUtil}
+import ai.chronon.spark.{EncoderUtil, GenericRowHandler, TableUtils}
 import com.google.gson.Gson
 import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
 import org.apache.spark.sql.streaming.{DataStreamWriter, Trigger}
@@ -37,6 +37,7 @@ import java.{lang, util}
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
+import scala.util.{Failure, Success}
 
 // micro batching destroys and re-creates these objects repeatedly through ForeachBatchWriter and MapFunction
 // this allows for re-use
@@ -191,7 +192,13 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     val leftSourceSchema: StructType = outputSchema(leftStreamSchema, enrichQuery(left.query)) // apply same thing
 
     // joinSchema = leftSourceSchema ++ joinCodec.valueSchema
-    val joinCodec: JoinCodec = apiImpl.buildFetcher(debug).buildJoinCodec(joinSource.getJoin)
+    val joinCodec: JoinCodec = apiImpl
+      .buildFetcher(debug)
+      .buildJoinCodec(
+        joinSource.getJoin,
+        refreshOnFail = false // immediately fails if the codec has partial error to avoid using stale codec
+      )
+      ._1
     val joinValueSchema: StructType = SparkConversions.fromChrononSchema(joinCodec.valueSchema)
     val joinSchema: StructType = StructType(leftSourceSchema ++ joinValueSchema)
     val joinSourceSchema: StructType = outputSchema(joinSchema, enrichQuery(joinSource.query))
@@ -247,6 +254,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         (mutation != null) && (!bothNull || !bothSame)
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
+    val streamSchemaEncoder = EncoderUtil(streamSchema)
     logger.info(s"""
          | streaming source: ${groupByConf.streamingSource.get}
          | streaming dataset: ${groupByConf.streamingDataset}
@@ -258,7 +266,14 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         Seq(mutation.after, mutation.before)
           .filter(_ != null)
           .map(SparkConversions.toSparkRow(_, streamDecoder.schema, GenericRowHandler.func).asInstanceOf[Row])
-      }(EncoderUtil(streamSchema))
+      }(streamSchemaEncoder)
+      .map { row =>
+        {
+          // Report flattened row count metric
+          ingressContext.withSuffix("flatten").increment(Metrics.Name.RowCount)
+          row
+        }
+      }(streamSchemaEncoder)
     dataStream.copy(df = des)
   }
 
@@ -385,7 +400,16 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           }
 
           if (debug && shouldSample) {
-            requests.foreach(request => logger.info(s"request: ${request.keys}, ts: ${request.atMillis}"))
+            var logMessage = s"\nShowing all ${requests.length} requests:\n"
+            requests.zipWithIndex.foreach {
+              case (request, index) =>
+                logMessage +=
+                  s"""request ${index}
+                     |payload: ${request.keys}
+                     |ts: ${request.atMillis}
+                     |""".stripMargin
+            }
+            logger.info(logMessage)
           }
 
           val responsesFuture = fetcher.fetchJoin(requests = requests.toSeq)
@@ -394,10 +418,18 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           val responses = Await.result(responsesFuture, 5.second)
 
           if (debug && shouldSample) {
-            logger.info(s"responses/request size: ${responses.size}/${requests.size}\n  responses: ${responses}")
-            responses.foreach(response =>
-              logger.info(
-                s"request: ${response.request.keys}, ts: ${response.request.atMillis}, values: ${response.values}"))
+            logger.info(s"Request count: ${requests.length} Response count: ${responses.length}")
+            var logMessage = s"\n Showing all ${responses.length} responses:\n"
+            responses.zipWithIndex.foreach {
+              case (response, index) =>
+                logMessage +=
+                  s"""response ${index}
+                     |ts: ${response.request.atMillis}
+                     |request payload: ${response.request.keys}
+                     |response payload: ${response.values}
+                     |""".stripMargin
+            }
+            logger.info(logMessage)
           }
           responses.iterator.map { response =>
             val responseMap = response.values.get
@@ -437,8 +469,24 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             logger.info(s" Final df size to write: ${data.length}")
             logger.info(s" Size of putRequests to kv store- ${putRequests.length}")
           } else {
-            putRequests.foreach(request => emitRequestMetric(request, context.withSuffix("egress")))
-            kvStore.multiPut(putRequests)
+            val egressCtx = context.withSuffix("egress")
+            putRequests.foreach(request => emitRequestMetric(request, egressCtx))
+
+            // Report kvStore metrics
+            val kvContext = egressCtx.withSuffix("put")
+            kvStore
+              .multiPut(putRequests)
+              .andThen {
+                case Success(results) =>
+                  results.foreach { result =>
+                    if (result) {
+                      kvContext.increment("success")
+                    } else {
+                      kvContext.increment("failure")
+                    }
+                  }
+                case Failure(exception) => kvContext.incrementException(exception)
+              }(kvStore.executionContext)
           }
         }
       }

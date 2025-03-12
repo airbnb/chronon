@@ -12,12 +12,16 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
+import json
 import os
 
-import ai.chronon.api.ttypes as api
 import pytest
+
+import ai.chronon.api.ttypes as api
 from ai.chronon import utils
+from ai.chronon.api.ttypes import EntitySource, EventSource, Query, Source
 from ai.chronon.repo.serializer import file2thrift, json2thrift
+from ai.chronon.utils import get_dependencies, wait_for_simple_schema
 
 
 @pytest.fixture
@@ -313,3 +317,76 @@ def test_group_by_table_names(repo, materialized_group_by, table_name):
 def test_join_part_table_names(repo, materialized_join, table_name):
     join = file2thrift(os.path.join(repo, "production/joins/sample_team", materialized_join), api.Join)
     assert utils.join_part_output_table_name(join, join.joinParts[0], True) == table_name
+
+
+@pytest.fixture(params=[None, "date_column"])
+def query_with_partition_column(request):
+    return Query(
+        partitionColumn=request.param,
+        startPartition="2021-01-01",
+        endPartition="2021-01-02",
+    )
+
+
+def test_wait_for_simple_schema_lag_zero_no_subpartition(
+    query_with_partition_column: Query,
+):
+    table = "mytable"
+    paritition_col = query_with_partition_column.partitionColumn or "ds"
+    expected_spec = f"mytable/{paritition_col}={{{{ ds }}}}"
+    result = wait_for_simple_schema(
+        table, 0, "2021-01-01", "2021-01-02", query=query_with_partition_column
+    )
+    assert result["spec"] == expected_spec
+
+
+def test_wait_for_simple_schema_lag_nonzero_no_subpartition(
+    query_with_partition_column,
+):
+    table = "mytable"
+    lag = 3
+    partition_col = query_with_partition_column.partitionColumn or "ds"
+    expected_spec = f"mytable/{partition_col}={{{{ macros.ds_add(ds, -3) }}}}"
+    result = wait_for_simple_schema(
+        table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column
+    )
+    assert result["spec"] == expected_spec
+
+
+def test_wait_for_simple_schema_with_subpartition(query_with_partition_column: Query):
+    table = "mytable/system=mobile"
+    lag = 0
+    partition_col = query_with_partition_column.partitionColumn or "ds"
+    expected_spec = f"mytable/{partition_col}={{{{ ds }}}}/system=mobile"
+    result = wait_for_simple_schema(
+        table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column
+    )
+    assert result["spec"] == expected_spec
+
+
+def test_get_dependencies_with_entities_mutation(query_with_partition_column: Query):
+    entity = EntitySource(
+        snapshotTable="snap_table",
+        mutationTable="mut_table",
+        query=query_with_partition_column,
+    )
+    src = Source(entities=entity)
+    deps_json = get_dependencies(src, lag=0)
+    assert len(deps_json) == 2
+    deps = [json.loads(d) for d in deps_json]
+    partition_col = query_with_partition_column.partitionColumn or "ds"
+    expected_spec_snap = f"snap_table/{partition_col}={{{{ ds }}}}"
+    expected_spec_mut = f"mut_table/{partition_col}={{{{ ds }}}}"
+    assert deps[0]["spec"] == expected_spec_snap
+    assert deps[1]["spec"] == expected_spec_mut
+
+
+def test_get_dependencies_with_events(query_with_partition_column: Query):
+    event = EventSource(table="event_table", query=query_with_partition_column)
+    src = Source(events=event)
+    deps_json = get_dependencies(src, lag=2)
+    assert len(deps_json) == 1
+    dep = json.loads(deps_json[0])
+    partition_col = query_with_partition_column.partitionColumn or "ds"
+    expected_spec = f"event_table/{partition_col}={{{{ macros.ds_add(ds, -2) }}}}"
+    assert dep["spec"] == expected_spec

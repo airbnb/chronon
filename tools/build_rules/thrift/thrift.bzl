@@ -63,7 +63,7 @@ def thrift_java_library(name, srcs, **kwargs):
         name = name,
         srcs = srcs,
         thrift_binary = select({
-            "@platforms//os:macos": "/opt/homebrew/bin/thrift",
+            "@platforms//os:macos": "/usr/local/bin/thrift",
             "//conditions:default": "/usr/local/bin/thrift",
         }),
         **kwargs
@@ -138,7 +138,7 @@ def thrift_python_library(name, srcs, namespace, visibility = None):
         srcs = srcs,
         namespace = namespace,
         thrift_binary = select({
-            "@platforms//os:macos": "/opt/homebrew/bin/thrift",
+            "@platforms//os:macos": "/usr/local/bin/thrift",
             "//conditions:default": "/usr/local/bin/thrift",
         }),
     )
