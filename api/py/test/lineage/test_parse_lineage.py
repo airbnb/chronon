@@ -25,7 +25,7 @@ class TestParseLineage(unittest.TestCase):
         parser = LineageParser()
         parser.parse_lineage(TEST_BASE_PATH)
         metadata = parser.metadata
-        attributes = ["modules", "tables", "features", "lineages"]
+        attributes = ["configs", "tables", "features", "lineages"]
         for attr in attributes:
             self.assertGreater(len(getattr(metadata, attr)), 0, f"{attr} should not be empty")
 

@@ -20,11 +20,11 @@ from functools import reduce
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from ai.chronon.api import ttypes
-from ai.chronon.group_by import Accuracy, get_output_col_names
+from ai.chronon.group_by import get_output_col_names
 from ai.chronon.lineage.lineage_metadata import (
+    Config,
+    ConfigType,
     LineageMetaData,
-    Module,
-    ModuleType,
     TableType,
 )
 from ai.chronon.repo.validator import (
@@ -64,12 +64,12 @@ class LineageParser:
         self.metadata: LineageMetaData = LineageMetaData()
         self.schema_provider = schema_provider
 
-    def parse_lineage(self, base_path: str, module_filter: Optional[Set[str]] = None) -> LineageMetaData:
+    def parse_lineage(self, base_path: str, config_filter: Optional[Set[str]] = None) -> LineageMetaData:
         """
         Parse lineage information for staging queries, group bys, and joins using the provided base path.
 
         :param base_path: Base directory path where configuration files reside.
-        :param module_filter: Set of specific module names to process; if None, all are processed.
+        :param config_filter: Set of specific config names to process; if None, all are processed.
         :return: The parsed lineage metadata.
         """
         self.base_path = base_path
@@ -78,56 +78,56 @@ class LineageParser:
             self.team_conf = json.load(team_infile)
 
         # Staging queries are lazily parsed when they are used.
-        self.parse_modules(self.handle_staging_query, "production/staging_queries", ttypes.StagingQuery, module_filter)
+        self.parse_configs(self.handle_staging_query, "production/staging_queries", ttypes.StagingQuery, config_filter)
 
         # Parse all group bys and joins.
-        self.parse_modules(self.parse_group_by, "production/group_bys", ttypes.GroupBy, module_filter)
-        self.parse_modules(self.parse_join, "production/joins", ttypes.Join, module_filter)
+        self.parse_configs(self.parse_group_by, "production/group_bys", ttypes.GroupBy, config_filter)
+        self.parse_configs(self.parse_join, "production/joins", ttypes.Join, config_filter)
 
         return self.metadata
 
-    def parse_modules(
+    def parse_configs(
         self,
         parser: Callable[[Any], None],
-        module_path: str,
-        module_ttype: ttypes,
-        module_filter: Optional[List[str]] = None,
+        config_path: str,
+        config_ttype: ttypes,
+        config_filter: Optional[List[str]] = None,
     ) -> None:
         """
-        Parse modules from a directory and process each using the provided parser.
+        Parse configs from a directory and process each using the provided parser.
 
-        :param parser: Function to process a module.
-        :param module_path: Relative path where configs are stored.
-        :param module_ttype: Expected type of module objects.
-        :param module_filter: Optional list of module names to include.
+        :param parser: Function to process a config.
+        :param config_path: Relative path where configs are stored.
+        :param config_ttype: Expected type of config objects.
+        :param config_filter: Optional list of config names to include.
         """
-        path = os.path.join(self.base_path, module_path)
-        module_type = module_path.split("/")[-1]
-        modules = []
+        path = os.path.join(self.base_path, config_path)
+        config_type = config_path.split("/")[-1]
+        configs = []
         for root, dirs, files in os.walk(path):
-            if root.endswith(module_path):
+            if root.endswith(config_path):
                 continue
-            modules.extend(extract_json_confs(module_ttype, root))
+            configs.extend(extract_json_confs(config_ttype, root))
 
-        for index, module in enumerate(modules):
-            if isinstance(module, module_ttype):
-                if module_filter and module.metaData.name not in module_filter:
+        for index, config in enumerate(configs):
+            if isinstance(config, config_ttype):
+                if config_filter and config.metaData.name not in config_filter:
                     continue
                 try:
-                    logger.info(f"({index}/{len(modules)}): Parse {module_type} {module.metaData.name} ...")
-                    parser(module)
+                    logger.info(f"({index}/{len(configs)}): Parse {config_type} {config.metaData.name} ...")
+                    parser(config)
                 except Exception as e:
-                    self.metadata.unparsed_modules[module_type].append(module.metaData.name)
+                    self.metadata.unparsed_configs[config_type].append(config.metaData.name)
                     logger.exception(
-                        f"An unexpected error occurred while parsing {module_type} {module.metaData.name}: {e}"
+                        f"An unexpected error occurred while parsing {config_type} {config.metaData.name}: {e}"
                     )
 
         logger.info(
-            f"Total {len(modules)} modules for {module_type}."
-            f"Unparsed = {len(self.metadata.unparsed_modules[module_type])}."
+            f"Total {len(configs)} configs for {config_type}."
+            f" Unparsed = {len(self.metadata.unparsed_configs[config_type])}."
         )
-        for name in self.metadata.unparsed_modules[module_type]:
-            logger.info(f"Unparsed module: {name}")
+        for name in self.metadata.unparsed_configs[config_type]:
+            logger.info(f"Unparsed configs: {name}")
 
     @staticmethod
     def build_select_sql(table: str, selects: List[Tuple[Any, Any]], filter_expr: Optional[Any] = None) -> exp.Select:
@@ -423,10 +423,10 @@ class LineageParser:
         :param join: The join configuration object.
         :return: None
         """
-        # store module
-        module_name = join.metaData.name
-        module = Module(module_name, ModuleType.JOIN, join)
-        self.metadata.modules[module_name] = module
+        # store config
+        config_name = join.metaData.name
+        config = Config(config_name, ConfigType.JOIN, join)
+        self.metadata.configs[config_name] = config
 
         # source tables used to build lineage
         sources = dict()
@@ -445,7 +445,7 @@ class LineageParser:
         bootstrap_sql = bootstrap_sql.sql(dialect="spark", pretty=True)
         sources["bootstrap_table"] = bootstrap_sql
         lineages = build_lineage(bootstrap_table, bootstrap_sql)
-        self.metadata.store_table(module_name, bootstrap_table, TableType.JOIN_BOOTSTRAP, set(source_keys))
+        self.metadata.store_table(config_name, bootstrap_table, TableType.JOIN_BOOTSTRAP, set(source_keys))
         self.metadata.store_lineage(lineages, output_table)
 
         for jp in join.joinParts:
@@ -453,7 +453,7 @@ class LineageParser:
             gb_table_name = sanitize(gb.metaData.name)
             prefix = jp.prefix + "_" if jp.prefix else ""
             join_part_table = f"{output_table}_{prefix}{gb_table_name}"
-            self.parse_group_by(gb, join_part_table=join_part_table)
+            self.parse_group_by(gb, join_part_table=join_part_table, join_config_name=config_name)
 
         # Build lineage for join
         join_sql = self.build_join_sql(join)
@@ -486,7 +486,7 @@ class LineageParser:
             self.metadata.store_feature(join.metaData.name, feature)
 
         # store table
-        self.metadata.store_table(module_name, output_table, TableType.JOIN, set(source_keys))
+        self.metadata.store_table(config_name, output_table, TableType.JOIN, set(source_keys))
 
         # store lineage
         parsed_lineages = build_lineage(output_table, sql, sources)
@@ -509,10 +509,10 @@ class LineageParser:
         :param query: The staging query configuration object.
         :return: None
         """
-        # store module
-        module_name = staging_query.metaData.name
-        module = Module(module_name, ModuleType.STAGING_QUERY, staging_query)
-        self.metadata.modules[module_name] = module
+        # store config
+        config_name = staging_query.metaData.name
+        config = Config(config_name, ConfigType.STAGING_QUERY, staging_query)
+        self.metadata.configs[config_name] = config
 
         schema = dict()
         if self.schema_provider:
@@ -524,7 +524,7 @@ class LineageParser:
 
         if table_name not in self.metadata.tables:
             parsed_lineages = build_lineage(table_name, staging_query.query, schema=schema)
-            self.metadata.store_table(module_name, table_name, TableType.STAGING_QUERY)
+            self.metadata.store_table(config_name, table_name, TableType.STAGING_QUERY)
             self.metadata.store_lineage(parsed_lineages, table_name)
 
     @staticmethod
@@ -545,18 +545,21 @@ class LineageParser:
             if isinstance(source, exp.Table)
         }
 
-    def parse_group_by(self, gb: Any, join_part_table: Optional[str] = None) -> None:
+    def parse_group_by(
+        self, gb: Any, join_part_table: Optional[str] = None, join_config_name: Optional[str] = None
+    ) -> None:
         """
         Parse a group-by configuration and build lineage.
 
         :param gb: The group-by configuration object.
         :param join_part_table: The join part table name for the group by.
+        :param join_config_name: The join config name if it is parsing from a join.
         :return: None
         """
-        # store module
-        module_name = gb.metaData.name
-        module = Module(module_name, ModuleType.GROUP_BY, gb)
-        self.metadata.modules[module_name] = module
+        # store config
+        config_name = gb.metaData.name
+        config = Config(config_name, ConfigType.GROUP_BY, gb)
+        self.metadata.configs[config_name] = config
 
         # source tables used to build lineage
         sources = {}
@@ -567,7 +570,7 @@ class LineageParser:
             table, filter_expr, selects = self.parse_source(source)
             if table in self.staging_queries:
                 self.parse_staging_query(self.staging_queries[table])
-            self.metadata.store_table(module_name, table, table_type=TableType.OTHER)
+            self.metadata.store_table(config_name, table, table_type=TableType.OTHER)
             sql = self.build_select_sql(table, selects.items(), filter_expr)
             select_sqls.append(sql)
 
@@ -596,37 +599,47 @@ class LineageParser:
 
         # If join_part_table is defined, then it generates a join part table.
         # If gb.backfill_start_date is defined, then it generates a backfill table.
-        # If gb.online is True and SNAPSHOT accuracy, then it generates an upload table.
-        # If gb.online is True and TEMPORAL accuracy, then no need to track lineage and the output table stores IR only.
+        # If gb.online is True, then it generates an upload table.
         if join_part_table:
             # store feature
             for feature in features:
                 self.metadata.store_feature(gb.metaData.name, feature, join_part_table)
 
             # store table
-            self.metadata.store_table(module_name, join_part_table, TableType.JOIN_PART, set(key_columns))
+            config_name = join_config_name or config_name
+            self.metadata.store_table(config_name, join_part_table, TableType.JOIN_PART, set(key_columns))
 
             # store lineage
             parsed_lineages = build_lineage(join_part_table, sql, sources)
             self.metadata.store_lineage(parsed_lineages, join_part_table)
         else:
             output_table = None
-            if gb.metaData.online and gb.accuracy == Accuracy.SNAPSHOT:
+            if gb.metaData.online:
                 output_table = f"{self.object_table_name(gb)}_upload"
 
                 # store table
-                self.metadata.store_table(module_name, output_table, TableType.GROUP_BY_UPLOAD, set(key_columns))
+                self.metadata.store_table(
+                    config_name,
+                    output_table,
+                    TableType.GROUP_BY_UPLOAD,
+                    set(f"key_json./{key_column}" for key_column in key_columns),
+                )
 
                 # store lineage
-                parsed_lineages = build_lineage(output_table, sql, sources)
-                self.metadata.store_lineage(parsed_lineages, output_table)
+                lineages = build_lineage(output_table, sql, sources)
+                # Put all key columns into the "key_json" column, and all values into the "value_json" column.
+                lineages = {
+                    upload_column_json(output_column, key_columns): lineage
+                    for output_column, lineage in lineages.items()
+                }
+                self.metadata.store_lineage(lineages, output_table)
 
             # track feature lineage to the backfill table if it is defined
             if gb.backfillStartDate:
                 output_table = self.object_table_name(gb)
 
                 # store table
-                self.metadata.store_table(module_name, output_table, TableType.GROUP_BY_BACKFILL, set(key_columns))
+                self.metadata.store_table(config_name, output_table, TableType.GROUP_BY_BACKFILL, set(key_columns))
 
                 # store lineage
                 parsed_lineages = build_lineage(output_table, sql, sources)
@@ -730,3 +743,14 @@ def build_lineage(
                 queue.append((child, append_transform(transforms, child_transform)))
         parsed_lineages[f"{output_table}.{output_column}"] = input_columns
     return parsed_lineages
+
+
+def upload_column_json(output_column: str, key_columns: Set[str]) -> str:
+    columns = output_column.rsplit(".", 1)
+    if len(columns) == 2:
+        if columns[-1] in key_columns:
+            columns[-1] = f"key_json./{columns[-1]}"
+        else:
+            columns[-1] = f"value_json./{columns[-1]}"
+
+    return ".".join(columns)

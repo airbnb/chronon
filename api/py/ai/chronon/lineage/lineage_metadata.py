@@ -34,7 +34,7 @@ class TableType(str, Enum):
 
 @dataclass
 class Table:
-    module_name: str
+    config_name: str
     table_name: str
     table_type: TableType
     key_columns: Set[str] = None
@@ -43,7 +43,7 @@ class Table:
 
 @dataclass(frozen=True)
 class Feature:
-    module_name: str
+    config_name: str
     feature_name: str
     column: Optional[str] = None
 
@@ -55,9 +55,9 @@ class ColumnTransform:
     transforms: Tuple[str]
 
 
-class ModuleType(str, Enum):
+class ConfigType(str, Enum):
     """
-    Enum representing the various types of module.
+    Enum representing the various types of config.
     """
 
     GROUP_BY = "group_by"
@@ -66,9 +66,9 @@ class ModuleType(str, Enum):
 
 
 @dataclass
-class Module:
-    module_name: str
-    module_type: ModuleType
+class Config:
+    config_name: str
+    config_type: ConfigType
     t_object: Any
     tables: Dict[str, Table] = field(default_factory=defaultdict)
     features: Dict[str, Feature] = field(default_factory=defaultdict)
@@ -83,9 +83,9 @@ class LineageMetaData:
         self.lineages: Set[ColumnTransform] = set()
         self.tables: Dict[str, Table] = {}
         self.features: Dict[str, Feature] = {}
-        self.modules: Dict[str, Module] = {}
+        self.configs: Dict[str, Config] = {}
 
-        self.unparsed_modules: Dict[str, List[str]] = defaultdict(list)
+        self.unparsed_configs: Dict[str, List[str]] = defaultdict(list)
         self.unparsed_columns: Dict[str, List[str]] = defaultdict(list)
 
     def store_column(self, column: str) -> None:
@@ -99,9 +99,8 @@ class LineageMetaData:
         :param column: Fully qualified column name.
         """
         # Split the string to get table and column parts.
-        parts = column.split(".")
-        table_name = ".".join(parts[:-1])
-        column_name = parts[-1]
+        table_name = extract_table_name(column)
+        column_name = extract_column_name(column)
 
         # Create a new Table if one does not exist for the extracted table name.
         if table_name not in self.tables:
@@ -110,49 +109,49 @@ class LineageMetaData:
         # Add the column name to the table's set of columns.
         self.tables[table_name].columns.add(column_name)
 
-    def store_feature(self, module_name: str, feature_name: str, output_table: Optional[str] = None) -> None:
+    def store_feature(self, config_name: str, feature_name: str, output_table: Optional[str] = None) -> None:
         """
         Instance method to create and store a Feature.
 
         Builds a feature identifier by combining the entity and feature names.
         If an output table is provided, it constructs a fully qualified column name.
 
-        :param module_name: Name of the module.
+        :param config_name: Name of the config.
         :param feature_name: Name of the feature.
         :param output_table: Optional table name where the feature is stored.
         """
-        feature = f"{module_name}.{feature_name}"
+        feature = f"{config_name}.{feature_name}"
         if output_table:
             # If an output table is provided, construct the full column name.
             column = f"{output_table}.{feature}"
-            self.features[feature] = Feature(module_name, feature, column)
+            self.features[feature] = Feature(config_name, feature, column)
         else:
-            self.features[feature] = Feature(module_name, feature)
+            self.features[feature] = Feature(config_name, feature)
 
-        self.modules[module_name].features[feature] = self.features[feature]
+        self.configs[config_name].features[feature] = self.features[feature]
 
     def store_table(
-        self, module_name: str, table_name: str, table_type: TableType, key_columns: Set[str] = None
+        self, config_name: str, table_name: str, table_type: TableType, key_columns: Set[str] = None
     ) -> None:
         """
         Instance method to create and store a Table if it does not already exist.
 
-        :param module_name: Name of the module.
+        :param config_name: Name of the config.
         :param table_name: Name of the table.
         :param table_type: The type of the table as defined in TableType.
         :param key_columns: The key columns used to join with other tables.
         """
         if table_name not in self.tables:
-            self.tables[table_name] = Table(module_name, table_name, table_type, key_columns)
+            self.tables[table_name] = Table(config_name, table_name, table_type, key_columns)
         else:
             # replace existing table with new parsed table type
             existing_table = self.tables[table_name]
             if existing_table.table_type == TableType.OTHER and table_type != TableType.OTHER:
                 self.tables[table_name].table_type = table_type
-                self.tables[table_name].module_name = module_name
+                self.tables[table_name].config_name = config_name
                 self.tables[table_name].key_columns = key_columns
 
-        self.modules[module_name].tables[table_name] = self.tables[table_name]
+        self.configs[config_name].tables[table_name] = self.tables[table_name]
 
     def store_lineage(self, parsed_lineages: Dict[str, Set[Tuple[str, Tuple[str]]]], table_name: str) -> None:
         """
@@ -199,26 +198,35 @@ class LineageMetaData:
         # Filter by input table if provided.
         if input_table:
             filtered_lineages = {
-                lineage for lineage in filtered_lineages if table_name(lineage.input_column) == input_table
+                lineage for lineage in filtered_lineages if extract_table_name(lineage.input_column) == input_table
             }
 
         # Filter by output table if provided.
         if output_table:
             filtered_lineages = {
-                lineage for lineage in filtered_lineages if table_name(lineage.output_column) == output_table
+                lineage for lineage in filtered_lineages if extract_table_name(lineage.output_column) == output_table
             }
 
         return filtered_lineages
 
 
-def table_name(column_name: str) -> str:
+def extract_table_name(full_column_name: str) -> str:
     """
     Utility function to extract the table name from a fully qualified column name.
 
-    It does so by removing the last segment (assumed to be the column name) from the string.
-
-    :param column_name: Fully qualified column name (e.g., "db.table.column").
+    :param full_column_name: Fully qualified column name (e.g., "db.table.column").
     :return: Extracted table name (e.g., "db.table").
     """
-    parts = column_name.split(".")
+    parts = full_column_name.split("./")[0].split(".")
     return ".".join(parts[:-1])
+
+
+def extract_column_name(full_column_name: str) -> str:
+    """
+    Utility function to extract the column name from a fully qualified column name.
+
+    :param full_column_name: Fully qualified column name (e.g., "db.table.column").
+    :return: Extracted column name (e.g., "column").
+    """
+    table_name = extract_table_name(full_column_name)
+    return full_column_name[len(table_name) + 1 :]

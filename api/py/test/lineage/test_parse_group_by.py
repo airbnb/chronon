@@ -175,7 +175,7 @@ class TestParseGroupBy(unittest.TestCase):
 
     def test_join_part_table(self):
         parser = LineageParser()
-        parser.parse_group_by(self.gb, join_part_table="test_db.test_join_jp_test_group_by")
+        parser.parse_group_by(self.gb, join_part_table="test_db.test_join_jp_test_group_by", join_config_name="")
 
         backfill_table_name = "test_db.test_join_jp_test_group_by"
         self.assertTrue(backfill_table_name in parser.metadata.tables)
@@ -215,6 +215,74 @@ class TestParseGroupBy(unittest.TestCase):
                 ),
                 ("source.gb_table.event", "test_db.test_join_jp_test_group_by.event_id_last_renamed", ("AGG_LAST",)),
                 ("source.gb_table.event", "test_db.test_join_jp_test_group_by.event_id_sum", ("AGG_SUM",)),
+            },
+            lineages,
+        )
+
+    def test_upload_table(self):
+        parser = LineageParser()
+        parser.parse_group_by(self.gb_multiple_source)
+
+        upload_table_name = "test_db.test_group_by_multiple_source_upload"
+        self.assertTrue(upload_table_name in parser.metadata.tables)
+        self.assertEqual(
+            TableType.GROUP_BY_UPLOAD,
+            parser.metadata.tables[upload_table_name].table_type,
+        )
+        self.assertEqual({"key_json./subject"}, parser.metadata.tables[upload_table_name].key_columns)
+        self.assertEqual(
+            {
+                "key_json./subject",
+                "value_json./cnt_count",
+                "value_json./event_id_approx_percentile",
+                "value_json./event_id_last",
+                "value_json./event_id_sum",
+            },
+            parser.metadata.tables[upload_table_name].columns,
+        )
+        lineages = parser.metadata.filter_lineages(output_table=upload_table_name)
+        self.compare_lineages(
+            {
+                (
+                    "source.gb_table1.event",
+                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_last",
+                    ("AGG_LAST",),
+                ),
+                (
+                    "source.gb_table.subject",
+                    "test_db.test_group_by_multiple_source_upload.key_json./subject",
+                    (),
+                ),
+                (
+                    "source.gb_table1.event",
+                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_approx_percentile",
+                    ("AGG_APPROX_PERCENTILE",),
+                ),
+                (
+                    "source.gb_table.event",
+                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_sum",
+                    ("AGG_SUM",),
+                ),
+                (
+                    "source.gb_table1.subject",
+                    "test_db.test_group_by_multiple_source_upload.key_json./subject",
+                    (),
+                ),
+                (
+                    "source.gb_table.event",
+                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_last",
+                    ("AGG_LAST",),
+                ),
+                (
+                    "source.gb_table.event",
+                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_approx_percentile",
+                    ("AGG_APPROX_PERCENTILE",),
+                ),
+                (
+                    "source.gb_table1.event",
+                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_sum",
+                    ("AGG_SUM",),
+                ),
             },
             lineages,
         )
