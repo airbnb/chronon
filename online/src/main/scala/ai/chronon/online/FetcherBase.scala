@@ -220,7 +220,7 @@ class FetcherBase(kvStore: KVStore,
           logger.info(s"""
                          |batch ir: ${gson.toJson(batchIr)}
                          |streamingRows: ${gson.toJson(streamingRows)}
-                         |streamingRowsCount: ${streamingRows.length}
+                         |streamingRowsCount: ${Try(streamingRows.length).getOrElse(0)}
                          |batchEnd in millis: ${servingInfo.batchEndTsMillis}
                          |queryTime in millis: $queryTimeMs
                          |""".stripMargin)
