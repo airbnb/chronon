@@ -77,6 +77,7 @@ MODE_ARGS = {
     "metadata-export": OFFLINE_ARGS,
     "label-join": OFFLINE_ARGS,
     "info": "",
+    "lineage-export": "",
 }
 
 ROUTES = {
@@ -115,6 +116,7 @@ UNIVERSAL_ROUTES = ["info"]
 
 APP_NAME_TEMPLATE = "chronon_{conf_type}_{mode}_{context}_{name}"
 RENDER_INFO_DEFAULT_SCRIPT = "scripts/render_info.py"
+LINEAGE_EXPORTER_PATH = os.path.join(os.path.dirname(__file__), "../lineage/lineage_exporter.py")
 
 
 def retry_decorator(retries=3, backoff=20):
@@ -403,6 +405,9 @@ class Runner:
                     script=self.render_info, conf=self.conf, ds=self.ds, repo=self.repo
                 )
             )
+        elif self.mode == "lineage-export":
+            exporter_extra_args = " ".join(self.args) if isinstance(self.args, list) else self.args
+            command_list.append(f"python3 {LINEAGE_EXPORTER_PATH} --repo {self.repo} {exporter_extra_args}")
         elif self.sub_help or (self.mode not in SPARK_MODES):
             command_list.append(
                 "java -cp {jar} ai.chronon.spark.Driver {subcommand} {args}".format(

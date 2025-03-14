@@ -17,8 +17,8 @@ Basic tests for namespace and breaking changes in run.py
 #     limitations under the License.
 
 import argparse
-import json
 import os
+import tempfile
 import time
 
 import pytest
@@ -291,6 +291,24 @@ def test_render_info(repo, parser, test_conf_location, monkeypatch):
     runner.run()
 
     assert run.RENDER_INFO_DEFAULT_SCRIPT in actual_cmd
+
+
+def test_export_lineage(repo, parser):
+    with tempfile.TemporaryDirectory() as temp_dir:
+        run.set_defaults(parser)
+        args, unknown_args = parser.parse_known_args(
+            args=["--mode", "lineage-export", "--repo", repo, "--output-root-path", temp_dir]
+        )
+
+        args.args = unknown_args
+        runner = run.Runner(args, "some.jar")
+        runner.run()
+
+        # verify files dumped
+        assert os.path.exists(os.path.join(temp_dir, "lineages.json"))
+        assert os.path.exists(os.path.join(temp_dir, "features.json"))
+        assert os.path.exists(os.path.join(temp_dir, "tables.json"))
+        assert os.path.exists(os.path.join(temp_dir, "configs.json"))
 
 
 def test_split_date_range():
