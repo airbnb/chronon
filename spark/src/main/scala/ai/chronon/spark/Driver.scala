@@ -344,8 +344,8 @@ object Driver {
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       override def subcommandName() =
         if (selectedJoinParts.isDefined) {
-          val parts = selectedJoinParts().mkString("_")
-          s"join_${joinConf.metaData.name}_${parts}"
+          val parts = selectedJoinParts().mkString(",")
+          s"join_${joinConf.metaData.name}_jp_${parts}"
         } else {
           s"join_${joinConf.metaData.name}"
         }
