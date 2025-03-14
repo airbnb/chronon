@@ -398,7 +398,7 @@ object Driver {
         with LocalExportTableAbility
         with ResultValidationAbility {
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
-      override def subcommandName() = s"join_left_${joinConf.metaData.name}"
+      override def subcommandName() = s"join_${joinConf.metaData.name}_left"
     }
 
     def run(args: Args): Unit = {
@@ -422,7 +422,7 @@ object Driver {
         with LocalExportTableAbility
         with ResultValidationAbility {
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
-      override def subcommandName() = s"join_final_${joinConf.metaData.name}"
+      override def subcommandName() = s"join_${joinConf.metaData.name}_final"
     }
 
     def run(args: Args): Unit = {
