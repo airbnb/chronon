@@ -95,7 +95,7 @@ Breakdown of the parameters
 - `label_part_group_by` defines a label aggregation that is a 7-window SUM over the source table
 - `left_start_offset` and `left_end_offset` is both set to 7. This means that for each label value on ds_label, it will be joined **back** to left rows on **ds_label - 7**.
 
-Essentially, this achieves a "7-day" label landing scheme, where for each inference event, labels landed in the next 7 day is being aggregated and attributed back to the inference event.
+Essentially, this achieves a "7-day" label landing scheme, where for each inference event, labels landed in the next 7 day are being aggregated and attributed back to the inference event.
 
 ```python
 
@@ -169,7 +169,7 @@ Examples:
 
 Schema is same as `my_team_my_join_v1_labeled` but with a different set of data:
 
-If a particular date do have multiple label versions like 2023-01-24, 2023-02-01, 2023-02-08: 
+If a particular date has multiple label versions like 2023-01-24, 2023-02-01, 2023-02-08: 
 - Only the latest label from 2023-02-08 would show up in `my_team_my_join_v1_labeled_latest`
 - Instead, all three label would show up in `my_team_my_join_v1_labeled` table
 
