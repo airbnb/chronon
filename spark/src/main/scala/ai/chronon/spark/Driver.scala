@@ -342,7 +342,12 @@ object Driver {
           default = Some(false),
           descr = "Whether or not to use the cached bootstrap table as the source - used in parallelized join flow.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
-      override def subcommandName() = s"join_${joinConf.metaData.name}"
+      override def subcommandName() = if (selectedJoinParts.isDefined) {
+        val parts = selectedJoinParts().mkString("_")
+        s"join_${joinConf.metaData.name}_${parts}"
+      } else {
+        s"join_${joinConf.metaData.name}"
+      }
     }
 
     def run(args: Args): Unit = {
