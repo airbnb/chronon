@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import typing
+from collections import defaultdict
 from functools import reduce
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -342,17 +343,24 @@ class LineageParser:
         :return: The built SQLGlot SELECT expression representing the left join.
         """
         left_table_columns = [value for values in get_pre_derived_join_features(join).values() for value in values]
+        left_table_keys = []
         if self.check_source_select_non_empty(join.left):
-            left_table_columns.extend(get_pre_derived_source_keys(join.left))
+            left_table_keys = get_pre_derived_source_keys(join.left)
+            left_table_columns.extend(left_table_keys)
 
         join_table = self.object_table_name(join)
         join_table_alias = sanitize(join.metaData.name)
         bootstrap_table = f"{join_table}_bootstrap"
 
         left_table_columns.sort()
-        sql = exp.Select(expressions=[exp.Column(this=column) for column in left_table_columns]).from_(
-            f"{bootstrap_table} AS {join_table_alias}"
-        )
+        expressions = []
+        for column in left_table_columns:
+            if column in left_table_keys:
+                expressions.append(exp.Column(this=f"{join_table_alias}.{column}"))
+            else:
+                expressions.append(exp.Column(this=f"{column}"))
+
+        sql = exp.Select(expressions=expressions).from_(f"{bootstrap_table} AS {join_table_alias}")
         for jp in join.joinParts:
             gb = jp.groupBy
             gb_name = sanitize(gb.metaData.name)
@@ -618,21 +626,17 @@ class LineageParser:
                 output_table = f"{self.object_table_name(gb)}_upload"
 
                 # store table
-                self.metadata.store_table(
-                    config_name,
-                    output_table,
-                    TableType.GROUP_BY_UPLOAD,
-                    set(f"key_json./{key_column}" for key_column in key_columns),
-                )
+                self.metadata.store_table(config_name, output_table, TableType.GROUP_BY_UPLOAD, {"key_json"})
 
-                # store lineage
-                lineages = build_lineage(output_table, sql, sources)
                 # Put all key columns into the "key_json" column, and all values into the "value_json" column.
-                lineages = {
-                    upload_column_json(output_column, key_columns): lineage
-                    for output_column, lineage in lineages.items()
-                }
-                self.metadata.store_lineage(lineages, output_table)
+                lineages = build_lineage(output_table, sql, sources)
+                updated_lineages = defaultdict(set)
+                for (output_table, output_column), lineage in lineages.items():
+                    if output_column in key_columns:
+                        updated_lineages[(output_table, "key_json")].update(lineage)
+                    else:
+                        updated_lineages[(output_table, "value_json")].update(lineage)
+                self.metadata.store_lineage(updated_lineages, output_table)
 
             # track feature lineage to the group by backfill table if it is defined
             if gb.backfillStartDate:
@@ -650,23 +654,24 @@ class LineageParser:
                 self.metadata.store_feature(gb.metaData.name, feature, output_table)
 
 
-def _get_col_node_name(node: Node, parent_node: Node) -> str:
+def _get_col_node_name(node: Node, parent_node: Node) -> Tuple[str, str]:
     """
     Get the fully qualified column name from a SQLGlot Node.
 
     :param node: A SQLGlot Node object representing a column.
     :param node: A SQLGlot Node object representing the parent node.
-    :return: The fully qualified column name.
+    :return: The tuple of table name and column name.
     """
     # Use parent.expression if it is a complex type
     if isinstance(parent_node.expression.this, exp.Dot):
-        return parent_node.expression.this.sql(pretty=False, identify=False)
+        full_name = parent_node.expression.this.sql(pretty=False, identify=False)
+        return full_name.split(".")[0], ".".join(full_name.split(".")[1:])
     else:
         column_name = node.name.split(".")[-1]
         # Strip table alias from table expression if present.
         table_exp: exp.Expression = node.expression.copy()
         table_exp.args["alias"] = None
-        return f"{table_exp.sql(pretty=False, identify=False)}.{column_name}".replace('"', "")
+        return table_exp.sql(pretty=False, identify=False), column_name.replace('"', "")
 
 
 def get_transform(expression: Any) -> Optional[str]:
@@ -700,7 +705,7 @@ def append_transform(transforms: List[str], transform: str) -> List[str]:
 
 def build_lineage(
     output_table: str, sql: str, sources: Dict[str, str] = None, schema: Dict[str, str] = None
-) -> Dict[str, Set[Tuple[str, Tuple[str]]]]:
+) -> Dict[Tuple[str, str], Set[Tuple[Tuple[str, str], Tuple[str]]]]:
     """
     Build the lineage mapping from the SQL query and its source queries.
 
@@ -741,16 +746,5 @@ def build_lineage(
                     input_columns.add((_get_col_node_name(child, parent), tuple(transforms)))
                 child_transform = get_transform(child.expression)
                 queue.append((child, append_transform(transforms, child_transform)))
-        parsed_lineages[f"{output_table}.{output_column}"] = input_columns
+        parsed_lineages[(output_table, output_column)] = input_columns
     return parsed_lineages
-
-
-def upload_column_json(output_column: str, key_columns: Set[str]) -> str:
-    columns = output_column.rsplit(".", 1)
-    if len(columns) == 2:
-        if columns[-1] in key_columns:
-            columns[-1] = f"key_json./{columns[-1]}"
-        else:
-            columns[-1] = f"value_json./{columns[-1]}"
-
-    return ".".join(columns)
