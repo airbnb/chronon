@@ -83,28 +83,15 @@ abstract class JoinBase(joinConf: api.Join,
     }
     val keys = partLeftKeys ++ additionalKeys
 
-    // apply prefix to value columns
-    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
-                                                                     tableUtils.partitionColumn,
-                                                                     Constants.TimePartitionColumn)
-    val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    val prefixedRightDf = rightDf.prefixColumnNames(joinPart.fullPrefix, valueColumns)
-
-    // apply key-renaming to key columns
-    val newColumns = prefixedRightDf.columns.map { column =>
-      if (joinPart.rightToLeft.contains(column)) {
-        col(column).as(joinPart.rightToLeft(column))
-      } else {
-        col(column)
-      }
-    }
-    val keyRenamedRightDf = prefixedRightDf.select(newColumns: _*)
+    val renamedRightDf = rightDf.renameRightColumnsForJoin(
+      joinPart,
+      Set(Constants.TimeColumn, tableUtils.partitionColumn, Constants.TimePartitionColumn))
 
     // adjust join keys
     val joinableRightDf = if (additionalKeys.contains(Constants.TimePartitionColumn)) {
       // increment one day to align with left side ts_ds
       // because one day was decremented from the partition range for snapshot accuracy
-      keyRenamedRightDf
+      renamedRightDf
         .withColumn(
           Constants.TimePartitionColumn,
           date_format(date_add(to_date(col(tableUtils.partitionColumn), tableUtils.partitionSpec.format), 1),
@@ -112,7 +99,7 @@ abstract class JoinBase(joinConf: api.Join,
         )
         .drop(tableUtils.partitionColumn)
     } else {
-      keyRenamedRightDf
+      renamedRightDf
     }
 
     logger.info(s"""
