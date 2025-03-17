@@ -103,9 +103,9 @@ class TestParseJoin(unittest.TestCase):
         compare_lineages(
             self,
             {
-                ("join_event_table.ts", "test_db.test_join_bootstrap.ts", ("TryCast",)),
-                ("join_event_table.event", "test_db.test_join_bootstrap.event_id", ()),
-                ("join_event_table.subject", "test_db.test_join_bootstrap.subject", ()),
+                (("join_event_table", "ts"), ("test_db.test_join_bootstrap", "ts"), ("TryCast",)),
+                (("join_event_table", "event"), ("test_db.test_join_bootstrap", "event_id"), ()),
+                (("join_event_table", "subject"), ("test_db.test_join_bootstrap", "subject"), ()),
             },
             lineages,
         )
@@ -135,15 +135,19 @@ class TestParseJoin(unittest.TestCase):
         compare_lineages(
             self,
             {
-                ("gb_table.event", "test_db.test_join_test_group_by.event_id_sum_plus_one", ("Add", "AGG_SUM")),
                 (
-                    "gb_table.event",
-                    "test_db.test_join_test_group_by.event_id_approx_percentile",
+                    ("gb_table", "event"),
+                    ("test_db.test_join_test_group_by", "event_id_sum_plus_one"),
+                    ("Add", "AGG_SUM"),
+                ),
+                (
+                    ("gb_table", "event"),
+                    ("test_db.test_join_test_group_by", "event_id_approx_percentile"),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
-                ("gb_table.subject", "test_db.test_join_test_group_by.subject", ()),
-                ("gb_table.event", "test_db.test_join_test_group_by.event_id_sum", ("AGG_SUM",)),
-                ("gb_table.event", "test_db.test_join_test_group_by.event_id_last_renamed", ("AGG_LAST",)),
+                (("gb_table", "subject"), ("test_db.test_join_test_group_by", "subject"), ()),
+                (("gb_table", "event"), ("test_db.test_join_test_group_by", "event_id_sum"), ("AGG_SUM",)),
+                (("gb_table", "event"), ("test_db.test_join_test_group_by", "event_id_last_renamed"), ("AGG_LAST",)),
             },
             lineages,
         )
@@ -179,39 +183,39 @@ class TestParseJoin(unittest.TestCase):
             self,
             {
                 (
-                    "test_db.test_join_test_group_by.event_id_sum",
-                    "test_db.test_join.test_group_by_event_id_sum",
+                    ("test_db.test_join_test_group_by", "event_id_sum"),
+                    ("test_db.test_join", "test_group_by_event_id_sum"),
                     (),
                 ),
                 (
-                    "test_db.test_join_test_group_by.cnt_count",
-                    "test_db.test_join.test_group_by_cnt_count",
+                    ("test_db.test_join_test_group_by", "cnt_count"),
+                    ("test_db.test_join", "test_group_by_cnt_count"),
                     (),
                 ),
                 (
-                    "test_db.test_join_bootstrap.event_id",
-                    "test_db.test_join.event_id",
+                    ("test_db.test_join_bootstrap", "event_id"),
+                    ("test_db.test_join", "event_id"),
                     (),
                 ),
-                ("test_db.test_join_bootstrap.ts", "test_db.test_join.ts", ()),
+                (("test_db.test_join_bootstrap", "ts"), ("test_db.test_join", "ts"), ()),
                 (
-                    "test_db.test_join_test_group_by.event_id_approx_percentile",
-                    "test_db.test_join.test_group_by_event_id_approx_percentile",
-                    (),
-                ),
-                (
-                    "test_db.test_join_test_group_by.subject",
-                    "test_db.test_join.subject",
+                    ("test_db.test_join_test_group_by", "event_id_approx_percentile"),
+                    ("test_db.test_join", "test_group_by_event_id_approx_percentile"),
                     (),
                 ),
                 (
-                    "test_db.test_join_test_group_by.event_id_last_renamed",
-                    "test_db.test_join.test_group_by_event_id_last_renamed",
+                    ("test_db.test_join_bootstrap", "subject"),
+                    ("test_db.test_join", "subject"),
                     (),
                 ),
                 (
-                    "test_db.test_join_test_group_by.event_id_sum_plus_one",
-                    "test_db.test_join.test_group_by_event_id_sum_plus_one",
+                    ("test_db.test_join_test_group_by", "event_id_last_renamed"),
+                    ("test_db.test_join", "test_group_by_event_id_last_renamed"),
+                    (),
+                ),
+                (
+                    ("test_db.test_join_test_group_by", "event_id_sum_plus_one"),
+                    ("test_db.test_join", "test_group_by_event_id_sum_plus_one"),
                     (),
                 ),
             },

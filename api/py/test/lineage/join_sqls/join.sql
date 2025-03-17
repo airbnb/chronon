@@ -1,12 +1,12 @@
 SELECT
-  event_id,
-  subject,
+  test_join.event_id,
+  test_join.subject,
   test_group_by_cnt_count,
   test_group_by_event_id_approx_percentile,
   test_group_by_event_id_last_renamed,
   test_group_by_event_id_sum,
   test_group_by_event_id_sum_plus_one,
-  ts
+  test_join.ts
 FROM test_db.test_join_bootstrap AS test_join
 LEFT JOIN (
   SELECT

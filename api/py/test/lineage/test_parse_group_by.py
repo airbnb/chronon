@@ -18,7 +18,7 @@ import unittest
 from ai.chronon import group_by
 from ai.chronon.api import ttypes
 from ai.chronon.group_by import Accuracy, Derivation
-from ai.chronon.lineage.lineage_metadata import ColumnTransform, TableType
+from ai.chronon.lineage.lineage_metadata import TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
 from helper import compare_lineages
 
@@ -130,43 +130,43 @@ class TestParseGroupBy(unittest.TestCase):
             self,
             {
                 (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source.event_id_approx_percentile",
+                    ("source.gb_table1", "event"),
+                    ("test_db.test_group_by_multiple_source", "event_id_approx_percentile"),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source.event_id_sum",
+                    ("source.gb_table1", "event"),
+                    ("test_db.test_group_by_multiple_source", "event_id_sum"),
                     ("AGG_SUM",),
                 ),
                 (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source.event_id_last",
+                    ("source.gb_table", "event"),
+                    ("test_db.test_group_by_multiple_source", "event_id_last"),
                     ("AGG_LAST",),
                 ),
                 (
-                    "source.gb_table1.subject",
-                    "test_db.test_group_by_multiple_source.subject",
+                    ("source.gb_table1", "subject"),
+                    ("test_db.test_group_by_multiple_source", "subject"),
                     (),
                 ),
                 (
-                    "source.gb_table.subject",
-                    "test_db.test_group_by_multiple_source.subject",
+                    ("source.gb_table", "subject"),
+                    ("test_db.test_group_by_multiple_source", "subject"),
                     (),
                 ),
                 (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source.event_id_approx_percentile",
+                    ("source.gb_table", "event"),
+                    ("test_db.test_group_by_multiple_source", "event_id_approx_percentile"),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source.event_id_sum",
+                    ("source.gb_table", "event"),
+                    ("test_db.test_group_by_multiple_source", "event_id_sum"),
                     ("AGG_SUM",),
                 ),
                 (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source.event_id_last",
+                    ("source.gb_table1", "event"),
+                    ("test_db.test_group_by_multiple_source", "event_id_last"),
                     ("AGG_LAST",),
                 ),
             },
@@ -196,25 +196,30 @@ class TestParseGroupBy(unittest.TestCase):
             parser.metadata.tables[backfill_table_name].columns,
         )
         lineages = parser.metadata.filter_lineages(output_table=backfill_table_name)
-        self.compare_lineages(
+        compare_lineages(
+            self,
             {
                 (
-                    "source.gb_table.subject",
-                    "test_db.test_join_jp_test_group_by.subject",
+                    ("source.gb_table", "subject"),
+                    ("test_db.test_join_jp_test_group_by", "subject"),
                     (),
                 ),
                 (
-                    "source.gb_table.event",
-                    "test_db.test_join_jp_test_group_by.event_id_approx_percentile",
+                    ("source.gb_table", "event"),
+                    ("test_db.test_join_jp_test_group_by", "event_id_approx_percentile"),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
-                    "source.gb_table.event",
-                    "test_db.test_join_jp_test_group_by.event_id_sum_plus_one",
+                    ("source.gb_table", "event"),
+                    ("test_db.test_join_jp_test_group_by", "event_id_sum_plus_one"),
                     ("Add", "AGG_SUM"),
                 ),
-                ("source.gb_table.event", "test_db.test_join_jp_test_group_by.event_id_last_renamed", ("AGG_LAST",)),
-                ("source.gb_table.event", "test_db.test_join_jp_test_group_by.event_id_sum", ("AGG_SUM",)),
+                (
+                    ("source.gb_table", "event"),
+                    ("test_db.test_join_jp_test_group_by", "event_id_last_renamed"),
+                    ("AGG_LAST",),
+                ),
+                (("source.gb_table", "event"), ("test_db.test_join_jp_test_group_by", "event_id_sum"), ("AGG_SUM",)),
             },
             lineages,
         )
@@ -229,58 +234,56 @@ class TestParseGroupBy(unittest.TestCase):
             TableType.GROUP_BY_UPLOAD,
             parser.metadata.tables[upload_table_name].table_type,
         )
-        self.assertEqual({"key_json./subject"}, parser.metadata.tables[upload_table_name].key_columns)
+        self.assertEqual({"key_json"}, parser.metadata.tables[upload_table_name].key_columns)
         self.assertEqual(
             {
-                "key_json./subject",
-                "value_json./cnt_count",
-                "value_json./event_id_approx_percentile",
-                "value_json./event_id_last",
-                "value_json./event_id_sum",
+                "key_json",
+                "value_json",
             },
             parser.metadata.tables[upload_table_name].columns,
         )
         lineages = parser.metadata.filter_lineages(output_table=upload_table_name)
-        self.compare_lineages(
+        compare_lineages(
+            self,
             {
                 (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_last",
+                    ("source.gb_table1", "event"),
+                    ("test_db.test_group_by_multiple_source_upload", "value_json"),
                     ("AGG_LAST",),
                 ),
                 (
-                    "source.gb_table.subject",
-                    "test_db.test_group_by_multiple_source_upload.key_json./subject",
+                    ("source.gb_table", "subject"),
+                    ("test_db.test_group_by_multiple_source_upload", "key_json"),
                     (),
                 ),
                 (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_approx_percentile",
+                    ("source.gb_table1", "event"),
+                    ("test_db.test_group_by_multiple_source_upload", "value_json"),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_sum",
+                    ("source.gb_table", "event"),
+                    ("test_db.test_group_by_multiple_source_upload", "value_json"),
                     ("AGG_SUM",),
                 ),
                 (
-                    "source.gb_table1.subject",
-                    "test_db.test_group_by_multiple_source_upload.key_json./subject",
+                    ("source.gb_table1", "subject"),
+                    ("test_db.test_group_by_multiple_source_upload", "key_json"),
                     (),
                 ),
                 (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_last",
+                    ("source.gb_table", "event"),
+                    ("test_db.test_group_by_multiple_source_upload", "value_json"),
                     ("AGG_LAST",),
                 ),
                 (
-                    "source.gb_table.event",
-                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_approx_percentile",
+                    ("source.gb_table", "event"),
+                    ("test_db.test_group_by_multiple_source_upload", "value_json"),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
-                    "source.gb_table1.event",
-                    "test_db.test_group_by_multiple_source_upload.value_json./event_id_sum",
+                    ("source.gb_table1", "event"),
+                    ("test_db.test_group_by_multiple_source_upload", "value_json"),
                     ("AGG_SUM",),
                 ),
             },
@@ -329,12 +332,3 @@ class TestParseGroupBy(unittest.TestCase):
         with open(expected_sql_path, "r") as infile:
             expected_sql = infile.read()
             self.assertEqual(expected_sql, actual_sql)
-
-    def compare_lineages(self, expected, actual):
-        expected = sorted(expected)
-        actual = sorted(actual, key=lambda t: (t.input_column, t.output_column, t.transforms))
-        self.assertEqual(len(actual), len(expected))
-        for lineage_expected, lineage_actual in zip(expected, actual):
-            self.assertEqual(
-                ColumnTransform(lineage_expected[0], lineage_expected[1], lineage_expected[2]), lineage_actual
-            )

@@ -33,7 +33,7 @@ class TestParseLineage(unittest.TestCase):
         # Can't parse lineage since there is no specific column.
         lineage = build_lineage("output", "SELECT COUNT(*) AS a FROM input")
         self.assertEqual(
-            {"output.a": set()},
+            {("output", "a"): set()},
             lineage,
         )
 
@@ -53,13 +53,13 @@ class TestParseLineage(unittest.TestCase):
         lineage = build_lineage(output_table, sql)
         self.assertEqual(
             {
-                "output_table.a": {("input_table.f", ())},
-                "output_table.b": {
-                    ("input_table.e", ("Add",)),
-                    ("input_table.f", ("Add",)),
+                ("output_table", "a"): {(("input_table", "f"), ())},
+                ("output_table", "b"): {
+                    (("input_table", "e"), ("Add",)),
+                    (("input_table", "f"), ("Add",)),
                 },
-                "output_table.c": {("input_table.g", ("AGG",))},
-                "output_table.d": {("input_table.h", ("Sum",))},
+                ("output_table", "c"): {(("input_table", "g"), ("AGG",))},
+                ("output_table", "d"): {(("input_table", "h"), ("Sum",))},
             },
             lineage,
         )
@@ -89,9 +89,9 @@ class TestParseLineage(unittest.TestCase):
         lineage = build_lineage(output_table, sql)
         self.assertEqual(
             {
-                "output_table.city": {("input_table.address.city", ("Dot",))},
-                "output_table.country": {("input_table.country", ())},
-                "output_table.zipcode": {("input_table.address.zipcode", ("Dot",))},
+                ("output_table", "city"): {(("input_table", "address.city"), ("Dot",))},
+                ("output_table", "country"): {(("input_table", "country"), ())},
+                ("output_table", "zipcode"): {(("input_table", "address.zipcode"), ("Dot",))},
             },
             lineage,
         )
@@ -110,9 +110,9 @@ class TestParseLineage(unittest.TestCase):
         lineage = build_lineage(output_table, sql)
         self.assertEqual(
             {
-                "output_table.a": {("input_table.*", ())},
-                "output_table.b": {("input_table.*", ())},
-                "output_table.c": {("input_table.*", ())},
+                ("output_table", "a"): {(("input_table", "*"), ())},
+                ("output_table", "b"): {(("input_table", "*"), ())},
+                ("output_table", "c"): {(("input_table", "*"), ())},
             },
             lineage,
         )
@@ -135,9 +135,9 @@ class TestParseLineage(unittest.TestCase):
         )
         self.assertEqual(
             {
-                "output_table.a": {("input_table.a", ())},
-                "output_table.b": {("input_table.b", ())},
-                "output_table.c": {("input_table.c", ())},
+                ("output_table", "a"): {(("input_table", "a"), ())},
+                ("output_table", "b"): {(("input_table", "b"), ())},
+                ("output_table", "c"): {(("input_table", "c"), ())},
             },
             lineage,
         )
