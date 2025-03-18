@@ -70,7 +70,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           val inputDf = tableUtils.sql(s"""
                |SELECT *
                |FROM $inputTable
-               |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
+               |WHERE ${tableUtils.partitionColumn} BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
           val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
           val aggregator = StatsGenerator.buildAggregator(

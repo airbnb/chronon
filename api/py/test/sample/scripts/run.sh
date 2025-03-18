@@ -44,7 +44,7 @@ run.py --mode backfill --conf production/joins/quickstart/training_set.v2
 # Run stats on the features
 run.py --mode stats-summary --conf production/joins/quickstart/training_set.v2
 # Upload to KV Store
-spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_training_set_v2_logged_daily_stats_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
+spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_training_set_v2_daily_stats_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
 # Fetch from KV Store
 run.py --mode fetch --type join-stats --name quickstart/training_set.v2 -k '{"startTs":"0","endTs":"180000000000000"}'
 
@@ -52,7 +52,7 @@ printf "\n => LOGSTATS \n\n"
 # Run Log stats
 run.py --mode log-summary --conf production/joins/quickstart/training_set.v2
 # Upload to KV Store
-spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_training_set_v2_daily_stats_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
+spark-submit --class ai.chronon.quickstart.online.Spark2MongoLoader --master local[*] /srv/onlineImpl/target/scala-2.12/mongo-online-impl-assembly-0.1.0-SNAPSHOT.jar default.quickstart_training_set_v2_logged_daily_stats_upload mongodb://admin:admin@mongodb:27017/?authSource=admin
 
 printf"\n => OOC \n\n"
 # Compute consistency metrics tables
