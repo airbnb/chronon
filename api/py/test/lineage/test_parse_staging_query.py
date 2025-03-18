@@ -62,13 +62,13 @@ class TestParseStagingQuery(unittest.TestCase):
             self,
             {
                 (
-                    "staging_query_input.raw_subject",
-                    "test.staging_table.raw_subject",
+                    ("staging_query_input", "raw_subject"),
+                    ("test.staging_table", "raw_subject"),
                     (),
                 ),
                 (
-                    "staging_query_input.raw_event_id",
-                    "test.staging_table.raw_event_id",
+                    ("staging_query_input", "raw_event_id"),
+                    ("test.staging_table", "raw_event_id"),
                     (),
                 ),
             },
@@ -103,13 +103,13 @@ class TestParseStagingQuery(unittest.TestCase):
             self,
             {
                 (
-                    "staging_query_input.raw_subject",
-                    "test.staging_table.raw_subject",
+                    ("staging_query_input", "raw_subject"),
+                    ("test.staging_table", "raw_subject"),
                     (),
                 ),
                 (
-                    "staging_query_input.raw_event_id",
-                    "test.staging_table.raw_event_id",
+                    ("staging_query_input", "raw_event_id"),
+                    ("test.staging_table", "raw_event_id"),
                     (),
                 ),
             },
