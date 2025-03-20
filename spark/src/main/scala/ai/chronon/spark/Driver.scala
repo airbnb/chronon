@@ -196,9 +196,8 @@ object Driver {
 
     val disableKryoSerializer: ScallopOption[Boolean] =
       opt[Boolean](required = false,
-        default = Some(false),
-        descr = "Disable Kryo to use JavaSerializer by default instead.")
-
+                   default = Some(false),
+                   descr = "Disable Kryo to use JavaSerializer by default instead.")
 
     lazy val sparkSession: SparkSession = buildSparkSession()
 
@@ -225,8 +224,7 @@ object Driver {
                                                      local = true,
                                                      localWarehouseLocation.toOption,
                                                      additionalConfig = extraDeltaConfigs,
-                                                     enforceKryoSerializer = !disableKryoSerializer.apply()
-        )
+                                                     enforceKryoSerializer = !disableKryoSerializer.apply())
         localTableMapping.foreach {
           case (table, filePath) =>
             val file = new File(filePath)
@@ -237,20 +235,22 @@ object Driver {
         val dir = new File(localDataPath())
         assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
         val localSession =
-          SparkSessionBuilder.build(subcommandName(),
-                                    local = true,
-                                    localWarehouseLocation = localWarehouseLocation.toOption,
-                                    additionalConfig = extraDeltaConfigs,
-                                    enforceKryoSerializer = !disableKryoSerializer.apply()
+          SparkSessionBuilder.build(
+            subcommandName(),
+            local = true,
+            localWarehouseLocation = localWarehouseLocation.toOption,
+            additionalConfig = extraDeltaConfigs,
+            enforceKryoSerializer = !disableKryoSerializer.apply()
           )
         LocalDataLoader.loadDataRecursively(dir, localSession)
         localSession
       } else {
         // We use the KryoSerializer for group bys and joins since we serialize the IRs.
         // But since staging query is fairly freeform, it's better to stick to the java serializer.
-        SparkSessionBuilder.build(subcommandName(),
-                                  enforceKryoSerializer = !subcommandName().contains("staging_query") && !disableKryoSerializer.apply(),
-                                  additionalConfig = extraDeltaConfigs)
+        SparkSessionBuilder.build(
+          subcommandName(),
+          enforceKryoSerializer = !subcommandName().contains("staging_query") && !disableKryoSerializer.apply(),
+          additionalConfig = extraDeltaConfigs)
       }
     }
 
