@@ -18,7 +18,7 @@ import unittest
 from ai.chronon import group_by
 from ai.chronon.api import ttypes
 from ai.chronon.group_by import Accuracy, Derivation
-from ai.chronon.lineage.lineage_metadata import TableType
+from ai.chronon.lineage.lineage_metadata import ConfigType, TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
 from helper import compare_lineages
 
@@ -95,7 +95,6 @@ class TestParseGroupBy(unittest.TestCase):
             {
                 "test_group_by.cnt_count",
                 "test_group_by.event_id_approx_percentile",
-                "test_group_by.event_id_last",
                 "test_group_by.event_id_last_renamed",
                 "test_group_by.event_id_sum",
                 "test_group_by.event_id_sum_plus_one",
@@ -131,7 +130,10 @@ class TestParseGroupBy(unittest.TestCase):
             {
                 (
                     ("source.gb_table1", "event"),
-                    ("test_db.test_group_by_multiple_source", "event_id_approx_percentile"),
+                    (
+                        "test_db.test_group_by_multiple_source",
+                        "event_id_approx_percentile",
+                    ),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
@@ -156,7 +158,10 @@ class TestParseGroupBy(unittest.TestCase):
                 ),
                 (
                     ("source.gb_table", "event"),
-                    ("test_db.test_group_by_multiple_source", "event_id_approx_percentile"),
+                    (
+                        "test_db.test_group_by_multiple_source",
+                        "event_id_approx_percentile",
+                    ),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
@@ -175,7 +180,11 @@ class TestParseGroupBy(unittest.TestCase):
 
     def test_join_part_table(self):
         parser = LineageParser()
-        parser.parse_group_by(self.gb, join_part_table="test_db.test_join_jp_test_group_by", join_config_name="")
+        parser.parse_group_by(
+            self.gb,
+            join_part_table="test_db.test_join_jp_test_group_by",
+            join_config_name="",
+        )
 
         backfill_table_name = "test_db.test_join_jp_test_group_by"
         self.assertTrue(backfill_table_name in parser.metadata.tables)
@@ -206,7 +215,10 @@ class TestParseGroupBy(unittest.TestCase):
                 ),
                 (
                     ("source.gb_table", "event"),
-                    ("test_db.test_join_jp_test_group_by", "event_id_approx_percentile"),
+                    (
+                        "test_db.test_join_jp_test_group_by",
+                        "event_id_approx_percentile",
+                    ),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
                 (
@@ -219,7 +231,11 @@ class TestParseGroupBy(unittest.TestCase):
                     ("test_db.test_join_jp_test_group_by", "event_id_last_renamed"),
                     ("AGG_LAST",),
                 ),
-                (("source.gb_table", "event"), ("test_db.test_join_jp_test_group_by", "event_id_sum"), ("AGG_SUM",)),
+                (
+                    ("source.gb_table", "event"),
+                    ("test_db.test_join_jp_test_group_by", "event_id_sum"),
+                    ("AGG_SUM",),
+                ),
             },
             lineages,
         )
@@ -303,6 +319,13 @@ class TestParseGroupBy(unittest.TestCase):
             set(parser.metadata.features.keys()),
         )
 
+        group_by_feature = parser.metadata.features["test_group_by_multiple_source.event_id_last"]
+        self.assertEqual("test_group_by_multiple_source", group_by_feature.config_name)
+        self.assertEqual(ConfigType.GROUP_BY, group_by_feature.config_type)
+        self.assertEqual("test_db.test_group_by_multiple_source", group_by_feature.table_name)
+        self.assertEqual("event_id_last", group_by_feature.column_name)
+        self.assertEqual("test_group_by_multiple_source.event_id_last", group_by_feature.feature_name)
+
         # parse group by with derived features
         parser = LineageParser()
         parser.parse_group_by(self.gb)
@@ -310,7 +333,6 @@ class TestParseGroupBy(unittest.TestCase):
             {
                 "test_group_by.cnt_count",
                 "test_group_by.event_id_approx_percentile",
-                "test_group_by.event_id_last",
                 "test_group_by.event_id_last_renamed",
                 "test_group_by.event_id_sum",
                 "test_group_by.event_id_sum_plus_one",

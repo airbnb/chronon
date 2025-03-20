@@ -20,7 +20,7 @@ from ai.chronon.api import ttypes
 from ai.chronon.api import ttypes as api
 from ai.chronon.group_by import Derivation
 from ai.chronon.join import Join
-from ai.chronon.lineage.lineage_metadata import TableType
+from ai.chronon.lineage.lineage_metadata import ConfigType, TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
 from helper import compare_lineages
 
@@ -103,9 +103,21 @@ class TestParseJoin(unittest.TestCase):
         compare_lineages(
             self,
             {
-                (("join_event_table", "ts"), ("test_db.test_join_bootstrap", "ts"), ("TryCast",)),
-                (("join_event_table", "event"), ("test_db.test_join_bootstrap", "event_id"), ()),
-                (("join_event_table", "subject"), ("test_db.test_join_bootstrap", "subject"), ()),
+                (
+                    ("join_event_table", "ts"),
+                    ("test_db.test_join_bootstrap", "ts"),
+                    ("TryCast",),
+                ),
+                (
+                    ("join_event_table", "event"),
+                    ("test_db.test_join_bootstrap", "event_id"),
+                    (),
+                ),
+                (
+                    ("join_event_table", "subject"),
+                    ("test_db.test_join_bootstrap", "subject"),
+                    (),
+                ),
             },
             lineages,
         )
@@ -145,9 +157,21 @@ class TestParseJoin(unittest.TestCase):
                     ("test_db.test_join_test_group_by", "event_id_approx_percentile"),
                     ("AGG_APPROX_PERCENTILE",),
                 ),
-                (("gb_table", "subject"), ("test_db.test_join_test_group_by", "subject"), ()),
-                (("gb_table", "event"), ("test_db.test_join_test_group_by", "event_id_sum"), ("AGG_SUM",)),
-                (("gb_table", "event"), ("test_db.test_join_test_group_by", "event_id_last_renamed"), ("AGG_LAST",)),
+                (
+                    ("gb_table", "subject"),
+                    ("test_db.test_join_test_group_by", "subject"),
+                    (),
+                ),
+                (
+                    ("gb_table", "event"),
+                    ("test_db.test_join_test_group_by", "event_id_sum"),
+                    ("AGG_SUM",),
+                ),
+                (
+                    ("gb_table", "event"),
+                    ("test_db.test_join_test_group_by", "event_id_last_renamed"),
+                    ("AGG_LAST",),
+                ),
             },
             lineages,
         )
@@ -197,7 +221,11 @@ class TestParseJoin(unittest.TestCase):
                     ("test_db.test_join", "event_id"),
                     (),
                 ),
-                (("test_db.test_join_bootstrap", "ts"), ("test_db.test_join", "ts"), ()),
+                (
+                    ("test_db.test_join_bootstrap", "ts"),
+                    ("test_db.test_join", "ts"),
+                    (),
+                ),
                 (
                     ("test_db.test_join_test_group_by", "event_id_approx_percentile"),
                     ("test_db.test_join", "test_group_by_event_id_approx_percentile"),
@@ -227,21 +255,21 @@ class TestParseJoin(unittest.TestCase):
         parser.parse_join(self.join)
         self.assertEqual(
             {
-                "test_group_by.event_id_approx_percentile",
-                "test_join.test_group_by_event_id_approx_percentile",
-                "test_group_by.event_id_sum_plus_one",
-                "test_group_by.event_id_sum",
-                "test_group_by.cnt_count",
-                "test_join.test_group_by_event_id_sum_plus_one",
-                "test_group_by.event_id_last",
-                "test_join.test_group_by_event_id_sum",
-                "test_join.event_id_last_plus_one_join",
                 "test_join.test_group_by_cnt_count",
-                "test_group_by.event_id_last_renamed",
+                "test_join.event_id_last_plus_one_join",
                 "test_join.test_group_by_event_id_last_renamed",
+                "test_join.test_group_by_event_id_approx_percentile",
+                "test_join.test_group_by_event_id_sum_plus_one",
+                "test_join.test_group_by_event_id_sum",
             },
             set(parser.metadata.features.keys()),
         )
+        join_feature = parser.metadata.features["test_join.test_group_by_event_id_sum"]
+        self.assertEqual("test_join", join_feature.config_name)
+        self.assertEqual(ConfigType.JOIN, join_feature.config_type)
+        self.assertEqual("test_db.test_join", join_feature.table_name)
+        self.assertEqual("test_group_by_event_id_sum", join_feature.column_name)
+        self.assertEqual("test_join.test_group_by_event_id_sum", join_feature.feature_name)
 
     def test_build_join_sql(self):
         expected_sql_path = os.path.join(os.path.dirname(__file__), "join_sqls/join.sql")
