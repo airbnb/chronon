@@ -289,7 +289,9 @@ def set_runtime_env(args):
                         conf_json = json.load(conf_file)
                     environment["conf_env"] = conf_json.get("metaData").get("modeToEnvMap", {}).get(effective_mode, {})
                     # Load additional args used on backfill.
-                    if custom_json(conf_json) and effective_mode in ["backfill", "backfill-left", "backfill-final"]:
+                    if custom_json(conf_json) and effective_mode in {
+                      "backfill", "backfill-left", "backfill-final", "upload"
+                    }:
                         environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = " ".join(
                             custom_json(conf_json).get("additional_args", [])
                         )
