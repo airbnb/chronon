@@ -38,6 +38,7 @@ from ai.chronon.repo.validator import (
     get_pre_derived_join_features,
     get_pre_derived_join_internal_features,
     get_pre_derived_source_keys,
+    is_identifier,
 )
 from ai.chronon.utils import FeatureDisplayKeys, output_table_name, sanitize
 from sqlglot import expressions as exp
@@ -63,6 +64,7 @@ class LineageParser:
         self.team_conf: Optional[Dict[str, Any]] = None
         self.staging_queries: Dict[str, Any] = {}
         self.metadata: LineageMetaData = LineageMetaData()
+        self.parsed_staging_query_tables = set()
         self.schema_provider = schema_provider
 
     def parse_lineage(self, base_path: str, config_filter: Optional[Set[str]] = None) -> LineageMetaData:
@@ -79,7 +81,7 @@ class LineageParser:
             self.team_conf = json.load(team_infile)
 
         # Staging queries are lazily parsed when they are used.
-        self.parse_configs(self.handle_staging_query, "production/staging_queries", ttypes.StagingQuery, config_filter)
+        self.parse_configs(self.handle_staging_query, "production/staging_queries", ttypes.StagingQuery)
 
         # Parse all group bys and joins.
         self.parse_configs(self.parse_group_by, "production/group_bys", ttypes.GroupBy, config_filter)
@@ -478,6 +480,12 @@ class LineageParser:
             if "*" in derived_features:
                 derived_features.remove("*")
                 features.extend(derived_features)
+                # If it is a rename only derivation, then remove the original feature name
+                removed_features = [
+                    derivation.expression for derivation in join.derivations if is_identifier(derivation.expression)
+                ]
+                for removed_feature in removed_features:
+                    features.remove(removed_feature)
             else:
                 features = derived_features
 
@@ -487,11 +495,11 @@ class LineageParser:
 
         # store feature
         for feature in features:
-            self.metadata.store_feature(join.metaData.name, feature, output_table)
+            self.metadata.store_feature(join.metaData.name, ConfigType.JOIN, feature, output_table)
         # no column lineage for external features
         external_features = get_pre_derived_external_features(join)
         for feature in external_features:
-            self.metadata.store_feature(join.metaData.name, feature)
+            self.metadata.store_feature(join.metaData.name, ConfigType.JOIN, feature)
 
         # store table
         self.metadata.store_table(config_name, output_table, TableType.JOIN, set(source_keys))
@@ -530,7 +538,9 @@ class LineageParser:
 
         table_name = output_table_name(staging_query, full_name=True)
 
-        if table_name not in self.metadata.tables:
+        # if we have already parsed this staging query output table then no need to parse again
+        if table_name not in self.parsed_staging_query_tables:
+            self.parsed_staging_query_tables.add(table_name)
             parsed_lineages = build_lineage(table_name, staging_query.query, schema=schema)
             self.metadata.store_table(config_name, table_name, TableType.STAGING_QUERY)
             self.metadata.store_lineage(parsed_lineages, table_name)
@@ -554,7 +564,10 @@ class LineageParser:
         }
 
     def parse_group_by(
-        self, gb: Any, join_part_table: Optional[str] = None, join_config_name: Optional[str] = None
+        self,
+        gb: Any,
+        join_part_table: Optional[str] = None,
+        join_config_name: Optional[str] = None,
     ) -> None:
         """
         Parse a group-by configuration and build lineage.
@@ -598,6 +611,12 @@ class LineageParser:
             if "*" in derived_features:
                 derived_features.remove("*")
                 features.extend(derived_features)
+                # If it is a rename only derivation, then remove the original feature name
+                removed_features = [
+                    derivation.expression for derivation in gb.derivations if is_identifier(derivation.expression)
+                ]
+                for removed_feature in removed_features:
+                    features.remove(removed_feature)
             else:
                 features = derived_features
 
@@ -609,10 +628,6 @@ class LineageParser:
         # If gb.backfill_start_date is defined, then it generates a group by backfill table.
         # If gb.online is True, then it generates an upload table.
         if join_part_table:
-            # store feature
-            for feature in features:
-                self.metadata.store_feature(gb.metaData.name, feature, join_part_table)
-
             # store table
             config_name = join_config_name or config_name
             self.metadata.store_table(config_name, join_part_table, TableType.JOIN_PART, set(key_columns))
@@ -643,7 +658,12 @@ class LineageParser:
                 output_table = self.object_table_name(gb)
 
                 # store table
-                self.metadata.store_table(config_name, output_table, TableType.GROUP_BY_BACKFILL, set(key_columns))
+                self.metadata.store_table(
+                    config_name,
+                    output_table,
+                    TableType.GROUP_BY_BACKFILL,
+                    set(key_columns),
+                )
 
                 # store lineage
                 parsed_lineages = build_lineage(output_table, sql, sources)
@@ -651,7 +671,7 @@ class LineageParser:
 
             # store feature
             for feature in features:
-                self.metadata.store_feature(gb.metaData.name, feature, output_table)
+                self.metadata.store_feature(gb.metaData.name, ConfigType.GROUP_BY, feature, output_table)
 
 
 def _get_col_node_name(node: Node, parent_node: Node) -> Tuple[str, str]:
@@ -704,7 +724,10 @@ def append_transform(transforms: List[str], transform: str) -> List[str]:
 
 
 def build_lineage(
-    output_table: str, sql: str, sources: Dict[str, str] = None, schema: Dict[str, str] = None
+    output_table: str,
+    sql: str,
+    sources: Dict[str, str] = None,
+    schema: Dict[str, str] = None,
 ) -> Dict[Tuple[str, str], Set[Tuple[Tuple[str, str], Tuple[str]]]]:
     """
     Build the lineage mapping from the SQL query and its source queries.

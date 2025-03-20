@@ -41,11 +41,23 @@ class Table:
     columns: Set[str] = field(default_factory=set)
 
 
+class ConfigType(str, Enum):
+    """
+    Enum representing the various types of config.
+    """
+
+    GROUP_BY = "group_by"
+    JOIN = "join"
+    STAGING_QUERY = "staging_query"
+
+
 @dataclass(frozen=True)
 class Feature:
     config_name: str
+    config_type: ConfigType
     feature_name: str
-    column: Optional[str] = None
+    table_name: Optional[str] = None
+    column_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -55,16 +67,6 @@ class ColumnTransform:
     output_table: str
     output_column: str
     transforms: Tuple[str]
-
-
-class ConfigType(str, Enum):
-    """
-    Enum representing the various types of config.
-    """
-
-    GROUP_BY = "group_by"
-    JOIN = "join"
-    STAGING_QUERY = "staging_query"
 
 
 @dataclass
@@ -104,7 +106,13 @@ class LineageMetaData:
         # Add the column name to the table's set of columns.
         self.tables[table_name].columns.add(column_name)
 
-    def store_feature(self, config_name: str, feature_name: str, output_table: Optional[str] = None) -> None:
+    def store_feature(
+        self,
+        config_name: str,
+        config_type: ConfigType,
+        feature_name: str,
+        output_table: Optional[str] = None,
+    ) -> None:
         """
         Instance method to create and store a Feature.
 
@@ -112,21 +120,26 @@ class LineageMetaData:
         If an output table is provided, it constructs a fully qualified column name.
 
         :param config_name: Name of the config.
+        :param config_type: Type of the config - GroupBy or Join.
         :param feature_name: Name of the feature.
         :param output_table: Optional table name where the feature is stored.
         """
-        feature = f"{config_name}.{feature_name}"
+        feature_full_name = f"{config_name}.{feature_name}"
         if output_table:
-            # If an output table is provided, construct the full column name.
-            column = f"{output_table}.{feature}"
-            self.features[feature] = Feature(config_name, feature, column)
+            self.features[feature_full_name] = Feature(
+                config_name, config_type, feature_full_name, output_table, feature_name
+            )
         else:
-            self.features[feature] = Feature(config_name, feature)
+            self.features[feature_full_name] = Feature(config_name, config_type, feature_full_name)
 
-        self.configs[config_name].features[feature] = self.features[feature]
+        self.configs[config_name].features[feature_full_name] = self.features[feature_full_name]
 
     def store_table(
-        self, config_name: str, table_name: str, table_type: TableType, key_columns: Set[str] = None
+        self,
+        config_name: str,
+        table_name: str,
+        table_type: TableType,
+        key_columns: Set[str] = None,
     ) -> None:
         """
         Instance method to create and store a Table if it does not already exist.
@@ -149,7 +162,9 @@ class LineageMetaData:
         self.configs[config_name].tables[table_name] = self.tables[table_name]
 
     def store_lineage(
-        self, parsed_lineages: Dict[Tuple[str, str], Set[Tuple[Tuple[str, str], Tuple[str]]]], table_name: str
+        self,
+        parsed_lineages: Dict[Tuple[str, str], Set[Tuple[Tuple[str, str], Tuple[str]]]],
+        table_name: str,
     ) -> None:
         """
         Instance method to record lineage information by mapping input columns to output columns with operations.
@@ -163,7 +178,10 @@ class LineageMetaData:
         :param parsed_lineages: Dictionary mapping output columns to lists of tuples (input_column, operations).
         :param table_name: Table name to associate unparsed columns.
         """
-        for (output_table, output_column), input_column_transforms in parsed_lineages.items():
+        for (
+            output_table,
+            output_column,
+        ), input_column_transforms in parsed_lineages.items():
             # Store the output column in its table.
             self.store_column(output_table, output_column)
 
@@ -175,7 +193,15 @@ class LineageMetaData:
             # Process each input column along with its operations.
             for (input_table, input_column), transforms in input_column_transforms:
                 self.store_column(input_table, input_column)
-                self.lineages.add(ColumnTransform(input_table, input_column, output_table, output_column, transforms))
+                self.lineages.add(
+                    ColumnTransform(
+                        input_table,
+                        input_column,
+                        output_table,
+                        output_column,
+                        transforms,
+                    )
+                )
 
     def filter_lineages(
         self, input_table: Optional[str] = None, output_table: Optional[str] = None
