@@ -455,7 +455,13 @@ class LineageParser:
         bootstrap_sql = bootstrap_sql.sql(dialect="spark", pretty=True)
         sources["bootstrap_table"] = bootstrap_sql
         lineages = build_lineage(bootstrap_table, bootstrap_sql)
-        self.metadata.store_table(config_name, bootstrap_table, TableType.JOIN_BOOTSTRAP, set(source_keys))
+        self.metadata.store_table(
+            config_name,
+            bootstrap_table,
+            TableType.JOIN_BOOTSTRAP,
+            materialized=True,
+            key_columns=set(source_keys),
+        )
         self.metadata.store_lineage(lineages, output_table)
 
         for jp in join.joinParts:
@@ -502,7 +508,13 @@ class LineageParser:
             self.metadata.store_feature(join.metaData.name, ConfigType.JOIN, feature)
 
         # store table
-        self.metadata.store_table(config_name, output_table, TableType.JOIN, set(source_keys))
+        self.metadata.store_table(
+            config_name,
+            output_table,
+            TableType.JOIN,
+            materialized=True,
+            key_columns=set(source_keys),
+        )
 
         # store lineage
         parsed_lineages = build_lineage(output_table, sql, sources)
@@ -630,18 +642,29 @@ class LineageParser:
         if join_part_table:
             # store table
             config_name = join_config_name or config_name
-            self.metadata.store_table(config_name, join_part_table, TableType.JOIN_PART, set(key_columns))
+            self.metadata.store_table(
+                config_name,
+                join_part_table,
+                TableType.JOIN_PART,
+                materialized=True,
+                key_columns=set(key_columns),
+            )
 
             # store lineage
             parsed_lineages = build_lineage(join_part_table, sql, sources)
             self.metadata.store_lineage(parsed_lineages, join_part_table)
         else:
-            output_table = None
             if gb.metaData.online:
                 output_table = f"{self.object_table_name(gb)}_upload"
 
                 # store table
-                self.metadata.store_table(config_name, output_table, TableType.GROUP_BY_UPLOAD, {"key_json"})
+                self.metadata.store_table(
+                    config_name,
+                    output_table,
+                    TableType.GROUP_BY_UPLOAD,
+                    materialized=True,
+                    key_columns={"key_json"},
+                )
 
                 # Put all key columns into the "key_json" column, and all values into the "value_json" column.
                 lineages = build_lineage(output_table, sql, sources)
@@ -653,21 +676,21 @@ class LineageParser:
                         updated_lineages[(output_table, "value_json")].update(lineage)
                 self.metadata.store_lineage(updated_lineages, output_table)
 
-            # track feature lineage to the group by backfill table if it is defined
-            if gb.backfillStartDate:
-                output_table = self.object_table_name(gb)
+            # track feature lineage to the group_by backfill table
+            output_table = self.object_table_name(gb)
 
-                # store table
-                self.metadata.store_table(
-                    config_name,
-                    output_table,
-                    TableType.GROUP_BY_BACKFILL,
-                    set(key_columns),
-                )
+            # store table
+            self.metadata.store_table(
+                config_name,
+                output_table,
+                TableType.GROUP_BY_BACKFILL,
+                materialized=gb.backfillStartDate,
+                key_columns=set(key_columns),
+            )
 
-                # store lineage
-                parsed_lineages = build_lineage(output_table, sql, sources)
-                self.metadata.store_lineage(parsed_lineages, output_table)
+            # store lineage
+            parsed_lineages = build_lineage(output_table, sql, sources)
+            self.metadata.store_lineage(parsed_lineages, output_table)
 
             # store feature
             for feature in features:
