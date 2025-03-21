@@ -86,11 +86,14 @@ class TestParseGroupBy(unittest.TestCase):
             ),
         )
 
-    def test_non_materialized(self):
+    def test_non_materialized_table(self):
         parser = LineageParser()
         parser.parse_group_by(self.gb)
-        self.assertFalse(parser.metadata.lineages)
-        # only features are extracted, but no lineage
+        metadata = parser.metadata
+
+        backfill_table_name = "test_db.test_group_by"
+        self.assertTrue(backfill_table_name in metadata.tables)
+        self.assertFalse(metadata.tables[backfill_table_name].materialized)
         self.assertEqual(
             {
                 "test_group_by.cnt_count",
@@ -99,7 +102,49 @@ class TestParseGroupBy(unittest.TestCase):
                 "test_group_by.event_id_sum",
                 "test_group_by.event_id_sum_plus_one",
             },
-            set(parser.metadata.features.keys()),
+            set(metadata.features.keys()),
+        )
+        # even the table is not materialized, feature to column mapping is still stored
+        # this is used to get the feature to source table mapping
+        self.assertEqual(
+            "test_db.test_group_by",
+            metadata.features["test_group_by.event_id_sum"].table_name,
+        )
+        self.assertEqual("event_id_sum", metadata.features["test_group_by.event_id_sum"].column_name)
+        lineages = parser.metadata.filter_lineages(output_table="test_db.test_group_by")
+        compare_lineages(
+            self,
+            {
+                (
+                    ("source.gb_table", "subject"),
+                    ("test_db.test_group_by", "subject"),
+                    (),
+                ),
+                (
+                    ("source.gb_table", "event"),
+                    (
+                        "test_db.test_group_by",
+                        "event_id_approx_percentile",
+                    ),
+                    ("AGG_APPROX_PERCENTILE",),
+                ),
+                (
+                    ("source.gb_table", "event"),
+                    ("test_db.test_group_by", "event_id_sum_plus_one"),
+                    ("Add", "AGG_SUM"),
+                ),
+                (
+                    ("source.gb_table", "event"),
+                    ("test_db.test_group_by", "event_id_last_renamed"),
+                    ("AGG_LAST",),
+                ),
+                (
+                    ("source.gb_table", "event"),
+                    ("test_db.test_group_by", "event_id_sum"),
+                    ("AGG_SUM",),
+                ),
+            },
+            lineages,
         )
 
     def test_backfill_table(self):

@@ -37,6 +37,7 @@ class Table:
     config_name: str
     table_name: str
     table_type: TableType
+    materialized: bool
     key_columns: Set[str] = None
     columns: Set[str] = field(default_factory=set)
 
@@ -139,6 +140,7 @@ class LineageMetaData:
         config_name: str,
         table_name: str,
         table_type: TableType,
+        materialized: bool = True,
         key_columns: Set[str] = None,
     ) -> None:
         """
@@ -147,10 +149,11 @@ class LineageMetaData:
         :param config_name: Name of the config.
         :param table_name: Name of the table.
         :param table_type: The type of the table as defined in TableType.
+        :param materialized: If the table is materialized.
         :param key_columns: The key columns used to join with other tables.
         """
         if table_name not in self.tables:
-            self.tables[table_name] = Table(config_name, table_name, table_type, key_columns)
+            self.tables[table_name] = Table(config_name, table_name, table_type, materialized, key_columns)
         else:
             # replace existing table with new parsed table type
             existing_table = self.tables[table_name]
