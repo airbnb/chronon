@@ -17,5 +17,5 @@ LEFT JOIN (
     event_id_sum AS test_group_by_event_id_sum,
     event_id_sum_plus_one AS test_group_by_event_id_sum_plus_one
   FROM test_db.test_join_test_group_by
-) AS test_group_by
-  ON test_join.subject = test_group_by.subject
+) AS gb_test_group_by
+  ON test_join.subject = gb_test_group_by.subject

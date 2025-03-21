@@ -395,12 +395,12 @@ class LineageParser:
                 conditions.append(
                     exp.EQ(
                         this=exp.Column(this=left_key, table=join_table_alias),
-                        expression=exp.Column(this=right_key, table=f"{prefix}{gb_name}"),
+                        expression=exp.Column(this=right_key, table=f"gb_{join_part_table}"),
                     )
                 )
-                join_expression.append(f"({join_table_alias}.{left_key} = {join_part_table}.{right_key})")
+                join_expression.append(f"({join_table_alias}.{left_key} = gb_{join_part_table}.{right_key})")
             sql = sql.join(
-                exp.Subquery(alias=f"{join_part_table}", this=gb_sql),
+                exp.Subquery(alias=f"gb_{join_part_table}", this=gb_sql),
                 on=exp.and_(*conditions),
                 join_type="left",
             )
@@ -491,7 +491,8 @@ class LineageParser:
                     derivation.expression for derivation in join.derivations if is_identifier(derivation.expression)
                 ]
                 for removed_feature in removed_features:
-                    features.remove(removed_feature)
+                    if removed_feature in features:
+                        features.remove(removed_feature)
             else:
                 features = derived_features
 
@@ -628,7 +629,8 @@ class LineageParser:
                     derivation.expression for derivation in gb.derivations if is_identifier(derivation.expression)
                 ]
                 for removed_feature in removed_features:
-                    features.remove(removed_feature)
+                    if removed_feature in features:
+                        features.remove(removed_feature)
             else:
                 features = derived_features
 
