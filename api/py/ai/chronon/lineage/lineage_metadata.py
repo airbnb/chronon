@@ -102,7 +102,7 @@ class LineageMetaData:
         """
         # Create a new Table if one does not exist for the extracted table name.
         if table_name not in self.tables:
-            self.tables[table_name] = Table("", table_name, TableType.OTHER)
+            self.tables[table_name] = Table("", table_name, TableType.OTHER, materialized=True)
 
         # Add the column name to the table's set of columns.
         self.tables[table_name].columns.add(column_name)
