@@ -1,5 +1,5 @@
 SELECT
-  event_id_last + 1 AS event_id_last_plus_one_join,
+  test_group_by_event_id_last_renamed + 1 AS test_group_by_event_id_last_renamed_plus_one_join,
   event_id,
   subject,
   test_group_by_cnt_count,
