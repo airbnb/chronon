@@ -175,7 +175,7 @@ class LineageParser:
                 op_name = ttypes.Operation._VALUES_TO_NAMES[agg.operation]
                 agg_names = get_output_col_names(agg)
                 for agg_name in agg_names:
-                    expressions.append(f"AGG_{op_name}({agg.inputColumn}) AS {agg_name}")
+                    expressions.append(f"AGG_{op_name}(`{agg.inputColumn}`) AS {agg_name}")
         elif selects:
             for input_column_name, input_column_expr in selects:
                 expressions.append(input_column_name)

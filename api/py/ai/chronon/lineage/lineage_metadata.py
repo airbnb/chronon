@@ -223,11 +223,11 @@ class LineageMetaData:
 
         # Filter by input table if provided.
         if input_table:
-            filtered_lineages = {lineage for lineage in self.lineages if lineage.input_table == input_table}
+            filtered_lineages = {lineage for lineage in filtered_lineages if lineage.input_table == input_table}
 
         # Filter by output table if provided.
         if output_table:
-            filtered_lineages = {lineage for lineage in self.lineages if lineage.output_table == output_table}
+            filtered_lineages = {lineage for lineage in filtered_lineages if lineage.output_table == output_table}
 
         return filtered_lineages
 
