@@ -60,7 +60,6 @@ class JoinBackfill:
         We will add Join recursively when we encounter a join source.
         The final join node will be returned to be used as a dependency.
         """
-        join_name = sanitize(join.metaData.name)
         # Merge default settings and final_join settings
         settings = {**self.settings["default"], **self.settings.get("final_join", {})}
         final_node = Node(
@@ -71,7 +70,7 @@ class JoinBackfill:
         # Merge default settings and left_table settings
         settings = {**self.settings["default"], **self.settings.get("left_table", {})}
         left_node = Node(
-            f"{TASK_PREFIX}__{join_name}__left_table", self.run_left_table(join.metaData.name, settings), settings
+            f"{TASK_PREFIX}__left_table", self.run_left_table(join.metaData.name, settings), settings
         )
         flow.add_node(final_node)
         flow.add_node(left_node)
@@ -84,7 +83,7 @@ class JoinBackfill:
             # Merge default settings and join_part settings
             settings = {**self.settings["default"], **self.settings.get(jp_full_name, {})}
             jp_node = Node(
-                f"{TASK_PREFIX}__{join_name}__{jp_full_name}",
+                f"{TASK_PREFIX}__{jp_full_name}",
                 self.run_join_part(join.metaData.name, jp_full_name, settings),
                 settings,
             )
