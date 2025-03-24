@@ -18,6 +18,7 @@ package ai.chronon.spark
 
 import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
+import ai.chronon.aggregator.windowing.HopsAggregator.OutputArrayType
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
@@ -28,9 +29,10 @@ import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{DataFrame, Row, SparkSession}
+import org.apache.spark.sql.{DataFrame, Row, SparkSession, types}
 import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.LoggerFactory
+import org.apache.spark.sql.catalyst.encoders.RowEncoder
 
 import java.util
 import scala.collection.{Seq, mutable}
@@ -139,6 +141,29 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     } else {
       toDf(snapshotEntitiesBase, Seq(tableUtils.partitionColumn -> StringType))
     }
+
+  def snapshotEventsDF(partitionRange: PartitionRange,
+                         resolution: Resolution = DailyResolution): DataFrame = {
+    val endTimes: Array[Long] = partitionRange.toTimePoints
+    // add 1 day to the end times to include data [ds 00:00:00.000, ds + 1 00:00:00.000)
+    val shiftedEndTimes = endTimes.map(_ + tableUtils.partitionSpec.spanMillis)
+
+    val finalPostAggSchema = StructType(Seq(StructField(tableUtils.partitionColumn, types.StringType)) ++ postAggSchema)
+
+    val hopsAggregatorUDAF = udaf(
+      new HopsAggregatorDF(finalize, endTimes, shiftedEndTimes, aggregations,
+            selectedSchema, finalPostAggSchema, tableUtils.partitionSpec, resolution, tsIndex),
+      inputEncoder = RowEncoder(inputDf.schema)
+    )
+    inputDf
+      .groupBy(keyColumns.map(col): _*)
+      .agg(hopsAggregatorUDAF(inputDf.columns.map(col): _*) as "hops_agg")
+      .withColumn("result", explode(col("hops_agg.results")))
+      .select(
+          keyColumns.map(col) ++
+          finalPostAggSchema.fieldNames.map(f => col(s"result.$f").as(f)): _*
+      )
+  }
 
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {

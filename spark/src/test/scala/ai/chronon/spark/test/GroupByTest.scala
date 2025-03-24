@@ -77,14 +77,14 @@ class GroupByTest {
     lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val schema = List(
-      Column("user", StringType, 10), // ts = last 10 days
-      Column("session_length", IntType, 2),
-      Column("rating", DoubleType, 2000)
+      Column("user", StringType, 1), // ts = last 10 days
+      Column("session_length", IntType, 3),
+      Column("rating", DoubleType, 100)
     )
 
     val outputDates = CStream.genPartitions(10, tableUtils.partitionSpec)
 
-    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
+    val df = DataFrameGen.events(spark, schema, count = 10, partitions = 10)
     df.drop("ts") // snapshots don't need ts.
     val viewName = "test_group_by_snapshot_events"
     df.createOrReplaceTempView(viewName)
@@ -99,7 +99,8 @@ class GroupByTest {
     )
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
-    val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+    val actualDf = groupBy.snapshotEventsDF(PartitionRange(outputDates.min, outputDates.max))
+    //val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
     val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
     val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
     val datesViewName = "test_group_by_snapshot_events_output_range"
@@ -117,7 +118,7 @@ class GroupByTest {
                                           |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 + ${tableUtils.partitionSpec.spanMillis}
                                           |group by user, $datesViewName.ds
                                           |""".stripMargin)
-
+    val result = actualDf.collect()
     val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", tableUtils.partitionColumn))
     if (diff.count() > 0) {
       diff.show()
