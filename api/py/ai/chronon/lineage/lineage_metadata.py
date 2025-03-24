@@ -202,7 +202,8 @@ class LineageMetaData:
                         input_column,
                         output_table,
                         output_column,
-                        transforms,
+                        # Reverse transform from input_column to output_column
+                        transforms[::-1],
                     )
                 )
 

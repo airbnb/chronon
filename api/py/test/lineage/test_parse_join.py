@@ -153,7 +153,7 @@ class TestParseJoin(unittest.TestCase):
                 (
                     ("gb_table", "event"),
                     ("test_db.test_join_test_group_by", "event_id_sum_plus_one"),
-                    ("Add", "AGG_SUM"),
+                    ("AGG_SUM", "Add"),
                 ),
                 (
                     ("gb_table", "event"),

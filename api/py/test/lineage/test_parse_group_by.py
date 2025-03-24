@@ -131,7 +131,7 @@ class TestParseGroupBy(unittest.TestCase):
                 (
                     ("source.gb_table", "event"),
                     ("test_db.test_group_by", "event_id_sum_plus_one"),
-                    ("Add", "AGG_SUM"),
+                    ("AGG_SUM", "Add"),
                 ),
                 (
                     ("source.gb_table", "event"),
@@ -269,7 +269,7 @@ class TestParseGroupBy(unittest.TestCase):
                 (
                     ("source.gb_table", "event"),
                     ("test_db.test_join_jp_test_group_by", "event_id_sum_plus_one"),
-                    ("Add", "AGG_SUM"),
+                    ("AGG_SUM", "Add"),
                 ),
                 (
                     ("source.gb_table", "event"),
