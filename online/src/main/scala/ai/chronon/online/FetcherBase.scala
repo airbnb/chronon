@@ -220,7 +220,7 @@ class FetcherBase(kvStore: KVStore,
           logger.info(s"""
                          |batch ir: ${gson.toJson(batchIr)}
                          |streamingRows: ${gson.toJson(streamingRows)}
-                         |streamingRowsCount: ${streamingRows.length}
+                         |streamingRowsCount: ${Try(streamingRows.length).getOrElse(0)}
                          |batchEnd in millis: ${servingInfo.batchEndTsMillis}
                          |queryTime in millis: $queryTimeMs
                          |""".stripMargin)
@@ -430,6 +430,15 @@ class FetcherBase(kvStore: KVStore,
       kvStore.multiGet(allRequestsToFetch)
     } else {
       Future(Seq.empty[GetResponse])
+    }.recover {
+      case e: Throwable =>
+        // Capture exceptions from calling KvStore.multiGet
+        // requestMetaTry is a Failure when GBServingInfo failed to load, those are skipped because we don't fetch them.
+        groupByRequestToKvRequest.foreach {
+          case (_, requestMetaTry) =>
+            requestMetaTry.toOption.foreach(_.context.withSuffix("multi_get").incrementException(e))
+        }
+        throw e
     }
 
     kvResponseFuture
@@ -453,6 +462,7 @@ class FetcherBase(kvStore: KVStore,
               context.count("multi_get.batch.size", allRequestsToFetch.length)
               context.distribution("multi_get.bytes", totalResponseValueBytes)
               context.distribution("multi_get.response.length", kvResponses.length)
+              context.distribution("multi_get.response.success.length", kvResponses.count(_.values.isSuccess))
               context.distribution("multi_get.latency.millis", multiGetMillis)
 
               // pick the batch version with highest timestamp
