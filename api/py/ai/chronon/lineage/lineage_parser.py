@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import typing
+from collections import defaultdict
 from functools import reduce
 from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
@@ -37,6 +38,7 @@ from ai.chronon.repo.validator import (
     get_pre_derived_join_features,
     get_pre_derived_join_internal_features,
     get_pre_derived_source_keys,
+    is_identifier,
 )
 from ai.chronon.utils import FeatureDisplayKeys, output_table_name, sanitize
 from sqlglot import expressions as exp
@@ -62,6 +64,7 @@ class LineageParser:
         self.team_conf: Optional[Dict[str, Any]] = None
         self.staging_queries: Dict[str, Any] = {}
         self.metadata: LineageMetaData = LineageMetaData()
+        self.parsed_staging_query_tables = set()
         self.schema_provider = schema_provider
 
     def parse_lineage(self, base_path: str, config_filter: Optional[Set[str]] = None) -> LineageMetaData:
@@ -78,7 +81,7 @@ class LineageParser:
             self.team_conf = json.load(team_infile)
 
         # Staging queries are lazily parsed when they are used.
-        self.parse_configs(self.handle_staging_query, "production/staging_queries", ttypes.StagingQuery, config_filter)
+        self.parse_configs(self.handle_staging_query, "production/staging_queries", ttypes.StagingQuery)
 
         # Parse all group bys and joins.
         self.parse_configs(self.parse_group_by, "production/group_bys", ttypes.GroupBy, config_filter)
@@ -172,7 +175,7 @@ class LineageParser:
                 op_name = ttypes.Operation._VALUES_TO_NAMES[agg.operation]
                 agg_names = get_output_col_names(agg)
                 for agg_name in agg_names:
-                    expressions.append(f"AGG_{op_name}({agg.inputColumn}) AS {agg_name}")
+                    expressions.append(f"AGG_{op_name}(`{agg.inputColumn}`) AS {agg_name}")
         elif selects:
             for input_column_name, input_column_expr in selects:
                 expressions.append(input_column_name)
@@ -342,17 +345,24 @@ class LineageParser:
         :return: The built SQLGlot SELECT expression representing the left join.
         """
         left_table_columns = [value for values in get_pre_derived_join_features(join).values() for value in values]
+        left_table_keys = []
         if self.check_source_select_non_empty(join.left):
-            left_table_columns.extend(get_pre_derived_source_keys(join.left))
+            left_table_keys = get_pre_derived_source_keys(join.left)
+            left_table_columns.extend(left_table_keys)
 
         join_table = self.object_table_name(join)
         join_table_alias = sanitize(join.metaData.name)
         bootstrap_table = f"{join_table}_bootstrap"
 
         left_table_columns.sort()
-        sql = exp.Select(expressions=[exp.Column(this=column) for column in left_table_columns]).from_(
-            f"{bootstrap_table} AS {join_table_alias}"
-        )
+        expressions = []
+        for column in left_table_columns:
+            if column in left_table_keys:
+                expressions.append(exp.Column(this=f"{join_table_alias}.{column}"))
+            else:
+                expressions.append(exp.Column(this=f"{column}"))
+
+        sql = exp.Select(expressions=expressions).from_(f"{bootstrap_table} AS {join_table_alias}")
         for jp in join.joinParts:
             gb = jp.groupBy
             gb_name = sanitize(gb.metaData.name)
@@ -385,12 +395,12 @@ class LineageParser:
                 conditions.append(
                     exp.EQ(
                         this=exp.Column(this=left_key, table=join_table_alias),
-                        expression=exp.Column(this=right_key, table=f"{prefix}{gb_name}"),
+                        expression=exp.Column(this=right_key, table=f"gb_{join_part_table}"),
                     )
                 )
-                join_expression.append(f"({join_table_alias}.{left_key} = {join_part_table}.{right_key})")
+                join_expression.append(f"({join_table_alias}.{left_key} = gb_{join_part_table}.{right_key})")
             sql = sql.join(
-                exp.Subquery(alias=f"{join_part_table}", this=gb_sql),
+                exp.Subquery(alias=f"gb_{join_part_table}", this=gb_sql),
                 on=exp.and_(*conditions),
                 join_type="left",
             )
@@ -445,7 +455,13 @@ class LineageParser:
         bootstrap_sql = bootstrap_sql.sql(dialect="spark", pretty=True)
         sources["bootstrap_table"] = bootstrap_sql
         lineages = build_lineage(bootstrap_table, bootstrap_sql)
-        self.metadata.store_table(config_name, bootstrap_table, TableType.JOIN_BOOTSTRAP, set(source_keys))
+        self.metadata.store_table(
+            config_name,
+            bootstrap_table,
+            TableType.JOIN_BOOTSTRAP,
+            materialized=True,
+            key_columns=set(source_keys),
+        )
         self.metadata.store_lineage(lineages, output_table)
 
         for jp in join.joinParts:
@@ -470,6 +486,13 @@ class LineageParser:
             if "*" in derived_features:
                 derived_features.remove("*")
                 features.extend(derived_features)
+                # If it is a rename only derivation, then remove the original feature name
+                removed_features = [
+                    derivation.expression for derivation in join.derivations if is_identifier(derivation.expression)
+                ]
+                for removed_feature in removed_features:
+                    if removed_feature in features:
+                        features.remove(removed_feature)
             else:
                 features = derived_features
 
@@ -479,14 +502,20 @@ class LineageParser:
 
         # store feature
         for feature in features:
-            self.metadata.store_feature(join.metaData.name, feature, output_table)
+            self.metadata.store_feature(join.metaData.name, ConfigType.JOIN, feature, output_table)
         # no column lineage for external features
         external_features = get_pre_derived_external_features(join)
         for feature in external_features:
-            self.metadata.store_feature(join.metaData.name, feature)
+            self.metadata.store_feature(join.metaData.name, ConfigType.JOIN, feature)
 
         # store table
-        self.metadata.store_table(config_name, output_table, TableType.JOIN, set(source_keys))
+        self.metadata.store_table(
+            config_name,
+            output_table,
+            TableType.JOIN,
+            materialized=True,
+            key_columns=set(source_keys),
+        )
 
         # store lineage
         parsed_lineages = build_lineage(output_table, sql, sources)
@@ -522,7 +551,9 @@ class LineageParser:
 
         table_name = output_table_name(staging_query, full_name=True)
 
-        if table_name not in self.metadata.tables:
+        # if we have already parsed this staging query output table then no need to parse again
+        if table_name not in self.parsed_staging_query_tables:
+            self.parsed_staging_query_tables.add(table_name)
             parsed_lineages = build_lineage(table_name, staging_query.query, schema=schema)
             self.metadata.store_table(config_name, table_name, TableType.STAGING_QUERY)
             self.metadata.store_lineage(parsed_lineages, table_name)
@@ -546,7 +577,10 @@ class LineageParser:
         }
 
     def parse_group_by(
-        self, gb: Any, join_part_table: Optional[str] = None, join_config_name: Optional[str] = None
+        self,
+        gb: Any,
+        join_part_table: Optional[str] = None,
+        join_config_name: Optional[str] = None,
     ) -> None:
         """
         Parse a group-by configuration and build lineage.
@@ -590,6 +624,13 @@ class LineageParser:
             if "*" in derived_features:
                 derived_features.remove("*")
                 features.extend(derived_features)
+                # If it is a rename only derivation, then remove the original feature name
+                removed_features = [
+                    derivation.expression for derivation in gb.derivations if is_identifier(derivation.expression)
+                ]
+                for removed_feature in removed_features:
+                    if removed_feature in features:
+                        features.remove(removed_feature)
             else:
                 features = derived_features
 
@@ -601,19 +642,20 @@ class LineageParser:
         # If gb.backfill_start_date is defined, then it generates a group by backfill table.
         # If gb.online is True, then it generates an upload table.
         if join_part_table:
-            # store feature
-            for feature in features:
-                self.metadata.store_feature(gb.metaData.name, feature, join_part_table)
-
             # store table
             config_name = join_config_name or config_name
-            self.metadata.store_table(config_name, join_part_table, TableType.JOIN_PART, set(key_columns))
+            self.metadata.store_table(
+                config_name,
+                join_part_table,
+                TableType.JOIN_PART,
+                materialized=True,
+                key_columns=set(key_columns),
+            )
 
             # store lineage
             parsed_lineages = build_lineage(join_part_table, sql, sources)
             self.metadata.store_lineage(parsed_lineages, join_part_table)
         else:
-            output_table = None
             if gb.metaData.online:
                 output_table = f"{self.object_table_name(gb)}_upload"
 
@@ -622,51 +664,59 @@ class LineageParser:
                     config_name,
                     output_table,
                     TableType.GROUP_BY_UPLOAD,
-                    set(f"key_json./{key_column}" for key_column in key_columns),
+                    materialized=True,
+                    key_columns={"key_json"},
                 )
 
-                # store lineage
-                lineages = build_lineage(output_table, sql, sources)
                 # Put all key columns into the "key_json" column, and all values into the "value_json" column.
-                lineages = {
-                    upload_column_json(output_column, key_columns): lineage
-                    for output_column, lineage in lineages.items()
-                }
-                self.metadata.store_lineage(lineages, output_table)
+                lineages = build_lineage(output_table, sql, sources)
+                updated_lineages = defaultdict(set)
+                for (output_table, output_column), lineage in lineages.items():
+                    if output_column in key_columns:
+                        updated_lineages[(output_table, "key_json")].update(lineage)
+                    else:
+                        updated_lineages[(output_table, "value_json")].update(lineage)
+                self.metadata.store_lineage(updated_lineages, output_table)
 
-            # track feature lineage to the group by backfill table if it is defined
-            if gb.backfillStartDate:
-                output_table = self.object_table_name(gb)
+            # track feature lineage to the group_by backfill table
+            output_table = self.object_table_name(gb)
 
-                # store table
-                self.metadata.store_table(config_name, output_table, TableType.GROUP_BY_BACKFILL, set(key_columns))
+            # store table
+            self.metadata.store_table(
+                config_name,
+                output_table,
+                TableType.GROUP_BY_BACKFILL,
+                materialized=gb.backfillStartDate,
+                key_columns=set(key_columns),
+            )
 
-                # store lineage
-                parsed_lineages = build_lineage(output_table, sql, sources)
-                self.metadata.store_lineage(parsed_lineages, output_table)
+            # store lineage
+            parsed_lineages = build_lineage(output_table, sql, sources)
+            self.metadata.store_lineage(parsed_lineages, output_table)
 
             # store feature
             for feature in features:
-                self.metadata.store_feature(gb.metaData.name, feature, output_table)
+                self.metadata.store_feature(gb.metaData.name, ConfigType.GROUP_BY, feature, output_table)
 
 
-def _get_col_node_name(node: Node, parent_node: Node) -> str:
+def _get_col_node_name(node: Node, parent_node: Node) -> Tuple[str, str]:
     """
     Get the fully qualified column name from a SQLGlot Node.
 
     :param node: A SQLGlot Node object representing a column.
     :param node: A SQLGlot Node object representing the parent node.
-    :return: The fully qualified column name.
+    :return: The tuple of table name and column name.
     """
     # Use parent.expression if it is a complex type
     if isinstance(parent_node.expression.this, exp.Dot):
-        return parent_node.expression.this.sql(pretty=False, identify=False)
+        full_name = parent_node.expression.this.sql(pretty=False, identify=False)
+        return full_name.split(".")[0], ".".join(full_name.split(".")[1:])
     else:
         column_name = node.name.split(".")[-1]
         # Strip table alias from table expression if present.
         table_exp: exp.Expression = node.expression.copy()
         table_exp.args["alias"] = None
-        return f"{table_exp.sql(pretty=False, identify=False)}.{column_name}".replace('"', "")
+        return table_exp.sql(pretty=False, identify=False), column_name.replace('"', "")
 
 
 def get_transform(expression: Any) -> Optional[str]:
@@ -699,8 +749,11 @@ def append_transform(transforms: List[str], transform: str) -> List[str]:
 
 
 def build_lineage(
-    output_table: str, sql: str, sources: Dict[str, str] = None, schema: Dict[str, str] = None
-) -> Dict[str, Set[Tuple[str, Tuple[str]]]]:
+    output_table: str,
+    sql: str,
+    sources: Dict[str, str] = None,
+    schema: Dict[str, str] = None,
+) -> Dict[Tuple[str, str], Set[Tuple[Tuple[str, str], Tuple[str]]]]:
     """
     Build the lineage mapping from the SQL query and its source queries.
 
@@ -741,16 +794,5 @@ def build_lineage(
                     input_columns.add((_get_col_node_name(child, parent), tuple(transforms)))
                 child_transform = get_transform(child.expression)
                 queue.append((child, append_transform(transforms, child_transform)))
-        parsed_lineages[f"{output_table}.{output_column}"] = input_columns
+        parsed_lineages[(output_table, output_column)] = input_columns
     return parsed_lineages
-
-
-def upload_column_json(output_column: str, key_columns: Set[str]) -> str:
-    columns = output_column.rsplit(".", 1)
-    if len(columns) == 2:
-        if columns[-1] in key_columns:
-            columns[-1] = f"key_json./{columns[-1]}"
-        else:
-            columns[-1] = f"value_json./{columns[-1]}"
-
-    return ".".join(columns)

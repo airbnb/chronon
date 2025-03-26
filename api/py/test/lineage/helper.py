@@ -17,9 +17,9 @@ from ai.chronon.lineage.lineage_metadata import ColumnTransform
 
 def compare_lineages(testcase, expected, actual):
     expected = sorted(expected)
-    actual = sorted(actual, key=lambda t: (t.input_column, t.output_column, t.transforms))
+    actual = sorted(
+        actual, key=lambda t: (t.input_table, t.input_column, t.output_table, t.output_column, t.transforms)
+    )
     testcase.assertEqual(len(actual), len(expected))
-    for lineage_expected, lineage_actual in zip(expected, actual):
-        testcase.assertEqual(
-            ColumnTransform(lineage_expected[0], lineage_expected[1], lineage_expected[2]), lineage_actual
-        )
+    for exp, act in zip(expected, actual):
+        testcase.assertEqual(ColumnTransform(exp[0][0], exp[0][1], exp[1][0], exp[1][1], exp[2]), act)
