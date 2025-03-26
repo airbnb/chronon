@@ -35,12 +35,21 @@ trait Resolution extends Serializable {
 }
 
 object FiveMinuteResolution extends Resolution {
-  def calculateTailHop(window: Window): Long =
-    window.millis match {
-      case x if x >= new Window(12, TimeUnit.DAYS).millis  => WindowUtils.Day.millis
-      case x if x >= new Window(12, TimeUnit.HOURS).millis => WindowUtils.Hour.millis
-      case _                                               => WindowUtils.FiveMinutes
+  private val millisIn12Days = new Window(12, TimeUnit.DAYS).millis
+  private val millisIn12Hours = new Window(12, TimeUnit.HOURS).millis
+
+  /**
+   * Given a GroupBy Window size, calculate the resolution of the window as defined by Chronon.
+   */
+  def getWindowResolutionMillis(windowSizeMillis: Long): Long =
+    windowSizeMillis match {
+      case x if x >= millisIn12Days  => WindowUtils.Day.millis
+      case x if x >= millisIn12Hours => WindowUtils.Hour.millis
+      case _                         => WindowUtils.FiveMinutes
     }
+
+  def calculateTailHop(window: Window): Long =
+    getWindowResolutionMillis(window.millis)
 
   val hopSizes: Array[Long] =
     Array(WindowUtils.Day.millis, WindowUtils.Hour.millis, WindowUtils.FiveMinutes)
