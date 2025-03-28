@@ -14,13 +14,13 @@
 
 1. Recommended to use Python 3.10 to generate the correct PyPI package name.
 2. Setup your PyPi public account and contact the team to get added to the PyPi package as a [collaborator](https://pypi.org/manage/project/chronon-ai/collaboration/)
-2. Install required Python packages:
+3. Install required Python packages:
 ```bash
 python3 -m pip install -U twine
 ```
 
-3. Fetch the user token from the PyPi website
-4. Create or update your PyPi credentials configuration at `~/.pypirc`:
+4. Fetch the user token from the PyPi website
+5. Create or update your PyPi credentials configuration at `~/.pypirc`:
 ```ini
 [distutils]
   index-servers =
