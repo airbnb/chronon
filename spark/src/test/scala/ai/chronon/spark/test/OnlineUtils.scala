@@ -190,7 +190,9 @@ object OnlineUtils {
     inMemoryKvStore.bulkPut(joinConf.metaData.consistencyUploadTable, Constants.ConsistencyMetricsDataset, null)
   }
 
-  def buildInMemoryKVStore(sessionName: String): InMemoryKvStore = {
-    InMemoryKvStore.build(sessionName, { () => TableUtils(SparkSessionBuilder.build(sessionName, local = true)) })
+  def buildInMemoryKVStore(sessionName: String, hardFailureOnInvalidDataset: Boolean = false): InMemoryKvStore = {
+    InMemoryKvStore.build(sessionName,
+                          { () => TableUtils(SparkSessionBuilder.build(sessionName, local = true)) },
+                          hardFailureOnInvalidDataset)
   }
 }
