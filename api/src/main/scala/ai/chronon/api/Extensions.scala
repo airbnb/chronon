@@ -670,7 +670,7 @@ object Extensions {
 
     private def schemaFields(schema: TDataType): Array[StructField] =
       schema.params.toScala
-        .map(field => StructField(field.name, DataType.fromTDataType(field.dataType)))
+        .map(field => DataFieldOps(field).toStructField)
         .toArray
 
     lazy val keyNames: Array[String] = schemaNames(externalSource.keySchema)
@@ -1033,6 +1033,33 @@ object Extensions {
     lazy val areDerivationsRenameOnly: Boolean = join.hasDerivations && derivationsScala.areDerivationsRenameOnly
     lazy val derivationExpressionSet: Set[String] =
       if (join.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
+
+    def hasModelTransforms: Boolean = join.isSetModelTransforms && !join.modelTransforms.isEmpty
+    lazy val modelTransformsScala: List[ModelTransform] =
+      if (join.isSetModelTransforms) join.modelTransforms.toScala else List.empty
+
+    lazy val modelSchema: StructType = {
+      val fields = modelTransformsScala.map(mt => {
+        mt.model.outputSchema.toScala.map(field => {
+          val name = field.name
+          val mappedName = mt.outputMappings.toScala.getOrElse(name, name)
+          StructField(mappedName, DataType.fromTDataType(field.dataType))
+        })
+      })
+      val distinctFields = fields.flatten.distinct.toArray
+      StructType(s"join_model_schema_${join.metaData.cleanName}", distinctFields)
+    }
+  }
+
+  implicit class ModelTransformOps(modelTransform: ModelTransform) {
+    lazy val inputMappingsScala: Map[String, String] = modelTransform.inputMappings.toScala
+    lazy val outputMappingsScala: Map[String, String] = modelTransform.outputMappings.toScala
+  }
+
+  implicit class DataFieldOps(dataField: DataField) {
+    def toStructField: StructField = {
+      StructField(dataField.name, DataType.fromTDataType(dataField.dataType))
+    }
   }
 
   implicit class StringsOps(strs: Iterable[String]) {

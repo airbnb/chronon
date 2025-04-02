@@ -337,6 +337,11 @@ struct Join {
     * columns.
     **/
     9: optional list<Derivation> derivations
+    /**
+     * (CHIP-9) A list of model_trnsforms that will convert derivations (raw data) into model outputs for each
+     * of the models in the list. The union of the model outputs will become the final output of the join.
+     **/
+    10: optional list<ModelTransform> modelTransforms
 }
 
 struct BootstrapPart {
@@ -420,4 +425,30 @@ struct TDataType {
     1: DataKind kind
     2: optional list<DataField> params
     3: optional string name // required only for struct types
+}
+
+/* Model API */
+
+// Inference spec used to describe how a Model is inferenced.
+// modelBackendParams can be passed to modelBackend to identify and serve the model.
+struct InferenceSpec {
+    1: optional string modelBackend
+    2: optional map<string, string> modelBackendParams
+}
+
+// A Model definition that can be used for inference, with its input/output schema documented.
+// In the future, we can extend it to include model training spec
+struct Model {
+    1: optional MetaData metaData
+    2: optional InferenceSpec inferenceSpec
+    3: optional list<DataField> inputSchema
+    4: optional list<DataField> outputSchema
+}
+
+// A ModelTransform is used in the context of a Join to transform raw data into model outputs.
+struct ModelTransform {
+    1: optional Model model
+    2: optional map<string, string> inputMappings
+    3: optional map<string, string> outputMappings
+    4: optional list<string> passthroughFields
 }

@@ -39,15 +39,15 @@ public class JavaFetcher {
     Fetcher fetcher;
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null, Option.apply(32));
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null, Option.apply(32), null);
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null, Option.apply(32));
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null, Option.apply(32), null);
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, FlagStore flagStore, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null, Option.apply(32));
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null, Option.apply(32), null);
     }
 
     /* user builder pattern to create JavaFetcher
@@ -69,7 +69,8 @@ public class JavaFetcher {
                 builder.flagStore,
                 builder.disableErrorThrows,
                 builder.executionContextOverride,
-                builder.joinFetchParallelChunkSize.isPresent() ? Option.apply(builder.joinFetchParallelChunkSize.get()) : Option.empty());
+                builder.joinFetchParallelChunkSize.isPresent() ? Option.apply(builder.joinFetchParallelChunkSize.get()) : Option.empty(),
+                builder.modelBackend);
     }
 
     public static class Builder {
@@ -83,6 +84,7 @@ public class JavaFetcher {
         private FlagStore flagStore;
         private Boolean disableErrorThrows;
         private ExecutionContext executionContextOverride;
+        private ModelBackend modelBackend;
 
         private Optional<Integer> joinFetchParallelChunkSize = Optional.empty();
 
@@ -122,6 +124,10 @@ public class JavaFetcher {
 
         public Builder joinFetchParallelChunkSize(Integer joinFetchParallelChunkSize) {
             this.joinFetchParallelChunkSize = Optional.ofNullable(joinFetchParallelChunkSize);
+            return this;
+        }
+        public Builder modelBackend(ModelBackend modelBackend) {
+            this.modelBackend = modelBackend;
             return this;
         }
 
