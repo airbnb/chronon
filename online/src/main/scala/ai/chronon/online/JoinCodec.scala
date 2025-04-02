@@ -31,25 +31,43 @@ import ai.chronon.online.OnlineDerivationUtil.{
 
 case class JoinCodec(conf: JoinOps, keySchema: StructType, baseValueSchema: StructType) extends Serializable {
 
-  @transient lazy val valueSchema: StructType = {
+  lazy val derivedSchema: StructType = {
     val fields = if (conf.join == null || conf.join.derivations == null || baseValueSchema.fields.isEmpty) {
       baseValueSchema
     } else {
       buildDerivedFields(conf.derivationsScala, keySchema, baseValueSchema)
     }
-    val derivedSchema: StructType = StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray)
-    if (conf.logFullValues) {
-      def toMap(schema: StructType): Map[String, DataType] = schema.map(field => (field.name, field.fieldType)).toMap
-      val (baseMap, derivedMap) = (toMap(baseValueSchema), toMap(derivedSchema))
-      StructType(
-        s"join_combined_${conf.join.metaData.cleanName}",
-        // derived values take precedence in case of collision
-        (baseMap ++ derivedMap).map {
-          case (name, dataTye) => StructField(name, dataTye)
-        }.toArray
-      )
+    val derivedSchema = StructType(s"join_derived_${conf.join.metaData.cleanName}", fields.toArray)
+    derivedSchema
+  }
+
+  // Merge schemas. If there are duplicate fields, the later ones take precedence.
+  private def mergeSchema(name: String, schemas: StructType*): StructType = {
+    def toMap(schema: StructType): Map[String, DataType] = schema.map(field => (field.name, field.fieldType)).toMap
+    val fields = schemas
+      .map(toMap)
+      .fold(Map.empty)(_ ++ _)
+      .map {
+        case (name, dataType) => StructField(name, dataType)
+      }
+      .toArray
+    StructType(name, fields)
+  }
+
+  @transient lazy val valueSchema: StructType = {
+    val name = s"join_combined_${conf.join.metaData.cleanName}"
+    if (!conf.hasModelTransforms) {
+      if (conf.logFullValues) {
+        mergeSchema(name, baseValueSchema, derivedSchema)
+      } else {
+        derivedSchema
+      }
     } else {
-      derivedSchema
+      if (conf.logFullValues) {
+        mergeSchema(name, baseValueSchema, derivedSchema, conf.modelSchema)
+      } else {
+        conf.modelSchema
+      }
     }
   }
 
