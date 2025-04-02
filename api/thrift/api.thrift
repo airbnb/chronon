@@ -435,9 +435,10 @@ struct InferenceSpec {
 // A Model definition that can be used for inference, with its input/output schema documented.
 // In the future, we can extend it to include model training spec
 struct Model {
-    1: optional InferenceSpec inferenceSpec
-    2: optional list<DataField> inputSchema
-    3: optional list<DataField> outputSchema
+    1: optional MetaData metaData
+    2: optional InferenceSpec inferenceSpec
+    3: optional list<DataField> inputSchema
+    4: optional list<DataField> outputSchema
 }
 
 // A ModelTransform is used in the context of a Join to transform raw data into model outputs.

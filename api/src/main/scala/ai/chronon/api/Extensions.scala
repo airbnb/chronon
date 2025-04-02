@@ -1050,6 +1050,11 @@ object Extensions {
     }
   }
 
+  implicit class ModelTransformOps(modelTransform: ModelTransform) {
+    lazy val inputMappingsScala: Map[String, String] = modelTransform.inputMappings.toScala
+    lazy val outputMappingsScala: Map[String, String] = modelTransform.outputMappings.toScala
+  }
+
   implicit class DataFieldOps(dataField: DataField) {
     def toStructField: StructField = {
       StructField(dataField.name, DataType.fromTDataType(dataField.dataType))

@@ -5,6 +5,8 @@ import ai.chronon.api.{Join, Model}
 import scala.concurrent.Future
 
 case class RegistrationResponse(status: String, isSuccess: Boolean, message: String)
+case class RunModelInferenceRequest(model: Model, inputs: Seq[Map[String, AnyRef]])
+case class RunModelInferenceResponse(request: RunModelInferenceRequest, outputs: Seq[Map[String, AnyRef]])
 trait JobId {
   def id: String
 }
@@ -27,7 +29,7 @@ trait ModelBackend {
   def getModelBatchJobStatus(jobId: JobId, start_ds: String, end_ds: String): Future[JobStatus]
   // Get the status of a batch model inference job.
 
-  def runModelInference(join: Join, inputs: Seq[Map[String, AnyRef]]): Future[Seq[Map[String, AnyRef]]]
+  def runModelInference(runModelInferenceRequest: RunModelInferenceRequest): Future[RunModelInferenceResponse]
   // Run online model inference which returns the model output directly.
   // Will be used in fetcher.fetchJoin
 
