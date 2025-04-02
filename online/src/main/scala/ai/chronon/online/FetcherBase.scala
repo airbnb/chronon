@@ -484,7 +484,7 @@ class FetcherBase(kvStore: KVStore,
               val streamingResponsesOpt =
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
-              val groupByResponse: Map[String, AnyRef] =
+              val groupByResponse: Option[Map[String, AnyRef]] =
                 try {
                   if (debug)
                     logger.info(
@@ -498,7 +498,7 @@ class FetcherBase(kvStore: KVStore,
                                            multiGetMillis,
                                            context,
                                            totalResponseValueBytes,
-                                           request.keys).getOrElse(Map.empty)
+                                           request.keys)
                 } catch {
                   case ex: Exception =>
                     // not all exceptions are due to stale schema, so we want to control how often we hit kv store
@@ -509,7 +509,7 @@ class FetcherBase(kvStore: KVStore,
                 }
               if (groupByServingInfo.groupBy.hasDerivations) {
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
-                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, groupByResponse)
+                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, groupByResponse.getOrElse(Map.empty))
                 }
                 val derivedMap = derivedMapTry match {
                   case Success(derivedMap) =>
@@ -522,7 +522,7 @@ class FetcherBase(kvStore: KVStore,
                     val renameOnlyDeriveFunction =
                       buildRenameOnlyDerivationFunction(groupByServingInfo.groupBy.derivationsScala)
                     val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
-                      renameOnlyDeriveFunction(request.keys, groupByResponse)
+                      renameOnlyDeriveFunction(request.keys, groupByResponse.getOrElse(Map.empty))
                         .mapValues(_.asInstanceOf[AnyRef])
                         .toMap
                     }
@@ -539,7 +539,7 @@ class FetcherBase(kvStore: KVStore,
                 }
                 derivedMap
               } else {
-                groupByResponse
+                groupByResponse.get
               }
             }
             Response(request, responseMapTry)
