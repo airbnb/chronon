@@ -45,7 +45,8 @@ class FetcherBase(kvStore: KVStore,
                   debug: Boolean = false,
                   flagStore: FlagStore = null,
                   disableErrorThrows: Boolean = false,
-                  executionContextOverride: ExecutionContext = null)
+                  executionContextOverride: ExecutionContext = null,
+                  modelBackend: ModelBackend = null)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis, executionContextOverride)
     with FetcherCache {
   import FetcherBase._
