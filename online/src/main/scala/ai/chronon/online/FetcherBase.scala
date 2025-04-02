@@ -539,7 +539,8 @@ class FetcherBase(kvStore: KVStore,
                 }
                 derivedMap
               } else {
-                groupByResponse.get
+                // When using fetchGroupBys and fetch key doesn't exist it should return Null.
+                groupByResponse.orNull
               }
             }
             Response(request, responseMapTry)
