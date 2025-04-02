@@ -26,7 +26,8 @@ import ai.chronon.api.Extensions.{
   JoinPartOps,
   MetadataOps,
   StringOps,
-  ThrowableOps
+  ThrowableOps,
+  ModelTransformOps
 }
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
@@ -59,7 +60,8 @@ object Fetcher {
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request,
                                  derivedValues: Map[String, AnyRef],
-                                 baseValues: Map[String, AnyRef]) {
+                                 baseValues: Map[String, AnyRef],
+                                 modelTransformsValues: Option[Map[String, AnyRef]] = None) {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
   }
   case class ColumnSpec(groupByName: String,
@@ -94,14 +96,16 @@ class Fetcher(val kvStore: KVStore,
               callerName: String = null,
               flagStore: FlagStore = null,
               disableErrorThrows: Boolean = false,
-              executionContextOverride: ExecutionContext = null)
+              executionContextOverride: ExecutionContext = null,
+              modelBackend: ModelBackend = null)
     extends FetcherBase(kvStore,
                         metaDataSet,
                         timeoutMillis,
                         debug,
                         flagStore,
                         disableErrorThrows,
-                        executionContextOverride) {
+                        executionContextOverride,
+                        modelBackend) {
   private def reportCallerNameFetcherVersion(): Unit = {
     val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
     val ctx = Metrics.Context(Environment.Fetcher)
@@ -233,9 +237,9 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  override def fetchJoin(requests: scala.collection.Seq[Request],
-                         joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
-    val ts = System.currentTimeMillis()
+  private def fetchJoinPreModelTransforms(requests: scala.collection.Seq[Request],
+                                          joinConf: Option[api.Join],
+                                          requestStartTs: Long): Future[scala.collection.Seq[ResponseWithContext]] = {
     val internalResponsesF = super.fetchJoin(requests, joinConf)
     val externalResponsesF = fetchExternal(requests)
     val combinedResponsesF = internalResponsesF.zip(externalResponsesF).map {
@@ -311,7 +315,7 @@ class Fetcher(val kvStore: KVStore,
                 val finalizedDerivedMap = derivedMap ++ baseMapExceptions
                 val requestEndTs = System.currentTimeMillis()
                 ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
-                ctx.distribution("overall.latency.millis", requestEndTs - ts)
+                ctx.distribution("overall.latency.millis", requestEndTs - requestStartTs)
                 val response = ResponseWithContext(request, finalizedDerivedMap, baseMap)
                 // Refresh joinCodec if it has partial failure
                 if (hasPartialFailure) {
@@ -328,9 +332,22 @@ class Fetcher(val kvStore: KVStore,
             }
         }
     }
-
     combinedResponsesF
-      .map(_.iterator.map(logResponse(_, ts)).toSeq)
+  }
+
+  private def fetchModelTransforms(
+      responsesPreModelTransforms: Future[scala.collection.Seq[ResponseWithContext]],
+      joinConf: Option[api.Join] = None): Future[scala.collection.Seq[ResponseWithContext]] =
+    throw new NotImplementedError()
+
+  override def fetchJoin(requests: scala.collection.Seq[Request],
+                         joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
+
+    val requestStartTs = System.currentTimeMillis()
+    val responsesPreModelTransforms: Future[scala.collection.Seq[ResponseWithContext]] =
+      fetchJoinPreModelTransforms(requests, joinConf, requestStartTs)
+    val responsesPostModelTransforms = fetchModelTransforms(responsesPreModelTransforms, joinConf)
+    responsesPostModelTransforms.map(_.iterator.map(logResponse(_, requestStartTs)).toSeq)
   }
 
   private def encode(loggingContext: Option[Metrics.Context],

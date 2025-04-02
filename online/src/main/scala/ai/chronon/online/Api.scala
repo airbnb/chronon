@@ -200,6 +200,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   def externalRegistry: ExternalSourceRegistry
 
+  def genModelBackend: ModelBackend = null
+
   private var timeoutMillis: Long = 10000
 
   private var flagStore: FlagStore = null
@@ -237,7 +239,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 timeoutMillis = timeoutMillis,
                 callerName = callerName,
                 flagStore = flagStore,
-                disableErrorThrows = disableErrorThrows)
+                disableErrorThrows = disableErrorThrows,
+                modelBackend = genModelBackend)
 
   final def buildJavaFetcher(callerName: String = null, disableErrorThrows: Boolean = false): JavaFetcher = {
     new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
@@ -245,12 +248,14 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
       .flagStore(flagStore)
       .disableErrorThrows(disableErrorThrows)
       .debug(false)
+      .modelBackend(genModelBackend)
       .build()
   }
 
   final def javaFetcherBuilder(): JavaFetcher.Builder = {
     new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
       .flagStore(flagStore)
+      .modelBackend(genModelBackend)
   }
 
   final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(callerName = null)
