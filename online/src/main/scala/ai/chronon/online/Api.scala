@@ -240,17 +240,20 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 disableErrorThrows = disableErrorThrows)
 
   final def buildJavaFetcher(callerName: String = null, disableErrorThrows: Boolean = false): JavaFetcher = {
-    new JavaFetcher(genKvStore,
-                    Constants.ChrononMetadataKey,
-                    timeoutMillis,
-                    responseConsumer,
-                    externalRegistry,
-                    callerName,
-                    flagStore,
-                    disableErrorThrows)
+    new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
+      .callerName(callerName)
+      .flagStore(flagStore)
+      .disableErrorThrows(disableErrorThrows)
+      .debug(false)
+      .build()
   }
 
-  final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(null)
+  final def javaFetcherBuilder(): JavaFetcher.Builder = {
+    new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
+      .flagStore(flagStore)
+  }
+
+  final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(callerName = null)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
