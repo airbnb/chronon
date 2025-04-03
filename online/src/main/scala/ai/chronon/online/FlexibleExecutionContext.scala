@@ -20,13 +20,13 @@ import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object FlexibleExecutionContext {
-  def buildExecutor(maxPoolSize: Int): ThreadPoolExecutor =
+  def buildExecutor(maxPoolSize: Int = 1000): ThreadPoolExecutor =
     new ThreadPoolExecutor(20, // corePoolSize
                            maxPoolSize, // maxPoolSize
                            600, // keepAliveTime
                            TimeUnit.SECONDS, // keep alive time units
                            new ArrayBlockingQueue[Runnable](1000))
-  def buildExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(buildExecutor(1000))
+  def buildExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(buildExecutor())
 
   def buildCustomExecutionContext(maxPoolSize: Int): ExecutionContextExecutor =
     ExecutionContext.fromExecutor(buildExecutor(maxPoolSize))
