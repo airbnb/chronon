@@ -16,18 +16,18 @@
 
 package ai.chronon.online
 
-import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{ArrayBlockingQueue, BlockingQueue, ThreadPoolExecutor, TimeUnit}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object FlexibleExecutionContext {
-  def buildExecutor(maxPoolSize: Int = 1000): ThreadPoolExecutor =
-    new ThreadPoolExecutor(20, // corePoolSize
-                           maxPoolSize, // maxPoolSize
-                           600, // keepAliveTime
-                           TimeUnit.SECONDS, // keep alive time units
-                           new ArrayBlockingQueue[Runnable](1000))
+  def buildExecutor(corePoolSize: Int = 20,
+                    maxPoolSize: Int = 1000,
+                    keepAliveTime: Int = 600,
+                    keepAliveTimeUnit: TimeUnit = TimeUnit.SECONDS,
+                    workQueue: BlockingQueue[Runnable] = new ArrayBlockingQueue[Runnable](1000)): ThreadPoolExecutor =
+    new ThreadPoolExecutor(corePoolSize, maxPoolSize, keepAliveTime, keepAliveTimeUnit, workQueue)
   def buildExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(buildExecutor())
 
   def buildCustomExecutionContext(maxPoolSize: Int): ExecutionContextExecutor =
-    ExecutionContext.fromExecutor(buildExecutor(maxPoolSize))
+    ExecutionContext.fromExecutor(buildExecutor(maxPoolSize = maxPoolSize))
 }
