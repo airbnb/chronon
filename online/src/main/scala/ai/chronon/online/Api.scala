@@ -244,6 +244,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
       .callerName(callerName)
       .flagStore(flagStore)
       .disableErrorThrows(disableErrorThrows)
+      .debug(false)
       .build()
   }
 
