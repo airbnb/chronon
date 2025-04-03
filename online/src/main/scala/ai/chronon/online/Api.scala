@@ -247,17 +247,9 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
       .build()
   }
 
-  final def buildJavaFetcherWithExecutionContext(callerName: String = null,
-                                                 disableErrorThrows: Boolean = false,
-                                                 debug: Boolean = false,
-                                                 executionContextOverride: ExecutionContext = null): JavaFetcher = {
+  final def javaFetcherBuilder(): JavaFetcher.Builder = {
     new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
-      .callerName(callerName)
-      .debug(debug)
       .flagStore(flagStore)
-      .disableErrorThrows(disableErrorThrows)
-      .executionContextOverride(executionContextOverride)
-      .build()
   }
 
   final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(callerName = null)
