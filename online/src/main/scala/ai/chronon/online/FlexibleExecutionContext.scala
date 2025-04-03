@@ -20,6 +20,7 @@ import java.util.concurrent.{ArrayBlockingQueue, BlockingQueue, ThreadPoolExecut
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object FlexibleExecutionContext {
+  // users can also provide a custom execution context override in [MetadataStore]
   def buildExecutor(corePoolSize: Int = 20,
                     maxPoolSize: Int = 1000,
                     keepAliveTime: Int = 600,
@@ -28,6 +29,7 @@ object FlexibleExecutionContext {
     new ThreadPoolExecutor(corePoolSize, maxPoolSize, keepAliveTime, keepAliveTimeUnit, workQueue)
   def buildExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(buildExecutor())
 
+  // a helper method to tune execution context based on thread pool size
   def buildCustomExecutionContext(maxPoolSize: Int): ExecutionContextExecutor =
     ExecutionContext.fromExecutor(buildExecutor(maxPoolSize = maxPoolSize))
 }
