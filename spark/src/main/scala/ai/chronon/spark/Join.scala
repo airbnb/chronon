@@ -155,6 +155,22 @@ class Join(joinConf: api.Join,
         }.toSeq
       }
 
+    val distinctBootstrapSetsWithSchema: Seq[(Seq[String], Long, Set[StructField])] =
+      distinctBootstrapSets.map {
+        case (hashes, rowCount) =>
+          if (hashes.exists(hash => !bootstrapInfo.hashToSchema.contains(hash))) {
+            logger.error(s"""Bootstrap table contains out-of-date metadata and should be cleaned up.
+                 |This is most likely caused by bootstrap table not properly archived during schema evolution. The semantic_hash may have been manually cleared to skip this.
+                 |Please manually archive the old bootstrap table and re-run.
+                 |
+                 |ALTER TABLE ${bootstrapTable} RENAME TO ${bootstrapTable}_<timestamp_suffix>;
+                 |""".stripMargin)
+            throw new IllegalStateException("Bootstrap table contains out-of-date metadata and should be cleaned up.")
+          }
+          val schema = hashes.toSet.flatMap(bootstrapInfo.hashToSchema.apply)
+          (hashes, rowCount, schema)
+      }
+
     val partsToCompute: Seq[JoinPartMetadata] = {
       if (selectedJoinParts.isEmpty) {
         bootstrapInfo.joinParts
@@ -171,9 +187,8 @@ class Join(joinConf: api.Join,
     val coveringSetsPerJoinPart: Seq[(JoinPartMetadata, Seq[CoveringSet])] = bootstrapInfo.joinParts
       .filter(part => selectedJoinParts.isEmpty || partsToCompute.contains(part))
       .map { joinPartMetadata =>
-        val coveringSets = distinctBootstrapSets.map {
-          case (hashes, rowCount) =>
-            val schema = hashes.toSet.flatMap(bootstrapInfo.hashToSchema.apply)
+        val coveringSets = distinctBootstrapSetsWithSchema.map {
+          case (hashes, rowCount, schema) =>
             val isCovering = joinPartMetadata.derivationDependencies
               .map {
                 case (derivedField, baseFields) =>
@@ -224,8 +239,7 @@ class Join(joinConf: api.Join,
   }
 
   override def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit = {
-    val bootstrapDf =
-      tableUtils.sql(leftRange.genScanQuery(query = null, table = bootstrapTable)).addTimebasedColIfExists()
+    val bootstrapDf = leftRange.scanQueryDf(query = null, table = bootstrapTable).addTimebasedColIfExists()
     val rightPartsData = getRightPartsData(leftRange)
     val joinedDfTry =
       try {
@@ -544,10 +558,12 @@ class Join(joinConf: api.Join,
               logger.info(s"partition range of bootstrap table ${part.table} is beyond unfilled range")
               partialDf
             } else {
-              var bootstrapDf = tableUtils.sql(
-                bootstrapRange.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
-              )
-
+              val partitionColumn = tableUtils.getPartitionColumn(part.query)
+              var bootstrapDf = bootstrapRange.scanQueryDf(part.query,
+                                                           part.table,
+                                                           fillIfAbsent = Map(partitionColumn -> null),
+                                                           partitionColOpt = Some(partitionColumn),
+                                                           renamePartitionCol = true)
               // attach semantic_hash for either log or regular table bootstrap
               validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
               if (bootstrapDf.columns.contains(Constants.SchemaHash)) {
@@ -589,7 +605,7 @@ class Join(joinConf: api.Join,
     val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
     logger.info(s"Finished computing bootstrap table ${joinConf.metaData.bootstrapTable} in ${elapsedMins} minutes")
 
-    tableUtils.sql(range.genScanQuery(query = null, table = bootstrapTable))
+    range.scanQueryDf(query = null, table = bootstrapTable)
   }
 
   /*

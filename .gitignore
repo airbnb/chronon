@@ -33,6 +33,7 @@ api/py/build/
 api/py/ai/chronon/thrift/
 api/py/*.egg-info/
 *.egg
+.coverge
 
 # spark test scratch area
 **/spark-warehouse/

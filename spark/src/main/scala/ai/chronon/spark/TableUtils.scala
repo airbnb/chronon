@@ -19,7 +19,7 @@ package ai.chronon.spark
 import java.io.{PrintWriter, Serializable, StringWriter}
 import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
-import ai.chronon.api.{Constants, PartitionSpec}
+import ai.chronon.api.{Constants, PartitionSpec, Query}
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
@@ -208,7 +208,7 @@ case object Iceberg extends Format {
       throw new NotImplementedError(s"subPartitionsFilter is not supported on this format")
     }
 
-    getIcebergPartitions(tableName)
+    getIcebergPartitions(tableName, partitionColumn)
   }
 
   override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
@@ -217,21 +217,22 @@ case object Iceberg extends Format {
         "For single partition retrieval, please use 'partition' method.")
   }
 
-  private def getIcebergPartitions(tableName: String)(implicit sparkSession: SparkSession): Seq[String] = {
+  private def getIcebergPartitions(tableName: String, partitionColumn: String)(implicit
+      sparkSession: SparkSession): Seq[String] = {
     val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
     val index = partitionsDf.schema.fieldIndex("partition")
     if (partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
       // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
       // so we collect and then filter.
       partitionsDf
-        .select("partition.ds", "partition.hr")
+        .select(s"partition.$partitionColumn", "partition.hr")
         .collect()
         .filter(_.get(1) == null)
         .map(_.getString(0))
         .toSeq
     } else {
       partitionsDf
-        .select("partition.ds")
+        .select(s"partition.$partitionColumn")
         .collect()
         .map(_.getString(0))
         .toSeq
@@ -347,10 +348,10 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
 
-  def isPartitioned(tableName: String): Boolean = {
+  def isPartitioned(tableName: String, partitionColOpt: Option[String] = None): Boolean = {
     // TODO: use proper way to detect if a table is partitioned or not
     val schema = getSchemaFromTable(tableName)
-    schema.fieldNames.contains(partitionColumn)
+    schema.fieldNames.contains(getPartitionColumn(partitionColOpt))
   }
 
   def createDatabase(database: String): Boolean = {
@@ -384,10 +385,12 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def partitions(tableName: String, subPartitionsFilter: Map[String, String] = Map.empty): Seq[String] = {
+  def partitions(tableName: String,
+                 subPartitionsFilter: Map[String, String] = Map.empty,
+                 partitionColOpt: Option[String] = None): Seq[String] = {
     if (!tableExists(tableName)) return Seq.empty[String]
     val format = tableReadFormat(tableName)
-    format.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)(sparkSession)
+    format.primaryPartitions(tableName, getPartitionColumn(partitionColOpt), subPartitionsFilter)(sparkSession)
   }
 
   // Given a table and a query extract the schema of the columns involved as input.
@@ -431,12 +434,15 @@ case class TableUtils(sparkSession: SparkSession) {
   // method to check if a user has access to a table
   def checkTablePermission(tableName: String,
                            fallbackPartition: String =
-                             partitionSpec.before(partitionSpec.at(System.currentTimeMillis()))): Boolean = {
+                             partitionSpec.before(partitionSpec.at(System.currentTimeMillis())),
+                           partitionColOpt: Option[String] = None): Boolean = {
     logger.info(s"Checking permission for table $tableName...")
     try {
       // retrieve one row from the table
       val partitionFilter = lastAvailablePartition(tableName).getOrElse(fallbackPartition)
-      sparkSession.sql(s"SELECT * FROM $tableName where $partitionColumn='$partitionFilter' LIMIT 1").collect()
+      sparkSession
+        .sql(s"SELECT * FROM $tableName where ${getPartitionColumn(partitionColOpt)}='$partitionFilter' LIMIT 1")
+        .collect()
       true
     } catch {
       case e: SparkException =>
@@ -454,11 +460,15 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  def lastAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].max(x, y))
+  def lastAvailablePartition(tableName: String,
+                             subPartitionFilters: Map[String, String] = Map.empty,
+                             partitionColOpt: Option[String] = None): Option[String] =
+    partitions(tableName, subPartitionFilters, partitionColOpt).reduceOption((x, y) => Ordering[String].max(x, y))
 
-  def firstAvailablePartition(tableName: String, subPartitionFilters: Map[String, String] = Map.empty): Option[String] =
-    partitions(tableName, subPartitionFilters).reduceOption((x, y) => Ordering[String].min(x, y))
+  def firstAvailablePartition(tableName: String,
+                              subPartitionFilters: Map[String, String] = Map.empty,
+                              partitionColOpt: Option[String] = None): Option[String] =
+    partitions(tableName, subPartitionFilters, partitionColOpt).reduceOption((x, y) => Ordering[String].min(x, y))
 
   def insertPartitions(df: DataFrame,
                        tableName: String,
@@ -513,7 +523,7 @@ case class TableUtils(sparkSession: SparkSession) {
       // so that an exception will be thrown below
       dfRearranged
     }
-    repartitionAndWrite(finalizedDf, tableName, saveMode, stats, sortByCols)
+    repartitionAndWrite(finalizedDf, tableName, saveMode, stats, sortByCols, partitionColumns)
   }
 
   def sql(query: String): DataFrame = {
@@ -542,6 +552,12 @@ case class TableUtils(sparkSession: SparkSession) {
         logger.error("Error running query:", e)
         throw e
     }
+  }
+
+  def sqlWithDefaultPartitionColumn(query: String, existingPartitionColumn: String): DataFrame = {
+    // To support joining table sources with various partition column name,
+    // we rename partition column back to the default
+    sql(query).withColumnRenamed(existingPartitionColumn, partitionColumn)
   }
 
   def insertUnPartitioned(df: DataFrame,
@@ -598,26 +614,38 @@ case class TableUtils(sparkSession: SparkSession) {
                                   tableName: String,
                                   saveMode: SaveMode,
                                   stats: Option[DfStats],
-                                  sortByCols: Seq[String] = Seq.empty): Unit = {
+                                  sortByCols: Seq[String] = Seq.empty,
+                                  partitionCols: Seq[String] = Seq.empty): Unit = {
     wrapWithCache(s"repartition & write to $tableName", df) {
       logger.info(s"Repartitioning before writing...")
-      repartitionAndWriteInternal(df, tableName, saveMode, stats, sortByCols)
+      repartitionAndWriteInternal(df, tableName, saveMode, stats, sortByCols, partitionCols)
     }.get
+  }
+
+  def getPartitionColumn(q: Query): String = {
+    Option(q).map(_.partitionColumn).filter(_ != null).getOrElse(partitionColumn)
+  }
+
+  def getPartitionColumn(columnOpt: Option[String] = None): String = {
+    columnOpt.getOrElse(partitionColumn)
   }
 
   private def repartitionAndWriteInternal(df: DataFrame,
                                           tableName: String,
                                           saveMode: SaveMode,
                                           stats: Option[DfStats],
-                                          sortByCols: Seq[String] = Seq.empty): Unit = {
+                                          sortByCols: Seq[String] = Seq.empty,
+                                          partitionCols: Seq[String] = Seq.empty): Unit = {
     // get row count and table partition count statistics
-
+    // to determine shuffle parallelism, count only top-level/first partition column
+    // assumed to be the date partition. If not given, use default
+    val partitionCol = partitionCols.headOption.getOrElse(partitionColumn)
     val (rowCount: Long, tablePartitionCount: Int) =
-      if (df.schema.fieldNames.contains(partitionColumn)) {
+      if (df.schema.fieldNames.contains(partitionCol)) {
         if (stats.isDefined && stats.get.partitionRange.wellDefined) {
           stats.get.count -> stats.get.partitionRange.partitions.length
         } else {
-          val result = df.select(count(lit(1)), approx_count_distinct(col(partitionColumn))).head()
+          val result = df.select(count(lit(1)), approx_count_distinct(col(partitionCol))).head()
           (result.getAs[Long](0), result.getAs[Long](1).toInt)
         }
       } else {
@@ -666,8 +694,8 @@ case class TableUtils(sparkSession: SparkSession) {
       logger.info(
         s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
       val (repartitionCols: immutable.Seq[String], partitionSortCols: immutable.Seq[String]) =
-        if (df.schema.fieldNames.contains(partitionColumn)) {
-          (Seq(partitionColumn, saltCol), Seq(partitionColumn) ++ sortByCols)
+        if (df.schema.fieldNames.contains(partitionCol)) {
+          (Seq(partitionCol, saltCol), Seq(partitionCol) ++ sortByCols)
         } else { (Seq(saltCol), sortByCols) }
       logger.info(s"Sorting within partitions with cols: $partitionSortCols")
       saltedDf
@@ -757,12 +785,16 @@ case class TableUtils(sparkSession: SparkSession) {
                      outputPartitionRange: PartitionRange,
                      inputTables: Option[Seq[String]] = None,
                      inputTableToSubPartitionFiltersMap: Map[String, Map[String, String]] = Map.empty,
+                     inputTableToPartitionColumnsMap: Map[String, String] = Map.empty,
                      inputToOutputShift: Int = 0,
                      skipFirstHole: Boolean = true): Option[Seq[PartitionRange]] = {
 
     val validPartitionRange = if (outputPartitionRange.start == null) { // determine partition range automatically
-      val inputStart = inputTables.flatMap(_.map(table =>
-        firstAvailablePartition(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))).min)
+      val inputStart = inputTables.flatMap(
+        _.map(table =>
+          firstAvailablePartition(table,
+                                  inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty),
+                                  partitionColOpt = inputTableToPartitionColumnsMap.get(table))).min)
       assert(
         inputStart.isDefined,
         s"""Either partition range needs to have a valid start or
@@ -794,7 +826,9 @@ case class TableUtils(sparkSession: SparkSession) {
       .map { tables =>
         tables
           .flatMap { table =>
-            partitions(table, inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty))
+            partitions(table,
+                       inputTableToSubPartitionFiltersMap.getOrElse(table, Map.empty),
+                       partitionColOpt = inputTableToPartitionColumnsMap.get(table))
           }
           .map(partitionSpec.shift(_, inputToOutputShift))
       }

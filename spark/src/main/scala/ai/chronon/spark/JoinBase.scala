@@ -71,6 +71,7 @@ abstract class JoinBase(joinConf: api.Join,
     val partLeftKeys = joinPart.rightToLeft.values.toArray
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
+    // At dataframe, we already renamed various partition column names to the common default
     val additionalKeys: Seq[String] = {
       if (joinConf.left.dataModel == Entities) {
         Seq(tableUtils.partitionColumn)
@@ -171,6 +172,7 @@ abstract class JoinBase(joinConf: api.Join,
           rightRange,
           Some(Seq(joinConf.left.table)),
           inputToOutputShift = shiftDays,
+          inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn,
           // never skip hole during partTable's range determination logic because we don't want partTable
           // and joinTable to be out of sync. skipping behavior is already handled in the outer loop.
           skipFirstHole = false
@@ -216,7 +218,7 @@ abstract class JoinBase(joinConf: api.Join,
         throw e
     }
     if (tableUtils.tableExists(partTable)) {
-      Some(tableUtils.sql(rightRange.genScanQuery(query = null, partTable)))
+      Some(rightRange.scanQueryDf(query = null, partTable))
     } else {
       // Happens when everything is handled by bootstrap
       None
@@ -354,7 +356,13 @@ abstract class JoinBase(joinConf: api.Join,
 
     (rangeToFill,
      tableUtils
-       .unfilledRanges(outputTable, rangeToFill, Some(Seq(joinConf.left.table)), skipFirstHole = skipFirstHole)
+       .unfilledRanges(
+         outputTable,
+         rangeToFill,
+         Some(Seq(joinConf.left.table)),
+         skipFirstHole = skipFirstHole,
+         inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn
+       )
        .getOrElse(Seq.empty))
   }
 
@@ -524,7 +532,7 @@ abstract class JoinBase(joinConf: api.Join,
     //  2 - User has entity table which is cumulative and only want to run backfill for the latest partition
     val (rangeToFill, unfilledRanges) = getUnfilledRange(overrideStartPartition, outputTable)
 
-    def finalResult: DataFrame = tableUtils.sql(rangeToFill.genScanQuery(null, outputTable))
+    def finalResult: DataFrame = rangeToFill.scanQueryDf(query = null, outputTable)
     if (unfilledRanges.isEmpty) {
       logger.info(s"\nThere is no data to compute based on end partition of ${rangeToFill.end}.\n\n Exiting..")
       if (selectedJoinParts.isDefined) {

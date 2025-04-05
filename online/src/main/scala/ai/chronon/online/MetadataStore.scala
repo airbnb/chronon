@@ -37,7 +37,10 @@ import scala.util.{Failure, Success, Try}
 // [timestamp -> {metric name -> metric value}]
 case class DataMetrics(series: Seq[(Long, SortedMap[String, Any])])
 
-class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, timeoutMillis: Long) {
+class MetadataStore(kvStore: KVStore,
+                    val dataset: String = ChrononMetadataKey,
+                    timeoutMillis: Long,
+                    executionContextOverride: ExecutionContext = null) {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
   private val CONF_BATCH_SIZE = 50
@@ -52,7 +55,8 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
     partitionSpec = PartitionSpec(format = format, spanMillis = partitionSpec.spanMillis)
   }
 
-  implicit val executionContext: ExecutionContext = kvStore.executionContext
+  implicit val executionContext: ExecutionContext =
+    Option(executionContextOverride).getOrElse(FlexibleExecutionContext.buildExecutionContext)
 
   def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
     val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
@@ -131,7 +135,7 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
         else Metrics.Context(Metrics.Environment.MetaDataFetching, join = name)
       // Throw exception after metrics. No join metadata is bound to be a critical failure.
       if (result.isFailure) {
-        context.withSuffix("join").increment(Metrics.Name.Exception)
+        context.withSuffix("join").incrementException(result.failed.get)
         throw result.failed.get
       }
       context.withSuffix("join").distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
@@ -221,6 +225,10 @@ class MetadataStore(kvStore: KVStore, val dataset: String = ChrononMetadataKey, 
           }
         logger.info(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset")
         if (metaData.isFailure) {
+          Metrics
+            .Context(Metrics.Environment.MetaDataFetching, groupBy = name)
+            .withSuffix("group_by")
+            .incrementException(metaData.failed.get)
           Failure(
             new RuntimeException(s"Couldn't fetch group by serving info for $batchDataset, " +
                                    s"please make sure a batch upload was successful",

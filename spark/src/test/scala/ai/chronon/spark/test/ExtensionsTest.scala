@@ -26,7 +26,7 @@ class ExtensionsTest {
       (7, "2024-01-07"),
       (8, "2024-01-08"),
       (9, "2024-01-08"),
-      (10, "2024-01-09"),
+      (10, "2024-01-09")
     ).toDF("key", "ds")
 
     val prunedDf = df.prunePartition(PartitionRange("2024-01-05", "2024-01-07"))
@@ -35,7 +35,7 @@ class ExtensionsTest {
       (4, "2024-01-05"),
       (5, "2024-01-05"),
       (6, "2024-01-06"),
-      (7, "2024-01-07"),
+      (7, "2024-01-07")
     ).toDF("key", "ds")
     val diff = Comparison.sideBySide(expectedDf, prunedDf, List("key"))
     if (diff.count() != 0) {

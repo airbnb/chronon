@@ -32,7 +32,7 @@ import com.google.gson.Gson
 import java.util
 import scala.collection.JavaConverters._
 import scala.collection.Seq
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 // Does internal facing fetching
@@ -44,8 +44,9 @@ class FetcherBase(kvStore: KVStore,
                   timeoutMillis: Long = 10000,
                   debug: Boolean = false,
                   flagStore: FlagStore = null,
-                  disableErrorThrows: Boolean = false)
-    extends MetadataStore(kvStore, metaDataSet, timeoutMillis)
+                  disableErrorThrows: Boolean = false,
+                  executionContextOverride: ExecutionContext = null)
+    extends MetadataStore(kvStore, metaDataSet, timeoutMillis, executionContextOverride)
     with FetcherCache {
   import FetcherBase._
 
@@ -62,7 +63,7 @@ class FetcherBase(kvStore: KVStore,
                                        context: Metrics.Context,
                                        totalResponseValueBytes: Int,
                                        keys: Map[String, Any] // The keys are used only for caching
-  ): Map[String, AnyRef] = {
+  ): Option[Map[String, AnyRef]] = {
     val (servingInfo, batchResponseMaxTs) = getServingInfo(oldServingInfo, batchResponses)
 
     // Batch metrics
@@ -113,7 +114,7 @@ class FetcherBase(kvStore: KVStore,
       ) {
         if (debug) logger.info("Both batch and streaming data are null")
         context.distribution("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
-        return null
+        return None
       }
 
       // Streaming metrics
@@ -219,6 +220,7 @@ class FetcherBase(kvStore: KVStore,
           logger.info(s"""
                          |batch ir: ${gson.toJson(batchIr)}
                          |streamingRows: ${gson.toJson(streamingRows)}
+                         |streamingRowsCount: ${Try(streamingRows.length).getOrElse(0)}
                          |batchEnd in millis: ${servingInfo.batchEndTsMillis}
                          |queryTime in millis: $queryTimeMs
                          |""".stripMargin)
@@ -237,7 +239,7 @@ class FetcherBase(kvStore: KVStore,
     }
 
     context.distribution("group_by.latency.millis", System.currentTimeMillis() - startTimeMs)
-    responseMap
+    Option(responseMap)
   }
 
   def reportKvResponse(ctx: Metrics.Context,
@@ -428,6 +430,15 @@ class FetcherBase(kvStore: KVStore,
       kvStore.multiGet(allRequestsToFetch)
     } else {
       Future(Seq.empty[GetResponse])
+    }.recover {
+      case e: Throwable =>
+        // Capture exceptions from calling KvStore.multiGet
+        // requestMetaTry is a Failure when GBServingInfo failed to load, those are skipped because we don't fetch them.
+        groupByRequestToKvRequest.foreach {
+          case (_, requestMetaTry) =>
+            requestMetaTry.toOption.foreach(_.context.withSuffix("multi_get").incrementException(e))
+        }
+        throw e
     }
 
     kvResponseFuture
@@ -451,6 +462,7 @@ class FetcherBase(kvStore: KVStore,
               context.count("multi_get.batch.size", allRequestsToFetch.length)
               context.distribution("multi_get.bytes", totalResponseValueBytes)
               context.distribution("multi_get.response.length", kvResponses.length)
+              context.distribution("multi_get.response.success.length", kvResponses.count(_.values.isSuccess))
               context.distribution("multi_get.latency.millis", multiGetMillis)
 
               // pick the batch version with highest timestamp
@@ -472,7 +484,7 @@ class FetcherBase(kvStore: KVStore,
               val streamingResponsesOpt =
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
-              val groupByResponse: Map[String, AnyRef] =
+              val groupByResponse: Option[Map[String, AnyRef]] =
                 try {
                   if (debug)
                     logger.info(
@@ -497,7 +509,7 @@ class FetcherBase(kvStore: KVStore,
                 }
               if (groupByServingInfo.groupBy.hasDerivations) {
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
-                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, groupByResponse)
+                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, groupByResponse.getOrElse(Map.empty))
                 }
                 val derivedMap = derivedMapTry match {
                   case Success(derivedMap) =>
@@ -510,7 +522,7 @@ class FetcherBase(kvStore: KVStore,
                     val renameOnlyDeriveFunction =
                       buildRenameOnlyDerivationFunction(groupByServingInfo.groupBy.derivationsScala)
                     val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
-                      renameOnlyDeriveFunction(request.keys, groupByResponse)
+                      renameOnlyDeriveFunction(request.keys, groupByResponse.getOrElse(Map.empty))
                         .mapValues(_.asInstanceOf[AnyRef])
                         .toMap
                     }
@@ -527,7 +539,8 @@ class FetcherBase(kvStore: KVStore,
                 }
                 derivedMap
               } else {
-                groupByResponse
+                // When using fetchGroupBys and fetch key doesn't exist it should return Null.
+                groupByResponse.orNull
               }
             }
             Response(request, responseMapTry)
@@ -658,7 +671,7 @@ class FetcherBase(kvStore: KVStore,
                         if (debug || Math.random() < 0.001) {
                           logger.error(s"Failed to fetch $groupByRequest", ex)
                         }
-                        Map(groupByRequest.name + "_exception" -> ex.traceString)
+                        Map(prefix + "_exception" -> ex.traceString)
                     }
                     .get
                 }

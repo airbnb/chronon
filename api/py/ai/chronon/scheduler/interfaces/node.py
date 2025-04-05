@@ -1,7 +1,8 @@
 class Node:
-    def __init__(self, name, command, *args, **kwargs):
+    def __init__(self, name, command, settings, *args, **kwargs):
         self.name = name
         self.command = command
+        self.settings = settings
         self.args = args
         self.kwargs = kwargs
         self.dependencies = set()
