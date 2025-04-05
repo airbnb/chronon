@@ -1,7 +1,7 @@
 package ai.chronon.flink.test
 
 import ai.chronon.flink.window.{TimestampedIR, TimestampedTile}
-import ai.chronon.flink.{FlinkJob, SparkExpressionEvalFn}
+import ai.chronon.flink.{AvroFlinkSource, FlinkJob, SparkExpressionEvalFn}
 import ai.chronon.online.{Api, GroupByServingInfoParsed}
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.runtime.testutils.MiniClusterResourceConfiguration
@@ -12,6 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.{After, Before, Test}
 import org.mockito.Mockito.withSettings
 import org.scalatestplus.mockito.MockitoSugar.mock
+import org.apache.flink.api.scala.createTypeInformation
 
 import scala.jdk.CollectionConverters.asScalaBufferConverter
 
@@ -158,4 +159,40 @@ class FlinkJobIntegrationTest {
 
     assertEquals(expectedFinalIRsPerKey, finalIRsPerKey)
   }
+
+  @Test
+  def testFlinkJobFromAvroEndToEnd(): Unit = {
+    implicit val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+
+    val elements = Seq(
+      E2ETestEvent("test1", 12, 1.5, 1699366993123L),
+      E2ETestEvent("test2", 13, 1.6, 1699366993124L),
+      E2ETestEvent("test3", 14, 1.7, 1699366993125L)
+    ).map(AvroFlinkSourceTestUtils.toAvroBytes)
+
+    val avroByteStream = env.fromCollection(elements)
+
+    val source = new AvroFlinkSource(avroByteStream, AvroFlinkSourceTestUtils.e2EAvroSchema)
+    val groupBy = FlinkTestUtils.makeGroupBy(Seq("id"))
+    val encoder = Encoders.product[E2ETestEvent]
+
+    val outputSchema = new SparkExpressionEvalFn(encoder, groupBy).getOutputSchema
+
+    val groupByServingInfoParsed =
+      FlinkTestUtils.makeTestGroupByServingInfoParsed(groupBy, encoder.schema, outputSchema)
+    val mockApi = mock[Api](withSettings().serializable())
+    val writerFn = new MockAsyncKVStoreWriter(Seq(true), mockApi, "testFlinkJobFromAvroEndToEnd")
+    val job = FlinkJob.fromAvro(source, writerFn, groupByServingInfoParsed, 2)
+
+    job.runGroupByJob(env).addSink(new CollectSink)
+
+    env.execute("FlinkJobIntegrationTest")
+
+    // capture the datastream of the 'created' timestamps of all the written out events
+    val writeEventCreatedDS = CollectSink.values.asScala
+    assert(writeEventCreatedDS.size == elements.size)
+    // check that all the writes were successful
+    assertEquals(writeEventCreatedDS.map(_.status), Seq(true, true, true))
+  }
+
 }
