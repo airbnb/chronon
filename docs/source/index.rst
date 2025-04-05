@@ -23,6 +23,7 @@
    authoring_features/StagingQuery
    authoring_features/DerivedFeatures
    authoring_features/Bootstrap
+   authoring_features/LabelJoin
 
 .. toctree::
    :maxdepth: 2
