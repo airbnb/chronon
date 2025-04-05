@@ -237,6 +237,7 @@ class AnalyzerTest {
 
   @Test
   def testJoinAnalyzerCheckTimestampHasValues(): Unit = {
+    throw new RuntimeException("")
     val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
@@ -537,7 +538,7 @@ class AnalyzerTest {
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
     Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = oneYearAgo),
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = oneYearAgo, partitionColumn = "datest"),
       table = viewsTable
     )
   }
