@@ -451,4 +451,5 @@ struct ModelTransform {
     2: optional map<string, string> inputMappings
     3: optional map<string, string> outputMappings
     4: optional list<string> passthroughFields
+    5: optional string prefix
 }
