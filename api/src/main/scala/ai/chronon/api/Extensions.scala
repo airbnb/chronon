@@ -1035,6 +1035,7 @@ object Extensions {
       if (join.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
 
     def hasModelTransforms: Boolean = join.isSetModelTransforms && !join.modelTransforms.isEmpty
+    lazy val models: List[Model] = modelTransformsScala.map(_.model).distinct
     lazy val modelTransformsScala: List[ModelTransform] =
       if (join.isSetModelTransforms) join.modelTransforms.toScala else List.empty
 
@@ -1054,6 +1055,25 @@ object Extensions {
   implicit class ModelTransformOps(modelTransform: ModelTransform) {
     lazy val inputMappingsScala: Map[String, String] = modelTransform.inputMappings.toScala
     lazy val outputMappingsScala: Map[String, String] = modelTransform.outputMappings.toScala
+
+    def mapInputs(inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
+      modelTransform.model.inputSchema.toScala.map { dataField =>
+        val mappedFieldName = inputMappingsScala.getOrElse(dataField.name, dataField.name)
+        mappedFieldName -> inputs.getOrElse(dataField.name, null)
+      }.toMap
+    }
+
+    def mapOutputs(outputs: Map[String, AnyRef], inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
+      val mappedOutputs = modelTransform.model.outputSchema.toScala.map { dataField =>
+        val mappedFieldName = outputMappingsScala.getOrElse(dataField.name, dataField.name)
+        val prefixedFieldName = (Option(modelTransform.prefix).toSeq :+ mappedFieldName).mkString("_")
+        prefixedFieldName -> outputs.getOrElse(mappedFieldName, null)
+      }.toMap
+      val passThroughFields = modelTransform.passthroughFields.toScala.map { field =>
+        field -> inputs.getOrElse(field, null)
+      }.toMap
+      mappedOutputs ++ passThroughFields
+    }
   }
 
   implicit class DataFieldOps(dataField: DataField) {
