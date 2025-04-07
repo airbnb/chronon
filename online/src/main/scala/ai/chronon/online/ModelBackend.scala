@@ -2,6 +2,7 @@ package ai.chronon.online
 
 import ai.chronon.api.{Join, Model}
 
+import scala.collection.Seq
 import scala.concurrent.Future
 
 case class RegistrationResponse(status: String, isSuccess: Boolean, message: String)
