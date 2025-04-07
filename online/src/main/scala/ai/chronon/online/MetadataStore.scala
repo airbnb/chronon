@@ -56,7 +56,7 @@ class MetadataStore(kvStore: KVStore,
   }
 
   implicit val executionContext: ExecutionContext =
-    Option(executionContextOverride).getOrElse(FlexibleExecutionContext.buildExecutionContext)
+    Option(executionContextOverride).getOrElse(FlexibleExecutionContext.buildExecutionContext())
 
   def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
     val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]

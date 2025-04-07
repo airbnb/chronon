@@ -27,9 +27,18 @@ object FlexibleExecutionContext {
                     keepAliveTimeUnit: TimeUnit = TimeUnit.SECONDS,
                     workQueue: BlockingQueue[Runnable] = new ArrayBlockingQueue[Runnable](1000)): ThreadPoolExecutor =
     new ThreadPoolExecutor(corePoolSize, maxPoolSize, keepAliveTime, keepAliveTimeUnit, workQueue)
-  def buildExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(buildExecutor())
 
-  // a helper method to tune execution context based on thread pool size
-  def buildCustomExecutionContext(maxPoolSize: Int): ExecutionContextExecutor =
-    ExecutionContext.fromExecutor(buildExecutor(maxPoolSize = maxPoolSize))
+  // a helper method to tune execution context
+  def buildExecutionContext(
+      corePoolSize: Int = 20,
+      maxPoolSize: Int = 1000,
+      keepAliveTime: Int = 600,
+      keepAliveTimeUnit: TimeUnit = TimeUnit.SECONDS,
+      workQueue: BlockingQueue[Runnable] = new ArrayBlockingQueue[Runnable](1000)): ExecutionContextExecutor =
+    ExecutionContext.fromExecutor(
+      buildExecutor(corePoolSize = corePoolSize,
+                    maxPoolSize = maxPoolSize,
+                    keepAliveTime = keepAliveTime,
+                    keepAliveTimeUnit = keepAliveTimeUnit,
+                    workQueue = workQueue))
 }
