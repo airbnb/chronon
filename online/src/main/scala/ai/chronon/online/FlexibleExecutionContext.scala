@@ -16,15 +16,29 @@
 
 package ai.chronon.online
 
-import java.util.concurrent.{ArrayBlockingQueue, ThreadPoolExecutor, TimeUnit}
+import java.util.concurrent.{ArrayBlockingQueue, BlockingQueue, ThreadPoolExecutor, TimeUnit}
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object FlexibleExecutionContext {
-  def buildExecutor: ThreadPoolExecutor =
-    new ThreadPoolExecutor(20, // corePoolSize
-                           1000, // maxPoolSize
-                           600, // keepAliveTime
-                           TimeUnit.SECONDS, // keep alive time units
-                           new ArrayBlockingQueue[Runnable](1000))
-  def buildExecutionContext: ExecutionContextExecutor = ExecutionContext.fromExecutor(buildExecutor)
+  // users can also provide a custom execution context override in [MetadataStore]
+  def buildExecutor(corePoolSize: Int = 20,
+                    maxPoolSize: Int = 1000,
+                    keepAliveTime: Int = 600,
+                    keepAliveTimeUnit: TimeUnit = TimeUnit.SECONDS,
+                    workQueue: BlockingQueue[Runnable] = new ArrayBlockingQueue[Runnable](1000)): ThreadPoolExecutor =
+    new ThreadPoolExecutor(corePoolSize, maxPoolSize, keepAliveTime, keepAliveTimeUnit, workQueue)
+
+  // a helper method to tune execution context
+  def buildExecutionContext(
+      corePoolSize: Int = 20,
+      maxPoolSize: Int = 1000,
+      keepAliveTime: Int = 600,
+      keepAliveTimeUnit: TimeUnit = TimeUnit.SECONDS,
+      workQueue: BlockingQueue[Runnable] = new ArrayBlockingQueue[Runnable](1000)): ExecutionContextExecutor =
+    ExecutionContext.fromExecutor(
+      buildExecutor(corePoolSize = corePoolSize,
+                    maxPoolSize = maxPoolSize,
+                    keepAliveTime = keepAliveTime,
+                    keepAliveTimeUnit = keepAliveTimeUnit,
+                    workQueue = workQueue))
 }

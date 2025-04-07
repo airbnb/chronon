@@ -23,7 +23,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.function
 
 object TTLCache {
-  private[TTLCache] val executor = FlexibleExecutionContext.buildExecutor
+  private[TTLCache] val executor = FlexibleExecutionContext.buildExecutor()
 }
 // can continuously grow, only used for schemas
 // has two methods apply & refresh. Apply uses a longer ttl before updating than refresh
