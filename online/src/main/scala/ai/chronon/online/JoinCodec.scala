@@ -18,10 +18,11 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api.{DataType, HashUtils, StructField, StructType}
+import ai.chronon.online.Fetcher.ResponseWithContext
 import com.google.gson.Gson
+
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.JMapOps
-
 import ai.chronon.online.OnlineDerivationUtil.{
   DerivationFunc,
   buildDerivationFunction,
@@ -67,6 +68,22 @@ case class JoinCodec(conf: JoinOps, keySchema: StructType, baseValueSchema: Stru
         mergeSchema(name, baseValueSchema, derivedSchema, conf.modelSchema)
       } else {
         conf.modelSchema
+      }
+    }
+  }
+
+  def buildLoggingValues(resp: ResponseWithContext): Map[String, AnyRef] = {
+    if (!conf.hasModelTransforms) {
+      if (conf.join.logFullValues) {
+        resp.combinedValues
+      } else {
+        resp.derivedValues
+      }
+    } else {
+      if (conf.join.logFullValues) {
+        resp.combinedValues ++ resp.modelTransformsValues.getOrElse(Map.empty)
+      } else {
+        resp.modelTransformsValues.getOrElse(Map.empty)
       }
     }
   }

@@ -26,8 +26,7 @@ import ai.chronon.api.Extensions.{
   JoinPartOps,
   MetadataOps,
   StringOps,
-  ThrowableOps,
-  ModelTransformOps
+  ThrowableOps
 }
 import ai.chronon.api._
 import ai.chronon.online.Fetcher._
@@ -59,6 +58,7 @@ object Fetcher {
   case class SeriesStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request,
+                                 joinCodec: Option[JoinCodec],
                                  derivedValues: Map[String, AnyRef],
                                  baseValues: Map[String, AnyRef],
                                  modelTransformsValues: Option[Map[String, AnyRef]] = None) {
@@ -339,7 +339,7 @@ class Fetcher(val kvStore: KVStore,
                 val requestEndTs = System.currentTimeMillis()
                 ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
                 ctx.distribution("overall.latency.millis", requestEndTs - requestStartTs)
-                val response = ResponseWithContext(request, finalizedDerivedMap, baseMap)
+                val response = ResponseWithContext(request, Some(joinCodec), finalizedDerivedMap, baseMap)
                 // Refresh joinCodec if it has partial failure
                 if (hasPartialFailure) {
                   getJoinCodecs.refresh(joinName)
@@ -350,6 +350,7 @@ class Fetcher(val kvStore: KVStore,
                 getJoinCodecs.refresh(joinName)
                 ctx.incrementException(exception)
                 ResponseWithContext(internalResponse.request,
+                                    None,
                                     Map("join_codec_fetch_exception" -> exception.traceString),
                                     Map.empty)
             }
@@ -364,12 +365,13 @@ class Fetcher(val kvStore: KVStore,
     throw new NotImplementedError()
 
   private def doFetchJoin(requests: scala.collection.Seq[Request],
-                         joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
+                          joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
 
     val requestStartTs = System.currentTimeMillis()
     val responsesPreModelTransforms: Future[scala.collection.Seq[ResponseWithContext]] =
       fetchJoinPreModelTransforms(requests, joinConf, requestStartTs)
-    val responsesPostModelTransforms = fetchModelTransforms(responsesPreModelTransforms, joinConf)
+    val responsesPostModelTransforms =
+      FetcherModelUtils.fetchModelTransforms(responsesPreModelTransforms, this.modelBackend)
     responsesPostModelTransforms.map(_.iterator.map(logResponse(_, requestStartTs)).toSeq)
   }
 
@@ -427,16 +429,16 @@ class Fetcher(val kvStore: KVStore,
           return Response(resp.request, Success(resp.derivedValues))
         }
 
-        val keyBytesTry: Try[Array[Byte]] = encode(loggingContext.map(_.withSuffix("encode_key")),
-                                                   codec.keySchema,
-                                                   codec.keyCodec,
-                                                   resp.request.keys,
-                                                   cast = true)
-        if (keyBytesTry.isFailure) {
-          loggingContext.foreach(_.withSuffix("encode_key").incrementException(keyBytesTry.failed.get))
-          throw keyBytesTry.failed.get
-        }
-        val keyBytes = keyBytesTry.get
+        val keyBytes = encode(loggingContext.map(_.withSuffix("encode_key")),
+                              codec.keySchema,
+                              codec.keyCodec,
+                              resp.request.keys,
+                              cast = true).recover {
+          case e: Throwable =>
+            loggingContext.foreach(_.withSuffix("encode_key").incrementException(e))
+            throw e
+        }.get
+
         val hash = if (samplePercent > 0) {
           Math.abs(HashUtils.md5Long(keyBytes))
         } else {
@@ -444,11 +446,7 @@ class Fetcher(val kvStore: KVStore,
         }
         val shouldPublishLog = (hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))
         if (shouldPublishLog || debug) {
-          val values = if (codec.conf.join.logFullValues) {
-            resp.combinedValues
-          } else {
-            resp.derivedValues
-          }
+          val values = codec.buildLoggingValues(resp)
 
           if (debug) {
             logger.info(s"Logging ${resp.request.keys} : ${hash % 100000}: $samplePercent")
@@ -460,13 +458,14 @@ class Fetcher(val kvStore: KVStore,
                |""".stripMargin)
           }
 
-          val valueBytesTry: Try[Array[Byte]] =
-            encode(loggingContext.map(_.withSuffix("encode_value")), codec.valueSchema, codec.valueCodec, values)
-          if (valueBytesTry.isFailure) {
-            loggingContext.foreach(_.withSuffix("encode_value").incrementException(valueBytesTry.failed.get))
-            throw valueBytesTry.failed.get
-          }
-          val valueBytes = valueBytesTry.get
+          val valueBytes = encode(loggingContext.map(_.withSuffix("encode_value")),
+                                  codec.valueSchema,
+                                  codec.valueCodec,
+                                  values).recover {
+            case e: Throwable =>
+              loggingContext.foreach(_.withSuffix("encode_value").incrementException(e))
+              throw e
+          }.get
 
           val loggableResponse = LoggableResponse(
             keyBytes,
