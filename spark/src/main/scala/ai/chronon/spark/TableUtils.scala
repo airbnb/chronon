@@ -441,7 +441,8 @@ case class TableUtils(sparkSession: SparkSession) {
       // retrieve one row from the table
       val partitionFilter = lastAvailablePartition(tableName).getOrElse(fallbackPartition)
       sparkSession
-        .sql(s"SELECT * FROM $tableName where ${getPartitionColumn(partitionColOpt)}='$partitionFilter' LIMIT 1")
+        .sql(
+          s"SELECT ${getPartitionColumn(partitionColOpt)} FROM $tableName where ${getPartitionColumn(partitionColOpt)}='$partitionFilter' LIMIT 1")
         .collect()
       true
     } catch {
