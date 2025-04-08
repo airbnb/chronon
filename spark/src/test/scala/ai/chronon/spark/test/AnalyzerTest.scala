@@ -144,7 +144,7 @@ class AnalyzerTest {
         sources = Seq(getTestEventSource(namespace, partitionColOpt = partitionOpt)),
         keyColumns = Seq("item_id"),
         aggregations = Seq(
-          Builders.Aggregation(windows = Seq(new Window(windowDays, TimeUnit.DAYS)), // greater than one year
+          Builders.Aggregation(windows = Seq(new Window(windowDays, TimeUnit.DAYS)),
             operation = Operation.AVERAGE,
             inputColumn = "time_spent_ms")
         ),
