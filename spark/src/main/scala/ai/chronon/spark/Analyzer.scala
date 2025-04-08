@@ -544,7 +544,7 @@ class Analyzer(tableUtils: TableUtils,
             val tableToPartitions = groupBy.sources.toScala.map { source =>
               val table = source.table
               logger.info(s"Checking table $table for data availability ...")
-              val partitions = tableUtils.partitions(table)
+              val partitions = tableUtils.partitions(table, partitionColOpt = source.partitionColumnOpt)
               val startOpt = if (partitions.isEmpty) None else Some(partitions.min)
               val endOpt = if (partitions.isEmpty) None else Some(partitions.max)
               (table, partitions, startOpt, endOpt)
