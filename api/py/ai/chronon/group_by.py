@@ -515,7 +515,7 @@ def GroupBy(
 
     if not isinstance(sources, list):
         sources = [sources]
-    sources = [_sanitize_columns(_normalize_source(source)) for source in sources]
+    sources = [_sanitize_columns(_normalize_source(_copy_source(source))) for source in sources]
 
     deps = [dep for src in sources for dep in utils.get_dependencies(src, dependencies, lag=lag)]
 
@@ -557,3 +557,20 @@ def GroupBy(
     )
     validate_group_by(group_by)
     return group_by
+
+def _copy_source(source: ttypes.Source) -> ttypes.Source:
+    # Hold a reference to the join in a join source so that the
+    # module name can be extracted from GC referrers later on
+    join = None
+    if isinstance(source, ttypes.JoinSource):
+        join = source.join
+    elif isinstance(source, ttypes.Source) and source.joinSource:
+        join = source.joinSource.join
+
+    source_copy = copy.deepcopy(source)
+
+    if isinstance(source_copy, ttypes.JoinSource):
+        source_copy.join = join
+    elif isinstance(source_copy, ttypes.Source) and source_copy.joinSource:
+        source_copy.joinSource.join = join
+    return source_copy
