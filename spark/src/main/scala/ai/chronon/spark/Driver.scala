@@ -1062,7 +1062,6 @@ object Driver {
 
   def main(baseArgs: Array[String]): Unit = {
     val args = new Args(baseArgs)
-    var shouldExit = true
     args.subcommand match {
       case Some(x) =>
         x match {
@@ -1070,28 +1069,22 @@ object Driver {
           case args.GroupByBackfillArgs      => GroupByBackfill.run(args.GroupByBackfillArgs)
           case args.StagingQueryBackfillArgs => StagingQueryBackfill.run(args.StagingQueryBackfillArgs)
           case args.GroupByUploadArgs        => GroupByUploader.run(args.GroupByUploadArgs)
-          case args.GroupByStreamingArgs =>
-            shouldExit = false
-            GroupByStreaming.run(args.GroupByStreamingArgs)
-
-          case args.MetadataUploaderArgs   => MetadataUploader.run(args.MetadataUploaderArgs)
-          case args.FetcherCliArgs         => FetcherCli.run(args.FetcherCliArgs)
-          case args.LogFlattenerArgs       => LogFlattener.run(args.LogFlattenerArgs)
-          case args.ConsistencyMetricsArgs => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
-          case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
-          case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
-          case args.DailyStatsArgs         => DailyStats.run(args.DailyStatsArgs)
-          case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
-          case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
-          case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
-          case args.JoinBackfillLeftArgs   => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
-          case args.JoinBackfillFinalArgs  => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
-          case _                           => logger.info(s"Unknown subcommand: $x")
+          case args.GroupByStreamingArgs     => GroupByStreaming.run(args.GroupByStreamingArgs)
+          case args.MetadataUploaderArgs     => MetadataUploader.run(args.MetadataUploaderArgs)
+          case args.FetcherCliArgs           => FetcherCli.run(args.FetcherCliArgs)
+          case args.LogFlattenerArgs         => LogFlattener.run(args.LogFlattenerArgs)
+          case args.ConsistencyMetricsArgs   => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
+          case args.CompareJoinQueryArgs     => CompareJoinQuery.run(args.CompareJoinQueryArgs)
+          case args.AnalyzerArgs             => Analyzer.run(args.AnalyzerArgs)
+          case args.DailyStatsArgs           => DailyStats.run(args.DailyStatsArgs)
+          case args.LogStatsArgs             => LogStats.run(args.LogStatsArgs)
+          case args.MetadataExportArgs       => MetadataExport.run(args.MetadataExportArgs)
+          case args.LabelJoinArgs            => LabelJoin.run(args.LabelJoinArgs)
+          case args.JoinBackfillLeftArgs     => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
+          case args.JoinBackfillFinalArgs    => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
+          case _                             => logger.info(s"Unknown subcommand: $x")
         }
       case None => logger.info(s"specify a subcommand please")
-    }
-    if (shouldExit) {
-      System.exit(0)
     }
   }
 }
