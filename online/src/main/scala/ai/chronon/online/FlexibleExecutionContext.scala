@@ -21,6 +21,10 @@ import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object FlexibleExecutionContext {
   // users can also provide a custom execution context override in [MetadataStore]
+
+  def buildExecutionContext: ExecutionContextExecutor = buildExecutionContext()
+  def buildExecutor: ThreadPoolExecutor = buildExecutor()
+
   def buildExecutor(corePoolSize: Int = 20,
                     maxPoolSize: Int = 1000,
                     keepAliveTime: Int = 600,

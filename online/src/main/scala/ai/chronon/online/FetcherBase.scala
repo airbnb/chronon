@@ -351,7 +351,15 @@ class FetcherBase(kvStore: KVStore,
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
-      val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
+      val groupByServingInfoTry = getGroupByServingInfo(request.name)
+        .recover {
+          case ex: Throwable =>
+            getGroupByServingInfo.refresh(request.name)
+            logger.error(s"Couldn't fetch GroupByServingInfo for ${request.name}", ex)
+            request.context.foreach(_.incrementException(ex))
+            throw ex
+        }
+      val groupByRequestMetaTry: Try[GroupByRequestMeta] = groupByServingInfoTry
         .map { groupByServingInfo =>
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
@@ -583,7 +591,11 @@ class FetcherBase(kvStore: KVStore,
       requests.map { request =>
         // get join conf from metadata store if not passed in
         val joinTry: Try[JoinOps] = if (joinConf.isEmpty) {
-          getJoinConf(request.name)
+          val joinConfTry = getJoinConf(request.name)
+          if (joinConfTry.isFailure) {
+            getJoinConf.refresh(request.name)
+          }
+          joinConfTry
         } else {
           logger.debug(s"Using passed in join configuration: ${joinConf.get.metaData.getName}")
           Success(JoinOps(joinConf.get))
