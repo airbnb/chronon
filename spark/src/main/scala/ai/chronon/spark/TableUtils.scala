@@ -203,11 +203,39 @@ case object Hive extends Format {
 }
 
 case object Iceberg extends Format {
+
+  override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(
+    implicit sparkSession: SparkSession): Seq[String] = {
+    if (!supportSubPartitionsFilter && subPartitionsFilter.nonEmpty) {
+      throw new NotImplementedError(s"subPartitionsFilter is not supported on this format")
+    }
+
+    getIcebergPartitions(tableName, partitionColumn, subPartitionsFilter)
+  }
+
+
   override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
     sparkSession.sqlContext
       .sql(s"SHOW PARTITIONS $tableName")
       .collect()
       .map(row => parseHivePartition(row.getString(0)))
+  }
+
+  private def getIcebergPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(implicit
+                                                                               sparkSession: SparkSession): Seq[String] = {
+    val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
+    val index = partitionsDf.schema.fieldIndex("partition")
+    if (partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr") && subPartitionsFilter.isEmpty) {
+      // For iceberg tables with hr partition column but without sub-partition filter, only retain the records where hr=null.
+      partitionsDf
+        .select(s"partition.$partitionColumn", "partition.hr")
+        .collect()
+        .filter(_.get(1) == null)
+        .map(_.getString(0))
+        .toSeq
+    } else {
+      super.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)
+    }
   }
 
   def createTableTypeString: String = "USING iceberg"
