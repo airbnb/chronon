@@ -203,10 +203,12 @@ class Fetcher(val kvStore: KVStore,
   lazy val getJoinCodecs = new TTLCache[String, Try[(JoinCodec, Boolean)]](
     { joinName: String =>
       val startTimeMs = System.currentTimeMillis()
-      val result: Try[(JoinCodec, Boolean)] = getJoinConf(joinName)
-        .map(_.join)
-        .map(join => buildJoinCodec(join, refreshOnFail = true))
-        .recoverWith {
+      val result: Try[(JoinCodec, Boolean)] =
+        try {
+          getJoinConf(joinName)
+            .map(_.join)
+            .map(join => buildJoinCodec(join, refreshOnFail = true))
+        } catch {
           case th: Throwable =>
             getJoinConf.refresh(joinName)
             Failure(
