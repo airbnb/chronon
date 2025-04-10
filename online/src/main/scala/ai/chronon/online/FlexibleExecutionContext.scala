@@ -20,6 +20,8 @@ import java.util.concurrent.{ArrayBlockingQueue, BlockingQueue, ThreadPoolExecut
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
 
 object FlexibleExecutionContext {
+  def buildExecutor: ThreadPoolExecutor = buildExecutor()
+  def buildExecutionContext: ExecutionContextExecutor = buildExecutionContext()
   // users can also provide a custom execution context override in [MetadataStore]
   def buildExecutor(corePoolSize: Int = 20,
                     maxPoolSize: Int = 1000,
