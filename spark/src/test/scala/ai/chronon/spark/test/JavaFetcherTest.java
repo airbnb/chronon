@@ -41,7 +41,7 @@ public class JavaFetcherTest {
     String namespace = "java_fetcher_test";
     SparkSession session = SparkSessionBuilder.build(namespace, true, scala.Option.apply(null), scala.Option.apply(null), true);
     TableUtils tu = new TableUtils(session);
-    InMemoryKvStore kvStore = new InMemoryKvStore(func(() -> tu), false);
+    InMemoryKvStore kvStore = new InMemoryKvStore(func(() -> tu));
     MockApi mockApi = new MockApi(func(() -> kvStore), "java_fetcher_test");
     JavaFetcher fetcher = mockApi.buildJavaFetcher();
 

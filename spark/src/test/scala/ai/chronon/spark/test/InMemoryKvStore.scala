@@ -29,9 +29,7 @@ import scala.collection.mutable
 import scala.concurrent.Future
 import scala.util.Try
 
-class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset: Boolean = false)
-    extends KVStore
-    with Serializable {
+class InMemoryKvStore(tableUtils: () => TableUtils) extends KVStore with Serializable {
   //type aliases for readability
   type Key = String
   type Data = Array[Byte]
@@ -49,9 +47,6 @@ class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset:
       // emulate IO latency
       Thread.sleep(4)
       requests.map { req =>
-        if (!database.containsKey(req.dataset) && hardFailureOnInvalidDataset) {
-          throw new RuntimeException(s"Invalid dataset: ${req.dataset}")
-        }
         val values = Try {
           database
             .get(req.dataset) // table
@@ -149,15 +144,13 @@ object InMemoryKvStore {
   // We would like to create one instance of InMemoryKVStore per executors, but share SparkContext
   // across them. Since SparkContext is not serializable,  we wrap TableUtils that has SparkContext
   // in a closure and pass it around.
-  def build(testName: String,
-            tableUtils: () => TableUtils,
-            hardFailureOnInvalidDataset: Boolean = false): InMemoryKvStore = {
+  def build(testName: String, tableUtils: () => TableUtils): InMemoryKvStore = {
     stores.computeIfAbsent(
       testName,
       new function.Function[String, InMemoryKvStore] {
         override def apply(name: String): InMemoryKvStore = {
           logger.info(s"Missing in-memory store for name: $name. Creating one")
-          new InMemoryKvStore(tableUtils, hardFailureOnInvalidDataset)
+          new InMemoryKvStore(tableUtils)
         }
       }
     )
