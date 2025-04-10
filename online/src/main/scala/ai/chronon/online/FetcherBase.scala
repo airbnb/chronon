@@ -671,7 +671,7 @@ class FetcherBase(kvStore: KVStore,
                         if (debug || Math.random() < 0.001) {
                           logger.error(s"Failed to fetch $groupByRequest", ex)
                         }
-                        Map(groupByRequest.name + "_exception" -> ex.traceString)
+                        Map(prefix + "_exception" -> ex.traceString)
                     }
                     .get
                 }
