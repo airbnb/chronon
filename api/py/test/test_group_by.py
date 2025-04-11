@@ -80,6 +80,14 @@ def entity_source(snapshotTable, mutationTable):
         ),
     )
 
+def test_group_by_with_description():
+    group_by = GroupBy(
+        sources=event_source("table"),
+        keys=["subject"],
+        aggregations=[],
+        description="GroupBy description"
+    )
+    assert group_by.metaData.description == "GroupBy description"
 
 def test_pretty_window_str(days_unit, hours_unit):
     """
@@ -274,3 +282,22 @@ def test_additional_metadata():
         tags={"to_deprecate": True}
     )
     assert json.loads(gb.metaData.customJson)['groupby_tags']['to_deprecate']
+
+
+
+def test_derivation():
+    derivation = Derivation(name="derivation_name", expression="derivation_expression")
+    expected_derivation = api.Derivation(
+        name="derivation_name",
+        expression="derivation_expression")
+
+    assert derivation == expected_derivation
+
+def test_derivation_with_description():
+    derivation = Derivation(name="derivation_name", expression="derivation_expression", description="Derivation description")
+    expected_derivation = api.Derivation(
+        name="derivation_name",
+        expression="derivation_expression",
+        metaData=api.MetaData(description="Derivation description"))
+
+    assert derivation == expected_derivation

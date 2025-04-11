@@ -147,6 +147,7 @@ def Aggregation(
         Besides the GroupBy.keys, this is another level of keys for use under this aggregation.
         Using this would create an output as a map of string to aggregate.
     :type buckets: List[str]
+    :param description: optional description of this aggregation
     :return: An aggregate defined with the specified operation.
     """
     # Default to last
@@ -166,11 +167,20 @@ def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
     return ttypes.Window(length, timeUnit)
 
 
-def Derivation(**kwargs) -> ttypes.Derivation:
+def Derivation(name: str, expression: str, description: Optional[str]) -> ttypes.Derivation:
     """
-    See documentation for ai.chronon.join.Derivation.
+    Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
+    output schema. It is supported for offline computations for now.
+    If both name and expression are set to "*", then every raw column will be included along with the derived columns.
+    :param name: output column name of the SQL expression
+    :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
+    :param description: optional description of this derivation
+    :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
     """
-    return join.Derivation(**kwargs)
+    metadata = None
+    if description:
+        metadata = ttypes.MetaData(description=description)
+    return ttypes.Derivation(name=name, expression=expression, metaData=metadata)
 
 
 def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
@@ -463,6 +473,7 @@ def GroupBy(
     :param kwargs:
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
+    :param description: optional description of this GroupBy
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.

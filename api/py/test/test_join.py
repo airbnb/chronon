@@ -54,6 +54,13 @@ def right_part(source):
         ),
     )
 
+def test_join_with_description():
+    join = Join(
+        left=event_source("sample_namespace.sample_table"),
+        right_parts=[right_part(event_source("sample_namespace.another_table"))],
+        description="Join description"
+    )
+    assert join.metaData.description == "Join description"
 
 def test_deduped_dependencies():
     """
