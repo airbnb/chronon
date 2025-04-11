@@ -67,6 +67,10 @@ SPARK_LIBS_PROVIDED = [
         name = "jackson-databind",
         org = "com.fasterxml.jackson.core",
     ),
+    scala_jar(
+        name = "jackson-module-scala",
+        org = "com.fasterxml.jackson.module",
+    ),
     jar(
         name = "kryo_shaded",
         org = "com.esotericsoftware",
