@@ -154,7 +154,10 @@ def Aggregation(
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
-    agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
+    metadata = None
+    if description:
+        metadata = ttypes.MetaData(description=description)
+    agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets, metadata)
     agg.tags = tags
     return agg
 
@@ -163,18 +166,11 @@ def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
     return ttypes.Window(length, timeUnit)
 
 
-def Derivation(name: str, expression: str) -> ttypes.Derivation:
+def Derivation(**kwargs) -> ttypes.Derivation:
     """
-    Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
-    output schema. It is supported for offline computations for now.
-
-    If both name and expression are set to "*", then every raw column will be included along with the derived columns.
-
-    :param name: output column name of the SQL expression
-    :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
-    :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
+    See documentation for ai.chronon.join.Derivation.
     """
-    return ttypes.Derivation(name=name, expression=expression)
+    return join.Derivation(**kwargs)
 
 
 def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
@@ -349,6 +345,7 @@ def GroupBy(
     tags: Optional[Dict[str, str]] = None,
     derivations: Optional[List[ttypes.Derivation]] = None,
     deprecation_date: Optional[str] = None,
+    description: Optional[str] = None,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
@@ -544,6 +541,7 @@ def GroupBy(
         team=team,
         offlineSchedule=offline_schedule,
         deprecationDate=deprecation_date,
+        description=description,
     )
 
     group_by = ttypes.GroupBy(

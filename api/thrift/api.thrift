@@ -205,6 +205,8 @@ struct Aggregation {
     This is an additional layer of aggregation. You can key a group_by by user, and bucket a “item_view” count by “item_category”. This will produce one row per user, with column containing map of “item_category” to “view_count”. You can specify multiple such buckets at once
     */
     5: optional list<string> buckets
+
+    6: optional MetaData metaData
 }
 
 // used internally not exposed - maps 1:1 with a field in the output
@@ -260,6 +262,8 @@ struct MetaData {
     14: optional bool historicalBackfill
     // Optional expected deprecation date
     15: optional string deprecationDate
+    // Description for the object holding this metadata
+    16: optional string description
 }
 
 // Equivalent to a FeatureSet in chronon terms
@@ -298,6 +302,7 @@ struct ExternalPart {
 struct Derivation {
     1: optional string name
     2: optional string expression
+    3: optional MetaData metaData
 }
 
 // A Temporal join - with a root source, with multiple groupby's.
