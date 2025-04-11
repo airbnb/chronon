@@ -28,7 +28,9 @@ spark_3_1_repo = repo(name = "spark_3_1", artifacts = [
     "org.apache.curator:apache-curator:2.12.0",
     "org.apache.datasketches:datasketches-java:2.0.0",
     "org.apache.datasketches:datasketches-memory:1.3.0",
-    "org.apache.hive:hive-exec:3.1.2",
+    "org.apache.hive:hive-exec:2.3.7",
+    "org.apache.hive:hive-common:2.3.7",
+    "org.apache.hive:hive-metastore:2.3.7",
     "org.apache.kafka:kafka_2.12:2.6.3",
     versioned_artifacts("3.1.1", [
         "org.apache.spark:spark-streaming_2.12",
@@ -38,14 +40,19 @@ spark_3_1_repo = repo(name = "spark_3_1", artifacts = [
         "org.apache.spark:spark-sql_2.12",
         "org.apache.spark:spark-streaming-kafka-0-10_2.12",
     ]),
-    versioned_artifacts("3.5.2", [
+    versioned_artifacts("3.5.3", [
         "org.json4s:json4s-ast_2.12",
         "org.json4s:json4s-core_2.12",
         "org.json4s:json4s-jackson_2.12",
     ]),
-    "org.apache.hive:hive-metastore:2.3.9",
+    versioned_artifacts("2.10.0", [
+        "com.fasterxml.jackson.core:jackson-core",
+        "com.fasterxml.jackson.core:jackson-annotations",
+        "com.fasterxml.jackson.core:jackson-databind",
+        "com.fasterxml.jackson.module:jackson-module-scala_2.12",
+    ]),
     "io.delta:delta-core_2.12:2.0.2",
-], excluded_artifacts = ["org.slf4j:slf4j-log4j12"])
+], excluded_artifacts = ["org.slf4j:slf4j-log4j12", "org.pentaho:pentaho-aggdesigner-algorithm"])
 
 spark_3_2_repo = repo(
     name = "spark_3_2",
@@ -80,15 +87,13 @@ spark_3_2_repo = repo(
         "org.apache.avro:avro:1.8.2",
         "org.apache.avro:avro-mapred:1.8.2",
         "org.apache.hive:hive-metastore:2.3.9",
-        "org.apache.hive:hive-exec:3.1.2",
+        "org.apache.hive:hive-exec:2.3.9",
 
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
         "io.delta:delta-core_2.12:2.0.2",
     ],
-    excluded_artifacts = [
-        "org.pentaho:pentaho-aggdesigner-algorithm",
-    ],
+    excluded_artifacts = ["org.slf4j:slf4j-log4j12", "org.pentaho:pentaho-aggdesigner-algorithm"],
 )
 
 spark_3_5_repo = repo(
@@ -124,7 +129,7 @@ spark_3_5_repo = repo(
         "org.apache.avro:avro:1.8.2",
         "org.apache.avro:avro-mapred:1.8.2",
         "org.apache.hive:hive-metastore:2.3.9",
-        "org.apache.hive:hive-exec:3.1.2",
+        "org.apache.hive:hive-exec:2.3.9",
 
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
@@ -138,7 +143,5 @@ spark_3_5_repo = repo(
             "com.fasterxml.jackson.module:jackson-module-scala_2.13",
         ]),
     ],
-    excluded_artifacts = [
-        "org.pentaho:pentaho-aggdesigner-algorithm",
-    ],
+    excluded_artifacts = ["org.slf4j:slf4j-log4j12", "org.pentaho:pentaho-aggdesigner-algorithm"],
 )

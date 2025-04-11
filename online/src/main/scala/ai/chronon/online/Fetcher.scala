@@ -37,7 +37,6 @@ import com.google.gson.Gson
 import com.timgroup.statsd.Event
 import com.timgroup.statsd.Event.AlertType
 import org.apache.avro.generic.GenericRecord
-import org.json4s.BuildInfo
 
 import java.util.function.Consumer
 import scala.collection.JavaConverters._
@@ -103,7 +102,7 @@ class Fetcher(val kvStore: KVStore,
                         disableErrorThrows,
                         executionContextOverride) {
   private def reportCallerNameFetcherVersion(): Unit = {
-    val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
+    val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}"
     val ctx = Metrics.Context(Environment.Fetcher)
     val event = Event
       .builder()

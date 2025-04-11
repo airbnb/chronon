@@ -76,6 +76,10 @@ SPARK_LIBS_PROVIDED = [
         org = "com.esotericsoftware",
     ),
     scala_jar(
+        name = "json4s-core",
+        org = "org.json4s",
+    ),
+    scala_jar(
         name = "json4s-jackson",
         org = "org.json4s",
     ),
