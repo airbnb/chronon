@@ -167,7 +167,7 @@ def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
     return ttypes.Window(length, timeUnit)
 
 
-def Derivation(name: str, expression: str, description: Optional[str]) -> ttypes.Derivation:
+def Derivation(name: str, expression: str, description: Optional[str] = None) -> ttypes.Derivation:
     """
     Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
     output schema. It is supported for offline computations for now.

@@ -80,15 +80,6 @@ def entity_source(snapshotTable, mutationTable):
         ),
     )
 
-def test_group_by_with_description():
-    group_by = GroupBy(
-        sources=event_source("table"),
-        keys=["subject"],
-        aggregations=[],
-        description="GroupBy description"
-    )
-    assert group_by.metaData.description == "GroupBy description"
-
 def test_pretty_window_str(days_unit, hours_unit):
     """
     Test pretty window utils.
@@ -285,9 +276,27 @@ def test_additional_metadata():
 
 
 
+def test_group_by_with_description():
+    gb = group_by.GroupBy(
+        sources=[
+            ttypes.EventSource(
+                table="event_table1",
+                query=query.Query(
+                    selects=None,
+                    time_column="ts"
+                )
+            )
+        ],
+        keys=["key1", "key2"],
+        aggregations=[group_by.Aggregation(input_column="event_id", operation=ttypes.Operation.SUM)],
+        name="test.additional_metadata_gb",
+        description="GroupBy description"
+    )
+    assert gb.metaData.description == "GroupBy description"
+
 def test_derivation():
     derivation = Derivation(name="derivation_name", expression="derivation_expression")
-    expected_derivation = api.Derivation(
+    expected_derivation = ttypes.Derivation(
         name="derivation_name",
         expression="derivation_expression")
 
@@ -295,9 +304,9 @@ def test_derivation():
 
 def test_derivation_with_description():
     derivation = Derivation(name="derivation_name", expression="derivation_expression", description="Derivation description")
-    expected_derivation = api.Derivation(
+    expected_derivation = ttypes.Derivation(
         name="derivation_name",
         expression="derivation_expression",
-        metaData=api.MetaData(description="Derivation description"))
+        metaData=ttypes.MetaData(description="Derivation description"))
 
     assert derivation == expected_derivation
