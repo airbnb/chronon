@@ -23,6 +23,7 @@ import ai.chronon.api.{Constants, PartitionSpec, Query}
 import ai.chronon.api.Extensions._
 import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
+import ai.chronon.spark.Hive.parseHivePartition
 import io.delta.tables.DeltaTable
 import jnr.ffi.annotations.Synchronized
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException
@@ -202,28 +203,38 @@ case object Hive extends Format {
 }
 
 case object Iceberg extends Format {
+
   override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(
       implicit sparkSession: SparkSession): Seq[String] = {
     if (!supportSubPartitionsFilter && subPartitionsFilter.nonEmpty) {
       throw new NotImplementedError(s"subPartitionsFilter is not supported on this format")
     }
 
-    getIcebergPartitions(tableName, partitionColumn)
+    getIcebergPartitions(tableName, partitionColumn, subPartitionsFilter)
   }
 
   override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
-    throw new NotImplementedError(
-      "Multi-partitions retrieval is not supported on Iceberg tables yet." +
-        "For single partition retrieval, please use 'partition' method.")
+    sparkSession.sqlContext
+      .sql(s"SHOW PARTITIONS $tableName")
+      .collect()
+      .map(row => parseHivePartition(row.getString(0)))
   }
 
-  private def getIcebergPartitions(tableName: String, partitionColumn: String)(implicit
+  private def getIcebergPartitions(tableName: String,
+                                   partitionColumn: String,
+                                   subPartitionsFilter: Map[String, String])(implicit
       sparkSession: SparkSession): Seq[String] = {
     val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
     val index = partitionsDf.schema.fieldIndex("partition")
-    if (partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
-      // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
-      // so we collect and then filter.
+    if (
+      partitionsDf
+        .schema(index)
+        .dataType
+        .asInstanceOf[StructType]
+        .fieldNames
+        .contains("hr") && subPartitionsFilter.isEmpty
+    ) {
+      // For iceberg tables with hr partition column but without sub-partition filter, only retain the records where hr=null.
       partitionsDf
         .select(s"partition.$partitionColumn", "partition.hr")
         .collect()
@@ -231,20 +242,15 @@ case object Iceberg extends Format {
         .map(_.getString(0))
         .toSeq
     } else {
-      partitionsDf
-        .select(s"partition.$partitionColumn")
-        .collect()
-        .map(_.getString(0))
-        .toSeq
+      super.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)
     }
   }
 
   def createTableTypeString: String = "USING iceberg"
   def fileFormatString(format: String): String = ""
 
-  override def supportSubPartitionsFilter: Boolean = false
+  override def supportSubPartitionsFilter: Boolean = true
 }
-
 // The Delta Lake format is compatible with the Delta lake and Spark versions currently supported by the project.
 // Attempting to use newer Delta lake library versions (e.g. 3.2 which works with Spark 3.5) results in errors:
 // java.lang.NoSuchMethodError: 'org.apache.spark.sql.delta.Snapshot org.apache.spark.sql.delta.DeltaLog.update(boolean)'
