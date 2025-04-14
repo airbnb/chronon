@@ -441,8 +441,8 @@ struct InferenceSpec {
 struct Model {
     1: optional MetaData metaData
     2: optional InferenceSpec inferenceSpec
-    3: optional list<DataField> inputSchema
-    4: optional list<DataField> outputSchema
+    3: optional TDataType inputSchema
+    4: optional TDataType outputSchema
 }
 
 // A ModelTransform is used in the context of a Join to transform raw data into model outputs.
