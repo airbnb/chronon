@@ -391,6 +391,7 @@ def Join(
     derivations: Optional[List[api.Derivation]] = None,
     deprecation_date: Optional[str] = None,
     tags: Optional[Dict[str, str]] = None,
+    model_transforms: List[api.ModelTransform] = None,
     **kwargs,
 ) -> api.Join:
     """
@@ -490,6 +491,8 @@ def Join(
     :param deprecation_date:
         Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
     :type deprecation_date: str
+    :param model_transforms:
+        A list of model transforms to convert derivation outputs to model outputs using model-based transformations
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -610,4 +613,5 @@ def Join(
         rowIds=row_ids,
         labelPart=label_part,
         derivations=derivations,
+        modelTransforms=model_transforms,
     )
