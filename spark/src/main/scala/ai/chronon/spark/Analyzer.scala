@@ -333,6 +333,7 @@ class Analyzer(tableUtils: TableUtils,
       .unfilledRanges(joinConf.metaData.outputTable,
                       rangeToFill,
                       Some(Seq(joinConf.left.table)),
+                      inputTableToSubPartitionFiltersMap = Map(joinConf.left.table -> joinConf.left.subPartitionFilters),
                       inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn)
       .getOrElse(Seq.empty)
 
