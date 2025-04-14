@@ -1040,7 +1040,7 @@ object Extensions {
 
     lazy val modelSchema: StructType = {
       val fields = modelTransformsScala.map(mt => {
-        mt.model.outputSchema.toScala.map(field => {
+        mt.model.outputSchema.params.toScala.map(field => {
           val name = field.name
           val mappedName = mt.outputMappings.toScala.getOrElse(name, name)
           StructField(mappedName, DataType.fromTDataType(field.dataType))
@@ -1056,14 +1056,14 @@ object Extensions {
     lazy val outputMappingsScala: Map[String, String] = modelTransform.outputMappings.toScala
 
     def mapInputs(inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
-      modelTransform.model.inputSchema.toScala.map { dataField =>
+      modelTransform.model.inputSchema.params.toScala.map { dataField =>
         val mappedFieldName = inputMappingsScala.getOrElse(dataField.name, dataField.name)
         mappedFieldName -> inputs.getOrElse(dataField.name, null)
       }.toMap
     }
 
     def mapOutputs(outputs: Map[String, AnyRef], inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
-      val mappedOutputs = modelTransform.model.outputSchema.toScala.map { dataField =>
+      val mappedOutputs = modelTransform.model.outputSchema.params.toScala.map { dataField =>
         val mappedFieldName = outputMappingsScala.getOrElse(dataField.name, dataField.name)
         val prefixedFieldName = (Option(modelTransform.prefix).toSeq :+ mappedFieldName).mkString("_")
         prefixedFieldName -> outputs.getOrElse(mappedFieldName, null)
