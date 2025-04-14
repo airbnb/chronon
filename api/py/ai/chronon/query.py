@@ -13,19 +13,19 @@
 #     limitations under the License.
 
 import ai.chronon.api.ttypes as api
-from typing import List, Dict
+from typing import List, Dict, Optional
 
 
 def Query(
-    selects: Dict[str, str] = None,
-    wheres: List[str] = None,
-    start_partition: str = None,
-    end_partition: str = None,
-    time_column: str = None,
+    selects: Optional[Dict[str, str]] = None,
+    wheres: Optional[List[str]] = None,
+    start_partition: Optional[str] = None,
+    end_partition: Optional[str] = None,
+    time_column: Optional[str] = None,
     setups: List[str] = [],
-    mutation_time_column: str = None,
-    reversal_column: str = None,
-    partition_column: str = None,
+    mutation_time_column: Optional[str] = None,
+    reversal_column: Optional[str] = None,
+    partition_column: Optional[str] = None,
 ) -> api.Query:
     """
     Create a query object that is used to scan data from various data sources.
