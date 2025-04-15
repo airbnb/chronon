@@ -350,8 +350,9 @@ class FetcherBase(kvStore: KVStore,
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
+    // don't send to KV store if ANY of key's value is null
     val validRequests =
-      requests.filter(r => r.keys == null || r.keys.values == null || r.keys.values.exists(_ != null))
+      requests.filter(r => r.keys == null || r.keys.values == null || !r.keys.values.exists(_ == null))
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
       val groupByServingInfoTry = getGroupByServingInfo(request.name)
         .recover {
@@ -692,8 +693,8 @@ class FetcherBase(kvStore: KVStore,
                            groupByRequest: Request,
                            responseMap: Map[Request, Try[Map[String, AnyRef]]]) = {
 
-    // Group bys with all null keys won't be requested from the KV store and we don't expect a response.
-    val isRequiredRequest = groupByRequest.keys.values.exists(_ != null) || groupByRequest.keys.isEmpty
+    // Group bys with ANY null keys won't be requested from the KV store and we don't expect a response.
+    val isRequiredRequest = (groupByRequest.keys.nonEmpty && !groupByRequest.keys.values.exists(_ == null)) || groupByRequest.keys.isEmpty
 
     val response: Try[Map[String, AnyRef]] = responseMap.get(groupByRequest) match {
       case Some(value) => value
