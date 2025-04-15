@@ -38,6 +38,7 @@ object Metrics {
     val joinMetadataExport = "join.metadata_export"
     val JoinLogFlatten = "join.log_flatten"
     val LabelJoin = "label_join"
+    val ModelTransform = "model_transform"
   }
 
   import Environment._
@@ -52,6 +53,7 @@ object Metrics {
     val Accuracy = "accuracy"
     val Team = "team"
     val Owner = "owner"
+    val Model = "model"
   }
 
   object Name {
@@ -147,7 +149,8 @@ object Metrics {
                      accuracy: Accuracy = null,
                      team: String = null,
                      joinPartPrefix: String = null,
-                     suffix: String = null)
+                     suffix: String = null,
+                     model: String = null)
       extends Serializable {
 
     def withSuffix(suffixN: String): Context = copy(suffix = (Option(suffix) ++ Seq(suffixN)).mkString("."))
@@ -210,7 +213,7 @@ object Metrics {
       assert(
         environment != null,
         "Environment needs to be set - group_by.upload, group_by.streaming, join.fetching, group_by.fetching, group_by.offline etc")
-      val buffer = new Array[String](8 + joinNames.length)
+      val buffer = new Array[String](9 + joinNames.length)
       var counter = 0
 
       def addTag(key: String, value: String): Unit = {
@@ -232,6 +235,11 @@ object Metrics {
       addTag(Tag.Environment, environment)
       addTag(Tag.JoinPartPrefix, joinPartPrefix)
       addTag(Tag.Accuracy, if (accuracy != null) accuracy.name() else null)
+
+      if (model != null) {
+        addTag(Tag.Model, model)
+      }
+
       buffer
     }
   }
