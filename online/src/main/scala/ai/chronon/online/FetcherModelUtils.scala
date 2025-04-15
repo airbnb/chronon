@@ -3,6 +3,7 @@ package ai.chronon.online
 import ai.chronon.api.Extensions.{ModelTransformOps, ThrowableOps}
 import ai.chronon.api.ModelTransform
 import ai.chronon.online.Fetcher.ResponseWithContext
+import org.slf4j.LoggerFactory
 
 import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
@@ -16,6 +17,8 @@ case class ModelTransformRequest(model: ModelTransform,
 case class ModelTransformResponse(modelRequestIdentifier: ModelRequestIdentifier, outputs: Map[String, AnyRef])
 
 object FetcherModelUtils {
+
+  @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
   private def buildModelTransformRequests(joinRequest: ResponseWithContext): Seq[ModelTransformRequest] = {
     if (joinRequest.joinCodec.isEmpty) {
       Seq.empty

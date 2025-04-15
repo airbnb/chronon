@@ -344,7 +344,12 @@ class Fetcher(val kvStore: KVStore,
       fetchJoinPreModelTransforms(requests, joinConf, requestStartTs)
     val responsesPostModelTransforms =
       FetcherModelUtils.fetchModelTransforms(responsesPreModelTransforms, this.modelBackend)
-    responsesPostModelTransforms.map(_.iterator.map(logResponse(_, requestStartTs)).toSeq)
+    val loggedResponses = responsesPostModelTransforms.map(_.iterator.map(logResponse(_, requestStartTs)).toSeq)
+    loggedResponses.map { responses =>
+      responses.map { resp =>
+        Response(resp.request, Success(resp.modelTransformsValues.getOrElse(resp.derivedValues)))
+      }
+    }
   }
 
   private def encode(loggingContext: Option[Metrics.Context],
@@ -384,7 +389,7 @@ class Fetcher(val kvStore: KVStore,
     tryOnce(null, tries, totalTries = tries)
   }
 
-  private def logResponse(resp: ResponseWithContext, ts: Long): Response = {
+  private def logResponse(resp: ResponseWithContext, ts: Long): ResponseWithContext = {
     val loggingStartTs = System.currentTimeMillis()
     val loggingContext = resp.request.context.map(_.withSuffix("logging_request"))
     val loggingTs = resp.request.atMillis.getOrElse(ts)
@@ -398,7 +403,7 @@ class Fetcher(val kvStore: KVStore,
 
         // Exit early if sample percent is 0
         if (samplePercent == 0) {
-          return Response(resp.request, Success(resp.derivedValues))
+          return resp
         }
 
         val keyBytes = encode(loggingContext.map(_.withSuffix("encode_key")),
@@ -490,7 +495,7 @@ class Fetcher(val kvStore: KVStore,
     if (joinCodecTry.isSuccess && joinCodecTry.get._2) {
       getJoinCodecs.refresh(resp.request.name)
     }
-    Response(resp.request, Success(resp.derivedValues))
+    resp
   }
 
   // Pulling external features in a batched fashion across services in-parallel

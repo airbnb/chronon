@@ -1054,6 +1054,8 @@ object Extensions {
   implicit class ModelTransformOps(modelTransform: ModelTransform) {
     lazy val inputMappingsScala: Map[String, String] = modelTransform.inputMappings.toScala
     lazy val outputMappingsScala: Map[String, String] = modelTransform.outputMappings.toScala
+    lazy val passthroughFieldsScala: Seq[String] =
+      Option(modelTransform.passthroughFields).map(_.toScala).getOrElse(Seq.empty)
 
     def mapInputs(inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
       modelTransform.model.inputSchema.params.toScala.map { dataField =>
@@ -1066,11 +1068,9 @@ object Extensions {
       val mappedOutputs = modelTransform.model.outputSchema.params.toScala.map { dataField =>
         val mappedFieldName = outputMappingsScala.getOrElse(dataField.name, dataField.name)
         val prefixedFieldName = (Option(modelTransform.prefix).toSeq :+ mappedFieldName).mkString("_")
-        prefixedFieldName -> outputs.getOrElse(mappedFieldName, null)
+        prefixedFieldName -> outputs.getOrElse(dataField.name, null)
       }.toMap
-      val passThroughFields = modelTransform.passthroughFields.toScala.map { field =>
-        field -> inputs.getOrElse(field, null)
-      }.toMap
+      val passThroughFields = passthroughFieldsScala.map { field => field -> inputs.getOrElse(field, null) }.toMap
       mappedOutputs ++ passThroughFields
     }
   }
