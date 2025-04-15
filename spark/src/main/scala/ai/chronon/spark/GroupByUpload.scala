@@ -183,9 +183,14 @@ object GroupByUpload {
     groupByConf.setups.foreach(tableUtils.sql)
     // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val batchEndDate = tableUtils.partitionSpec.after(endDs)
+    val computeDependency = !groupByConf.isModelChaining
     // for snapshot accuracy - we don't need to scan mutations
     lazy val groupBy =
-      GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils, computeDependency = true, showDf = showDf)
+      GroupBy.from(groupByConf,
+                   PartitionRange(endDs, endDs),
+                   tableUtils,
+                   computeDependency = computeDependency,
+                   showDf = showDf)
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
     // for temporal accuracy - we don't need to scan mutations for upload
     // when endDs = xxxx-01-02 the timestamp from airflow is more than (xxxx-01-03 00:00:00)
@@ -194,7 +199,7 @@ object GroupByUpload {
       GroupBy.from(groupByConf,
                    PartitionRange(endDs, endDs).shift(1),
                    tableUtils,
-                   computeDependency = true,
+                   computeDependency = computeDependency,
                    showDf = showDf)
     lazy val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
     // for mutations I need the snapshot from the previous day, but a batch end date of ds +1

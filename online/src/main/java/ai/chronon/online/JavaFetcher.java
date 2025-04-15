@@ -242,11 +242,11 @@ public class JavaFetcher {
     }
 
     private Metrics.Context getJoinContext(String joinName) {
-        return new Metrics.Context("join.fetch", joinName, null, null, false, null, null, null, null);
+        return new Metrics.Context("join.fetch", joinName, null, null, false, null, null, null, null, null);
     }
 
     private Metrics.Context getGroupByContext(String groupByName) {
-        return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null);
+        return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null, null);
     }
 
     public CompletableFuture<JavaSeriesStatsResponse> fetchStatsTimeseries(JavaStatsRequest request) {

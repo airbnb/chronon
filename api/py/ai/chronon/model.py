@@ -49,13 +49,21 @@ def ModelTransform(
     model: api.Model,
     input_mappings: Optional[Dict[str, str]] = None,
     output_mappings: Optional[Dict[str, str]] = None,
-    passthrough_fields: Optional[List[str]] = None,
     prefix: Optional[str] = None,
 ) -> api.ModelTransform:
     return api.ModelTransform(
         model=model,
         inputMappings=input_mappings,
         outputMappings=output_mappings,
-        passthroughFields=passthrough_fields,
         prefix=prefix,
+    )
+
+
+def ModelTransforms(
+    transforms: List[api.ModelTransform],
+    passthrough_fields: Optional[List[str]] = None,
+) -> api.ModelTransforms:
+    return api.ModelTransforms(
+        transforms=transforms,
+        passthroughFields=passthrough_fields,
     )
