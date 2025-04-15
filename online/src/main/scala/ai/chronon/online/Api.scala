@@ -182,6 +182,8 @@ object ExternalSourceHandler {
 abstract class ExternalSourceHandler extends Serializable {
   implicit lazy val executionContext: ExecutionContext = ExternalSourceHandler.executor
   def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
+
+
 }
 
 // the implementer of this class should take a single argument, a scala map of string to string
