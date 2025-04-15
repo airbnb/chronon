@@ -350,9 +350,9 @@ class FetcherBase(kvStore: KVStore,
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
-    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator
-      .filter(r => r.keys == null || r.keys.values == null || r.keys.values.exists(_ != null))
-      .map { request =>
+    val validRequests =
+        requests.filter(r => r.keys == null || r.keys.values == null || r.keys.values.exists(_ != null))
+    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
       val groupByServingInfoTry = getGroupByServingInfo(request.name)
         .recover {
           case ex: Throwable =>
