@@ -391,7 +391,7 @@ def Join(
     derivations: Optional[List[api.Derivation]] = None,
     deprecation_date: Optional[str] = None,
     tags: Optional[Dict[str, str]] = None,
-    model_transforms: List[api.ModelTransform] = None,
+    model_transforms: Optional[api.ModelTransforms] = None,
     **kwargs,
 ) -> api.Join:
     """

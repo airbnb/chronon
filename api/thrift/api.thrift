@@ -337,7 +337,7 @@ struct Join {
      * (CHIP-9) A list of model_trnsforms that will convert derivations (raw data) into model outputs for each
      * of the models in the list. The union of the model outputs will become the final output of the join.
      **/
-    10: optional list<ModelTransform> modelTransforms
+    10: optional ModelTransforms modelTransforms
 }
 
 struct BootstrapPart {
@@ -446,6 +446,10 @@ struct ModelTransform {
     1: optional Model model
     2: optional map<string, string> inputMappings
     3: optional map<string, string> outputMappings
-    4: optional list<string> passthroughFields
-    5: optional string prefix
+    4: optional string prefix
+}
+
+struct ModelTransforms {
+    1: optional list<ModelTransform> transforms
+    2: optional list<string> passthroughFields
 }
