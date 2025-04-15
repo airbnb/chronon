@@ -844,6 +844,7 @@ object Driver {
         logger.info("loop is set to true, start next iteration. will only exit if manually killed.")
         iterate()
       }
+      System.exit(0) // Terminate once completion to shutdown execution context
     }
   }
 
@@ -866,7 +867,6 @@ object Driver {
       }
       val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
       val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
-      implicit val ec: ExecutionContext = ExecutionContext.global
       val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
         case (endPoint, kvMap) =>
           if (args.batchSize.isDefined) {
@@ -882,6 +882,7 @@ object Driver {
       val res = putRequestsSeq.flatMap(putRequests => Await.result(putRequests, 1.hour))
       logger.info(
         s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
+      System.exit(0) // Terminate once completion to shutdown execution context
     }
   }
 
