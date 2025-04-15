@@ -351,7 +351,7 @@ class FetcherBase(kvStore: KVStore,
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
     val validRequests =
-        requests.filter(r => r.keys == null || r.keys.values == null || r.keys.values.exists(_ != null))
+      requests.filter(r => r.keys == null || r.keys.values == null || r.keys.values.exists(_ != null))
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
       val groupByServingInfoTry = getGroupByServingInfo(request.name)
         .recover {
@@ -667,7 +667,8 @@ class FetcherBase(kvStore: KVStore,
                   }
                   Map(fetchException.getRequestName + "_exception" -> fetchException.getMessage)
                 }
-                case Left(PrefixedRequest(prefix, groupByRequest)) => parseGroupByResponse(prefix, groupByRequest, responseMap)
+                case Left(PrefixedRequest(prefix, groupByRequest)) =>
+                  parseGroupByResponse(prefix, groupByRequest, responseMap)
               }.toMap
             }
             joinValuesTry match {
@@ -687,7 +688,8 @@ class FetcherBase(kvStore: KVStore,
       }
   }
 
-  def parseGroupByResponse(prefix: String, groupByRequest: Request,
+  def parseGroupByResponse(prefix: String,
+                           groupByRequest: Request,
                            responseMap: Map[Request, Try[Map[String, AnyRef]]]) = {
 
     // Group bys with all null keys won't be requested from the KV store and we don't expect a response.
