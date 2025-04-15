@@ -130,6 +130,13 @@ spark_3_5_repo = repo(
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
         "io.delta:delta-core_2.12:2.0.2",
         "io.delta:delta-core_2.13:2.0.2",
+        versioned_artifacts("2.18.2", [
+            "com.fasterxml.jackson.core:jackson-core",
+            "com.fasterxml.jackson.core:jackson-annotations",
+            "com.fasterxml.jackson.core:jackson-databind",
+            "com.fasterxml.jackson.module:jackson-module-scala_2.12",
+            "com.fasterxml.jackson.module:jackson-module-scala_2.13",
+        ]),
     ],
     excluded_artifacts = [
         "org.pentaho:pentaho-aggdesigner-algorithm",

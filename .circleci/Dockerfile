@@ -1,41 +1,67 @@
-ARG base_image
+# Set a default base image version (e.g., ubuntu:25.04)
+ARG base_image=ubuntu:25.04
+
+# Use the argument in the FROM statement
 FROM ${base_image}
-USER root
-ENV JAVA_HOME /usr/lib/jvm/java-8-openjdk-amd64
-ENV PATH /opt/conda/bin:$PATH
-ENV THRIFT_VERSION 0.11.0
 
-WORKDIR /img-build
+ARG DEBIAN_FRONTEND=noninteractive
+ENV LC_ALL=C.utf-8
+ENV THRIFT_VERSION 0.13.0
 
+RUN apt-get update && apt-get install -y software-properties-common && \
+    apt-add-repository ppa:deadsnakes/ppa \
+    && apt-get install -y \
+  automake \
+  autotools-dev \
+  bison \
+  byacc \
+  build-essential \
+  ca-certificates \
+  chromium-browser \
+  clang \
+  cmake \
+  curl \
+  docker.io \
+  gettext-base \
+  git \
+  git-lfs \
+  jq \
+  libbz2-dev \
+  libc++-dev \
+  libc++abi-dev \
+  libcurl4-openssl-dev \
+  libffi-dev \
+  libgdbm-dev \
+  liblzma-dev \
+  libmysqlclient-dev \
+  libncurses5-dev \
+  libnss3-dev \
+  libpcre3 \
+  libpcre3-dev \
+  libreadline-dev \
+  libsqlite3-dev \
+  libssl-dev \
+  libtinfo-dev \
+  locales \
+  pkg-config \
+  python3.8 \
+  python3.8-dev \
+  python3.8-distutils \
+  zlib1g-dev \
+  openjdk-11-jdk \
+  zip && \
+  rm -rf /var/lib/apt/lists/*
 
-# Add sbt repo to sources list
-RUN echo "deb https://repo.scala-sbt.org/scalasbt/debian all main" | sudo tee /etc/apt/sources.list.d/sbt.list
-RUN echo "deb https://repo.scala-sbt.org/scalasbt/debian /" | sudo tee /etc/apt/sources.list.d/sbt_old.list
-RUN curl -sL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=0x2EE0EA64E40A89B84B2DF73499E82A75642AC823" | sudo apt-key add
+# Set JAVA_HOME environment variable
+ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64
+ENV PATH="$JAVA_HOME/bin:$PATH"
 
-# Install prereqs
-RUN apt-get update && apt-get -y -q install \
-    automake \
-    bison \
-    cmake \
-    curl \
-    flex \
-    g++ \
-    git \
-    libboost-dev \
-    libboost-filesystem-dev \
-    libboost-program-options-dev \
-    libboost-system-dev \
-    libboost-test-dev \
-    libevent-dev \
-    libssl-dev \
-    libtool \
-    make \
-    openjdk-8-jdk \
-    pkg-config \
-    sbt \
-    bazelisk \
-    && apt-get clean
+RUN update-alternatives --install /usr/bin/c++ c++ /usr/bin/clang++ 100 && \
+    update-alternatives --install /usr/bin/cc cc /usr/bin/clang 100
+
+# Install Bazel
+ADD https://github.com/bazelbuild/bazelisk/releases/download/v1.19.0/bazelisk-linux-amd64 /usr/local/bin/bazel
+RUN chmod 755 /usr/local/bin/bazel
 
 # Install thrift
 RUN curl -sSL "http://archive.apache.org/dist/thrift/$THRIFT_VERSION/thrift-$THRIFT_VERSION.tar.gz" -o thrift.tar.gz \
@@ -49,35 +75,14 @@ RUN curl -sSL "http://archive.apache.org/dist/thrift/$THRIFT_VERSION/thrift-$THR
 	&& cd / \
 	&& rm -rf /usr/src/thrift
 
-# Install Scala
-ENV SCALA_VERSION 2.11.7
-ENV SCALA_DEB http://www.scala-lang.org/files/archive/scala-$SCALA_VERSION.deb
 
-RUN wget --quiet --output-document=scala.deb $SCALA_DEB && \
-    dpkg -i scala.deb && \
-    rm -f *.deb
+# Create a non-root user
+RUN useradd -m -s /bin/bash chronon
 
-# Install sbt
-RUN apt-get update && apt-get -y -q install \
-    sbt \
-    && apt-get clean
+# Set working directory
+WORKDIR /home/chronon
+RUN chown -R chronon:chronon /home/chronon/
+USER chronon
 
-# Install conda
-RUN /var/lib/dpkg/info/ca-certificates-java.postinst configure && \
-    wget -q https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh -O ~/miniconda.sh && \
-    bash ~/miniconda.sh -b -p /opt/conda && \
-    ln -s /opt/conda/etc/profile.d/conda.sh /etc/profile.d/conda.sh && \
-    # clean up
-    rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* && \
-    rm ~/*.sh
-
-RUN conda create -y -n chronon_py python=3.7
-RUN conda install -y -q -n chronon_py --no-deps virtualenv
-RUN  /opt/conda/envs/chronon_py/bin/pip install \
-   flake8==5.0.4 flake8-quotes==3.3.1 thrift==0.11.0 click==7.0 thrift_json==0.1.0 nose>=1.3.7
-
-# Install python build dependencies
-RUN  /opt/conda/envs/chronon_py/bin/pip install build
-
-WORKDIR /
-RUN rm -rf /img-build
+# Cmd to run when starting the container
+CMD ["/bin/bash"]
