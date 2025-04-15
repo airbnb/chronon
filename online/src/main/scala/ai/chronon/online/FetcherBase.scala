@@ -694,7 +694,8 @@ class FetcherBase(kvStore: KVStore,
                            responseMap: Map[Request, Try[Map[String, AnyRef]]]) = {
 
     // Group bys with ANY null keys won't be requested from the KV store and we don't expect a response.
-    val isRequiredRequest = (groupByRequest.keys.nonEmpty && !groupByRequest.keys.values.exists(_ == null)) || groupByRequest.keys.isEmpty
+    val isRequiredRequest =
+      (groupByRequest.keys.nonEmpty && !groupByRequest.keys.values.exists(_ == null)) || groupByRequest.keys.isEmpty
 
     val response: Try[Map[String, AnyRef]] = responseMap.get(groupByRequest) match {
       case Some(value) => value
