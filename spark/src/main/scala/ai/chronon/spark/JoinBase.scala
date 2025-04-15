@@ -46,7 +46,11 @@ abstract class JoinBase(joinConf: api.Join,
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
-  val outputTable = joinConf.metaData.outputTable
+  val outputTable = if (!joinConf.hasModelTransforms) {
+    joinConf.metaData.outputTable
+  } else {
+    joinConf.metaData.preModelTransformsTable
+  }
 
   // Used for parallelized JoinPart execution
   val bootstrapTable = joinConf.metaData.bootstrapTable

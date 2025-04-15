@@ -98,6 +98,8 @@ object Extensions {
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
+
+    def preModelTransformsTable = s"${metaData.outputNamespace}.${metaData.cleanName}_pre_mt"
     def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
     def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
@@ -651,6 +653,12 @@ object Extensions {
       )
       partitionColumns.headOption
     }
+
+    lazy val isModelChaining: Boolean = {
+      groupBy.sources.toScala.exists { source =>
+        source.isSetJoinSource && source.getJoinSource.getJoin.hasModelTransforms
+      }
+    }
   }
 
   implicit class StringOps(string: String) {
@@ -1034,22 +1042,37 @@ object Extensions {
     lazy val derivationExpressionSet: Set[String] =
       if (join.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
 
-    def hasModelTransforms: Boolean = join.isSetModelTransforms && !join.modelTransforms.isEmpty
-    lazy val models: List[Model] = modelTransformsScala.map(_.model).distinct
-    lazy val modelTransformsScala: List[ModelTransform] =
-      if (join.isSetModelTransforms) join.modelTransforms.toScala else List.empty
+    def hasModelTransforms: Boolean = join.isSetModelTransforms && join.modelTransformsListScala.nonEmpty
+    lazy val models: List[Model] = modelTransformsListScala.map(_.model).distinct
+    lazy val modelTransformsListScala: List[ModelTransform] =
+      if (join.isSetModelTransforms) {
+        Option(join.modelTransforms).toList.flatMap(_.transforms.toScala)
+      } else {
+        List.empty
+      }
 
     lazy val modelSchema: StructType = {
-      val fields = modelTransformsScala.map(mt => {
-        mt.model.outputSchema.params.toScala.map(field => {
-          val name = field.name
-          val mappedName = mt.outputMappings.toScala.getOrElse(name, name)
-          StructField(mappedName, DataType.fromTDataType(field.dataType))
-        })
+      val fields = modelTransformsListScala.map(mt => {
+        mt.model.outputSchemaScala.map { field =>
+          field.copy(name = mt.mapOutputFieldName(field.name))
+        }
       })
       val distinctFields = fields.flatten.distinct.toArray
       StructType(s"join_model_schema_${join.metaData.cleanName}", distinctFields)
     }
+
+    lazy val modelTransformsPassthroughFieldsScala: Seq[String] = {
+      if (join.modelTransforms == null) {
+        Seq.empty
+      } else {
+        Option(join.modelTransforms.passthroughFields).map(_.toScala.toSeq).getOrElse(Seq.empty)
+      }
+    }
+  }
+
+  implicit class ModelOps(model: Model) {
+    lazy val inputSchemaScala: List[StructField] = model.inputSchema.params.toScala.map(DataFieldOps(_).toStructField)
+    lazy val outputSchemaScala: List[StructField] = model.outputSchema.params.toScala.map(DataFieldOps(_).toStructField)
   }
 
   implicit class ModelTransformOps(modelTransform: ModelTransform) {
@@ -1057,22 +1080,22 @@ object Extensions {
     lazy val outputMappingsScala: Map[String, String] = modelTransform.outputMappings.toScala
 
     def mapInputs(inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
-      modelTransform.model.inputSchema.params.toScala.map { dataField =>
+      modelTransform.model.inputSchemaScala.map { dataField =>
         val mappedFieldName = inputMappingsScala.getOrElse(dataField.name, dataField.name)
-        mappedFieldName -> inputs.getOrElse(dataField.name, null)
+        dataField.name -> inputs.getOrElse(mappedFieldName, null)
       }.toMap
     }
 
-    def mapOutputs(outputs: Map[String, AnyRef], inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
-      val mappedOutputs = modelTransform.model.outputSchema.params.toScala.map { dataField =>
-        val mappedFieldName = outputMappingsScala.getOrElse(dataField.name, dataField.name)
-        val prefixedFieldName = (Option(modelTransform.prefix).toSeq :+ mappedFieldName).mkString("_")
-        prefixedFieldName -> outputs.getOrElse(mappedFieldName, null)
+    def mapOutputFieldName(modelOutputFieldName: String): String = {
+      val mappedFieldName = outputMappingsScala.getOrElse(modelOutputFieldName, modelOutputFieldName)
+      (Option(modelTransform.prefix).toSeq :+ mappedFieldName).mkString("_")
+    }
+
+    def mapOutputs(outputs: Map[String, AnyRef]): Map[String, AnyRef] = {
+      val mappedOutputs = modelTransform.model.outputSchemaScala.map { dataField =>
+        mapOutputFieldName(dataField.name) -> outputs.getOrElse(dataField.name, null)
       }.toMap
-      val passThroughFields = modelTransform.passthroughFields.toScala.map { field =>
-        field -> inputs.getOrElse(field, null)
-      }.toMap
-      mappedOutputs ++ passThroughFields
+      mappedOutputs
     }
   }
 
