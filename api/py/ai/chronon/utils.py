@@ -576,6 +576,7 @@ def get_config_path(join_name: str) -> str:
     team_name, config_name = join_name.split(".", 1)
     return f"production/joins/{team_name}/{config_name}"
 
+
 def is_valid_ttype_enum_value(value: int, enum_type: Any) -> bool:
     """Validates that an integer value is valid for a Thrift enum type."""
     assert hasattr(enum_type, '_VALUES_TO_NAMES'), f"enum_type {enum_type} is not a valid Thrift enum type"
