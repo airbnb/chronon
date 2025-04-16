@@ -313,6 +313,6 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     )
 
     val result = baseFetcher.parseGroupByResponse("prefix", request, response)
-    result.keySet shouldBe Set("name_exception")
+    result.keySet shouldBe Set("prefix_exception")
   }
 }
