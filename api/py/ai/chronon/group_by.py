@@ -559,6 +559,7 @@ def GroupBy(
     validate_group_by(group_by)
     return group_by
 
+
 def _copy_source(source: ttypes.Source) -> ttypes.Source:
     # Hold a reference to the join in a join source so that the
     # module name can be extracted from GC referrers later on
