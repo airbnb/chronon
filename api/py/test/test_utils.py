@@ -15,7 +15,6 @@
 import json
 import os
 
-from api.py.ai.chronon.api import ttypes
 import pytest
 
 import ai.chronon.api.ttypes as api
@@ -393,9 +392,9 @@ def test_get_dependencies_with_events(query_with_partition_column: Query):
     assert dep["spec"] == expected_spec
 
 def test_is_valid_ttype_enum_value_valid():
-    assert utils.is_valid_ttype_enum_value(ttypes.Accuracy.TEMPORAL, ttypes.Accuracy)
-    assert utils.is_valid_ttype_enum_value(ttypes.Accuracy.SNAPSHOT, ttypes.Accuracy)
+    assert utils.is_valid_ttype_enum_value(api.Accuracy.TEMPORAL, api.Accuracy)
+    assert utils.is_valid_ttype_enum_value(api.Accuracy.SNAPSHOT, api.Accuracy)
 
 def test_is_valid_ttype_enum_value_invalid():
-    assert not utils.is_valid_ttype_enum_value(-1, ttypes.Accuracy)
-    assert not utils.is_valid_ttype_enum_value(100, ttypes.Accuracy)
+    assert not utils.is_valid_ttype_enum_value(-1, api.Accuracy)
+    assert not utils.is_valid_ttype_enum_value(100, api.Accuracy)
