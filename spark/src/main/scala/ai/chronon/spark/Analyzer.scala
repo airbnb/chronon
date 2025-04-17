@@ -331,11 +331,13 @@ class Analyzer(tableUtils: TableUtils,
     logger.info(s"Join range to fill $rangeToFill")
 
     val unfilledRanges = tableUtils
-      .unfilledRanges(joinConf.metaData.outputTable,
-                      rangeToFill,
-                      Some(Seq(joinConf.left.table)),
-                      inputTableToSubPartitionFiltersMap = Map(joinConf.left.table -> joinConf.left.subPartitionFilters),
-                      inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn)
+      .unfilledRanges(
+        joinConf.metaData.outputTable,
+        rangeToFill,
+        Some(Seq(joinConf.left.table)),
+        inputTableToSubPartitionFiltersMap = Map(joinConf.left.table -> joinConf.left.subPartitionFilters),
+        inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn
+      )
       .getOrElse(Seq.empty)
 
     joinConf.joinParts.toScala.foreach { part =>
@@ -358,10 +360,12 @@ class Analyzer(tableUtils: TableUtils,
       }
       // Run validation checks.
       keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
-      val subPartitionFilters = part.groupBy.sources.toScala.map(
-        source => source.table -> source.subPartitionFilters
-      ).toMap
-      dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel, part.groupBy, unfilledRanges, subPartitionFilters)
+      val subPartitionFilters =
+        part.groupBy.sources.toScala.map(source => source.table -> source.subPartitionFilters).toMap
+      dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel,
+                                                          part.groupBy,
+                                                          unfilledRanges,
+                                                          subPartitionFilters)
       noAccessTables ++= rightNoAccessTables
       // list any startPartition dates for conflict checks
       val gbStartPartition = part.groupBy.sources.toScala
@@ -550,7 +554,10 @@ class Analyzer(tableUtils: TableUtils,
             val tableToPartitions = groupBy.sources.toScala.map { source =>
               val table = source.table
               logger.info(s"Checking table $table for data availability ...")
-              val partitions = tableUtils.partitions(table, subPartitionsFilter = subPartitionsFilter.getOrElse(table, Map.empty),partitionColOpt = source.partitionColumnOpt)
+              val partitions = tableUtils.partitions(table,
+                                                     subPartitionsFilter =
+                                                       subPartitionsFilter.getOrElse(table, Map.empty),
+                                                     partitionColOpt = source.partitionColumnOpt)
               val startOpt = if (partitions.isEmpty) None else Some(partitions.min)
               val endOpt = if (partitions.isEmpty) None else Some(partitions.max)
               (table, partitions, startOpt, endOpt)
