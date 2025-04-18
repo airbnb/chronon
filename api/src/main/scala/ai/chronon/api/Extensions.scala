@@ -98,6 +98,8 @@ object Extensions {
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
+
+    def preModelTransformsTable = s"${metaData.outputNamespace}.${metaData.cleanName}_pre_model_transforms"
     def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
     def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
@@ -649,6 +651,12 @@ object Extensions {
         s"Expect all queries from a given group-by to have the same partition column. All sources should have identical schemas and same partition column name. Found distinct partition columns $partitionColumns for group-by ${groupBy.metaData.name}"
       )
       partitionColumns.headOption
+    }
+
+    lazy val isModelChaining: Boolean = {
+      groupBy.sources.toScala.exists { source =>
+        source.isSetJoinSource && source.getJoinSource.getJoin.hasModelTransforms
+      }
     }
   }
 
