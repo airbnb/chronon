@@ -172,6 +172,7 @@ abstract class JoinBase(joinConf: api.Join,
           rightRange,
           Some(Seq(joinConf.left.table)),
           inputToOutputShift = shiftDays,
+          inputTableToSubPartitionFiltersMap = Map(joinConf.left.table -> joinConf.left.subPartitionFilters),
           inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn,
           // never skip hole during partTable's range determination logic because we don't want partTable
           // and joinTable to be out of sync. skipping behavior is already handled in the outer loop.
@@ -361,6 +362,7 @@ abstract class JoinBase(joinConf: api.Join,
          rangeToFill,
          Some(Seq(joinConf.left.table)),
          skipFirstHole = skipFirstHole,
+         inputTableToSubPartitionFiltersMap = Map(joinConf.left.table -> joinConf.left.subPartitionFilters),
          inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn
        )
        .getOrElse(Seq.empty))
