@@ -385,6 +385,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             val ts = if (useEventTimeForQuery) Some(eventTs) else None
             Request(joinRequestName, keyMap, atMillis = ts.map(_ + queryShiftMs))
           }
+          context.distribution("chain.request_batch_size", requests.length)
 
           val microBatchTimestamp =
             percentile(rowsScala.map(_.get(leftTimeIndex).asInstanceOf[Long]), timePercentile)
