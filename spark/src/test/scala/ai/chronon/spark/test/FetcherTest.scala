@@ -401,7 +401,10 @@ class FetcherTest extends TestCase {
 
     val listingEventData = Seq(
       Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
-      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10")
+      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
+      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
+      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
+      Row(null, toTs("2021-04-10 03:10:00"), "2021-04-10")
     )
     val ratingEventData = Seq(
       // 1L listing id event data
@@ -422,7 +425,9 @@ class FetcherTest extends TestCase {
       Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
       Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
       Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
-      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10") // dated 4/10 but excluded from avg agg based on ts
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10"), // dated 4/10 but excluded from avg agg based on ts
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10"), // dated 4/10 but excluded from avg agg based on ts
+      Row(null, toTs("2021-04-10 02:30:00"), 8, "2021-04-10")
     )
     // Schemas
     // {..., event (generic event column), ...}
