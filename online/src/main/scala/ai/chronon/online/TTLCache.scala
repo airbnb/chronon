@@ -93,5 +93,4 @@ class TTLCache[I, O](f: I => O,
   def apply(i: I): O = asyncUpdateOnExpiry(i, ttlMillis)
   // manually refresh entry with a lower interval
   def refresh(i: I): O = asyncUpdateOnExpiry(i, refreshIntervalMillis)
-  def force(i: I): O = asyncUpdateOnExpiry(i, refreshIntervalMillis)
 }
