@@ -309,7 +309,7 @@ class FetcherBase(kvStore: KVStore,
                      |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
                      |Forcing an update of schema.""".stripMargin)
       getGroupByServingInfo
-        .force(name)
+        .refresh(name)
         .recover {
           case ex: Throwable =>
             logger.error(s"Couldn't update GroupByServingInfo of $name. Proceeding with the old one.", ex)
