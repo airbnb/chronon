@@ -19,7 +19,6 @@ Run the flow for materialize.
 import json
 import os
 import re
-
 import pytest
 from ai.chronon.api.ttypes import GroupBy, Join
 from ai.chronon.repo.compile import extract_and_convert
