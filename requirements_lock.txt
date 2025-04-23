@@ -243,9 +243,9 @@ six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
     --hash=sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81
     # via thrift
-sqlglot==26.16.0 \
-    --hash=sha256:253585bd6694bf376af100a306f71d8dae2e6b5be0b61df130a7c1d868d28487 \
-    --hash=sha256:7ecc3f7c73d714cad39a11a48c76db5e64466f93c793bf56ed8df6bb1210efb7
+sqlglot==25.17.0 \
+    --hash=sha256:8580475f4ee27032ad00b366b8a1967f3630f119a07ed6da92653adcba7ba731 \
+    --hash=sha256:91f3741f815a5e1d1dd157a428268af3eda43632dad56790d5c547be1c0491d0
     # via -r requirements.txt
 thrift==0.13.0 \
     --hash=sha256:9af1c86bf73433afc6010ed376a6c6aca2b54099cc0d61895f640870a9ae7d89
