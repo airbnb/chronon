@@ -40,18 +40,21 @@ pytest_suite(
         ["test/**/*.py"],
         exclude = ["test/sample/**/*"],
     ),
-    data = glob(["test/sample/**/*"]),
+    data = glob(["test/sample/**/*",
+                 "test/lineage/**/*.sql"]),
     env = {
         "CHRONON_ROOT": "api/py/",
     },
     imports = [
         ".",
         "test/sample",
+        "chronon/api/thrift",
     ],
     deps = [
         "//api/py:api_py",
         "//api/thrift:api-models-py",
         requirement("thrift"),
         requirement("click"),
+        requirement("sqlglot")
     ],
 )
