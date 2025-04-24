@@ -57,8 +57,6 @@ case class DatabricksTableUtils (override val sparkSession: SparkSession) extend
         .toSeq
     } else if (partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("locality_zone")) {
       partitionsDf
-        // TODO(FCOMP-2242) We should factor out a provider for getting Iceberg partitions
-        //  so we can inject a Stripe-specific one that takes into account locality_zone
         .select(s"partition.${partitionColumn}")
         .where("partition.locality_zone == 'DEFAULT'")
         .collect()
