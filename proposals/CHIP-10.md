@@ -63,7 +63,7 @@ For non-deletable operators, we will go with the current behavior of Chronon whe
 
 # API changes 
 
-Add `incremental=True` if the feature compute needs to happen in incremental way. 
+Add `incremental=True` if the feature compute needs to happen in incremental way in GroupBy API
 
 ```python
 GroupBy(
