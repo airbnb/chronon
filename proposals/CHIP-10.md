@@ -1,4 +1,4 @@
-# Context
+# Motivation
 
 Chronon reads data partitions based on window sizes to compute features for event sources. For example
 
@@ -7,7 +7,7 @@ count_visits_past_90days         ←  90 day window
 
 When computing aggregations, one of the major time taking tasks is reading data from disk. If a feature needs 90 days lookback, Chronon reads 90 days worth of data to compute. When this feature is computed in production everyday, consecutive days have 89 partitions in common.
 
-<img src="./images/CHIP10_inc_agg_visual.png" alt="Incremental Agg" width="600" />
+<img src="./images/CHIP10_inc_agg_visual.png" alt="Incremental Agg" width="900" />
 
 
 This CHIP is to add support for incremental aggregation which will avoid reading 89 common partitions between consecutive days and take advantage of previous day’s computation in feature store.
@@ -41,10 +41,8 @@ To compute above groupBy incrementally
 
 These features are windowed and does not have an inverse operator
 
-_
 
 > Eg: What is the max purchase price by the user in the past 30 days
 
-_
+For non-deletable operators, we will go with the current behavior of Chronon where we load all the data/partitions needed to compute feature.
 
-For non-deletable operators, we have to go with the current behavior of Chronon where we load all the data/partitions needed to compute feature. 
