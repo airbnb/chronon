@@ -7,7 +7,7 @@ count_visits_past_90days         ←  90 day window
 
 When computing aggregations, one of the major time taking tasks is reading data from disk. If a feature needs 90 days lookback, Chronon reads 90 days worth of data to compute. When this feature is computed in production everyday, consecutive days have 89 partitions in common.
 
-<img src="/Users/kchakka/Desktop/inc_agg.png" alt="Incremental Agg" width="300" />
+<img src="./images/CHIP10_inc_agg_visual" alt="Incremental Agg" width="300" />
 
 
 This CHIP is to add support for incremental aggregation which will avoid reading 89 common partitions between consecutive days and take advantage of previous day’s computation in feature store.
@@ -16,11 +16,8 @@ This CHIP is to add support for incremental aggregation which will avoid reading
 # Usecases
 ## Case 1 : Unwindowed deletable
 
-_
 
 > Eg:  how many listings purchased by the user since signup.
-
-_
 
 These features are not windowed, which means the feature calculation happens over the lifetime.
 
