@@ -263,7 +263,11 @@ class JupyterPlatform(PlatformInterface):
 class JupyterGroupBy(GroupByExecutable):
     def __init__(self, group_by: GroupBy, spark_session: SparkSession):
         super().__init__(group_by, spark_session)
-        # Set metadata as needed
+        # You can pass Jupyter specific parameters into to set metadata 
+        # that allow you to customize things like:
+        # - What namespace is written to 
+        # - Table name prefixing (in the Databricks implementation we prefix the table name with the notebook username)
+        # - Root dir for where your existing feature defs are if you want to import features that were defined in an IDE
         self.obj: GroupBy = self.platform.set_metadata(obj=self.obj)
 
     @override
@@ -273,7 +277,11 @@ class JupyterGroupBy(GroupByExecutable):
 class JupyterJoin(JoinExecutable):
     def __init__(self, join: Join, spark_session: SparkSession):
         super().__init__(join, spark_session)
-        # Set metadata as needed
+        # You can pass Jupyter specific parameters into to set metadata 
+        # that allow you to customize things like:
+        # - What namespace is written to 
+        # - Table name prefixing (in the Databricks implementation we prefix the table name with the notebook username)
+        # - Root dir for where your existing feature defs are if you want to import features that were defined in an IDE
         self.obj: Join = self.platform.set_metadata(obj=self.obj)
 
     @override
