@@ -44,7 +44,7 @@ object KVStore {
 // used for streaming writes, batch bulk uploads & fetching
 trait KVStore {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
-  implicit val executionContext: ExecutionContext = FlexibleExecutionContext.buildExecutionContext
+  implicit val executionContext: ExecutionContext = FlexibleExecutionContext.buildExecutionContext()
 
   def create(dataset: String): Unit
 
@@ -58,27 +58,29 @@ trait KVStore {
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): Try[String] = {
-    val response = getResponse(key, dataset, timeoutMillis)
-    if (response.values.isFailure) {
-      Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", response.values.failed.get))
-    } else {
-      Success(new String(response.latest.get.bytes, Constants.UTF8))
-    }
+    val bytesTry = getResponse(key, dataset, timeoutMillis)
+    bytesTry.map(bytes => new String(bytes, Constants.UTF8))
   }
 
   def getStringArray(key: String, dataset: String, timeoutMillis: Long): Try[Seq[String]] = {
-    val response = getResponse(key, dataset, timeoutMillis)
-    if (response.values.isFailure) {
-      Failure(new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", response.values.failed.get))
-    } else {
-      Success(StringArrayConverter.bytesToStrings(response.latest.get.bytes))
-    }
+    val bytesTry = getResponse(key, dataset, timeoutMillis)
+    bytesTry.map(bytes => StringArrayConverter.bytesToStrings(bytes))
   }
 
-  private def getResponse(key: String, dataset: String, timeoutMillis: Long): GetResponse = {
+  private def getResponse(key: String, dataset: String, timeoutMillis: Long): Try[Array[Byte]] = {
     val fetchRequest = KVStore.GetRequest(key.getBytes(Constants.UTF8), dataset)
     val responseFutureOpt = get(fetchRequest)
-    Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))
+    def buildException(e: Throwable) = new RuntimeException(s"Request for key ${key} in dataset ${dataset} failed", e)
+    Try(Await.result(responseFutureOpt, Duration(timeoutMillis, MILLISECONDS))) match {
+      case Failure(e) =>
+        Failure(buildException(e))
+      case Success(resp) =>
+        if (resp.values.isFailure) {
+          Failure(buildException(resp.values.failed.get))
+        } else {
+          Success(resp.latest.get.bytes)
+        }
+    }
   }
   def get(request: GetRequest): Future[GetResponse] = {
     multiGet(Seq(request))
@@ -170,7 +172,7 @@ trait StreamBuilder {
 }
 
 object ExternalSourceHandler {
-  private[ExternalSourceHandler] val executor = FlexibleExecutionContext.buildExecutionContext
+  private[ExternalSourceHandler] val executor = FlexibleExecutionContext.buildExecutionContext()
 }
 
 // user facing class that needs to be implemented for external sources defined in a join
@@ -238,17 +240,20 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 disableErrorThrows = disableErrorThrows)
 
   final def buildJavaFetcher(callerName: String = null, disableErrorThrows: Boolean = false): JavaFetcher = {
-    new JavaFetcher(genKvStore,
-                    Constants.ChrononMetadataKey,
-                    timeoutMillis,
-                    responseConsumer,
-                    externalRegistry,
-                    callerName,
-                    flagStore,
-                    disableErrorThrows)
+    new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
+      .callerName(callerName)
+      .flagStore(flagStore)
+      .disableErrorThrows(disableErrorThrows)
+      .debug(false)
+      .build()
   }
 
-  final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(null)
+  final def javaFetcherBuilder(): JavaFetcher.Builder = {
+    new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
+      .flagStore(flagStore)
+  }
+
+  final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(callerName = null)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
