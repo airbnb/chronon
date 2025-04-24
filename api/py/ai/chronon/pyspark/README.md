@@ -307,6 +307,8 @@ When implementing a platform interface, pay special attention to these methods:
 2. **Python Dependencies**:
     - pyspark (tested on both 3.1 and 3.3)
 
+3. **Log File**: You will need to make sure that your Chronon JVM logs are writting to single file. This is generally platform specific.
+
 ### Example Setup
 
 Here's a minimal example of setting up and using the Chronon Python interface in a Databricks notebook. It assumes that you have already included the necessary jars in your cluster dependencies.
