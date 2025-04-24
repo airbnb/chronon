@@ -30,8 +30,23 @@ These features are windowed and has a inverse operator
 
 <img src="./images/CHIP10_windowed_deletable_agg.png" alt="Incremental Agg" width="600" />
 
-<img src="./images//CHIP10_groupby_eg.png" alt="Incremental Agg" width="600" />
+```python
+GroupBy(
+    sources=[table_name],
+    keys=["key_col1", "key_col2"],
+    aggregations=[
+        Aggregation(
+            input_column="inp_col",
+            operation=Operation.COUNT,
+            windows=[
+                Window(length=3, timeUnit=TimeUnit.DAYS),
+                Window(length=10, timeUnit=TimeUnit.DAYS)
 
+            ]
+        )],
+    accuracy=Accuracy.SNAPSHOT
+)
+```
 To compute above groupBy incrementally
 * Read the output table from groupby to get previous day’s aggregated values
 * Read _day 0_ to add the latest activity
@@ -46,3 +61,17 @@ These features are windowed and does not have an inverse operator
 
 For non-deletable operators, we will go with the current behavior of Chronon where we load all the data/partitions needed to compute feature.
 
+# API changes 
+
+Add `incremental=True` if the feature compute needs to happen in incremental way. 
+
+```python
+GroupBy(
+    sources=[table_name],
+    keys=["key_col1", "key_col2"],
+    aggregations=[....],
+    incremental_agg=True,
+    accuracy=Accuracy.SNAPSHOT
+)
+```
+Need thrift changes for the flag
