@@ -1,32 +1,30 @@
 from __future__ import annotations
 
 import os
-from typing_extensions import override
 from typing import cast
-from pyspark.sql import SparkSession
-from pyspark.dbutils import DBUtils
-from py4j.java_gateway import JavaObject
 
+from py4j.java_gateway import JavaObject
+from pyspark.dbutils import DBUtils
+from pyspark.sql import SparkSession
+from typing_extensions import override
+
+from ai.chronon.api.ttypes import GroupBy, Join
+from ai.chronon.pyspark.constants import (
+    DATABRICKS_JVM_LOG_FILE,
+    DATABRICKS_OUTPUT_NAMESPACE,
+    DATABRICKS_ROOT_DIR_FOR_IMPORTED_FEATURES,
+)
 from ai.chronon.pyspark.executables import (
     GroupByExecutable,
     JoinExecutable,
     PlatformInterface,
 )
 
-from ai.chronon.api.ttypes import GroupBy, Join
-
-from ai.chronon.pyspark.constants import (
-    DATABRICKS_OUTPUT_NAMESPACE,
-    DATABRICKS_JVM_LOG_FILE,
-    DATABRICKS_ROOT_DIR_FOR_IMPORTED_FEATURES,
-)
 
 class DatabricksPlatform(PlatformInterface):
     """
     Databricks-specific implementation of the platform interface.
     """
-
-
 
     def __init__(self, spark: SparkSession):
         """
@@ -49,8 +47,12 @@ class DatabricksPlatform(PlatformInterface):
         Returns:
             A JavaObject representing the constants provider
         """
-        constants_provider: JavaObject = self.jvm.ai.chronon.spark.databricks.DatabricksConstantsNameProvider()
-        self.jvm.ai.chronon.api.Constants.initConstantNameProvider(constants_provider)
+        constants_provider: JavaObject = (
+            self.jvm.ai.chronon.spark.databricks.DatabricksConstantsNameProvider()
+        )
+        self.jvm.ai.chronon.api.Constants.initConstantNameProvider(
+            constants_provider
+        )
         return constants_provider
 
     @override
@@ -61,7 +63,9 @@ class DatabricksPlatform(PlatformInterface):
         Returns:
             A JavaObject representing the table utilities
         """
-        return self.jvm.ai.chronon.spark.databricks.DatabricksTableUtils(self.java_spark_session)
+        return self.jvm.ai.chronon.spark.databricks.DatabricksTableUtils(
+            self.java_spark_session
+        )
 
     @override
     def register_udfs(self) -> None:
@@ -102,7 +106,6 @@ class DatabricksPlatform(PlatformInterface):
             print(file_handler.read())
         print("*" * 10, f" END LOGS FOR {job_name} ", "*" * 10, "\n\n")
 
-
     def get_databricks_user(self) -> str:
         """
         Get the current Databricks user.
@@ -110,7 +113,8 @@ class DatabricksPlatform(PlatformInterface):
         Returns:
             The username of the current Databricks user
         """
-        user_email = self.dbutils.notebook.entry_point.getDbutils().notebook().getContext().userName().get()
+        user_email = self.dbutils.notebook.entry_point.getDbutils().notebook(
+        ).getContext().userName().get()
         return user_email.split('@')[0].lower()
 
 
