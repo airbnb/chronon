@@ -10,7 +10,7 @@ from pyspark.sql import DataFrame, SparkSession
 from py4j.java_gateway import JavaObject
 
 from ai.chronon.api.ttypes import GroupBy, Join, JoinPart, JoinSource, Source, Query, StagingQuery
-from ai.chronon.utils import set_name, get_max_window_for_gb_in_days, output_table_name
+from ai.chronon.utils import __set_name as set_name, get_max_window_for_gb_in_days, output_table_name
 from ai.chronon.repo.serializer import thrift_simple_json
 from ai.chronon.pyspark.constants import PARTITION_COLUMN_FORMAT
 
@@ -163,9 +163,9 @@ class PySparkExecutable(Generic[T], ABC):
         print(f'{time_str} {message}')
 
 
-    def group_by_to_java(self, group_by: GroupBy, end_date: str) -> JavaObject:
+    def group_by_to_java(self, group_by: GroupBy) -> JavaObject:
         """
-        Convert GroupBy object to Java representation with updated S3 prefixes.
+        Convert GroupBy object to Java representation.
 
         Args:
             group_by: The GroupBy object to convert
@@ -176,13 +176,11 @@ class PySparkExecutable(Generic[T], ABC):
         """
         json_representation: str = thrift_simple_json(group_by)
         java_group_by: JavaObject = self.jvm.ai.chronon.spark.PySparkUtils.parseGroupBy(json_representation)
-        return self.jvm.ai.chronon.spark.S3Utils.readAndUpdateS3PrefixesForGroupBy(
-            java_group_by, end_date, self.java_spark_session
-        )
+        return java_group_by
 
-    def join_to_java(self, join: Join, end_date: str) -> JavaObject:
+    def join_to_java(self, join: Join) -> JavaObject:
         """
-        Convert Join object to Java representation with updated S3 prefixes.
+        Convert Join object to Java representation.
 
         Args:
             join: The Join object to convert
@@ -193,9 +191,7 @@ class PySparkExecutable(Generic[T], ABC):
         """
         json_representation: str = thrift_simple_json(join)
         java_join: JavaObject = self.jvm.ai.chronon.spark.PySparkUtils.parseJoin(json_representation)
-        return self.jvm.ai.chronon.spark.S3Utils.readAndUpdateS3PrefixesForJoin(
-            java_join, end_date, self.java_spark_session
-        )
+        return java_join
 
 
 class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
@@ -266,7 +262,7 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
 
         try:
             # Convert to Java GroupBy
-            java_group_by = self.group_by_to_java(group_by_to_execute, end_date)
+            java_group_by = self.group_by_to_java(group_by_to_execute)
             # Execute GroupBy
             result_df_scala: JavaObject = self.jvm.ai.chronon.spark.PySparkUtils.runGroupBy(
                 java_group_by,
@@ -314,7 +310,7 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
 
         try:
             # Convert to Java GroupBy
-            java_group_by = self.group_by_to_java(group_by_to_analyze, end_date)
+            java_group_by = self.group_by_to_java(group_by_to_analyze)
             # Analyze GroupBy
             self.jvm.ai.chronon.spark.PySparkUtils.analyzeGroupBy(
                 java_group_by,
@@ -359,7 +355,7 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
 
         try:
             # Convert to Java GroupBy
-            java_group_by: JavaObject = self.group_by_to_java(group_by_to_validate, end_date)
+            java_group_by: JavaObject = self.group_by_to_java(group_by_to_validate)
             # Validate GroupBy
             errors_list: JavaObject = self.jvm.ai.chronon.spark.PySparkUtils.validateGroupBy(
                 java_group_by,
@@ -456,7 +452,7 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
 
         try:
             # Convert to Java Join
-            java_join: JavaObject = self.join_to_java(join_to_execute, end_date)
+            java_join: JavaObject = self.join_to_java(join_to_execute)
             # Execute Join
             result_df_scala: JavaObject = self.jvm.ai.chronon.spark.PySparkUtils.runJoin(
                 java_join,
@@ -509,7 +505,7 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
 
         try:
             # Convert to Java Join
-            java_join: JavaObject = self.join_to_java(join_to_analyze, end_date)
+            java_join: JavaObject = self.join_to_java(join_to_analyze)
             # Analyze Join
             self.jvm.ai.chronon.spark.PySparkUtils.analyzeJoin(
                 java_join,
@@ -559,7 +555,7 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
 
         try:
             # Convert to Java Join
-            java_join: JavaObject = self.join_to_java(join_to_validate, end_date)
+            java_join: JavaObject = self.join_to_java(join_to_validate)
             # Validate Join
             errors_list: JavaObject = self.jvm.ai.chronon.spark.PySparkUtils.validateJoin(
                 java_join,
