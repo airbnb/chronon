@@ -1,3 +1,4 @@
 click
 thrift<0.14
 sqlglot
+pyspark==3.3.1
