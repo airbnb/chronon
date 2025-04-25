@@ -13,4 +13,4 @@ import org.apache.spark.sql.{Column, SparkSession}
  *
  * @param sparkSession The Spark session used for table operations.
  */
-case class DatabricksTableUtils (override val sparkSession: SparkSession) extends BaseTableUtils
+case class DatabricksTableUtils(override val sparkSession: SparkSession) extends BaseTableUtils
