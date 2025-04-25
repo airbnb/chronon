@@ -607,6 +607,7 @@ def get_max_window_for_gb_in_days(group_by: api.GroupBy) -> int:
                     )
                 else:
                     raise ValueError(
-                        f"Unsupported time unit {window.timeUnit}. Please add logic above to handle the newly introduced time unit."
+                        f"Unsupported time unit {window.timeUnit}. " +
+                        "Please add logic above to handle the newly introduced time unit."
                     )
     return result
