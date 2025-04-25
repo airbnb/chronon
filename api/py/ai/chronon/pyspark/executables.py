@@ -854,10 +854,10 @@ class PlatformInterface(ABC):
             self.log_operation(message=f"Validation passed for {object_name}.")
 
     def set_metadata(
-        self, 
-        obj: GroupBy | Join | StagingQuery, 
+        self,
+        obj: GroupBy | Join | StagingQuery,
         mod_prefix: str,
-        name_prefix: str | None = None, 
+        name_prefix: str | None = None,
         output_namespace: str | None = None
     ) -> T:
         """
@@ -914,4 +914,3 @@ class PlatformInterface(ABC):
             obj.metaData.name = f"{name_prefix}_{obj.metaData.name}"
 
         return obj
-
