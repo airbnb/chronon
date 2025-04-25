@@ -881,7 +881,7 @@ class PlatformInterface(ABC):
             except AttributeError:
                 raise AttributeError(
                     "Please provide a name when defining "
-                    "group_bys/joins/staging_queries adhoc."
+                    + "group_bys/joins/staging_queries adhoc."
                 )
         # We do this to avoid adding the name prefix multiple times
         elif obj.metaData.name and name_prefix:
