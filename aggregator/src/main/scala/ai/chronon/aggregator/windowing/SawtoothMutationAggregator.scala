@@ -141,7 +141,6 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
     }
   }
 
-
   def updateIrTiledWithTileLayering(ir: Array[Any],
                                     headStreamingTiledIrs: Seq[TiledIr],
                                     queryTs: Long,

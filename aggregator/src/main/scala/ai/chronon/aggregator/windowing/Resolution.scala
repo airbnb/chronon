@@ -39,8 +39,8 @@ object FiveMinuteResolution extends Resolution {
   private val millisIn12Hours = new Window(12, TimeUnit.HOURS).millis
 
   /**
-   * Given a GroupBy Window size, calculate the resolution of the window as defined by Chronon.
-   */
+    * Given a GroupBy Window size, calculate the resolution of the window as defined by Chronon.
+    */
   def getWindowResolutionMillis(windowSizeMillis: Long): Long =
     windowSizeMillis match {
       case x if x >= millisIn12Days  => WindowUtils.Day.millis
