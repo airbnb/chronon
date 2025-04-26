@@ -61,7 +61,9 @@ These features are windowed and does not have an inverse operator
 
 For non-deletable operators, we will go with the current behavior of Chronon where we load all the data/partitions needed to compute feature.
 
-# API changes 
+# Implementation
+
+## API Changes 
 
 Add `incremental=True` if the feature compute needs to happen in incremental way in GroupBy API
 
@@ -75,3 +77,24 @@ GroupBy(
 )
 ```
 Need thrift changes for the flag
+
+## Phase 1
+
+Implement incremental aggregation for a groupby where all aggregations are invertible
+
+### Step 1 : Changes to Data Scanning
+
+Instead of reading all the partitions of the source, read only the following
+
+* Latest source data partition
+* Latest GroupBy output partition
+* Partitions needed to delete the unwanted data. These are obtained from length of window from current date.
+   * For example, if the window is 30 days, 31st date partition is read.
+
+```scala
+def renderDataSourceQuery()
+```
+
+### Step 2 : Changes to Aggregator
+
+* `delete` function is implemented for deletable aggregations
