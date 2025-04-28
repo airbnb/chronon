@@ -13,7 +13,7 @@
 The Chronon PySpark Interface provides a clean, object-oriented framework for executing Chronon feature definitions directly within a PySpark environment, like Databricks Notebooks. This interface streamlines the developer experience by removing the need to switch between multiple tools, allowing rapid prototyping and iteration of Chronon feature engineering workflows.
 
 This library enables users to:
-- Run, analyze, and validate GroupBy and Join operations in a type-safe manner
+- Run and Analyze GroupBy and Join operations in a type-safe manner
 - Execute feature computations within notebook environments like Databricks
 - Implement platform-specific behavior while preserving a consistent interface
 - Access JVM-based functionality directly from Python code
@@ -92,7 +92,7 @@ Two specialized interfaces extend the base executable for different Chronon type
 - **GroupByExecutable**: Interface for executing GroupBy objects
 - **JoinExecutable**: Interface for executing Join objects
 
-These interfaces define type-specific behaviors for running, analyzing, and validating features.
+These interfaces define type-specific behaviors for running and analyzing features.
 
 ### Platform Interface
 
@@ -139,7 +139,6 @@ Concrete implementations for specific notebook environments:
 ├───────────────────┤    ├───────────────────┤
 │ + run()           │    │ + run()           │
 │ + analyze()       │    │ + analyze()       │
-│ + validate()      │    │ + validate()      │
 └────────┬──────────┘    └────────┬──────────┘
          │                        │
          │                        │
@@ -157,15 +156,12 @@ Concrete implementations for specific notebook environments:
 ├─────────────────────────────┤
 │ - spark: SparkSession       │
 ├─────────────────────────────┤
-│ + get_constants_provider()  │
-│ + get_table_utils()         │
 │ + register_udfs()           │
 │ + get_executable_join_cls() │
 │ + start_log_capture()       │
 │ + end_log_capture()         │
 │ + log_operation()           │
 │ + drop_table_if_exists()    │
-│ + handle_validation_errors()│
 └───────────┬─────────────────┘
             │
             │
@@ -173,11 +169,7 @@ Concrete implementations for specific notebook environments:
 │  DatabricksPlatform        │
 ├────────────────────────────┤
 │ - dbutils: DBUtils         │
-│ - constants_provider       │
-│ - table_utils              │
 ├────────────────────────────┤
-│ + get_constants_provider() │
-│ + get_table_utils()        │
 │ + register_udfs()          │
 │ + get_executable_join_cls()│
 │ + start_log_capture()      │
@@ -223,16 +215,6 @@ class JupyterPlatform(PlatformInterface):
     def __init__(self, spark: SparkSession):
         super().__init__(spark)
         # Initialize Jupyter-specific components
-    
-    @override
-    def get_constants_provider(self) -> JavaObject:
-        # Return Jupyter-specific constants provider
-        pass
-    
-    @override
-    def get_table_utils(self) -> JavaObject:
-        # Return Jupyter-specific table utilities
-        pass
     
     @override
     def register_udfs(self) -> None:
@@ -293,10 +275,7 @@ class JupyterJoin(JoinExecutable):
 
 When implementing a platform interface, pay special attention to these methods:
 
-- **get_constants_provider()**: Return a platform-specific implementation of constants
-- **get_table_utils()**: Return platform-specific table utilities
 - **start_log_capture()** and **end_log_capture()**: Implement platform-specific log capturing
-- **handle_validation_errors()**: Implement platform-specific error handling
 
 ## Setup and Dependencies
 
