@@ -331,8 +331,7 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
                     end_date,
                     self.jvm.ai.chronon.spark.PySparkUtils.getIntOptional(
                         str(step_days)),
-                    self.platform.get_table_utils(),
-                    self.platform.get_constants_provider()
+                    self.platform.get_table_utils()
                 )
             )
 
@@ -397,8 +396,7 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
                 start_date,
                 end_date,
                 enable_hitter_analysis,
-                self.platform.get_table_utils(),
-                self.platform.get_constants_provider()
+                self.platform.get_table_utils()
             )
             self.platform.end_log_capture(log_token)
             self.platform.log_operation(
@@ -409,65 +407,6 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
             self.platform.log_operation(
                 f"Analysis failed for GroupBy {self.obj.metaData.name}: {str(e)}"
             )
-            raise e
-
-    def validate(
-        self,
-        start_date: str | None = None,
-        end_date: str | None = None
-    ) -> None:
-        """
-        Validate the GroupBy object.
-
-        Args:
-            start_date: Start date for validation (format: YYYYMMDD)
-            end_date: End date for validation (format: YYYYMMDD)
-        """
-        start_date = start_date or self.default_start_date
-        end_date = end_date or self.default_end_date
-
-        self.platform.log_operation(
-            f"Validating GroupBy {self.obj.metaData.name} from "
-            f"{start_date} to {end_date}"
-        )
-
-        # Prepare GroupBy for validation
-        group_by_to_validate = copy.deepcopy(self.obj)
-
-        # Update sources with correct dates
-        group_by_to_validate = self._update_source_dates_for_group_by(
-            group_by_to_validate, start_date, end_date
-        )
-
-        # Start log capture just before executing JVM calls
-        log_token = self.platform.start_log_capture(
-            f"Validate GroupBy: {self.obj.metaData.name}"
-        )
-
-        try:
-            # Convert to Java GroupBy
-            java_group_by: JavaObject = self.group_by_to_java(group_by_to_validate)
-            # Validate GroupBy
-            errors_list: JavaObject = self.jvm.ai.chronon.spark.PySparkUtils.validateGroupBy(
-                java_group_by,
-                start_date,
-                end_date,
-                self.platform.get_table_utils(),
-                self.platform.get_constants_provider()
-            )
-
-            self.platform.end_log_capture(log_token)
-            self.platform.handle_validation_errors(
-                errors_list, f"GroupBy {self.obj.metaData.name}"
-            )
-            self.platform.log_operation(
-                f"Validation for GroupBy {self.obj.metaData.name} has completed"
-            )
-        except Exception as e:
-            self.platform.log_operation(
-                f"Validation failed for GroupBy {self.obj.metaData.name}: {str(e)}"
-            )
-            self.platform.end_log_capture(log_token)
             raise e
 
 
@@ -574,8 +513,7 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
                 self.jvm.ai.chronon.spark.PySparkUtils.getIntOptional(
                     None if not sample_num_of_rows else str(sample_num_of_rows)
                 ),
-                self.platform.get_table_utils(),
-                self.platform.get_constants_provider()
+                self.platform.get_table_utils()
             )
 
             result_df = DataFrame(result_df_scala, self.spark)
@@ -642,8 +580,7 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
                 start_date,
                 end_date,
                 enable_hitter_analysis,
-                self.platform.get_table_utils(),
-                self.platform.get_constants_provider()
+                self.platform.get_table_utils()
             )
             self.platform.end_log_capture(log_token)
             self.platform.log_operation(
@@ -654,69 +591,6 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
             self.platform.end_log_capture(log_token)
             self.platform.log_operation(
                 f"Analysis failed for Join {self.obj.metaData.name}: {str(e)}"
-            )
-            raise e
-
-    def validate(
-        self,
-        start_date: str | None = None,
-        end_date: str | None = None
-    ) -> None:
-        """
-        Validate the Join object.
-
-        Args:
-            start_date: Start date for validation (format: YYYYMMDD)
-            end_date: End date for validation (format: YYYYMMDD)
-        """
-        start_date: str = start_date or self.default_start_date
-        end_date: str = end_date or self.default_end_date
-
-        self.platform.log_operation(
-            f"Validating Join {self.obj.metaData.name} from "
-            f"{start_date} to {end_date}"
-        )
-
-        # Prepare Join for validation
-        join_to_validate: Join = copy.deepcopy(self.obj)
-        join_to_validate.left = self._update_source_dates(
-            join_to_validate.left, start_date, end_date
-        )
-
-        # Update join parts sources
-        join_to_validate.joinParts = self._update_source_dates_for_join_parts(
-            join_to_validate.joinParts, start_date, end_date
-        )
-
-        # Start log capture just before executing JVM calls
-        log_token = self.platform.start_log_capture(
-            f"Validate Join: {self.obj.metaData.name}"
-        )
-
-        try:
-            # Convert to Java Join
-            java_join: JavaObject = self.join_to_java(join_to_validate)
-            # Validate Join
-            errors_list: JavaObject = self.jvm.ai.chronon.spark.PySparkUtils.validateJoin(
-                java_join,
-                start_date,
-                end_date,
-                self.platform.get_table_utils(),
-                self.platform.get_constants_provider()
-            )
-
-            self.platform.end_log_capture(log_token)
-            # Handle validation errors
-            self.platform.handle_validation_errors(
-                errors_list, f"Join {self.obj.metaData.name}"
-            )
-            self.platform.log_operation(
-                f"Validation for Join {self.obj.metaData.name} has completed"
-            )
-        except Exception as e:
-            self.platform.end_log_capture(log_token)
-            self.platform.log_operation(
-                f"Validation failed for Join {self.obj.metaData.name}: {str(e)}"
             )
             raise e
 
@@ -740,16 +614,6 @@ class PlatformInterface(ABC):
         self.jvm = spark._jvm
         self.java_spark_session = spark._jsparkSession
         self.register_udfs()
-
-    @abstractmethod
-    def get_constants_provider(self) -> JavaObject:
-        """
-        Get the platform-specific constants provider.
-
-        Returns:
-            A JavaObject representing the constants provider
-        """
-        pass
 
     @abstractmethod
     def get_table_utils(self) -> JavaObject:
@@ -836,22 +700,6 @@ class PlatformInterface(ABC):
         """
         _ = self.spark.sql(f"DROP TABLE IF EXISTS {table_name}")
 
-    def handle_validation_errors(self, errors: JavaObject, object_name: str) -> None:
-        """
-        Handle validation errors.
-
-        Args:
-            errors: Platform-specific validation errors
-            object_name: Name of the object being validated
-        """
-        if errors.length() > 0:
-            self.log_operation(
-                message=f"Validation failed for {object_name} " +
-                "with the following errors:"
-            )
-            self.log_operation(message=str(errors))
-        else:
-            self.log_operation(message=f"Validation passed for {object_name}.")
 
     def set_metadata(
         self,
