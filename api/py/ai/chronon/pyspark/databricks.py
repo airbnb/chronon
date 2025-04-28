@@ -35,37 +35,7 @@ class DatabricksPlatform(PlatformInterface):
         """
         super().__init__(spark)
         self.dbutils: DBUtils = DBUtils(self.spark)
-        self.constants_provider: JavaObject = self.get_constants_provider()
-        self.table_utils: JavaObject = self.get_table_utils()
         self.register_udfs()
-
-    @override
-    def get_constants_provider(self) -> JavaObject:
-        """
-        Get the Databricks constants provider.
-
-        Returns:
-            A JavaObject representing the constants provider
-        """
-        constants_provider: JavaObject = (
-            self.jvm.ai.chronon.spark.databricks.DatabricksConstantsNameProvider()
-        )
-        self.jvm.ai.chronon.api.Constants.initConstantNameProvider(
-            constants_provider
-        )
-        return constants_provider
-
-    @override
-    def get_table_utils(self) -> JavaObject:
-        """
-        Get the Databricks table utilities.
-
-        Returns:
-            A JavaObject representing the table utilities
-        """
-        return self.jvm.ai.chronon.spark.databricks.DatabricksTableUtils(
-            self.java_spark_session
-        )
 
     @override
     def register_udfs(self) -> None:

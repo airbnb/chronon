@@ -616,16 +616,6 @@ class PlatformInterface(ABC):
         self.register_udfs()
 
     @abstractmethod
-    def get_table_utils(self) -> JavaObject:
-        """
-        Get the platform-specific table utilities.
-
-        Returns:
-            A JavaObject representing the table utilities
-        """
-        pass
-
-    @abstractmethod
     def get_executable_join_cls(self) -> type[JoinExecutable]:
         """
         Get the class for executing joins.
@@ -657,6 +647,17 @@ class PlatformInterface(ABC):
             capture_token: The token returned from start_log_capture
         """
         pass
+
+    def get_table_utils(self) -> JavaObject:
+        """
+        Get the table utils class that will be used for read/write operations
+        on the JVM side. Can be overridden by subclasses to provide
+        platform-specific implementations.
+
+        Returns:
+            A JavaObject representing the table utilities
+        """
+        return self.jvm.ai.chronon.spark.TableUtils(self.java_spark_session)
 
     def register_udfs(self) -> None:
         """
