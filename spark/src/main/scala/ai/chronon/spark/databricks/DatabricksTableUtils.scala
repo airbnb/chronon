@@ -1,10 +1,6 @@
 package ai.chronon.spark.databricks
 
-import ai.chronon.api.Constants
-import ai.chronon.spark.TableUtils.TableUtils
-import org.apache.spark.sql.types.StructType
-import org.apache.spark.sql.{Column, SparkSession}
-
+import ai.chronon.spark.TableUtils
 
 /**
  * DatabricksTableUtils is the table utils class used in our Databricks integration.
