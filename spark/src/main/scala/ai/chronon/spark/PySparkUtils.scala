@@ -92,7 +92,7 @@ object PySparkUtils {
    * @param tableUtils  TableUtils this will be used to perform ops against our data sources
    * @return DataFrame
    */
-  def runGroupBy(groupByConf: api.GroupBy, endDate: String, stepDays: Option[Int], tableUtils: BaseTableUtils): DataFrame = {
+  def runGroupBy(groupByConf: api.GroupBy, endDate: String, stepDays: Option[Int], tableUtils: TableUtils): DataFrame = {
     logger.info(s"Executing GroupBy: ${groupByConf.metaData.name}")
     GroupBy.computeBackfill(
       groupByConf,
@@ -118,7 +118,7 @@ object PySparkUtils {
               stepDays: Option[Int],
               skipFirstHole: Boolean,
               sampleNumOfRows: Option[Int],
-              tableUtils: BaseTableUtils
+              tableUtils: TableUtils
              ): DataFrame = {
     logger.info(s"Executing Join ${joinConf.metaData.name}")
     val join = new Join(
@@ -141,7 +141,7 @@ object PySparkUtils {
    * @param enableHitterAnalysis if true we will perform an analysis of what hot keys may be present
    * @param tableUtils           TableUtils this will be used to perform ops against our data sources
    */
-  def analyzeGroupBy(groupByConf: api.GroupBy, startDate: String, endDate: String, enableHitterAnalysis: Boolean, tableUtils: BaseTableUtils): Unit = {
+  def analyzeGroupBy(groupByConf: api.GroupBy, startDate: String, endDate: String, enableHitterAnalysis: Boolean, tableUtils: TableUtils): Unit = {
     logger.info(s"Analyzing GroupBy: ${groupByConf.metaData.name}")
     val analyzer = new Analyzer(tableUtils, groupByConf, startDate, endDate, enableHitter = enableHitterAnalysis)
     analyzer.analyzeGroupBy(groupByConf, enableHitter = enableHitterAnalysis)
@@ -159,7 +159,7 @@ object PySparkUtils {
    * @param tableUtils           TableUtils this will be used to perform ops against our data sources
    * @return DataFrame
    */
-  def analyzeJoin(joinConf: api.Join, startDate: String, endDate: String, enableHitterAnalysis: Boolean, tableUtils: BaseTableUtils): Unit = {
+  def analyzeJoin(joinConf: api.Join, startDate: String, endDate: String, enableHitterAnalysis: Boolean, tableUtils: TableUtils): Unit = {
     logger.info(s"Analyzing Join: ${joinConf.metaData.name}")
     val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = enableHitterAnalysis)
     analyzer.analyzeJoin(joinConf, enableHitter = enableHitterAnalysis)
