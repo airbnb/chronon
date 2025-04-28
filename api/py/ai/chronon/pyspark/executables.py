@@ -700,7 +700,6 @@ class PlatformInterface(ABC):
         """
         _ = self.spark.sql(f"DROP TABLE IF EXISTS {table_name}")
 
-
     def set_metadata(
         self,
         obj: GroupBy | Join | StagingQuery,
