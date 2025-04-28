@@ -148,7 +148,6 @@ object PySparkUtils {
     logger.info(s"Finished analyzing GroupBy: ${groupByConf.metaData.name}")
   }
 
-
   /**
    * Helper function to analyze a Join
    *
