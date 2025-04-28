@@ -3,7 +3,7 @@ package ai.chronon.spark
 import ai.chronon.aggregator.windowing.{FiveMinuteResolution, Resolution}
 import ai.chronon.api
 import ai.chronon.api.Extensions.MetadataOps
-import ai.chronon.api.{ConstantNameProvider, Constants, ThriftJsonCodec}
+import ai.chronon.api.ThriftJsonCodec
 import org.apache.spark.sql.DataFrame
 import org.slf4j.LoggerFactory
 
@@ -86,16 +86,14 @@ object PySparkUtils {
   /**
    * Helper function to allow a user to execute a Group By.
    *
-   * @param groupByConf       api.GroupBy Chronon scala GroupBy API object
-   * @param endDate           str this represents the last date we will perform the aggregation for
-   * @param stepDays          int this will determine how we chunk filling the missing partitions
-   * @param tableUtils        TableUtils this will be used to perform ops against our data sources
-   * @param constantsProvider ConstantsProvider must be set from the Scala side. Doing so from PySpark will not properly set it.
+   * @param groupByConf api.GroupBy Chronon scala GroupBy API object
+   * @param endDate     str this represents the last date we will perform the aggregation for
+   * @param stepDays    int this will determine how we chunk filling the missing partitions
+   * @param tableUtils  TableUtils this will be used to perform ops against our data sources
    * @return DataFrame
    */
-  def runGroupBy(groupByConf: api.GroupBy, endDate: String, stepDays: Option[Int], tableUtils: BaseTableUtils, constantsProvider: ConstantNameProvider): DataFrame = {
+  def runGroupBy(groupByConf: api.GroupBy, endDate: String, stepDays: Option[Int], tableUtils: BaseTableUtils): DataFrame = {
     logger.info(s"Executing GroupBy: ${groupByConf.metaData.name}")
-    Constants.initConstantNameProvider(constantsProvider)
     GroupBy.computeBackfill(
       groupByConf,
       endDate,
@@ -109,11 +107,10 @@ object PySparkUtils {
   /**
    * Helper function to allow a user to execute a Join.
    *
-   * @param joinConf          api.Join Chronon scala Join API object
-   * @param endDate           str this represents the last date we will perform the Join for
-   * @param stepDays          int this will determine how we chunk filling the missing partitions
-   * @param tableUtils        TableUtils this will be used to perform ops against our data sources
-   * @param constantsProvider ConstantsProvider must be set from the Scala side. Doing so from PySpark will not properly set it.
+   * @param joinConf   api.Join Chronon scala Join API object
+   * @param endDate    str this represents the last date we will perform the Join for
+   * @param stepDays   int this will determine how we chunk filling the missing partitions
+   * @param tableUtils TableUtils this will be used to perform ops against our data sources
    * @return DataFrame
    */
   def runJoin(joinConf: api.Join,
@@ -121,11 +118,9 @@ object PySparkUtils {
               stepDays: Option[Int],
               skipFirstHole: Boolean,
               sampleNumOfRows: Option[Int],
-              tableUtils: BaseTableUtils,
-              constantsProvider: ConstantNameProvider
+              tableUtils: BaseTableUtils
              ): DataFrame = {
     logger.info(s"Executing Join ${joinConf.metaData.name}")
-    Constants.initConstantNameProvider(constantsProvider)
     val join = new Join(
       joinConf,
       endDate,
@@ -138,45 +133,6 @@ object PySparkUtils {
   }
 
   /**
-   * Helper function to validate a GroupBy
-   *
-   * @param groupByConf       api.GroupBy Chronon scala GroupBy API object
-   * @param startDate         start date for the group by
-   * @param endDate           end date for the group by
-   * @param tableUtils        TableUtils this will be used to perform ops against our data sources
-   * @param constantsProvider ConstantsProvider must be set from the Scala side. Doing so from PySpark will not properly set it.
-   * @return DataFrame
-   */
-  def validateGroupBy(groupByConf: api.GroupBy, startDate: String, endDate: String, tableUtils: BaseTableUtils, constantsProvider: ConstantNameProvider): List[String] = {
-    logger.info(s"Validating GroupBy ${groupByConf.metaData.name}")
-    Constants.initConstantNameProvider(constantsProvider)
-    val validator = new Validator(tableUtils, groupByConf, startDate, endDate)
-    val result = validator.validateGroupBy(groupByConf)
-    logger.info(s"Finished validating GroupBy ${groupByConf.metaData.name}")
-    result
-  }
-
-
-  /**
-   * Helper function to validate a Join
-   *
-   * @param joinConf          api.Join Chronon scala Join API object
-   * @param startDate         start date for the join
-   * @param endDate           end date for the join
-   * @param tableUtils        TableUtils this will be used to perform ops against our data sources
-   * @param constantsProvider ConstantsProvider must be set from the Scala side. Doing so from PySpark will not properly set it.
-   * @return DataFrame
-   */
-  def validateJoin(joinConf: api.Join, startDate: String, endDate: String, tableUtils: BaseTableUtils, constantsProvider: ConstantNameProvider): List[String] = {
-    logger.info(s"Validating Join: ${joinConf.metaData.name}")
-    Constants.initConstantNameProvider(constantsProvider)
-    val validator = new Validator(tableUtils, joinConf, startDate, endDate)
-    val result = validator.validateJoin(joinConf)
-    logger.info(s"Finished validating Join: ${joinConf.metaData.name}")
-    result
-  }
-
-  /**
    * Helper function to analyze a GroupBy
    *
    * @param groupByConf          api.GroupBy Chronon scala GroupBy API object
@@ -184,11 +140,9 @@ object PySparkUtils {
    * @param endDate              end date for the group by
    * @param enableHitterAnalysis if true we will perform an analysis of what hot keys may be present
    * @param tableUtils           TableUtils this will be used to perform ops against our data sources
-   * @param constantsProvider    ConstantsProvider must be set from the Scala side. Doing so from PySpark will not properly set it.
    */
-  def analyzeGroupBy(groupByConf: api.GroupBy, startDate: String, endDate: String, enableHitterAnalysis: Boolean, tableUtils: BaseTableUtils, constantsProvider: ConstantNameProvider): Unit = {
+  def analyzeGroupBy(groupByConf: api.GroupBy, startDate: String, endDate: String, enableHitterAnalysis: Boolean, tableUtils: BaseTableUtils): Unit = {
     logger.info(s"Analyzing GroupBy: ${groupByConf.metaData.name}")
-    Constants.initConstantNameProvider(constantsProvider)
     val analyzer = new Analyzer(tableUtils, groupByConf, startDate, endDate, enableHitter = enableHitterAnalysis)
     analyzer.analyzeGroupBy(groupByConf, enableHitter = enableHitterAnalysis)
     logger.info(s"Finished analyzing GroupBy: ${groupByConf.metaData.name}")
@@ -203,12 +157,10 @@ object PySparkUtils {
    * @param endDate              end date for the join
    * @param enableHitterAnalysis if true we will perform an analysis of what hot keys may be present
    * @param tableUtils           TableUtils this will be used to perform ops against our data sources
-   * @param constantsProvider    ConstantsProvider must be set from the Scala side. Doing so from PySpark will not properly set it.
    * @return DataFrame
    */
-  def analyzeJoin(joinConf: api.Join, startDate: String, endDate: String, enableHitterAnalysis: Boolean, tableUtils: BaseTableUtils, constantsProvider: ConstantNameProvider): Unit = {
+  def analyzeJoin(joinConf: api.Join, startDate: String, endDate: String, enableHitterAnalysis: Boolean, tableUtils: BaseTableUtils): Unit = {
     logger.info(s"Analyzing Join: ${joinConf.metaData.name}")
-    Constants.initConstantNameProvider(constantsProvider)
     val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = enableHitterAnalysis)
     analyzer.analyzeJoin(joinConf, enableHitter = enableHitterAnalysis)
     logger.info(s"Finished analyzing Join: ${joinConf.metaData.name}")
