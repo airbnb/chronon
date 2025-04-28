@@ -1,7 +1,7 @@
 package ai.chronon.spark.databricks
 
 import ai.chronon.api.Constants
-import ai.chronon.spark.BaseTableUtils
+import ai.chronon.spark.TableUtils.TableUtils
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.{Column, SparkSession}
 
@@ -13,4 +13,4 @@ import org.apache.spark.sql.{Column, SparkSession}
  *
  * @param sparkSession The Spark session used for table operations.
  */
-case class DatabricksTableUtils(override val sparkSession: SparkSession) extends BaseTableUtils
+case class DatabricksTableUtils(sparkSession: SparkSession) extends TableUtils(sparkSession)
