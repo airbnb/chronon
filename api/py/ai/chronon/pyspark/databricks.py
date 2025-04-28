@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 from typing import cast
 
-from py4j.java_gateway import JavaObject
 from pyspark.dbutils import DBUtils
 from pyspark.sql import SparkSession
 from typing_extensions import override
