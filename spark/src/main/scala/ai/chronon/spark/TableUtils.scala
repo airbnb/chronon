@@ -74,7 +74,8 @@ trait Format {
   }
 
   // Return a sequence for partitions where each partition entry consists of a Map of partition keys to values
-  def partitions(tableName: String, partitionColumns: Seq[String])(implicit sparkSession: SparkSession): Seq[Map[String, String]]
+  def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]]
 
   // Help specify the appropriate table type to use in the Spark create table DDL query
   def createTableTypeString: String
@@ -206,7 +207,8 @@ case object Hive extends Format {
       .toMap
   }
 
-  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
+  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]] = {
     // data is structured as a Df with single composite partition key column. Every row is a partition with the
     // column values filled out as a formatted key=value pair
     // Eg. df schema = (partitions: String)
@@ -234,7 +236,8 @@ case object Iceberg extends Format {
     getIcebergPartitions(tableName, partitionColumn, subPartitionsFilter)
   }
 
-  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
+  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]] = {
     sparkSession.sqlContext
       .sql(s"SHOW PARTITIONS $tableName")
       .collect()
@@ -282,7 +285,8 @@ case object DeltaLake extends Format {
       implicit sparkSession: SparkSession): Seq[String] =
     super.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)
 
-  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
+  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]] = {
     // delta lake doesn't support the `SHOW PARTITIONS <tableName>` syntax - https://github.com/delta-io/delta/issues/996
     // there's alternative ways to retrieve partitions using the DeltaLog abstraction which is what we have to lean into
     // below
@@ -304,10 +308,11 @@ case object DeltaLake extends Format {
 
 case object View extends Format {
   override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(
-    implicit sparkSession: SparkSession): Seq[String] =
+      implicit sparkSession: SparkSession): Seq[String] =
     super.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)
 
-  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
+  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]] = {
     val partitionColumnsStr = partitionColumns.mkString("`,`")
     sparkSession.sqlContext
       .sql(s"SELECT DISTINCT `$partitionColumnsStr` FROM $tableName")
@@ -320,7 +325,6 @@ case object View extends Format {
 
   override def supportSubPartitionsFilter: Boolean = true
 }
-
 
 case class TableUtils(sparkSession: SparkSession) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
