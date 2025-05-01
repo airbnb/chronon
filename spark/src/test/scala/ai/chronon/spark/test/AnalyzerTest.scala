@@ -124,8 +124,7 @@ class AnalyzerTest {
     analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
 
-  @Test(expected = classOf[java.lang.AssertionError])
-  def testJoinAnalyzerValidationDataAvailability(): Unit = {
+  def joinValidationDataAvailability(hasSufficientDateRange: Boolean) = {
     val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
@@ -139,22 +138,26 @@ class AnalyzerTest {
 
     val start = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
 
-    val viewsGroupBy = Builders.GroupBy(
-      sources = Seq(getTestEventSource(namespace)),
-      keyColumns = Seq("item_id"),
-      aggregations = Seq(
-        Builders.Aggregation(windows = Seq(new Window(365, TimeUnit.DAYS)), // greater than one year
-                             operation = Operation.AVERAGE,
-                             inputColumn = "time_spent_ms")
-      ),
-      metaData = Builders.MetaData(name = "join_analyzer_test.item_data_avail_gb", namespace = namespace),
-      accuracy = Accuracy.SNAPSHOT
-    )
+    val windowDays = if(hasSufficientDateRange) 3 else 365
+    def buildGroupBy(partitionOpt: Option[String]): GroupBy = {
+      Builders.GroupBy(
+        sources = Seq(getTestEventSource(namespace, partitionColOpt = partitionOpt)),
+        keyColumns = Seq("item_id"),
+        aggregations = Seq(
+          Builders.Aggregation(windows = Seq(new Window(windowDays, TimeUnit.DAYS)),
+            operation = Operation.AVERAGE,
+            inputColumn = "time_spent_ms")
+        ),
+        metaData = Builders.MetaData(name = "join_analyzer_test.item_data_avail_gb" + partitionOpt.map(s => s"_$s").getOrElse(""), namespace = namespace),
+        accuracy = Accuracy.SNAPSHOT
+      )
+    }
 
     val joinConf = Builders.Join(
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(
-        Builders.JoinPart(groupBy = viewsGroupBy, prefix = "validation", keyMapping = Map("item" -> "item_id"))
+        Builders.JoinPart(groupBy = buildGroupBy(None), prefix = "validation", keyMapping = Map("item" -> "item_id")),
+        Builders.JoinPart(groupBy = buildGroupBy(Some("datestr")), prefix = "validation", keyMapping = Map("item" -> "item_id"))
       ),
       metaData = Builders.MetaData(name = "test_join_analyzer.item_validation", namespace = namespace, team = "chronon")
     )
@@ -162,6 +165,16 @@ class AnalyzerTest {
     //run analyzer and validate data availability
     val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
     analyzer.analyzeJoin(joinConf, validationAssert = true)
+  }
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testJoinAnalyzerValidationDataAvailabilityFail(): Unit = {
+    joinValidationDataAvailability(false)
+  }
+
+  @Test
+  def testJoinAnalyzerValidationDataAvailability(): Unit = {
+    joinValidationDataAvailability(true)
   }
 
   @Test
@@ -525,7 +538,8 @@ class AnalyzerTest {
     )
   }
 
-  def getTestEventSource(namespace: String): api.Source = {
+
+  def getTestEventSource(namespace: String, partitionColOpt: Option[String] = None): api.Source = {
     val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
@@ -533,11 +547,16 @@ class AnalyzerTest {
       Column("time_spent_ms", api.LongType, 5000)
     )
 
-    val viewsTable = s"$namespace.view_events_gb_table"
-    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
+    val viewsTable = s"$namespace.view_events_gb_table" + partitionColOpt.map(s => s"_$s").getOrElse("")
+    val df = DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200, partitionColOpt = partitionColOpt).drop("ts")
+    partitionColOpt  match {
+      case Some(partition) => df.save(viewsTable, partitionColumns = Seq(partition))
+      case None => df.save(viewsTable)
+    }
+
 
     Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = oneYearAgo),
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = oneYearAgo, partitionColumn = partitionColOpt.orNull),
       table = viewsTable
     )
   }

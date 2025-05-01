@@ -309,7 +309,7 @@ class FetcherBase(kvStore: KVStore,
                      |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
                      |Forcing an update of schema.""".stripMargin)
       getGroupByServingInfo
-        .force(name)
+        .refresh(name)
         .recover {
           case ex: Throwable =>
             logger.error(s"Couldn't update GroupByServingInfo of $name. Proceeding with the old one.", ex)
@@ -350,8 +350,19 @@ class FetcherBase(kvStore: KVStore,
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
-    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
-      val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
+    // don't send to KV store if ANY of key's value is null
+    val validRequests =
+      requests.filter(r => r.keys == null || r.keys.values == null || !r.keys.values.exists(_ == null))
+    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
+      val groupByServingInfoTry = getGroupByServingInfo(request.name)
+        .recover {
+          case ex: Throwable =>
+            getGroupByServingInfo.refresh(request.name)
+            logger.error(s"Couldn't fetch GroupByServingInfo for ${request.name}", ex)
+            request.context.foreach(_.incrementException(ex))
+            throw ex
+        }
+      val groupByRequestMetaTry: Try[GroupByRequestMeta] = groupByServingInfoTry
         .map { groupByServingInfo =>
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
@@ -583,7 +594,11 @@ class FetcherBase(kvStore: KVStore,
       requests.map { request =>
         // get join conf from metadata store if not passed in
         val joinTry: Try[JoinOps] = if (joinConf.isEmpty) {
-          getJoinConf(request.name)
+          val joinConfTry = getJoinConf(request.name)
+          if (joinConfTry.isFailure) {
+            getJoinConf.refresh(request.name)
+          }
+          joinConfTry
         } else {
           logger.debug(s"Using passed in join configuration: ${joinConf.get.metaData.getName}")
           Success(JoinOps(joinConf.get))
@@ -653,28 +668,8 @@ class FetcherBase(kvStore: KVStore,
                   }
                   Map(fetchException.getRequestName + "_exception" -> fetchException.getMessage)
                 }
-                case Left(PrefixedRequest(prefix, groupByRequest)) => {
-                  responseMap
-                    .getOrElse(groupByRequest,
-                               Failure(new IllegalStateException(
-                                 s"Couldn't find a groupBy response for $groupByRequest in response map")))
-                    .map { valueMap =>
-                      if (valueMap != null) {
-                        valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
-                      } else {
-                        Map.empty[String, AnyRef]
-                      }
-                    }
-                    // prefix feature names
-                    .recover { // capture exception as a key
-                      case ex: Throwable =>
-                        if (debug || Math.random() < 0.001) {
-                          logger.error(s"Failed to fetch $groupByRequest", ex)
-                        }
-                        Map(prefix + "_exception" -> ex.traceString)
-                    }
-                    .get
-                }
+                case Left(PrefixedRequest(prefix, groupByRequest)) =>
+                  parseGroupByResponse(prefix, groupByRequest, responseMap)
               }.toMap
             }
             joinValuesTry match {
@@ -692,6 +687,41 @@ class FetcherBase(kvStore: KVStore,
         }.toSeq
         responses
       }
+  }
+
+  def parseGroupByResponse(prefix: String,
+                           groupByRequest: Request,
+                           responseMap: Map[Request, Try[Map[String, AnyRef]]]) = {
+
+    // Group bys with ANY null keys won't be requested from the KV store and we don't expect a response.
+    val isRequiredRequest =
+      (groupByRequest.keys.nonEmpty && !groupByRequest.keys.values.exists(_ == null)) || groupByRequest.keys.isEmpty
+
+    val response: Try[Map[String, AnyRef]] = responseMap.get(groupByRequest) match {
+      case Some(value) => value
+      case None =>
+        if (isRequiredRequest)
+          Failure(new IllegalStateException(s"Couldn't find a groupBy response for $groupByRequest in response map"))
+        else Success(null)
+    }
+
+    response
+      .map { valueMap =>
+        if (valueMap != null) {
+          valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
+        } else {
+          Map.empty[String, AnyRef]
+        }
+      }
+      // prefix feature names
+      .recover { // capture exception as a key
+        case ex: Throwable =>
+          if (debug || Math.random() < 0.001) {
+            logger.error(s"Failed to fetch $groupByRequest", ex)
+          }
+          Map(prefix + "_exception" -> ex.traceString)
+      }
+      .get
   }
 
   /**
