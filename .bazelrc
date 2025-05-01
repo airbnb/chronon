@@ -36,7 +36,9 @@ build --incompatible_default_to_explicit_init_py
 
 # https://github.com/bazelbuild/bazel/issues/2377
 test --spawn_strategy=standalone
+test --test_timeout=6000
 
+# Use Java 11 as the JVM for Bazel builds
 # Don't depend on a JAVA_HOME pointing at a system JDK
 # see https://github.com/bazelbuild/rules_jvm_external/issues/445
 build --repo_env=JAVA_HOME=../bazel_tools/jdk

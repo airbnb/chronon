@@ -35,6 +35,7 @@ class AvroTest {
   @Test
   def testDecimal(): Unit = {
 
+    println("inside test")
     val namespace = "test_decimal"
     tableUtils.createDatabase(namespace)
 
