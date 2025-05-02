@@ -76,7 +76,7 @@ class MockStreamBuilder extends StreamBuilder {
   }
 }
 
-class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
+class MockApi(kvStore: () => KVStore, val namespace: String, val modelBackend: ModelBackend = null) extends Api(null) {
   class PlusOneExternalHandler extends ExternalSourceHandler {
     override def fetch(requests: collection.Seq[Fetcher.Request]): Future[collection.Seq[Fetcher.Response]] = {
       Future(
@@ -176,4 +176,6 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   override def generateStreamBuilder(streamType: String): StreamBuilder = {
     new MockStreamBuilder()
   }
+
+  override def genModelBackend: ModelBackend = modelBackend
 }
