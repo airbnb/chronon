@@ -1075,8 +1075,10 @@ object Extensions {
   }
 
   implicit class ModelTransformOps(modelTransform: ModelTransform) {
-    lazy val inputMappingsScala: Map[String, String] = modelTransform.inputMappings.toScala
-    lazy val outputMappingsScala: Map[String, String] = modelTransform.outputMappings.toScala
+    lazy val inputMappingsScala: Map[String, String] =
+      Option(modelTransform.inputMappings).map(_.toScala).getOrElse(Map.empty)
+    lazy val outputMappingsScala: Map[String, String] =
+      Option(modelTransform.outputMappings).map(_.toScala).getOrElse(Map.empty)
 
     def mapInputs(inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
       modelTransform.model.inputSchemaScala.map { dataField =>
