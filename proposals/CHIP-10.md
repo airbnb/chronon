@@ -44,7 +44,7 @@ The above diagram shows the daily IRs for `count` aggregation
 * Intermediate table is created for each groupby which increases the storage cost
 * Any changes in datasource will require re-computation of intermediate table.
 
-## Optimizations
+# Optimizations
 
 The proposed solution is a good start but can be improved further for invertible operators. Invertible operators are those which can be deleted. For example, `count` and `sum` are invertible operators.
 
