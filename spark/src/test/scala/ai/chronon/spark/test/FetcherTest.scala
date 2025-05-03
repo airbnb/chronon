@@ -273,8 +273,11 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.LAST_K,
                              argMap = Map("k" -> "300"),
                              inputColumn = "user",
-                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))
-      ),
+                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.BOUNDED_UNIQUE_COUNT,
+                             argMap = Map("k" -> "5"),
+                             inputColumn = "user",
+                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
       metaData = Builders.MetaData(name = "unit_test/vendor_ratings", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
@@ -501,6 +504,11 @@ class FetcherTest extends TestCase {
         ),
         Builders.Aggregation(
           operation = Operation.APPROX_HISTOGRAM_K,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.BOUNDED_UNIQUE_COUNT,
           inputColumn = "rating",
           windows = Seq(new Window(1, TimeUnit.DAYS))
         )

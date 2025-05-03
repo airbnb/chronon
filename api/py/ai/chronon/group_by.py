@@ -65,6 +65,7 @@ class Operation:
     # https://github.com/apache/incubator-datasketches-java/blob/master/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180
     APPROX_UNIQUE_COUNT_LGK = collector(ttypes.Operation.APPROX_UNIQUE_COUNT)
     UNIQUE_COUNT = ttypes.Operation.UNIQUE_COUNT
+    BOUNDED_UNIQUE_COUNT = ttypes.Operation.BOUNDED_UNIQUE_COUNT
     COUNT = ttypes.Operation.COUNT
     SUM = ttypes.Operation.SUM
     AVERAGE = ttypes.Operation.AVERAGE
