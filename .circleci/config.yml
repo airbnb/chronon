@@ -11,7 +11,7 @@ executors:
         docker:
             - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
     docker_baseimg_executor_xxlarge:
-      resource_class: xxlarge
+      resource_class: 2xlarge
       working_directory: /chronon
       docker:
         - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
