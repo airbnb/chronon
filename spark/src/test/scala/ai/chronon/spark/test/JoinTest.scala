@@ -457,9 +457,11 @@ class JoinTest {
     val viewsTable = s"$namespace.view_events"
     DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200).drop("ts").save(viewsTable)
 
+    val viewsTableView = s"$namespace.v_view_events"
+    spark.sql(s"CREATE OR REPLACE VIEW $viewsTableView AS SELECT * FROM $viewsTable")
     val viewsSource = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo),
-      table = viewsTable
+      table = viewsTableView
     )
 
     val viewsGroupBy = Builders.GroupBy(
@@ -481,8 +483,11 @@ class JoinTest {
 
     val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
 
+    val itemQueriesView = s"$namespace.v_item_queries"
+    spark.sql(s"CREATE OR REPLACE VIEW $itemQueriesView AS SELECT * FROM $itemQueriesTable")
+
     val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesView),
       joinParts = Seq(Builders.JoinPart(groupBy = viewsGroupBy, prefix = "user")),
       metaData = Builders.MetaData(name = "test.item_snapshot_features_2", namespace = namespace, team = "chronon")
     )

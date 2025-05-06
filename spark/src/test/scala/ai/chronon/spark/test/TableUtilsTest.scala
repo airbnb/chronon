@@ -340,6 +340,11 @@ class TableUtilsTest {
                       PartitionRange("2022-10-05", "2022-10-05")(tableUtils)))
   }
 
+  private def prepareTestDataWithSubPartitionsWithView(tableName: String, viewName: String, partitionColOpt: Option[String] = None): Unit = {
+    prepareTestDataWithSubPartitions(tableName, partitionColOpt)
+    tableUtils.sql(s"CREATE OR REPLACE VIEW $viewName AS SELECT * FROM $tableName")
+  }
+
   private def prepareTestDataWithSubPartitions(tableName: String, partitionColOpt: Option[String] = None): Unit = {
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
     val columns1 = Array(
@@ -474,5 +479,72 @@ class TableUtilsTest {
     }
     assert(hasPartitionCol(tableUtils.sql(query)))
     assert(!hasPartitionCol(tableUtils.sqlWithDefaultPartitionColumn(query, partitionCol)))
+  }
+
+  @Test
+  def testReadFormat(): Unit = {
+    val dbName = "db_" + Random.alphanumeric.take(3).mkString
+    val tableName = s"$dbName.test_table"
+    val viewName = s"$dbName.v_test_table"
+    tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
+    tableUtils.sql(s"CREATE TABLE IF NOT EXISTS $tableName (test INT, test_col STRING) PARTITIONED BY (ds STRING) STORED AS PARQUET")
+    tableUtils.sql(s"CREATE OR REPLACE VIEW $viewName AS SELECT test, test_col FROM $tableName")
+
+    val table_format = tableUtils.tableReadFormat(tableName)
+    assert(table_format == Hive)
+
+    val view_format = tableUtils.tableReadFormat(viewName)
+    assert(view_format == View)
+  }
+
+  @Test
+  def testViewPartitions(): Unit = {
+    val tableName = "db.test_table"
+    val viewName = "db.v_test_table"
+    prepareTestDataWithSubPartitionsWithView(tableName, viewName)
+    val partitions = tableUtils.partitions(viewName)
+    assertEquals(Seq("2022-11-01", "2022-11-02", "2022-11-03").sorted, partitions.sorted)
+  }
+
+  @Test
+  def testViewWithSubPartitions(): Unit = {
+    val tableName = "db.test_table_with_sub_partition"
+    val viewName = "db.v_test_table_with_sub_partition"
+    val partitionCol = "custom_partition_date"
+    prepareTestDataWithSubPartitionsWithView(tableName, viewName, partitionColOpt = Some(partitionCol))
+    val partitions = tableUtils.partitions(viewName, partitionColOpt=Some(partitionCol))
+    assertEquals(Seq("2022-11-01", "2022-11-02", "2022-11-03").sorted, partitions.sorted)
+  }
+
+  @Test
+  def testViewWithSubPartitionFilter(): Unit = {
+    val tableName = "db.test_table_with_sub_partition"
+    val viewName = "db.v_test_table_with_sub_partition"
+    val partitionCol = "custom_partition_date"
+    prepareTestDataWithSubPartitionsWithView(tableName, viewName, partitionColOpt = Some(partitionCol))
+    val partitions = tableUtils.partitions(viewName, subPartitionsFilter=Map("label_ds" -> "2022-11-02"), partitionColOpt=Some(partitionCol))
+    assertEquals(Seq("2022-11-01", "2022-11-02").sorted, partitions.sorted)
+  }
+
+  @Test
+  def testViewLastAvailablePartition(): Unit = {
+    val tableName = "db.test_last_available_partition"
+    val viewName = "db.v_test_last_available_partition"
+    prepareTestDataWithSubPartitionsWithView(tableName, viewName)
+    Seq("2022-11-01", "2022-11-02", "2022-11-03").foreach { ds =>
+      val firstDs = tableUtils.lastAvailablePartition(viewName, Map(Constants.LabelPartitionColumn -> ds))
+      assertTrue(firstDs.contains(ds))
+    }
+  }
+
+  @Test
+  def testViewFirstAvailablePartition(): Unit = {
+    val tableName = "db.test_first_available_partition"
+    val viewName = "db.v_test_last_available_partition"
+    prepareTestDataWithSubPartitionsWithView(tableName, viewName)
+    Seq("2022-11-01", "2022-11-02", "2022-11-03").foreach { ds =>
+      val firstDs = tableUtils.firstAvailablePartition(viewName, Map(Constants.LabelPartitionColumn -> ds))
+      assertTrue(firstDs.contains("2022-11-01"))
+    }
   }
 }
