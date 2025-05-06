@@ -10,6 +10,11 @@ executors:
         working_directory: /chronon
         docker:
             - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
+    docker_baseimg_executor_xxlarge:
+      resource_class: xxlarge
+      working_directory: /chronon
+      docker:
+        - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
 
 jobs:
     "Pull Docker Image":
@@ -27,7 +32,7 @@ jobs:
                     docker pull houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 || true
 
     "Scala 12 -- Spark 3 Tests":
-        executor: docker_baseimg_executor
+        executor: docker_baseimg_executor_xxlarge
         steps:
             - checkout
             - run:
@@ -53,7 +58,7 @@ jobs:
                   when: on_fail
 
     "Scala 13 -- Tests":
-        executor: docker_baseimg_executor
+        executor: docker_baseimg_executor_xxlarge
         steps:
             - checkout
             - run:
