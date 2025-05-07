@@ -13,7 +13,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from ai.chronon.join import Join, Derivation, ModelTransformation
+from ai.chronon.join import Join, Derivation
 from ai.chronon.group_by import GroupBy
 from ai.chronon.api import ttypes as api
 
@@ -113,3 +113,21 @@ def test_dependencies_propagation():
         ("wait_for_table_2_ds_ds_key_value", "table_2/ds={{ ds }}/key=value")
     ]
     assert expected == actual
+
+def test_derivation():
+    derivation = Derivation(name="derivation_name", expression="derivation_expression")
+    expected_derivation = api.Derivation(
+        name="derivation_name",
+        expression="derivation_expression")
+
+    assert derivation == expected_derivation
+
+
+def test_derivation_with_description():
+    derivation = Derivation(name="derivation_name", expression="derivation_expression", description="Derivation description")
+    expected_derivation = api.Derivation(
+        name="derivation_name",
+        expression="derivation_expression",
+        metaData=api.MetaData(description="Derivation description"))
+
+    assert derivation == expected_derivation

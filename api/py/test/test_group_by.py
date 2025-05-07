@@ -16,7 +16,7 @@
 import pytest, json
 
 from ai.chronon import group_by, query
-from ai.chronon.group_by import GroupBy, TimeUnit, Window, Aggregation, Accuracy
+from ai.chronon.group_by import GroupBy, Derivation, TimeUnit, Window, Aggregation, Accuracy
 from ai.chronon.api import ttypes
 from ai.chronon.api.ttypes import EventSource, EntitySource, Operation
 
