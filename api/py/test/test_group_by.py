@@ -294,6 +294,7 @@ def test_group_by_with_description():
     )
     assert gb.metaData.description == "GroupBy description"
 
+
 def test_derivation():
     derivation = Derivation(name="derivation_name", expression="derivation_expression")
     expected_derivation = ttypes.Derivation(
@@ -301,6 +302,7 @@ def test_derivation():
         expression="derivation_expression")
 
     assert derivation == expected_derivation
+
 
 def test_derivation_with_description():
     derivation = Derivation(name="derivation_name", expression="derivation_expression", description="Derivation description")
