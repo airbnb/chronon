@@ -154,7 +154,7 @@ def Aggregation(
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
-    agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets, metadata)
+    agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
     agg.tags = tags
     return agg
 
