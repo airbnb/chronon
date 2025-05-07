@@ -235,6 +235,10 @@ class Fetcher(val kvStore: KVStore,
 
   override def fetchJoin(requests: scala.collection.Seq[Request],
                          joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
+    logger.info("[chronon test] logger info level logs join")
+    logger.debug("[chronon test] logger debug level logs join")
+    logger.warn("[chronon test] logger warn level logs join")
+    logger.error("[chronon test] logger error level logs join")
     val ts = System.currentTimeMillis()
     val internalResponsesF = super.fetchJoin(requests, joinConf)
     val externalResponsesF = fetchExternal(requests)
