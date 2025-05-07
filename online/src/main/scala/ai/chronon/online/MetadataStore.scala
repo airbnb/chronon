@@ -42,6 +42,11 @@ class MetadataStore(kvStore: KVStore,
                     timeoutMillis: Long,
                     executionContextOverride: ExecutionContext = null) {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
+  logger.info("[chronon test] Metadata store creation info level logs")
+  logger.warn("[chronon test] Metadata store creation warn level logs")
+  logger.debug("[chronon test] Metadata store creation debug level logs")
+  logger.error("[chronon test] Metadata store creation error level logs")
+  print("[chronon test] Metadata store logger information: info enabled=" + logger.isInfoEnabled() + ", debug enabled=" + logger.isDebugEnabled() + ", error enabled=" + logger.isErrorEnabled())
   private var partitionSpec = PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
   private val CONF_BATCH_SIZE = 50
 
