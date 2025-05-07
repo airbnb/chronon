@@ -147,7 +147,6 @@ def Aggregation(
         Besides the GroupBy.keys, this is another level of keys for use under this aggregation.
         Using this would create an output as a map of string to aggregate.
     :type buckets: List[str]
-    :param description: optional description of this aggregation
     :return: An aggregate defined with the specified operation.
     """
     # Default to last
@@ -155,9 +154,6 @@ def Aggregation(
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
-    metadata = None
-    if description:
-        metadata = ttypes.MetaData(description=description)
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets, metadata)
     agg.tags = tags
     return agg

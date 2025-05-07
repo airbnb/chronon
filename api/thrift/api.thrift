@@ -205,8 +205,6 @@ struct Aggregation {
     This is an additional layer of aggregation. You can key a group_by by user, and bucket a “item_view” count by “item_category”. This will produce one row per user, with column containing map of “item_category” to “view_count”. You can specify multiple such buckets at once
     */
     5: optional list<string> buckets
-
-    6: optional MetaData metaData
 }
 
 // used internally not exposed - maps 1:1 with a field in the output
