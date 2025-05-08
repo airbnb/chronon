@@ -270,7 +270,8 @@ object Builders {
         consistencySamplePercent: Double = 5,
         tableProperties: Map[String, String] = Map.empty,
         historicalBackill: Boolean = true,
-        deprecationDate: String = null
+        deprecationDate: String = null,
+        description: String = null
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)
@@ -290,6 +291,9 @@ object Builders {
         result.setTableProperties(tableProperties.toJava)
       if (deprecationDate != null)
         result.setDeprecationDate(deprecationDate)
+      if (description != null) {
+        result.setDescription(description)
+      }
       result
     }
   }
@@ -331,7 +335,8 @@ object Builders {
   object Derivation {
     def apply(
         name: String = null,
-        expression: String = null
+        expression: String = null,
+        metaData: MetaData = null
     ): Derivation = {
       val derivation = new Derivation()
       if (name != null) {
@@ -339,6 +344,9 @@ object Builders {
       }
       if (derivation != null) {
         derivation.setExpression(expression)
+      }
+      if (metaData != null) {
+        derivation.setMetaData(metaData)
       }
       derivation
     }

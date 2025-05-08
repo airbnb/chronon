@@ -13,7 +13,7 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from ai.chronon.join import Join
+from ai.chronon.join import Join, Derivation
 from ai.chronon.group_by import GroupBy
 from ai.chronon.api import ttypes as api
 
@@ -54,6 +54,13 @@ def right_part(source):
         ),
     )
 
+def test_join_with_description():
+    join = Join(
+        left=event_source("sample_namespace.sample_table"),
+        right_parts=[right_part(event_source("sample_namespace.another_table"))],
+        description="Join description"
+    )
+    assert join.metaData.description == "Join description"
 
 def test_deduped_dependencies():
     """
@@ -106,3 +113,21 @@ def test_dependencies_propagation():
         ("wait_for_table_2_ds_ds_key_value", "table_2/ds={{ ds }}/key=value")
     ]
     assert expected == actual
+
+def test_derivation():
+    derivation = Derivation(name="derivation_name", expression="derivation_expression")
+    expected_derivation = api.Derivation(
+        name="derivation_name",
+        expression="derivation_expression")
+
+    assert derivation == expected_derivation
+
+
+def test_derivation_with_description():
+    derivation = Derivation(name="derivation_name", expression="derivation_expression", description="Derivation description")
+    expected_derivation = api.Derivation(
+        name="derivation_name",
+        expression="derivation_expression",
+        metaData=api.MetaData(description="Derivation description"))
+
+    assert derivation == expected_derivation

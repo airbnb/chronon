@@ -19,7 +19,7 @@ package ai.chronon.api.test
 import ai.chronon.api.{Accuracy, Builders, Constants, GroupBy}
 import org.junit.Test
 import ai.chronon.api.Extensions._
-import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
 import org.mockito.Mockito.{spy, when}
 
 import scala.util.ScalaJavaConversions.JListOps
@@ -191,5 +191,59 @@ class ExtensionsTest {
     assertTrue(buildGroupByWithCustomJson("{\"enable_tiling\": true}").isTilingEnabled)
     assertFalse(buildGroupByWithCustomJson("{\"enable_tiling\": false}").isTilingEnabled)
     assertFalse(buildGroupByWithCustomJson("{\"enable_tiling\": \"string instead of bool\"}").isTilingEnabled)
+  }
+
+  @Test
+  def semanticHashWithoutChangesIsEqual(): Unit = {
+    val metadata = Builders.MetaData(name = "test")
+    val groupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = null, table = "db.gb_table", topic = "test.gb_topic")),
+      keyColumns = Seq("a", "c"),
+      metaData = metadata)
+    val join = Builders.Join(
+      left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = metadata)
+    assertEquals(join.semanticHash(excludeTopic = true), join.semanticHash(excludeTopic = true))
+    assertEquals(join.semanticHash(excludeTopic = false), join.semanticHash(excludeTopic = false))
+  }
+
+  @Test
+  def semanticHashWithChangesIsDifferent(): Unit = {
+    val metadata = Builders.MetaData(name = "test")
+    val groupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = null, table = "db.gb_table", topic = "test.gb_topic")),
+      keyColumns = Seq("a", "c"),
+      metaData = metadata)
+    val join1 = Builders.Join(
+      left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = metadata)
+    val join2 = join1.deepCopy()
+    join2.joinParts.get(0).groupBy.setKeyColumns(Seq("b", "c").toJava)
+    assertNotEquals(join1.semanticHash(excludeTopic = true), join2.semanticHash(excludeTopic = true))
+    assertNotEquals(join1.semanticHash(excludeTopic = false), join2.semanticHash(excludeTopic = false))
+  }
+
+  @Test
+  def semanticHashIgnoresMetadataDescriptions(): Unit = {
+    val metadata = Builders.MetaData(name = "test", description = "metadata description")
+    val groupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = null, table = "db.gb_table", topic = "test.gb_topic")),
+      keyColumns = Seq("a", "c"),
+      metaData = metadata)
+    val join1 = Builders.Join(
+      left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = metadata,
+      derivations = Seq(
+        Builders.Derivation(name="*", expression="*", metaData = metadata)))
+    val updatedMetadata = Builders.MetaData(name = "test", description = "other description")
+    val join2 = join1.deepCopy()
+    join2.setMetaData(updatedMetadata)
+    join2.joinParts.get(0).groupBy.setMetaData(updatedMetadata)
+    join2.derivations.get(0).setMetaData(updatedMetadata)
+    assertEquals(join1.semanticHash(excludeTopic = true), join2.semanticHash(excludeTopic = true))
+    assertEquals(join1.semanticHash(excludeTopic = false), join2.semanticHash(excludeTopic = false))
   }
 }

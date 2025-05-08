@@ -298,7 +298,7 @@ def LabelPart(
     )
 
 
-def Derivation(name: str, expression: str) -> api.Derivation:
+def Derivation(name: str, expression: str, description: Optional[str] = None) -> api.Derivation:
     """
     Derivation allows arbitrary SQL select clauses to be computed using columns from joinPart and externalParts,
     and saves the result as derived columns. The results will be available both in online fetching response map,
@@ -322,7 +322,10 @@ def Derivation(name: str, expression: str) -> api.Derivation:
     :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
     :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
     """
-    return api.Derivation(name=name, expression=expression)
+    metadata = None
+    if description:
+        metadata = api.MetaData(description=description)
+    return api.Derivation(name=name, expression=expression, metaData=metadata)
 
 
 def BootstrapPart(
@@ -391,6 +394,7 @@ def Join(
     derivations: Optional[List[api.Derivation]] = None,
     deprecation_date: Optional[str] = None,
     tags: Optional[Dict[str, str]] = None,
+    description: Optional[str] = None,
     **kwargs,
 ) -> api.Join:
     """
@@ -490,6 +494,7 @@ def Join(
     :param deprecation_date:
         Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
     :type deprecation_date: str
+    :param description: optional description of this Join
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -598,6 +603,7 @@ def Join(
         consistencySamplePercent=consistency_sample_percent,
         historicalBackfill=historical_backfill,
         deprecationDate=deprecation_date,
+        description=description,
     )
 
     return api.Join(
