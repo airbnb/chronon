@@ -195,20 +195,30 @@ class ExtensionsTest {
 
   @Test
   def semanticHashWithoutChangesIsEqual(): Unit = {
-    val groupByMetadata = Builders.MetaData(name = "test")
-    val groupBy = Builders.GroupBy(keyColumns = Seq("a", "c"), metaData = groupByMetadata)
-    val joinPart = Builders.JoinPart(groupBy = groupBy)
-    val join = Builders.Join(joinParts = Seq(joinPart))
+    val metadata = Builders.MetaData(name = "test")
+    val groupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = null, table = "db.gb_table", topic = "test.gb_topic")),
+      keyColumns = Seq("a", "c"),
+      metaData = metadata)
+    val join = Builders.Join(
+      left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = metadata)
     assertEquals(join.semanticHash(excludeTopic = true), join.semanticHash(excludeTopic = true))
     assertEquals(join.semanticHash(excludeTopic = false), join.semanticHash(excludeTopic = false))
   }
 
   @Test
-  def semanticHashWithChangesIsEqual(): Unit = {
-    val groupByMetadata = Builders.MetaData(name = "test")
-    val groupBy = Builders.GroupBy(keyColumns = Seq("a", "c"), metaData = groupByMetadata)
-    val joinPart = Builders.JoinPart(groupBy = groupBy)
-    val join1 = Builders.Join(joinParts = Seq(joinPart))
+  def semanticHashWithChangesIsDifferent(): Unit = {
+    val metadata = Builders.MetaData(name = "test")
+    val groupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = null, table = "db.gb_table", topic = "test.gb_topic")),
+      keyColumns = Seq("a", "c"),
+      metaData = metadata)
+    val join1 = Builders.Join(
+      left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = metadata)
     val join2 = join1.deepCopy()
     join2.joinParts.get(0).groupBy.setKeyColumns(Seq("b", "c").toJava)
     assertNotEquals(join1.semanticHash(excludeTopic = true), join2.semanticHash(excludeTopic = true))
@@ -218,10 +228,13 @@ class ExtensionsTest {
   @Test
   def semanticHashIgnoresMetadataDescriptions(): Unit = {
     val metadata = Builders.MetaData(name = "test", description = "metadata description")
-    val groupBy = Builders.GroupBy(keyColumns = Seq("a", "c"), metaData = metadata)
-    val joinPart = Builders.JoinPart(groupBy = groupBy)
+    val groupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = null, table = "db.gb_table", topic = "test.gb_topic")),
+      keyColumns = Seq("a", "c"),
+      metaData = metadata)
     val join1 = Builders.Join(
-      joinParts = Seq(joinPart),
+      left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
       metaData = metadata,
       derivations = Seq(
         Builders.Derivation(name="*", expression="*", metaData = metadata)))
