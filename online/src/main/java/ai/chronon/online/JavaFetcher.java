@@ -37,15 +37,19 @@ public class JavaFetcher {
     Fetcher fetcher;
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null, null);
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null, null);
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, FlagStore flagStore, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null, null);
+    }
+
+    public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, FlagStore flagStore, Boolean disableErrorThrows, ModelBackend modelBackend) {
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null, modelBackend);
     }
 
     /* user builder pattern to create JavaFetcher
@@ -66,7 +70,8 @@ public class JavaFetcher {
                 builder.callerName,
                 builder.flagStore,
                 builder.disableErrorThrows,
-                builder.executionContextOverride);
+                builder.executionContextOverride,
+                builder.modelBackend);
     }
 
     public static class Builder {
@@ -80,6 +85,7 @@ public class JavaFetcher {
         private FlagStore flagStore;
         private Boolean disableErrorThrows;
         private ExecutionContext executionContextOverride;
+        private ModelBackend modelBackend;
 
         public Builder(KVStore kvStore, String metaDataSet, Long timeoutMillis,
                        Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
@@ -112,6 +118,11 @@ public class JavaFetcher {
 
         public Builder executionContextOverride(ExecutionContext executionContextOverride) {
             this.executionContextOverride = executionContextOverride;
+            return this;
+        }
+
+        public Builder modelBackend(ModelBackend modelBackend) {
+            this.modelBackend = modelBackend;
             return this;
         }
 
@@ -209,11 +220,11 @@ public class JavaFetcher {
     }
 
     private Metrics.Context getJoinContext(String joinName) {
-        return new Metrics.Context("join.fetch", joinName, null, null, false, null, null, null, null);
+        return new Metrics.Context("join.fetch", joinName, null, null, false, null, null, null, null, null);
     }
 
     private Metrics.Context getGroupByContext(String groupByName) {
-        return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null);
+        return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null, null);
     }
 
     public CompletableFuture<JavaSeriesStatsResponse> fetchStatsTimeseries(JavaStatsRequest request) {
