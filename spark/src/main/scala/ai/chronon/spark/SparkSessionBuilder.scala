@@ -128,7 +128,7 @@ object SparkSessionBuilder {
   }
 
   def buildStreaming(local: Boolean): SparkSession = {
-        val userName = Properties.userName
+    val userName = Properties.userName
     val baseBuilder = SparkSession
       .builder()
       .config("spark.ui.enabled", "false")
