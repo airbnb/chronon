@@ -64,6 +64,16 @@ object SparkSessionBuilder {
     val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
     var baseBuilder = SparkSession
       .builder()
+      // ── use an in‐memory Derby metastore rather than disk + BoneCP ──
+      .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:metastore_db;create=true")
+      .config("spark.hadoop.javax.jdo.option.ConnectionDriverName", "org.apache.derby.jdbc.EmbeddedDriver")
+      .config("spark.hadoop.javax.jdo.option.ConnectionUserName", "APP")
+      .config("spark.hadoop.javax.jdo.option.ConnectionPassword", "APP")
+      .config("spark.ui.enabled", "false")
+      .config("spark.chronon.outputParallelismOverride", "2")
+      .config("spark.chronon.group_by.parallelism", "2")
+      .config("spark.sql.shuffle.partitions", "2")
+      .config("spark.default.parallelism", "2")
       .appName(name)
       .enableHiveSupport()
       .config("spark.sql.session.timeZone", "UTC")
@@ -98,6 +108,9 @@ object SparkSessionBuilder {
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.kryo.registrationRequired", s"${localWarehouseLocation.isEmpty}")
+        .config("spark.testing", "true")
+        .config("spark.ui.enabled", false)
+        .config("spark.sql.adaptive.enabled", true)
         .config("spark.local.dir", s"/tmp/$userName/$name")
         .config("spark.sql.warehouse.dir", s"$warehouseDir/data")
         .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
@@ -118,6 +131,7 @@ object SparkSessionBuilder {
     val userName = Properties.userName
     val baseBuilder = SparkSession
       .builder()
+      .config("spark.ui.enabled", "false")
       .config("spark.sql.session.timeZone", "UTC")
       .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .config("spark.kryo.registrator", "ai.chronon.spark.ChrononKryoRegistrator")
@@ -129,6 +143,7 @@ object SparkSessionBuilder {
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
+        .config("spark.ui.enabled", "false")
         .config("spark.local.dir", s"/tmp/$userName/chronon-spark-streaming")
         .config("spark.kryo.registrationRequired", "true")
     } else {
