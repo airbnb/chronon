@@ -43,6 +43,7 @@ import scala.util.Random
 import scala.util.ScalaJavaConversions.ListOps
 import scala.util.Try
 
+
 class JoinTest {
   val dummySpark: SparkSession = SparkSessionBuilder.build("JoinTest", local = true)
   private val dummyTableUtils = TableUtils(dummySpark)
@@ -89,7 +90,7 @@ class JoinTest {
       snapshotTable = dollarTable
     )
 
-    //println("Rupee Source start partition $month")
+    //logger.debug("Rupee Source start partition $month")
     val rupeeSource =
       Builders.Source.entities(
         query = Builders.Query(
@@ -167,7 +168,7 @@ class JoinTest {
     resetUDFs()
     val runner2 = new Join(joinConf, end, tableUtils)
     val computed = runner2.computeJoin(Some(3))
-    println(s"join start = $start")
+    logger.debug(s"join start = $start")
 
     val expectedQuery = s"""
                            |WITH
@@ -217,11 +218,11 @@ class JoinTest {
     val diff = Comparison.sideBySide(computed, expected, List("user_name", "user", "ts", "ds"))
 
     if (diff.count() > 0) {
-      println(s"Actual count: ${computed.count()}")
-      println(s"Expected count: ${expected.count()}")
-      println(s"Diff count: ${diff.count()}")
-      println(s"Queries count: ${queries.count()}")
-      println(s"diff result rows")
+      logger.debug(s"Actual count: ${computed.count()}")
+      logger.debug(s"Expected count: ${expected.count()}")
+      logger.debug(s"Diff count: ${diff.count()}")
+      logger.debug(s"Queries count: ${queries.count()}")
+      logger.debug(s"diff result rows")
       diff.show()
     }
     assertEquals(0, diff.count())
@@ -249,11 +250,11 @@ class JoinTest {
     val diff2 = Comparison.sideBySide(computed2, expected2, List("user_name", "user", "ts", "ds"))
 
     if (diff2.count() > 0) {
-      println(s"Actual count: ${computed2.count()}")
-      println(s"Expected count: ${expected2.count()}")
-      println(s"Diff count: ${diff2.count()}")
-      println(s"Queries count: ${queries.count()}")
-      println(s"diff result rows")
+      logger.debug(s"Actual count: ${computed2.count()}")
+      logger.debug(s"Expected count: ${expected2.count()}")
+      logger.debug(s"Diff count: ${diff2.count()}")
+      logger.debug(s"Queries count: ${queries.count()}")
+      logger.debug(s"diff result rows")
       diff2.show()
     }
     assertEquals(0, diff2.count())
@@ -352,18 +353,18 @@ class JoinTest {
                                      | AND countries.country = grouped_heights.country
     """.stripMargin)
 
-    println("showing join result")
+    logger.debug("showing join result")
     computed.show()
-    println("showing query result")
+    logger.debug("showing query result")
     expected.show()
-    println(
+    logger.debug(
       s"Left side count: ${spark.sql(s"SELECT country, ds from $countryTable where ds >= '$start' and ds <= '$end'").count()}")
-    println(s"Actual count: ${computed.count()}")
-    println(s"Expected count: ${expected.count()}")
+    logger.debug(s"Actual count: ${computed.count()}")
+    logger.debug(s"Expected count: ${expected.count()}")
     val diff = Comparison.sideBySide(computed, expected, List("country", "ds"))
     if (diff.count() > 0) {
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.debug(s"Diff count: ${diff.count()}")
+      logger.debug(s"diff result rows")
       diff.show()
     }
     assertEquals(diff.count(), 0)
@@ -371,14 +372,14 @@ class JoinTest {
      * have same partitions, in other words, the frontfill is done, the join job
      * should not trigger a backfill and exit the program properly
      * TODO: Revisit this in a logger world.
-    // use console to redirect println message to Java IO
+    // use console to redirect logger.debug message to Java IO
     val stream = new java.io.ByteArrayOutputStream()
     Console.withOut(stream) {
       // rerun the same join job
       runner.computeJoin(Some(7))
     }
     val stdOutMsg = stream.toString()
-    println(s"std out message =\n $stdOutMsg")
+    logger.debug(s"std out message =\n $stdOutMsg")
     // make sure that the program exits with target print statements
     assertTrue(stdOutMsg.contains(s"There is no data to compute based on end partition of $end."))
      */
@@ -429,12 +430,12 @@ class JoinTest {
 
     val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
-    println("showing join result")
+    logger.debug("showing join result")
     computed.show()
 
     val leftSideCount = spark.sql(s"SELECT country, ds from $countryTable where ds == '$end'").count()
-    println(s"Left side expected count: $leftSideCount")
-    println(s"Actual count: ${computed.count()}")
+    logger.debug(s"Left side expected count: $leftSideCount")
+    logger.debug(s"Actual count: ${computed.count()}")
     assertEquals(leftSideCount, computed.count())
     // There should be only one partition in computed df which equals to end partition
     val allPartitions = computed.select("ds").rdd.map(row => row(0)).collect().toSet
@@ -449,7 +450,7 @@ class JoinTest {
     val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     val viewsSchema = List(
-      Column("user", api.StringType, 10000),
+      Column("user", api.StringType, 50),
       Column("item", api.StringType, 100),
       Column("time_spent_ms", api.LongType, 5000)
     )
@@ -514,8 +515,8 @@ class JoinTest {
     val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
 
     if (diff.count() > 0) {
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.debug(s"Diff count: ${diff.count()}")
+      logger.debug(s"diff result rows")
       diff.show()
     }
     assertEquals(diff.count(), 0)
@@ -592,8 +593,8 @@ class JoinTest {
       tableUtils.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore'")
     assertEquals(queriesBare.count(), computed.count())
     if (diff.count() > 0) {
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.debug(s"Diff count: ${diff.count()}")
+      logger.debug(s"diff result rows")
       diff
         .replaceWithReadableTime(Seq("ts", "a_user_unit_test_item_views_ts_max", "b_user_unit_test_item_views_ts_max"),
                                  dropOriginal = true)
@@ -617,7 +618,7 @@ class JoinTest {
 
     // Run job
     val itemQueriesTable = s"$namespace.item_queries"
-    println("Item Queries DF: ")
+    logger.debug("Item Queries DF: ")
     val q =
       s"""
          |SELECT
@@ -628,7 +629,9 @@ class JoinTest {
          |FROM $viewsTable
          |WHERE
          |  ds >= '2021-06-03' AND ds <= '2021-06-03'""".stripMargin
-    spark.sql(q).show()
+    if (logger.isDebugEnabled) {
+      spark.sql(q).show()
+    }
     val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
     val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
     val computed = join.computeJoin(Some(100))
@@ -658,8 +661,8 @@ class JoinTest {
       tableUtils.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore'")
     assertEquals(queriesBare.count(), computed.count())
     if (diff.count() > 0) {
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+      logger.debug(s"Diff count: ${diff.count()}")
+      logger.debug(s"diff result rows")
       diff.show()
     }
     assertEquals(diff.count(), 0)
@@ -743,7 +746,7 @@ class JoinTest {
       viewsGroupByCumulative.inferredAccuracy,
       tableUtils.partitionColumn
     )
-    println(renderedIncremental)
+    logger.debug(renderedIncremental)
     assert(renderedIncremental.contains(s"(ds >= '2021-01-01') AND (ds <= '2021-01-01')"))
   }
 
@@ -797,7 +800,7 @@ class JoinTest {
 
     val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
-    println(s"join start = $start")
+    logger.debug(s"join start = $start")
     val expected = tableUtils.sql(s"""
                                      |WITH
                                      |   users AS (SELECT user, ds from $usersTable where ds >= '$start' and ds <= '$end'),
@@ -814,22 +817,24 @@ class JoinTest {
                                      | ON users.user = grouped_names.user
                                      | AND users.ds = grouped_names.ds
     """.stripMargin)
-
-    println("showing join result")
-    computed.show()
-    println("showing query result")
-    expected.show()
-    println(
-      s"Left side count: ${spark.sql(s"SELECT user, ds from $namesTable where ds >= '$start' and ds <= '$end'").count()}")
-    println(s"Actual count: ${computed.count()}")
-    println(s"Expected count: ${expected.count()}")
+    if (logger.isDebugEnabled) {
+      logger.debug("showing join result")
+      computed.show()
+      logger.debug("showing query result")
+      expected.show()
+      logger.debug(
+        s"Left side count: ${spark.sql(s"SELECT user, ds from $namesTable where ds >= '$start' and ds <= '$end'").count()}")
+      logger.debug(s"Actual count: ${computed.count()}")
+      logger.debug(s"Expected count: ${expected.count()}")
+    }
     val diff = Comparison.sideBySide(computed, expected, List("user", "ds"))
-    if (diff.count() > 0) {
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+    val diffCount = diff.count()
+    if (diffCount > 0) {
+      logger.debug(s"Diff count: $diffCount")
+      logger.debug(s"diff result rows")
       diff.show()
     }
-    assertEquals(diff.count(), 0)
+    assertEquals(diffCount, 0)
   }
 
   @Test
@@ -916,22 +921,24 @@ class JoinTest {
                                      | JOIN queries
                                      | ON queries.item <=> part.item AND queries.ts <=> part.ts AND queries.ds <=> part.ds
                                      |""".stripMargin)
-    expected.show()
-
+    if (logger.isDebugEnabled){
+      expected.show()
+    }
     val diff = Comparison.sideBySide(expected, computed, List("item", "ts", "ds"))
+    val diffCount = diff.count() 
     val queriesBare =
       tableUtils.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore'")
     assertEquals(queriesBare.count(), computed.count())
-    if (diff.count() > 0) {
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
+    if (diffCount > 0) {
+      logger.debug(s"Diff count: ${diffCount}")
+      logger.debug(s"diff result rows")
       diff
         .replaceWithReadableTime(
           Seq("ts", "a_user_3_unit_test_item_views_ts_max", "b_user_3_unit_test_item_views_ts_max"),
           dropOriginal = true)
         .show()
     }
-    assertEquals(0, diff.count())
+    assertEquals(0, diffCount)
   }
 
   private def getViewsGroupBy(suffix: String, makeCumulative: Boolean = false, namespace: String) = {
@@ -1106,8 +1113,9 @@ class JoinTest {
     )
     val skipBloomComputed = new Join(joinConf, today, testTableUtils).computeJoin()
     val leftSideCount = testSpark.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start'").count()
-    println("computed count: " + skipBloomComputed.count())
-    assertEquals(leftSideCount, skipBloomComputed.count())
+    val skippedBloomCount = skipBloomComputed.count()
+    logger.debug("computed count: " + skippedBloomCount)
+    assertEquals(leftSideCount, skippedBloomCount)
   }
 
   @Test
@@ -1744,7 +1752,7 @@ class JoinTest {
 
     val runner = new Join(joinConf, end, tableUtils)
     val computed = runner.computeJoin(Some(7))
-    println(s"join start = $start")
+    logger.debug(s"join start = $start")
     val expected = tableUtils.sql(s"""
                                      |WITH
                                      |   users AS (SELECT user, $userPartitionColumn as ds from $usersTable where $userPartitionColumn >= '$start' and $userPartitionColumn <= '$end'),
@@ -1762,20 +1770,23 @@ class JoinTest {
                                      | AND users.ds = grouped_names.ds
     """.stripMargin)
 
-    println("showing join result")
+    logger.debug("showing join result")
     computed.show()
-    println("showing query result")
+    logger.debug("showing query result")
     expected.show()
-    println(
+    logger.debug(
       s"Left side count: ${spark.sql(s"SELECT user, $namePartitionColumn as ds from $namesTable where $namePartitionColumn >= '$start' and $namePartitionColumn <= '$end'").count()}")
-    println(s"Actual count: ${computed.count()}")
-    println(s"Expected count: ${expected.count()}")
+    logger.debug(s"Actual count: ${computed.count()}")
+    logger.debug(s"Expected count: ${expected.count()}")
     val diff = Comparison.sideBySide(computed, expected, List("user", "ds"))
-    if (diff.count() > 0) {
-      println(s"Diff count: ${diff.count()}")
-      println(s"diff result rows")
-      diff.show()
+    val diffCount = diff.count()
+    if (diffCount > 0) {
+      logger.debug(s"Diff count: ${diffCount}")
+      logger.debug(s"diff result rows")
+      if (logger.isDebugEnabled) {
+        diff.show()
+      }
     }
-    assertEquals(diff.count(), 0)
+    assertEquals(diffCount, 0)
   }
 }
