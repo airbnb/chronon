@@ -39,7 +39,7 @@ object SparkSessionBuilder {
             additionalConfig: Option[Map[String, String]] = None,
             enforceKryoSerializer: Boolean = true): SparkSession = {
 
-        // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
+    // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
     // between Spark sessions created in existing chronon tests that need the hive format and some specific tests
     // that require a format override like delta lake.
     val (formatConfigs, kryoRegistrator) = sys.env.get(FormatTestEnvVar) match {
@@ -64,13 +64,13 @@ object SparkSessionBuilder {
     val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
     var baseBuilder = SparkSession
       .builder()
-        // ── use an in‐memory Derby metastore rather than disk + BoneCP ──
-      .config("spark.hadoop.javax.jdo.option.ConnectionURL",        "jdbc:derby:memory:metastore_db;create=true")
+      // ── use an in‐memory Derby metastore rather than disk + BoneCP ──
+      .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:metastore_db;create=true")
       .config("spark.hadoop.javax.jdo.option.ConnectionDriverName", "org.apache.derby.jdbc.EmbeddedDriver")
-      .config("spark.hadoop.javax.jdo.option.ConnectionUserName",   "APP")
-      .config("spark.hadoop.javax.jdo.option.ConnectionPassword",   "APP")
+      .config("spark.hadoop.javax.jdo.option.ConnectionUserName", "APP")
+      .config("spark.hadoop.javax.jdo.option.ConnectionPassword", "APP")
       .config("spark.ui.enabled", "false")
-      .config("spark.chronon.outputParallelismOverride","2")
+      .config("spark.chronon.outputParallelismOverride", "2")
       .config("spark.chronon.group_by.parallelism", "2")
       .config("spark.sql.shuffle.partitions", "2")
       .config("spark.default.parallelism", "2")
@@ -141,7 +141,7 @@ object SparkSessionBuilder {
 
     val builder = if (local) {
       baseBuilder
-        // use all threads - or the tests will be slow
+      // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.ui.enabled", "false")
         .config("spark.local.dir", s"/tmp/$userName/chronon-spark-streaming")
