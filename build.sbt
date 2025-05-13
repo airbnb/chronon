@@ -192,15 +192,15 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
   ),
   "iceberg31" -> VersionDependency(
     Seq(
-      "org.apache.iceberg" %% "iceberg-spark-3.1",
+      "org.apache.iceberg" %% "iceberg-spark-runtime-3.1",
     ),
     None,
     Some(icebergVersion),
-    Some(icebergVersion)
+    None
   ),
   "iceberg32" -> VersionDependency(
     Seq(
-      "org.apache.iceberg" %% "iceberg-spark-3.2",
+      "org.apache.iceberg" %% "iceberg-spark-runtime-3.2",
     ),
     None,
     None,

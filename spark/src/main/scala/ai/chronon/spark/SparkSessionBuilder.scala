@@ -39,10 +39,14 @@ object SparkSessionBuilder {
             additionalConfig: Option[Map[String, String]] = None,
             enforceKryoSerializer: Boolean = true): SparkSession = {
 
+
+    val userName = Properties.userName
+    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
+    
     // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
     // between Spark sessions created in existing chronon tests that need the hive format and some specific tests
     // that require a format override like delta lake.
-    val (formatConfigs, kryoRegistrator) = Some("deltalake") match {
+    val (formatConfigs, kryoRegistrator) = Some("iceberg") match {
       case Some("deltalake") =>
         val configMap = Map(
           "spark.sql.extensions" -> "io.delta.sql.DeltaSparkSessionExtension",
@@ -53,8 +57,13 @@ object SparkSessionBuilder {
       case Some("iceberg") =>
         val configMap = Map(
           "spark.sql.extensions" -> "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+
+          "spark.sql.catalog.spark_catalog" -> "org.apache.iceberg.spark.SparkSessionCatalog",
+          "spark.sql.catalog.spark_catalog.type" -> "hadoop",
+          "spark.sql.catalog.iceberg_catalog.warehouse" -> s"$warehouseDir/iceberg-warehouse",
+          "spark.sql.catalog.iceberg_catalog.cache-enabled" -> "false",
+
           "spark.chronon.table_write.format" -> "iceberg",
-          "spark.sql.sources.partitionOverwriteMode" -> "dynamic"
         )
         // TODO registrator for iceberg
         (configMap, "ai.chronon.spark.ChrononKryoRegistrator")
@@ -68,8 +77,7 @@ object SparkSessionBuilder {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
     }
-    val userName = Properties.userName
-    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
+
     var baseBuilder = SparkSession
       .builder()
       .appName(name)
