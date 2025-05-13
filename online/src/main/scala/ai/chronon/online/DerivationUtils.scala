@@ -2,13 +2,17 @@ package ai.chronon.online
 
 import scala.util.{Failure, Success, Try}
 import scala.collection.Seq
-
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.Extensions.DerivationOps
-import ai.chronon.api.{Derivation, LongType, StringType, StructField, StructType}
+import ai.chronon.api.{Builders, Derivation, Join, LongType, StringType, StructField, StructType}
 import ai.chronon.online.Fetcher.Request
+import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.functions.{coalesce, col, expr}
+import ai.chronon.api.Extensions.JoinOps
 
-object OnlineDerivationUtil {
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+
+object DerivationUtils {
   type DerivationFunc = (Map[String, Any], Map[String, Any]) => Map[String, Any]
 
   val timeFields: Array[StructField] = Array(
@@ -119,5 +123,74 @@ object OnlineDerivationUtil {
       val catalystUtil = buildCatalystUtil(derivationsScala, keySchema, baseValueSchema)
       catalystUtil.outputChrononSchema.map(tup => StructField(tup._1, tup._2))
     }
+  }
+
+  def applyDerivation(joinConf: Join,
+                      baseDf: DataFrame,
+                      baseColumns: Seq[String],
+                      leftColumns: Seq[String],
+                      includeAllBase: Boolean = false): DataFrame = {
+    if (!joinConf.isSetDerivations || joinConf.derivations.isEmpty) {
+      return baseDf
+    }
+
+    val derivations = if (includeAllBase && !joinConf.derivations.toScala.derivationsContainStar) {
+      joinConf.derivations.toScala :+ Builders.Derivation("*", "*")
+    } else {
+      joinConf.derivations.toScala
+    }
+    val projections = derivations.derivationProjection(baseColumns)
+    val projectionsMap = projections.toMap
+    val baseOutputColumns = baseDf.columns.toSet
+
+    val finalOutputColumns =
+      /*
+       * Loop through all columns in the base join output:
+       * 1. If it is one of the value columns, then skip it here and it will be handled later as we loop through
+       *    derived columns again - derivation is a projection from all value columns to desired derived columns
+       * 2.  (see case 2 below) If it is matching one of the projected output columns, then there are 2 sub-cases
+       *     a. matching with a left column, then we handle the coalesce here to make sure left columns show on top
+       *     b. a bootstrapped derivation case, the skip it here and it will be handled later as
+       *        loop through derivations to perform coalescing
+       * 3. Else, we keep it in the final output - cases falling here are either (1) key columns, or (2)
+       *    arbitrary columns selected from left.
+       */
+      baseDf.columns.flatMap { c =>
+        if (baseColumns.contains(c)) {
+          None
+        } else if (projectionsMap.contains(c)) {
+          if (leftColumns.contains(c)) {
+            Some(coalesce(col(c), expr(projectionsMap(c))).as(c))
+          } else {
+            None
+          }
+        } else {
+          Some(col(c))
+        }
+      } ++
+        /*
+         * Loop through all clauses in derivation projections:
+         * 1. (see case 2 above) If it is matching one of the projected output columns, then there are 2 sub-cases
+         *     a. matching with a left column, then we skip since it is handled above
+         *     b. a bootstrapped derivation case (see case 2 below), then we do the coalescing to achieve the bootstrap
+         *        behavior.
+         * 2. Else, we do the standard projection.
+         */
+        projections
+          .flatMap {
+            case (name, expression) =>
+              if (baseOutputColumns.contains(name)) {
+                if (leftColumns.contains(name)) {
+                  None
+                } else {
+                  Some(coalesce(col(name), expr(expression)).as(name))
+                }
+              } else {
+                Some(expr(expression).as(name))
+              }
+          }
+
+    val result = baseDf.select(finalOutputColumns: _*)
+    result
   }
 }

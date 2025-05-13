@@ -28,7 +28,7 @@ import java.util
 
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 
-import ai.chronon.online.OnlineDerivationUtil.timeFields
+import ai.chronon.online.DerivationUtils.timeFields
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
