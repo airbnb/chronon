@@ -98,6 +98,16 @@ object SparkSessionBuilder {
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.kryo.registrationRequired", s"${localWarehouseLocation.isEmpty}")
+      // ── use an in‐memory Derby metastore rather than disk + BoneCP ──
+        .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:metastore_db;create=true")
+        .config("spark.hadoop.javax.jdo.option.ConnectionDriverName", "org.apache.derby.jdbc.EmbeddedDriver")
+        .config("spark.hadoop.javax.jdo.option.ConnectionUserName", "APP")
+        .config("spark.hadoop.javax.jdo.option.ConnectionPassword", "APP")
+        .config("spark.ui.enabled", "false")
+        .config("spark.chronon.outputParallelismOverride", "2")
+        .config("spark.chronon.group_by.parallelism", "2")
+        .config("spark.sql.shuffle.partitions", "2")
+        .config("spark.default.parallelism", "2")
         .config("spark.testing", "true")
         .config("spark.ui.enabled", false)
         .config("spark.sql.adaptive.enabled", true)
