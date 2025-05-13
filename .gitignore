@@ -10,6 +10,11 @@
 *.logs
 *.iml
 .idea/
+*.jvmopts
+.bloop*
+.metals*
+.venv*
+*metals.sbt*
 .eclipse
 **/.vscode/
 **/__pycache__/

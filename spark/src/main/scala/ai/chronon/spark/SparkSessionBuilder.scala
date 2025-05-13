@@ -42,7 +42,7 @@ object SparkSessionBuilder {
     // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
     // between Spark sessions created in existing chronon tests that need the hive format and some specific tests
     // that require a format override like delta lake.
-    val (formatConfigs, kryoRegistrator) = sys.env.get(FormatTestEnvVar) match {
+    val (formatConfigs, kryoRegistrator) = Some("deltalake") match {
       case Some("deltalake") =>
         val configMap = Map(
           "spark.sql.extensions" -> "io.delta.sql.DeltaSparkSessionExtension",
@@ -50,6 +50,14 @@ object SparkSessionBuilder {
           "spark.chronon.table_write.format" -> "delta"
         )
         (configMap, "ai.chronon.spark.ChrononDeltaLakeKryoRegistrator")
+      case Some("iceberg") =>
+        val configMap = Map(
+          "spark.sql.extensions" -> "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+          "spark.chronon.table_write.format" -> "iceberg",
+          "spark.sql.sources.partitionOverwriteMode" -> "dynamic"
+        )
+        // TODO registrator for iceberg
+        (configMap, "ai.chronon.spark.ChrononKryoRegistrator")
       case _ => (Map.empty, "ai.chronon.spark.ChrononKryoRegistrator")
     }
 

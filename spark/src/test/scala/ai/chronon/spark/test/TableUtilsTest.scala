@@ -547,4 +547,43 @@ class TableUtilsTest {
       assertTrue(firstDs.contains("2022-11-01"))
     }
   }
+
+  @Test
+  def testGetPartitionsWithLongPartition(): Unit = {
+    val tableName = "db.test_long_partitions"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val structFields = Array(
+      StructField("dateint", LongType),
+      StructField("hr", IntType),
+      StructField("event_type", StringType),
+      StructField("label_ds", StringType),
+      StructField("feature_value", IntType)
+    )
+
+    val rows = List(
+        Row(20220101L, 1, "event1", "2022-01-01", 4), // 2022-01-01 with hr=1
+        Row(20220102L, 2, "event2", "2022-01-02", 2), // 2022-01-02 with hr=2
+        Row(20220103L, 10, "event1", "2022-01-03", 9), // 2022-01-03 with hr=10
+        Row(20220104L, 12, "event1", "20224-01-04", 12) // 2022-01-04 with hr=12
+    )
+
+    val df1 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        structFields
+      ),
+      rows
+    )
+    val partitionColumns = Seq("dateint", "hr", "event_type")
+    tableUtils.insertPartitions(df1,
+                            tableName,
+                            partitionColumns = partitionColumns,
+                            )
+    assert(tableUtils.tableExists(tableName))
+    val partitions = tableUtils.partitions(tableName, Map.empty, partitionColOpt = Some("dateint"))
+    assert(partitions.size == 4)
+    assert(tableUtils.allPartitions(tableName).size == 4)
+  }
+
 }
