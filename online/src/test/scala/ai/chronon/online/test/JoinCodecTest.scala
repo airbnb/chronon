@@ -16,7 +16,7 @@
 
 package ai.chronon.online.test
 
-import ai.chronon.online.OnlineDerivationUtil.reintroduceExceptions
+import ai.chronon.online.DerivationUtils.reintroduceExceptions
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
