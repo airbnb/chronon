@@ -131,7 +131,6 @@ object SparkSessionBuilder {
     val userName = Properties.userName
     val baseBuilder = SparkSession
       .builder()
-      .config("spark.ui.enabled", "false")
       .config("spark.sql.session.timeZone", "UTC")
       .config("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
       .config("spark.kryo.registrator", "ai.chronon.spark.ChrononKryoRegistrator")
