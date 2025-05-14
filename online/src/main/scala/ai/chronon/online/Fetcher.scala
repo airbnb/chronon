@@ -29,10 +29,10 @@ import ai.chronon.api.Extensions.{
   ThrowableOps
 }
 import ai.chronon.api._
+import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildDerivedFields}
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
-import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildDerivedFields}
 import com.google.gson.Gson
 import com.timgroup.statsd.Event
 import com.timgroup.statsd.Event.AlertType
@@ -58,12 +58,12 @@ object Fetcher {
   case class SeriesStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request,
-                                 joinCodec: Option[JoinCodec],
                                  ctx: Metrics.Context,
                                  requestStartTs: Long,
                                  baseValues: Map[String, AnyRef],
                                  derivedValues: Option[Map[String, AnyRef]] = None,
-                                 modelTransformsValues: Option[Map[String, AnyRef]] = None)
+                                 modelTransformsValues: Option[Map[String, AnyRef]] = None,
+                                 joinCodec: Option[JoinCodec] = None)
   case class ColumnSpec(groupByName: String,
                         columnName: String,
                         prefix: Option[String],
@@ -296,7 +296,7 @@ class Fetcher(val kvStore: KVStore,
             )
             val joinName = internalResponse.request.name
             val ctx = Metrics.Context(Environment.JoinFetching, join = joinName)
-            ResponseWithContext(request, None, ctx, requestStartTs, baseMap)
+            ResponseWithContext(request, ctx, requestStartTs, baseMap)
         }
     }
   }
@@ -354,11 +354,11 @@ class Fetcher(val kvStore: KVStore,
             ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
             val response =
               ResponseWithContext(request,
-                                  Some(joinCodec),
                                   ctx,
                                   baseValue.requestStartTs,
                                   baseMap,
-                                  Some(finalizedDerivedMap))
+                                  Some(finalizedDerivedMap),
+                                  joinCodec = Some(joinCodec))
             // Refresh joinCodec if it has partial failure
             if (hasPartialFailure) {
               getJoinCodecs.refresh(baseValue.request.name)
@@ -369,7 +369,6 @@ class Fetcher(val kvStore: KVStore,
             getJoinCodecs.refresh(baseValue.request.name)
             ctx.incrementException(exception)
             ResponseWithContext(baseValue.request,
-                                None,
                                 ctx,
                                 baseValue.requestStartTs,
                                 baseValue.baseValues,
@@ -412,7 +411,7 @@ class Fetcher(val kvStore: KVStore,
     instrumentAndLog(modelTransformsF)
   }
 
-  private def encode(loggingContext: Option[Metrics.Context],
+  private def encode(loggingContext: Metrics.Context,
                      schema: StructType,
                      codec: AvroCodec,
                      dataMap: Map[String, AnyRef],
@@ -439,7 +438,7 @@ class Fetcher(val kvStore: KVStore,
 
     def tryOnce(lastTry: Try[Array[Byte]], tries: Int, totalTries: Int): Try[Array[Byte]] = {
       if (tries == 0 || (lastTry != null && lastTry.isSuccess)) {
-        loggingContext.foreach(_.gauge("tries", totalTries - tries))
+        loggingContext.gauge("tries", totalTries - tries)
         return lastTry
       }
       val binary = encodeOnce(schema, codec, dataMap, cast)
@@ -451,9 +450,13 @@ class Fetcher(val kvStore: KVStore,
 
   private def logResponse(resp: ResponseWithContext): ResponseWithContext = {
     val loggingStartTs = System.currentTimeMillis()
-    val loggingContext = resp.request.context.map(_.withSuffix("logging_request"))
+    val loggingContext = resp.request.context.getOrElse(resp.ctx).withSuffix("logging_request")
     val loggingTs = resp.request.atMillis.getOrElse(resp.requestStartTs)
-    val joinCodecTry = getJoinCodecs(resp.request.name)
+    val joinCodecTry = if (resp.joinCodec.isDefined) {
+      Success((resp.joinCodec.get, false))
+    } else {
+      getJoinCodecs(resp.request.name)
+    }
 
     val loggingTry: Try[Unit] = joinCodecTry
       .map(_._1)
@@ -466,13 +469,13 @@ class Fetcher(val kvStore: KVStore,
           return resp
         }
 
-        val keyBytes = encode(loggingContext.map(_.withSuffix("encode_key")),
+        val keyBytes = encode(loggingContext.withSuffix("encode_key"),
                               codec.keySchema,
                               codec.keyCodec,
                               resp.request.keys,
                               cast = true).recover {
           case e: Throwable =>
-            loggingContext.foreach(_.withSuffix("encode_key").incrementException(e))
+            loggingContext.withSuffix("encode_key").incrementException(e)
             throw e
         }.get
 
@@ -495,14 +498,12 @@ class Fetcher(val kvStore: KVStore,
                |""".stripMargin)
           }
 
-          val valueBytes = encode(loggingContext.map(_.withSuffix("encode_value")),
-                                  codec.valueSchema,
-                                  codec.valueCodec,
-                                  values).recover {
-            case e: Throwable =>
-              loggingContext.foreach(_.withSuffix("encode_value").incrementException(e))
-              throw e
-          }.get
+          val valueBytes =
+            encode(loggingContext.withSuffix("encode_value"), codec.valueSchema, codec.valueCodec, values).recover {
+              case e: Throwable =>
+                loggingContext.withSuffix("encode_value").incrementException(e)
+                throw e
+            }.get
 
           val loggableResponse = LoggableResponse(
             keyBytes,
@@ -513,11 +514,9 @@ class Fetcher(val kvStore: KVStore,
           )
           if (logFunc != null) {
             logFunc.accept(loggableResponse)
-            loggingContext.foreach(context => context.increment("count"))
-            loggingContext.foreach(context =>
-              context.distribution("latency.millis", System.currentTimeMillis() - loggingStartTs))
-            loggingContext.foreach(context =>
-              context.distribution("overall.latency.millis", System.currentTimeMillis() - resp.requestStartTs))
+            loggingContext.increment("count")
+            loggingContext.distribution("latency.millis", System.currentTimeMillis() - loggingStartTs)
+            loggingContext.distribution("overall.latency.millis", System.currentTimeMillis() - resp.requestStartTs)
 
             if (debug) {
               logger.info(s"Logged data with schema_hash ${codec.loggingSchemaHash}")
@@ -527,10 +526,16 @@ class Fetcher(val kvStore: KVStore,
       })
     loggingTry.failed.map { exception =>
       // Publish logging failure metrics before codec refresh in case of another exception
-      loggingContext.foreach(_.incrementException(exception)(logger))
+      loggingContext.incrementException(exception)(logger)
 
       // to handle GroupByServingInfo staleness that results in encoding failure
-      val refreshedJoinCodec = getJoinCodecs.refresh(resp.request.name).map(_._1)
+      val refreshedJoinCodec = if (resp.joinCodec.isDefined) {
+        // Don't refresh if passed-in joinCodec is successful.
+        // This prevents chaining streaming job from recomputing the codec which causes Spark serialization issue
+        Success(resp.joinCodec.get)
+      } else {
+        getJoinCodecs.refresh(resp.request.name).map(_._1)
+      }
       if (debug) {
         val rand = new Random
         val number = rand.nextDouble
