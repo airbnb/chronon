@@ -109,11 +109,9 @@ object SparkSessionBuilder {
         .config("spark.sql.shuffle.partitions", "2")
         .config("spark.default.parallelism", "2")
         .config("spark.testing", "true")
-        .config("spark.ui.enabled", false)
         .config("spark.sql.adaptive.enabled", true)
         .config("spark.local.dir", s"/tmp/$userName/$name")
         .config("spark.sql.warehouse.dir", s"$warehouseDir/data")
-        .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
         .config("spark.driver.bindAddress", "127.0.0.1")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
