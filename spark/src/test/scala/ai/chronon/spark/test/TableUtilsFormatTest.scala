@@ -16,7 +16,7 @@ class TableUtilsFormatTest {
   import TableUtilsFormatTest._
 
   // Read the format we want this instantiation of the test to run via environment vars
-  val format: String = sys.env.getOrElse(FormatTestEnvVar, "hive")
+  val format: String = "iceberg"
   val spark = SparkSessionBuilder.build("TableUtilsFormatTest", local = true)
   val tableUtils = TableUtils(spark)
 

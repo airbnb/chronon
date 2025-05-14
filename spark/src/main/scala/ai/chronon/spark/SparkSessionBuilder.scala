@@ -39,14 +39,10 @@ object SparkSessionBuilder {
             additionalConfig: Option[Map[String, String]] = None,
             enforceKryoSerializer: Boolean = true): SparkSession = {
 
-
-    val userName = Properties.userName
-    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
-    
     // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
     // between Spark sessions created in existing chronon tests that need the hive format and some specific tests
     // that require a format override like delta lake.
-    val (formatConfigs, kryoRegistrator) = Some("iceberg") match {
+    val (formatConfigs, kryoRegistrator) = sys.env.get(FormatTestEnvVar) match {
       case Some("deltalake") =>
         val configMap = Map(
           "spark.sql.extensions" -> "io.delta.sql.DeltaSparkSessionExtension",
@@ -54,18 +50,6 @@ object SparkSessionBuilder {
           "spark.chronon.table_write.format" -> "delta"
         )
         (configMap, "ai.chronon.spark.ChrononDeltaLakeKryoRegistrator")
-      case Some("iceberg") =>
-        val configMap = Map(
-          "spark.sql.extensions" -> "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
-
-          "spark.sql.catalog.spark_catalog" -> "org.apache.iceberg.spark.SparkSessionCatalog",
-          "spark.sql.catalog.spark_catalog.type" -> "hadoop",
-          "spark.sql.catalog.iceberg_catalog.warehouse" -> s"$warehouseDir/iceberg-warehouse",
-          "spark.sql.catalog.iceberg_catalog.cache-enabled" -> "false",
-
-          "spark.chronon.table_write.format" -> "iceberg",
-        )
-        // TODO registrator for iceberg
         (configMap, "ai.chronon.spark.ChrononKryoRegistrator")
       case _ => (Map.empty, "ai.chronon.spark.ChrononKryoRegistrator")
     }
@@ -79,17 +63,18 @@ object SparkSessionBuilder {
     }
 
     var baseBuilder = SparkSession
-      .builder()
-      .appName(name)
-      .enableHiveSupport()
-      .config("spark.sql.session.timeZone", "UTC")
-      //otherwise overwrite will delete ALL partitions, not just the ones it touches
-      .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
-      .config("hive.exec.dynamic.partition", "true")
-      .config("hive.exec.dynamic.partition.mode", "nonstrict")
-      .config("spark.sql.catalogImplementation", "hive")
-      .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
-      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
+        .builder()
+        .appName(name)
+        .enableHiveSupport()
+        .config("spark.sql.session.timeZone", "UTC")
+        //otherwise overwrite will delete ALL partitions, not just the ones it touches
+        .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
+        .config("hive.exec.dynamic.partition", "true")
+        .config("hive.exec.dynamic.partition.mode", "nonstrict")
+        .config("spark.sql.catalogImplementation", "hive")
+        .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
+        .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
+  
 
     // Staging queries don't benefit from the KryoSerializer and in fact may fail with buffer underflow in some cases.
     if (enforceKryoSerializer) {
@@ -107,7 +92,23 @@ object SparkSessionBuilder {
       baseBuilder.config("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
     }
 
-    val builder = if (local) {
+    val userName = Properties.userName
+    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
+
+    val builder = if (true) {
+      SparkSession
+        .builder()
+        .appName(name)
+        .master("local[*]")
+        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.spark_catalog.type", "hadoop")
+        .config("spark.sql.catalog.spark_catalog.warehouse", s"$warehouseDir/data")
+        .config("spark.sql.catalog.spark_catalog.cache.enabled", "false")
+        .config("spark.driver.bindAddress", "127.0.0.1")
+        .config("spark.chronon.table_write.format","iceberg")
+        .config("spark.chronon.table_read.format","iceberg") 
+    } else if (local) {
       logger.info(s"Building local spark session with warehouse at $warehouseDir")
       val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
       baseBuilder
