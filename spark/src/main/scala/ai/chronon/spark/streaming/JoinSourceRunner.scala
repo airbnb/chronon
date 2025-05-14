@@ -17,14 +17,16 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api._
-import ai.chronon.online.Fetcher.{Request, Response, ResponseWithContext}
+import ai.chronon.online.Fetcher.{Request, ResponseWithContext}
 import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online._
 import ai.chronon.spark.{EncoderUtil, GenericRowHandler, TableUtils}
 import com.google.gson.Gson
 import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
+import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
+import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.streaming.{DataStreamWriter, Trigger}
 import org.apache.spark.sql.types.{BooleanType, LongType, StructField, StructType}
 import org.apache.spark.sql.{DataFrame, Dataset, Encoder, Encoders, Row, SparkSession}
@@ -34,8 +36,8 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import java.{lang, util}
-import scala.concurrent.{Await, Future}
 import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, Future}
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 import scala.util.{Failure, Success}
 
@@ -71,6 +73,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private case class Schemas(joinCodec: JoinCodec,
                              leftStreamSchema: StructType,
                              leftSourceSchema: StructType,
+                             joinBaseValueSchema: StructType,
                              joinBaseSchema: StructType,
                              joinFullDerivedSchema: StructType,
                              joinOutputSchema: StructType,
@@ -222,6 +225,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
        |  ${leftStreamSchema.catalogString}
        |left schema after applying left query:
        |  ${leftSourceSchema.catalogString}
+       |join base value schema:
+       |  ${joinBaseValueSchema.catalogString}
        |join base schema:
        |  ${joinBaseSchema.catalogString}
        |join derived schema:
@@ -235,6 +240,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     Schemas(joinCodec,
             leftStreamSchema,
             leftSourceSchema,
+            joinBaseValueSchema,
             joinBaseSchema,
             joinFullDerivedSchema,
             joinOutputSchema,
@@ -382,8 +388,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     val schemas = buildSchemas(leftSchema)
     val chainingFetchTsSchema = StructType(
-      Seq(StructField(Constants.TimeColumn, LongType), StructField(Constants.ChainingFetchTs, LongType)))
+      Seq(StructField(Constants.ChainingRequestTs, LongType), StructField(Constants.ChainingFetchTs, LongType)))
     val joinBaseSchemaWithMetadata = StructType(schemas.joinBaseSchema ++ chainingFetchTsSchema)
+    val joinFullDerivedSchemaWithMetadata = StructType(schemas.joinFullDerivedSchema ++ chainingFetchTsSchema)
     val leftColumns = schemas.leftSourceSchema.fieldNames
 
     logger.info(s"""
@@ -392,8 +399,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
          |Fetching upstream join to enrich the stream... Fetching lag time: $lagMillis
          |""".stripMargin)
 
-    // todo: add proper timestamp to the fetcher
-    val leftTimeIndex = leftColumns.indexWhere(_ == eventTimeColumn)
     val enrichedBase = leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
@@ -404,7 +409,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           val rowsScala = rows.toScala.toArray
           val requests = rowsScala.map { row =>
             val keyMap = row.getValuesMap[AnyRef](leftColumns)
-            val eventTs = row.get(leftTimeIndex).asInstanceOf[Long]
+            val eventTs = row.getAs[Long](eventTimeColumn)
             context.distribution(Metrics.Name.LagMillis, System.currentTimeMillis() - eventTs)
             val ts = if (useEventTimeForQuery) Some(eventTs) else None
             Request(joinRequestName, keyMap, atMillis = ts.map(_ + queryShiftMs))
@@ -415,8 +420,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           }
 
           // Apply micro batch query delay if necessary
-          val microBatchTimestamp =
-            percentile(rowsScala.map(_.get(leftTimeIndex).asInstanceOf[Long]), timePercentile)
+          val microBatchTimestamp = percentile(rowsScala.map(_.getAs[Long](eventTimeColumn)), timePercentile)
           if (microBatchTimestamp.isDefined) {
             val microBatchLag = System.currentTimeMillis() - microBatchTimestamp.get
             context.distribution(Metrics.Name.BatchLagMillis, microBatchLag)
@@ -469,29 +473,36 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             response =>
               val baseValuesMap = response.request.keys ++ response.baseValues
               val baseValues = schemas.joinBaseSchema.fieldNames.map(f => baseValuesMap.getOrElse(f, null))
+
+              // Attach request_ts and fetch_start_ts as metadata for logging/instrumentation purpose
               val metaData: Array[Any] = Array(response.request.atMillis.orNull, fetchStartTs)
               val baseValuesWithMetadata = baseValues ++ metaData
-              SparkConversions
+              val genericRow = SparkConversions
                 .toSparkRowSparkType(baseValuesWithMetadata, joinBaseSchemaWithMetadata)
                 .asInstanceOf[Row]
+
+              // Need to attach schema so that in next stage of mapPartitions, the row objects have schema
+              new GenericRowWithSchema(genericRow.toSeq.toArray, joinBaseSchemaWithMetadata).asInstanceOf[Row]
           }.toJava
         }
       },
       EncoderUtil(joinBaseSchemaWithMetadata)
     )
-    val derived = DerivationUtils.applyDerivation(
-      joinSource.join,
-      enrichedBase,
-      schemas.joinBaseSchema.fieldNames,
-      schemas.leftSourceSchema.fieldNames,
-      includeAllBase = true // preserve all base columns for join logging purpose
-    )
+    val derived = DerivationUtils
+      .applyDerivation(
+        joinSource.join,
+        enrichedBase,
+        schemas.joinBaseValueSchema.fieldNames,
+        schemas.leftSourceSchema.fieldNames,
+        includeAllBase = true // preserve all base columns for join logging purpose
+      )
+      .select(joinFullDerivedSchemaWithMetadata.fieldNames.map(col): _*)
 
     val enriched = derived.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
           val shouldSample = Math.random() <= 0.1
-          val ctx = Metrics.Context(Metrics.Environment.JoinFetching, join = schemas.joinCodec.conf.join)
+          val ctx = Metrics.Context(Metrics.Environment.JoinFetching, join = joinSource.join)
           val fetcher = getOrCreateFetcher()
 
           // Convert derived rows to fetcher responses with context
@@ -499,17 +510,17 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           val derivedValues = rowsScala.map {
             row =>
               val keyMap = row.getValuesMap[AnyRef](leftColumns)
-              val atMillis = row.getAs[Option[Long]](Constants.TimeColumn)
+              val atMillis = Option(row.getAs[Long](Constants.ChainingRequestTs))
               val request = Request(joinRequestName, keys = keyMap, atMillis = atMillis)
               val requestStartTs = row.getAs[Long](Constants.ChainingFetchTs) // must be non null
               val baseValuesMap = row.getValuesMap[AnyRef](schemas.joinBaseSchema.fieldNames)
               val derivedValuesMap = row.getValuesMap[AnyRef](schemas.joinFullDerivedSchema.fieldNames)
               ResponseWithContext(request,
-                                  Some(schemas.joinCodec),
                                   ctx,
                                   requestStartTs,
                                   baseValuesMap,
-                                  Some(derivedValuesMap))
+                                  Some(derivedValuesMap),
+                                  joinCodec = Some(schemas.joinCodec))
           }
 
           // Apply model transforms if necessary and then logging
