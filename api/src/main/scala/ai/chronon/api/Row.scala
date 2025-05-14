@@ -214,7 +214,7 @@ object Row {
                 )
               }
             mapper(newMap)
-          case map: collection.immutable.Map[Any, Any] =>
+          case map: collection.Map[Any, Any] =>
             val newMap = new util.HashMap[Any, Any](map.size)
             map
               .foreach { entry =>
