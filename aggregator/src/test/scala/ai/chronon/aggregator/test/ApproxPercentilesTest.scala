@@ -22,11 +22,14 @@ import ai.chronon.aggregator.row.StatsGenerator
 import com.yahoo.sketches.kll.KllFloatsSketch
 import junit.framework.TestCase
 import org.junit.Assert._
+import org.junit.Test
 
 import scala.util.Random
 
 class ApproxPercentilesTest extends TestCase {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
+
+  @Test
   def testBasicImpl(nums: Int, slide: Int, k: Int, percentiles: Array[Double], errorPercent: Float): Unit = {
     val sorted = (0 to nums).map(_.toFloat)
     val elems = Random.shuffle(sorted.toList).toArray
@@ -54,6 +57,7 @@ class ApproxPercentilesTest extends TestCase {
     diffs.foreach(diff => assertTrue(diff < errorMargin))
   }
 
+  @Test
   def testBasicPercentiles: Unit = {
     val percentiles_tested: Int = 31
     val percentiles: Array[Double] = (0 to percentiles_tested).toArray.map(i => i * 1.0 / percentiles_tested)
@@ -72,6 +76,7 @@ class ApproxPercentilesTest extends TestCase {
     drift
   }
 
+  @Test
   def testPSIDrifts(): Unit = {
     assertTrue(
       getPSIDrift(

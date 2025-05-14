@@ -6,6 +6,7 @@ spark_2_4_repo = repo(name = "spark_2_4", artifacts = [
     "org.apache.curator:apache-curator:2.11.0",
     "org.apache.datasketches:datasketches-java:2.0.0",
     "org.apache.datasketches:datasketches-memory:1.3.0",
+    "org.apache.derby:derby:10.12.1.1",
     "org.apache.hive:hive-exec:1.2.1",
     versioned_artifacts("2.4.0", [
         "org.apache.spark:spark-streaming_2.11",
@@ -28,7 +29,6 @@ spark_3_1_repo = repo(name = "spark_3_1", artifacts = [
     "org.apache.curator:apache-curator:2.12.0",
     "org.apache.datasketches:datasketches-java:2.0.0",
     "org.apache.datasketches:datasketches-memory:1.3.0",
-    "org.apache.hive:hive-exec:3.1.2",
     "org.apache.kafka:kafka_2.12:2.6.3",
     versioned_artifacts("3.1.1", [
         "org.apache.spark:spark-streaming_2.12",
@@ -43,9 +43,11 @@ spark_3_1_repo = repo(name = "spark_3_1", artifacts = [
         "org.json4s:json4s-core_2.12",
         "org.json4s:json4s-jackson_2.12",
     ]),
+    "org.apache.derby:derby:10.12.1.1",
     "org.apache.hive:hive-metastore:2.3.9",
+    "org.apache.hive:hive-exec:2.3.9",
     "io.delta:delta-core_2.12:2.0.2",
-], excluded_artifacts = ["org.slf4j:slf4j-log4j12"])
+], excluded_artifacts = ["org.slf4j:slf4j-log4j12", "org.pentaho:pentaho-aggdesigner-algorithm"])
 
 spark_3_2_repo = repo(
     name = "spark_3_2",
@@ -80,11 +82,14 @@ spark_3_2_repo = repo(
         "org.apache.avro:avro:1.8.2",
         "org.apache.avro:avro-mapred:1.8.2",
         "org.apache.hive:hive-metastore:2.3.9",
-        "org.apache.hive:hive-exec:3.1.2",
+        "org.apache.hive:hive-exec:2.3.9",
 
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
         "io.delta:delta-core_2.12:2.0.2",
+
+        # Test
+        "org.apache.derby:derby:10.14.2.0",
     ],
     excluded_artifacts = [
         "org.pentaho:pentaho-aggdesigner-algorithm",
@@ -124,12 +129,15 @@ spark_3_5_repo = repo(
         "org.apache.avro:avro:1.8.2",
         "org.apache.avro:avro-mapred:1.8.2",
         "org.apache.hive:hive-metastore:2.3.9",
-        "org.apache.hive:hive-exec:3.1.2",
+        "org.apache.hive:hive-exec:2.3.9",
 
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
         "io.delta:delta-core_2.12:2.0.2",
         "io.delta:delta-core_2.13:2.0.2",
+
+        # Test
+        "org.apache.derby:derby:10.14.2.0",
     ],
     excluded_artifacts = [
         "org.pentaho:pentaho-aggdesigner-algorithm",
