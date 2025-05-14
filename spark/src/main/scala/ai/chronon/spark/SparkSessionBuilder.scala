@@ -98,7 +98,7 @@ object SparkSessionBuilder {
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.kryo.registrationRequired", s"${localWarehouseLocation.isEmpty}")
-      // ── use an in‐memory Derby metastore rather than disk + BoneCP ──
+        // ── use an in‐memory Derby metastore rather than disk + BoneCP ──
         .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:metastore_db;create=true")
         .config("spark.hadoop.javax.jdo.option.ConnectionDriverName", "org.apache.derby.jdbc.EmbeddedDriver")
         .config("spark.hadoop.javax.jdo.option.ConnectionUserName", "APP")
