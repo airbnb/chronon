@@ -1,18 +1,20 @@
 package ai.chronon.online
 
-import scala.util.{Failure, Success, Try}
-import scala.collection.Seq
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.Extensions.DerivationOps
-import ai.chronon.api.{Builders, Derivation, Join, LongType, StringType, StructField, StructType}
+import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.{coalesce, col, expr}
-import ai.chronon.api.Extensions.JoinOps
+import org.slf4j.LoggerFactory
 
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.collection.Seq
+import scala.util.ScalaJavaConversions.ListOps
 
 object DerivationUtils {
+
+  @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
+
   type DerivationFunc = (Map[String, Any], Map[String, Any]) => Map[String, Any]
 
   val timeFields: Array[StructField] = Array(
@@ -134,14 +136,15 @@ object DerivationUtils {
       return baseDf
     }
 
-    val derivations = if (includeAllBase && !joinConf.derivations.toScala.derivationsContainStar) {
-      joinConf.derivations.toScala :+ Builders.Derivation("*", "*")
-    } else {
-      joinConf.derivations.toScala
-    }
-    val projections = derivations.derivationProjection(baseColumns)
+    logger.info(
+      s"""Join ${joinConf.metaData.name} base schema:
+         |${baseDf.schema.treeString}
+         |""".stripMargin
+    )
+
+    val projections = joinConf.derivations.toScala.derivationProjection(baseColumns)
     val projectionsMap = projections.toMap
-    val baseOutputColumns = baseDf.columns.toSet
+    val baseColumnsSet = baseDf.columns.toSet
 
     val finalOutputColumns =
       /*
@@ -179,18 +182,39 @@ object DerivationUtils {
         projections
           .flatMap {
             case (name, expression) =>
-              if (baseOutputColumns.contains(name)) {
+              if (baseColumnsSet.contains(name)) {
                 if (leftColumns.contains(name)) {
                   None
                 } else {
+                  // Happens when derivation overrides an existing base column name
                   Some(coalesce(col(name), expr(expression)).as(name))
                 }
               } else {
                 Some(expr(expression).as(name))
               }
+          } ++
+        /*
+         * Include all base columns that is not already selected, if includeAllBase is true:
+         * - Include it again unless it is a duplicate from left columns (rare) or handled by derivation (either
+         * rename or because of select-*)
+         * - This is because rename will remove base columns but here we want to retain it.
+         */ {
+          if (!includeAllBase) {
+            Seq()
+          } else {
+            baseColumns.filterNot(c => leftColumns.contains(c) || projectionsMap.contains(c)).map(col)
           }
+        }
+
+    logger.info(s"Join ${joinConf.metaData.name} derivation logic: \n-- ${finalOutputColumns.mkString("\n-- ")}")
 
     val result = baseDf.select(finalOutputColumns: _*)
+
+    logger.info(
+      s"""Join ${joinConf.metaData.name} derived schema:
+         |${result.schema.treeString}
+         |""".stripMargin
+    )
     result
   }
 }
