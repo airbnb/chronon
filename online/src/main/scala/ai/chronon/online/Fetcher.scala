@@ -203,11 +203,14 @@ class Fetcher(val kvStore: KVStore,
   lazy val getJoinCodecs = new TTLCache[String, Try[(JoinCodec, Boolean)]](
     { joinName: String =>
       val startTimeMs = System.currentTimeMillis()
-      val result: Try[(JoinCodec, Boolean)] = getJoinConf(joinName)
-        .map(_.join)
-        .map(join => buildJoinCodec(join, refreshOnFail = true))
-        .recoverWith {
+      val result: Try[(JoinCodec, Boolean)] =
+        try {
+          getJoinConf(joinName)
+            .map(_.join)
+            .map(join => buildJoinCodec(join, refreshOnFail = true))
+        } catch {
           case th: Throwable =>
+            getJoinConf.refresh(joinName)
             Failure(
               new RuntimeException(
                 s"Couldn't fetch joinName = ${joinName} or build join codec due to ${th.traceString}",
@@ -317,6 +320,7 @@ class Fetcher(val kvStore: KVStore,
                 response
               case Failure(exception) =>
                 // more validation logic will be covered in compile.py to avoid this case
+                getJoinCodecs.refresh(joinName)
                 ctx.incrementException(exception)
                 ResponseWithContext(internalResponse.request,
                                     Map("join_codec_fetch_exception" -> exception.traceString),
@@ -490,6 +494,7 @@ class Fetcher(val kvStore: KVStore,
       val joinName = request.name
       val joinConfTry: Try[JoinOps] = getJoinConf(request.name)
       if (joinConfTry.isFailure) {
+        getJoinConf.refresh(request.name)
         resultMap.update(
           request,
           Failure(
@@ -509,8 +514,11 @@ class Fetcher(val kvStore: KVStore,
     // step-2 dedup external requests across joins
     val externalToJoinRequests: Seq[ExternalToJoinRequest] = validRequests
       .flatMap { joinRequest =>
-        val parts =
-          getJoinConf(joinRequest.name).get.join.onlineExternalParts // cheap since it is cached, valid since step-1
+        val joinConf = getJoinConf(joinRequest.name)
+        if (joinConf.isFailure) {
+          getJoinConf.refresh(joinRequest.name)
+        }
+        val parts = joinConf.get.join.onlineExternalParts // cheap since it is cached, valid since step-1
         parts.iterator().asScala.map { part =>
           val externalRequest = Try(part.applyMapping(joinRequest.keys)) match {
             case Success(mappedKeys)                     => Left(Request(part.source.metadata.name, mappedKeys))

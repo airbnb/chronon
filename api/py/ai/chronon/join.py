@@ -18,7 +18,7 @@ import importlib
 import json
 import logging
 from collections import Counter
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
@@ -30,9 +30,9 @@ logging.basicConfig(level=logging.INFO)
 
 def JoinPart(
     group_by: api.GroupBy,
-    key_mapping: Dict[str, str] = None,
-    prefix: str = None,
-    tags: Dict[str, str] = None,
+    key_mapping: Optional[Dict[str, str]] = None,
+    prefix: Optional[str] = None,
+    tags: Optional[Dict[str, str]] = None,
 ) -> api.JoinPart:
     """
     Specifies HOW to join the `left` of a Join with GroupBy's.
@@ -137,7 +137,7 @@ def ExternalSource(
     team: str,
     key_fields: FieldsType,
     value_fields: FieldsType,
-    custom_json: str = None,
+    custom_json: Optional[str] = None,
 ) -> api.ExternalSource:
     """
     External sources are online only data sources. During fetching, using
@@ -197,7 +197,7 @@ def ContextualSource(fields: FieldsType, team="default") -> api.ExternalSource:
 
 
 def ExternalPart(
-    source: api.ExternalSource, key_mapping: Dict[str, str] = None, prefix: str = None
+    source: api.ExternalSource, key_mapping: Optional[Dict[str, str]] = None, prefix: Optional[str] = None
 ) -> api.ExternalPart:
     """
     Used to describe which ExternalSources to pull features from while fetching
@@ -325,7 +325,9 @@ def Derivation(name: str, expression: str) -> api.Derivation:
     return api.Derivation(name=name, expression=expression)
 
 
-def BootstrapPart(table: str, key_columns: List[str] = None, query: api.Query = None) -> api.BootstrapPart:
+def BootstrapPart(
+    table: str, key_columns: Optional[List[str]] = None, query: Optional[api.Query] = None
+) -> api.BootstrapPart:
     """
     Bootstrap is the concept of using pre-computed feature values and skipping backfill computation during the
     training data generation phase. Bootstrap can be used for many purposes:
@@ -367,28 +369,28 @@ def Join(
     left: api.Source,
     right_parts: List[api.JoinPart],
     check_consistency: bool = False,
-    additional_args: List[str] = None,
-    additional_env: List[str] = None,
-    dependencies: List[str] = None,
+    additional_args: Optional[List[str]] = None,
+    additional_env: Optional[List[str]] = None,
+    dependencies: Optional[List[str]] = None,
     online: bool = False,
     production: bool = False,
-    output_namespace: str = None,
-    table_properties: Dict[str, str] = None,
-    env: Dict[str, Dict[str, str]] = None,
+    output_namespace: Optional[str] = None,
+    table_properties: Optional[Dict[str, str]] = None,
+    env: Optional[Dict[str, Dict[str, str]]] = None,
     lag: int = 0,
-    skew_keys: Dict[str, List[str]] = None,
+    skew_keys: Optional[Dict[str, List[str]]] = None,
     sample_percent: float = 100.0,
     consistency_sample_percent: float = 5.0,
-    online_external_parts: List[api.ExternalPart] = None,
+    online_external_parts: Optional[List[api.ExternalPart]] = None,
     offline_schedule: str = "@daily",
-    historical_backfill: bool = None,
-    row_ids: List[str] = None,
-    bootstrap_parts: List[api.BootstrapPart] = None,
+    historical_backfill: Optional[bool] = None,
+    row_ids: Optional[List[str]] = None,
+    bootstrap_parts: Optional[List[api.BootstrapPart]] = None,
     bootstrap_from_log: bool = False,
-    label_part: api.LabelPart = None,
-    derivations: List[api.Derivation] = None,
-    deprecation_date: str = None,
-    tags: Dict[str, str] = None,
+    label_part: Optional[api.LabelPart] = None,
+    derivations: Optional[List[api.Derivation]] = None,
+    deprecation_date: Optional[str] = None,
+    tags: Optional[Dict[str, str]] = None,
     **kwargs,
 ) -> api.Join:
     """

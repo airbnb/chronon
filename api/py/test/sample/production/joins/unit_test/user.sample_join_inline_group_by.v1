@@ -1,0 +1,78 @@
+{
+  "metaData": {
+    "name": "unit_test.user.sample_join_inline_group_by.v1",
+    "online": 0,
+    "production": 0,
+    "customJson": "{\"check_consistency\": false, \"lag\": 0, \"join_tags\": null, \"join_part_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "default",
+    "team": "unit_test",
+    "samplePercent": 100.0,
+    "offlineSchedule": "@daily"
+  },
+  "left": {
+    "events": {
+      "table": "sample_namespace.sample_table_group_by",
+      "query": {
+        "selects": {
+          "event": "event_expr",
+          "group_by_subject": "group_by_expr",
+          "ts": "ts"
+        },
+        "startPartition": "2021-04-09",
+        "timeColumn": "ts",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "unit_test.user_inline_group_by",
+          "online": 1,
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
+          ],
+          "team": "unit_test",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "events": {
+              "table": "sample_namespace.sample_table_group_by",
+              "query": {
+                "selects": {
+                  "event": "event_expr",
+                  "group_by_subject": "group_by_expr"
+                },
+                "startPartition": "2021-04-09",
+                "timeColumn": "ts",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "group_by_subject"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "event",
+            "operation": 7,
+            "argMap": {}
+          }
+        ]
+      },
+      "keyMapping": {
+        "subject": "group_by_subject"
+      }
+    }
+  ]
+}

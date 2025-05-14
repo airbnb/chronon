@@ -12,14 +12,15 @@
 
 ## Setup for pushing Python API package to PyPi repository
 
-1. Setup your PyPi public account and contact the team to get added to the PyPi package as a [collaborator](https://pypi.org/manage/project/chronon-ai/collaboration/)
-2. Install required Python packages:
+1. Recommended to use Python 3.10 to generate the correct PyPI package name.
+2. Setup your PyPi public account and contact the team to get added to the PyPi package as a [collaborator](https://pypi.org/manage/project/chronon-ai/collaboration/)
+3. Install required Python packages:
 ```bash
 python3 -m pip install -U twine
 ```
 
-3. Fetch the user token from the PyPi website
-4. Create or update your PyPi credentials configuration at `~/.pypirc`:
+4. Fetch the user token from the PyPi website
+5. Create or update your PyPi credentials configuration at `~/.pypirc`:
 ```ini
 [distutils]
   index-servers =
@@ -157,6 +158,11 @@ host=s01.oss.sonatype.org
 user=<your username>
 password=<your password>
 ```
+
+Do not use your plain text username and password above.
+Instead, visit `https://central.sonatype.com/account` and click **"Generate User Token"** to obtain your user token.
+
+
 5. setup gpg - just first step in this [link](https://www.scala-sbt.org/1.x/docs/Using-Sonatype.html#step+1%3A+PGP+Signatures)
 
 ## Setup for pushing python API package to PyPi repository
@@ -208,7 +214,12 @@ NOTE: Python API package will also be generated, but it will not be pushed to an
 push the Python artifacts to the public repository.
 
 ## Release artifacts to Maven Central & PyPi from main branch
-1. Run release command in the right HEAD of chronon repository. Before running this, you may want to activate your Python venv or install the required Python packages on the laptop. Otherwise, the Python release will fail due to missing deps.
+1. Run the following command to cache your GPG key, so you won’t be prompted for your password again until the cache expires. A window will appear asking you to enter your GPG password.
+```shell
+export GPG_TTY=$(tty)
+echo "test" | gpg --clearsign > /dev/null
+```
+2. Run release command in the right HEAD of chronon repository. Before running this, you may want to activate your Python venv or install the required Python packages on the laptop. Otherwise, the Python release will fail due to missing deps.
 ```shell
 GPG_TTY=$(tty) sbt -mem 8192 release
 ```
