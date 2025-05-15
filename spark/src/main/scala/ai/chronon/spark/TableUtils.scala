@@ -239,9 +239,14 @@ case object Iceberg extends Format {
   override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
       sparkSession: SparkSession): Seq[Map[String, String]] = {
     sparkSession.sqlContext
-      .sql(s"SHOW PARTITIONS $tableName")
+      .sql(s"SELECT partition FROM $tableName"++".partitions")
       .collect()
-      .map(row => parseHivePartition(row.getString(0)))
+      .map { row =>
+        val partitionStruct = row.getStruct(0)
+        partitionStruct.schema.fieldNames.zipWithIndex.map { case (fieldName, idx) =>
+          fieldName -> partitionStruct.getString(idx)
+        }.toMap
+      }
   }
 
   private def getIcebergPartitions(tableName: String,
@@ -395,7 +400,14 @@ case class TableUtils(sparkSession: SparkSession) {
       rdd
     }
 
-  def tableExists(tableName: String): Boolean = sparkSession.catalog.tableExists(tableName)
+  def tableExists(tableName: String): Boolean = {
+    try {
+      sparkSession.sql(s"DESCRIBE TABLE $tableName")
+      true
+    } catch {
+      case _: AnalysisException => false
+    }
+  }
 
   def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
 

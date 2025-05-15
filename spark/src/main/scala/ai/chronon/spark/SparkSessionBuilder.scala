@@ -96,18 +96,17 @@ object SparkSessionBuilder {
     val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
 
     val builder = if (true) {
-      SparkSession
-        .builder()
-        .appName(name)
+      baseBuilder
         .master("local[*]")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog")
+        .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.spark_catalog.type", "hadoop")
         .config("spark.sql.catalog.spark_catalog.warehouse", s"$warehouseDir/data")
-        .config("spark.sql.catalog.spark_catalog.cache.enabled", "false")
+        .config("spark.jars.packages", "org.apache.iceberg:iceberg-spark-runtime-3.2_1.12:1.1.0")
         .config("spark.driver.bindAddress", "127.0.0.1")
         .config("spark.chronon.table_write.format","iceberg")
-        .config("spark.chronon.table_read.format","iceberg") 
+        .config("spark.chronon.table_read.format", "iceberg") 
     } else if (local) {
       logger.info(s"Building local spark session with warehouse at $warehouseDir")
       val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
