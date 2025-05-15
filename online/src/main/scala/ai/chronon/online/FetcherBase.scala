@@ -34,6 +34,8 @@ import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
+import scala.util.ScalaJavaConversions.IterableOps
+
 
 // Does internal facing fetching
 //   1. takes join request or groupBy requests
@@ -353,7 +355,7 @@ class FetcherBase(kvStore: KVStore,
     // don't send to KV store if ANY of key's value is null
     val validRequests =
       requests.filter(r => r.keys == null || r.keys.values == null || !r.keys.values.exists(_ == null))
-    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
+    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.parallel.iterator.map { request =>
       val groupByServingInfoTry = getGroupByServingInfo(request.name)
         .recover {
           case ex: Throwable =>
@@ -465,7 +467,7 @@ class FetcherBase(kvStore: KVStore,
             .flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0)))
             .sum
 
-        val responses: Seq[Response] = groupByRequestToKvRequest.iterator.map {
+        val responses: Seq[Response] = groupByRequestToKvRequest.parallel.iterator.map {
           case (request, requestMetaTry) =>
             val responseMapTry: Try[Map[String, AnyRef]] = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
@@ -653,7 +655,7 @@ class FetcherBase(kvStore: KVStore,
     groupByResponsesFuture
       .map { groupByResponses =>
         val responseMap = groupByResponses.iterator.map { response => response.request -> response.values }.toMap
-        val responses = joinDecomposed.iterator.map {
+        val responses = joinDecomposed.parallel.iterator.map {
           case (joinRequest, decomposedRequestsTry) =>
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
               groupByRequestsWithPrefix.iterator.flatMap {

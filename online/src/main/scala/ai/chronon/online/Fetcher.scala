@@ -45,6 +45,7 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Random, Success, Try}
+import scala.util.ScalaJavaConversions.IterableOps
 
 object Fetcher {
   case class Request(name: String,
@@ -240,7 +241,7 @@ class Fetcher(val kvStore: KVStore,
     val externalResponsesF = fetchExternal(requests)
     val combinedResponsesF = internalResponsesF.zip(externalResponsesF).map {
       case (internalResponses, externalResponses) =>
-        internalResponses.zip(externalResponses).map {
+        internalResponses.zip(externalResponses).parallel.map {
           case (internalResponse, externalResponse) =>
             if (debug) {
               logger.info(internalResponse.values.get.keys.toSeq.mkString(","))
