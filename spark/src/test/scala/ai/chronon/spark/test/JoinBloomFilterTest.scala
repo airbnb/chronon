@@ -91,6 +91,4 @@ class JoinBloomFilterTest{
     logger.debug("computed count: " + skippedBloomCount)
     assertEquals(leftSideCount, skippedBloomCount)
   }
-
-  
 }

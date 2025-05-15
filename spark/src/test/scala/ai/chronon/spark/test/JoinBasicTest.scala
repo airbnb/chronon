@@ -120,8 +120,8 @@ class JoinBasicTests {
     val diff = Comparison.sideBySide(computed, expected, List("user", "ds"))
     val diffCount = diff.count()
     if (diffCount > 0) {
-      logger.debug(s"Diff count: ${diffCount}")
-      logger.debug(s"diff result rows")
+      logger.warn(s"Diff count: ${diffCount}")
+      logger.warn(s"diff result rows")
       if (logger.isDebugEnabled) {
         diff.show()
       }
@@ -232,8 +232,8 @@ class JoinBasicTests {
     logger.debug(s"Expected count: ${expected.count()}")
     val diff = Comparison.sideBySide(computed, expected, List("country", "ds"))
     if (diff.count() > 0) {
-      logger.debug(s"Diff count: ${diff.count()}")
-      logger.debug(s"diff result rows")
+      logger.warn(s"Diff count: ${diff.count()}")
+      logger.warn(s"diff result rows")
       diff.show()
     }
     assertEquals(diff.count(), 0)
@@ -521,8 +521,8 @@ class JoinBasicTests {
     val diff = Comparison.sideBySide(computed, expected, List("user", "ds"))
     val diffCount = diff.count()
     if (diffCount > 0) {
-      logger.debug(s"Diff count: $diffCount")
-      logger.debug(s"diff result rows")
+      logger.warn(s"Diff count: $diffCount")
+      logger.warn(s"diff result rows")
       diff.show()
     }
     assertEquals(diffCount, 0)
