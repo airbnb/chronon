@@ -985,6 +985,9 @@ case class TableUtils(sparkSession: SparkSession) {
                      partitions: Seq[String],
                      partitionColumn: String = partitionColumn,
                      subPartitionFilters: Map[String, String] = Map.empty): Unit = {
+    // TODO this is using datasource v1 semantics, which won't be compatible with non-hive catalogs
+    // notably, the unit test iceberg integration uses hadoop because of 
+    // https://github.com/apache/iceberg/issues/7847 
     if (partitions.nonEmpty && tableExists(tableName)) {
       val partitionSpecs = partitions
         .map { partition =>

@@ -96,6 +96,8 @@ object SparkSessionBuilder {
     val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
 
     val builder = if (true) {
+      //iceberg can't use derby as a metastore
+      //https://github.com/apache/iceberg/issues/7847
       baseBuilder
         .master("local[*]")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
