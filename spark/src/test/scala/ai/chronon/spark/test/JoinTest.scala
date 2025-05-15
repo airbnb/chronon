@@ -446,7 +446,7 @@ class JoinTest {
          |FROM $viewsTable
          |WHERE
          |  ds >= '2021-06-03' AND ds <= '2021-06-03'""".stripMargin
-    if (logger.isDebugEnabled) {
+    if (logger.isWarnEnabled()) {
       spark.sql(q).show()
     }
     val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
