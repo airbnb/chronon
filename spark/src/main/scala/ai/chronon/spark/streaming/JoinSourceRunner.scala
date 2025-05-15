@@ -17,7 +17,7 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, SourceOps, JoinOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, ResponseWithContext}
 import ai.chronon.online.KVStore.PutRequest
@@ -345,6 +345,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
   def chainedStreamingQuery: DataStreamWriter[Row] = {
     val joinSource = groupByConf.streamingSource.get.getJoinSource
+
+    joinSource.join.setups.foreach(session.sql)
+    groupByConf.setups.foreach(session.sql)
+
     val left = joinSource.join.left
     val topic = TopicInfo.parse(left.topic)
 
