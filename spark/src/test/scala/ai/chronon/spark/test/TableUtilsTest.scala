@@ -261,7 +261,6 @@ class TableUtilsTest {
     // notably, the unit test iceberg integration uses hadoop because of 
     // https://github.com/apache/iceberg/issues/7847 
     Assume.assumeTrue(format != "iceberg")
-    Assume.assumeTrue(false)
     val tableName = "db.test_drop_partitions_table"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
     val columns1 = Array(
@@ -561,7 +560,6 @@ class TableUtilsTest {
     // This is a known issue with iceberg
     // To be fixed in a fast follow PR
     Assume.assumeTrue(format != "iceberg")
-    Assume.assumeTrue(false)
     val tableName = "db.test_long_partitions"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
     val structFields = Array(

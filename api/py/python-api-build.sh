@@ -21,10 +21,6 @@ export CHRONON_VERSION_STR=$1
 export CHRONON_BRANCH_STR=$2
 ACTION=$3
 
-python3 -m venv .venv
-source .venv/bin/activate
-pip install build tox
-
 echo "Finding working directory.."
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 echo "Removing old distributions..."
