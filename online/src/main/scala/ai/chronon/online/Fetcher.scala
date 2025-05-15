@@ -95,14 +95,16 @@ class Fetcher(val kvStore: KVStore,
               callerName: String = null,
               flagStore: FlagStore = null,
               disableErrorThrows: Boolean = false,
-              executionContextOverride: ExecutionContext = null)
+              executionContextOverride: ExecutionContext = null,
+              parallelBatchSize: Int = 32)
     extends FetcherBase(kvStore,
                         metaDataSet,
                         timeoutMillis,
                         debug,
                         flagStore,
                         disableErrorThrows,
-                        executionContextOverride) {
+                        executionContextOverride,
+                        parallelBatchSize) {
   private def reportCallerNameFetcherVersion(): Unit = {
     val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
     val ctx = Metrics.Context(Environment.Fetcher)
@@ -241,7 +243,7 @@ class Fetcher(val kvStore: KVStore,
     val externalResponsesF = fetchExternal(requests)
     val combinedResponsesF = internalResponsesF.zip(externalResponsesF).map {
       case (internalResponses, externalResponses) =>
-        internalResponses.zip(externalResponses).parallel.map {
+        parMap(internalResponses.zip(externalResponses)) {
           case (internalResponse, externalResponse) =>
             if (debug) {
               logger.info(internalResponse.values.get.keys.toSeq.mkString(","))
