@@ -25,7 +25,7 @@ import org.apache.avro.Schema
 import org.apache.spark.sql.SparkSession
 import scala.collection.JavaConverters.asScalaBufferConverter
 
-import ai.chronon.online.OnlineDerivationUtil.{DerivationFunc, buildDerivationFunction, buildDerivedFields, timeFields}
+import ai.chronon.online.DerivationUtils.{DerivationFunc, buildDerivationFunction, buildDerivedFields, timeFields}
 
 // mixin class - with schema
 class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, partitionSpec: PartitionSpec)

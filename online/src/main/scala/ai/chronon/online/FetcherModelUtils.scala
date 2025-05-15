@@ -3,7 +3,6 @@ package ai.chronon.online
 import ai.chronon.api.Extensions.{ModelTransformOps, ThrowableOps}
 import ai.chronon.api.ModelTransform
 import ai.chronon.online.Fetcher.ResponseWithContext
-import ai.chronon.online.Metrics.Environment
 import org.slf4j.{Logger, LoggerFactory}
 
 import scala.collection.Seq
@@ -37,7 +36,7 @@ object FetcherModelUtils {
         val prefix = Option(modelTransform.prefix)
         ModelTransformRequest(modelTransform,
                               ModelRequestIdentifier(joinName, modelName, prefix),
-                              joinRequest.derivedValues)
+                              joinRequest.derivedValues.get)
       }
       requests
     }
@@ -153,9 +152,8 @@ object FetcherModelUtils {
                 }
                 .toMap
 
-              val updatedJoinRequest = req.copy(
-                modelTransformsValues = Some(modelTransformResponses ++ passthroughValues)
-              )
+              val updatedJoinRequest =
+                req.copy(modelTransformsValues = Some(modelTransformResponses ++ passthroughValues))
               val requestEndTs = System.currentTimeMillis()
               req.ctx
                 .withSuffix(Metrics.Environment.ModelTransform)
