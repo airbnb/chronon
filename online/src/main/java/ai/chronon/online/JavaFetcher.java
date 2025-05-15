@@ -37,15 +37,15 @@ public class JavaFetcher {
     Fetcher fetcher;
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null, 32);
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null, 32);
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, FlagStore flagStore, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null, 32);
     }
 
     /* user builder pattern to create JavaFetcher
@@ -66,7 +66,8 @@ public class JavaFetcher {
                 builder.callerName,
                 builder.flagStore,
                 builder.disableErrorThrows,
-                builder.executionContextOverride);
+                builder.executionContextOverride,
+                builder.parallelBatchSize);
     }
 
     public static class Builder {
@@ -80,6 +81,7 @@ public class JavaFetcher {
         private FlagStore flagStore;
         private Boolean disableErrorThrows;
         private ExecutionContext executionContextOverride;
+        private int parallelBatchSize = 32;
 
         public Builder(KVStore kvStore, String metaDataSet, Long timeoutMillis,
                        Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
@@ -112,6 +114,11 @@ public class JavaFetcher {
 
         public Builder executionContextOverride(ExecutionContext executionContextOverride) {
             this.executionContextOverride = executionContextOverride;
+            return this;
+        }
+
+        public Builder parallelBatchSize(int parallelBatchSize) {
+            this.parallelBatchSize = parallelBatchSize;
             return this;
         }
 

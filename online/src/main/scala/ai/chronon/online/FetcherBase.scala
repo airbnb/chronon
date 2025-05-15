@@ -20,7 +20,7 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, WindowOps, ThrowableOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, ThrowableOps, WindowOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
@@ -36,7 +36,6 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 import scala.util.ScalaJavaConversions.IterableOps
 
-
 // Does internal facing fetching
 //   1. takes join request or groupBy requests
 //   2. does the fan out and fan in from kv store in a parallel fashion
@@ -47,10 +46,19 @@ class FetcherBase(kvStore: KVStore,
                   debug: Boolean = false,
                   flagStore: FlagStore = null,
                   disableErrorThrows: Boolean = false,
-                  executionContextOverride: ExecutionContext = null)
+                  executionContextOverride: ExecutionContext = null,
+                  parallelBatchSize: Int = 32)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis, executionContextOverride)
     with FetcherCache {
   import FetcherBase._
+
+  def parMap[T, U](requests: Seq[T])(f: T => U): Seq[U] = {
+    if (requests.size < parallelBatchSize) {
+      requests.iterator.map(f).toSeq
+    } else {
+      requests.parallel.iterator.map(f).toList // Convert back to Seq
+    }
+  }
 
   /**
     * A groupBy request is split into batchRequest and optionally a streamingRequest. This method decodes bytes
@@ -355,7 +363,7 @@ class FetcherBase(kvStore: KVStore,
     // don't send to KV store if ANY of key's value is null
     val validRequests =
       requests.filter(r => r.keys == null || r.keys.values == null || !r.keys.values.exists(_ == null))
-    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.parallel.iterator.map { request =>
+    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = parMap(validRequests) { request =>
       val groupByServingInfoTry = getGroupByServingInfo(request.name)
         .recover {
           case ex: Throwable =>
@@ -421,7 +429,7 @@ class FetcherBase(kvStore: KVStore,
           GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, request.atMillis, context)
         }
       request -> groupByRequestMetaTry
-    }.toSeq
+    }
 
     // If caching is enabled, we check if any of the GetRequests are already cached. If so, we store them in a Map
     // and avoid the work of re-fetching them. It is mainly for batch data requests.
@@ -467,7 +475,7 @@ class FetcherBase(kvStore: KVStore,
             .flatMap(_.get.map(v => Option(v.bytes).map(_.length).getOrElse(0)))
             .sum
 
-        val responses: Seq[Response] = groupByRequestToKvRequest.parallel.iterator.map {
+        val responses: Seq[Response] = parMap(groupByRequestToKvRequest) {
           case (request, requestMetaTry) =>
             val responseMapTry: Try[Map[String, AnyRef]] = requestMetaTry.map { requestMeta =>
               val GroupByRequestMeta(groupByServingInfo, batchRequest, streamingRequestOpt, _, context) = requestMeta
@@ -557,7 +565,7 @@ class FetcherBase(kvStore: KVStore,
               }
             }
             Response(request, responseMapTry)
-        }.toList
+        }
         responses
       }
   }
@@ -655,7 +663,7 @@ class FetcherBase(kvStore: KVStore,
     groupByResponsesFuture
       .map { groupByResponses =>
         val responseMap = groupByResponses.iterator.map { response => response.request -> response.values }.toMap
-        val responses = joinDecomposed.parallel.iterator.map {
+        val responses = parMap(joinDecomposed) {
           case (joinRequest, decomposedRequestsTry) =>
             val joinValuesTry = decomposedRequestsTry.map { groupByRequestsWithPrefix =>
               groupByRequestsWithPrefix.iterator.flatMap {
@@ -686,7 +694,7 @@ class FetcherBase(kvStore: KVStore,
               ctx.increment("internal.request.count")
             }
             Response(joinRequest, joinValuesTry)
-        }.toSeq
+        }
         responses
       }
   }
