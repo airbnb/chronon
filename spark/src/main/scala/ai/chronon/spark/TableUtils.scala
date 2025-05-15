@@ -239,12 +239,13 @@ case object Iceberg extends Format {
   override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
       sparkSession: SparkSession): Seq[Map[String, String]] = {
     sparkSession.sqlContext
-      .sql(s"SELECT partition FROM $tableName"++".partitions")
+      .sql(s"SELECT partition FROM $tableName" ++ ".partitions")
       .collect()
       .map { row =>
         val partitionStruct = row.getStruct(0)
-        partitionStruct.schema.fieldNames.zipWithIndex.map { case (fieldName, idx) =>
-          fieldName -> partitionStruct.getString(idx)
+        partitionStruct.schema.fieldNames.zipWithIndex.map {
+          case (fieldName, idx) =>
+            fieldName -> partitionStruct.getString(idx)
         }.toMap
       }
   }
@@ -986,8 +987,8 @@ case class TableUtils(sparkSession: SparkSession) {
                      partitionColumn: String = partitionColumn,
                      subPartitionFilters: Map[String, String] = Map.empty): Unit = {
     // TODO this is using datasource v1 semantics, which won't be compatible with non-hive catalogs
-    // notably, the unit test iceberg integration uses hadoop because of 
-    // https://github.com/apache/iceberg/issues/7847 
+    // notably, the unit test iceberg integration uses hadoop because of
+    // https://github.com/apache/iceberg/issues/7847
     if (partitions.nonEmpty && tableExists(tableName)) {
       val partitionSpecs = partitions
         .map { partition =>

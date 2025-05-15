@@ -63,18 +63,17 @@ object SparkSessionBuilder {
     }
 
     var baseBuilder = SparkSession
-        .builder()
-        .appName(name)
-        .enableHiveSupport()
-        .config("spark.sql.session.timeZone", "UTC")
-        //otherwise overwrite will delete ALL partitions, not just the ones it touches
-        .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
-        .config("hive.exec.dynamic.partition", "true")
-        .config("hive.exec.dynamic.partition.mode", "nonstrict")
-        .config("spark.sql.catalogImplementation", "hive")
-        .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
-        .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
-  
+      .builder()
+      .appName(name)
+      .enableHiveSupport()
+      .config("spark.sql.session.timeZone", "UTC")
+      //otherwise overwrite will delete ALL partitions, not just the ones it touches
+      .config("spark.sql.sources.partitionOverwriteMode", "dynamic")
+      .config("hive.exec.dynamic.partition", "true")
+      .config("hive.exec.dynamic.partition.mode", "nonstrict")
+      .config("spark.sql.catalogImplementation", "hive")
+      .config("spark.hadoop.hive.exec.max.dynamic.partitions", 30000)
+      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
 
     // Staging queries don't benefit from the KryoSerializer and in fact may fail with buffer underflow in some cases.
     if (enforceKryoSerializer) {
@@ -107,8 +106,8 @@ object SparkSessionBuilder {
         .config("spark.sql.catalog.spark_catalog.warehouse", s"$warehouseDir/data")
         .config("spark.jars.packages", "org.apache.iceberg:iceberg-spark-runtime-3.2_1.12:1.1.0")
         .config("spark.driver.bindAddress", "127.0.0.1")
-        .config("spark.chronon.table_write.format","iceberg")
-        .config("spark.chronon.table_read.format", "iceberg") 
+        .config("spark.chronon.table_write.format", "iceberg")
+        .config("spark.chronon.table_read.format", "iceberg")
     } else if (local) {
       logger.info(s"Building local spark session with warehouse at $warehouseDir")
       val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
