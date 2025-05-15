@@ -94,7 +94,7 @@ object SparkSessionBuilder {
     val userName = Properties.userName
     val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
 
-    val builder = if (true) {
+    val builder = if (sys.env.getOrElse(FormatTestEnvVar, "hive") == "iceberg") {
       //iceberg can't use derby as a metastore
       //https://github.com/apache/iceberg/issues/7847
       baseBuilder
