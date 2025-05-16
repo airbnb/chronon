@@ -153,7 +153,8 @@ jobs:
               conda activate chronon_py
               # Increase if we see OOM.
               export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-              sbt '++ 2.12.12' "testOnly ai.chronon.spark.test.TableUtilsFormatTest"
+              # spark_embedded only because we don't want to install a ton of jars on the uber if they're not needed
+              sbt '++ 2.12.12' "project spark_embedded" "testOnly ai.chronon.spark.test.TableUtilsFormatTest"
         - store_test_results:
             path: /chronon/spark/target/test-reports
         - store_test_results:

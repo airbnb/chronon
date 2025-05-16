@@ -429,8 +429,6 @@ lazy val spark_uber = (project in file("spark"))
       fromMatrix(scalaVersion.value, "jackson", "spark-all-3-5/provided", "delta-core/provided")
     else
       fromMatrix(scalaVersion.value, "jackson", "spark-all/provided", "delta-core/provided", "iceberg32/provided")),
-    // make Iceberg classes available in tests for circleci
-    Test / libraryDependencies ++= fromMatrix(scalaVersion.value, "iceberg32"),
   )
 
 lazy val spark_embedded = (project in file("spark"))
