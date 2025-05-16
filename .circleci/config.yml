@@ -189,7 +189,7 @@ workflows:
                       - "Pull Docker Image"
             - "Chronon Python Lint":
                   requires:
-                      - "Pull Docker Image - 
+                      - "Pull Docker Image"
             - "Scala 12 -- Iceberg Format Tests":
                   requires:
                       - "Pull Docker Image"
