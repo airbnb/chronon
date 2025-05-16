@@ -45,7 +45,6 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Random, Success, Try}
-import scala.util.ScalaJavaConversions.IterableOps
 
 object Fetcher {
   case class Request(name: String,
@@ -239,13 +238,11 @@ class Fetcher(val kvStore: KVStore,
 
     // Split requests into batches of size 32
     val batchSize = 32 // make tunable
+
     val batches = requests.grouped(batchSize).toSeq
-    batches.parallel.map(doFetchJoin(_, joinConf)).reduceLeft { (acc, batch) =>
-      acc.zip(batch).map {
-        case (accResponse, batchResponse) =>
-          accResponse ++ batchResponse
-      }
-    }
+    val batchFutures: Seq[Future[Seq[Response]]] =
+      batches.map(batch => doFetchJoin(batch, joinConf))
+    Future.sequence(batchFutures).map(_.flatten)
   }
 
   private def doFetchJoin(requests: scala.collection.Seq[Request],
