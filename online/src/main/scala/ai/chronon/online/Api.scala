@@ -248,25 +248,12 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
       .build()
   }
 
-  final def buildJavaFetcher(callerName: String = null,
-                             disableErrorThrows: Boolean = false,
-                             parallelBatchSize: Int = 32): JavaFetcher = {
-    new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
-      .callerName(callerName)
-      .flagStore(flagStore)
-      .disableErrorThrows(disableErrorThrows)
-      .debug(false)
-      .parallelBatchSize(parallelBatchSize)
-      .build()
-  }
-
   final def javaFetcherBuilder(): JavaFetcher.Builder = {
     new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
       .flagStore(flagStore)
   }
 
-  final def buildJavaFetcher(): JavaFetcher =
-    buildJavaFetcher(callerName = null, disableErrorThrows = false, parallelBatchSize = 32)
+  final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(callerName = null)
 
   private def responseConsumer: Consumer[LoggableResponse] =
     new Consumer[LoggableResponse] {
