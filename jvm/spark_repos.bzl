@@ -43,6 +43,15 @@ spark_3_1_repo = repo(name = "spark_3_1", artifacts = [
         "org.json4s:json4s-core_2.12",
         "org.json4s:json4s-jackson_2.12",
     ]),
+    versioned_artifacts("2.12.5", [
+        "com.fasterxml.jackson.module:jackson-module-scala_2.12",
+        "com.fasterxml.jackson.module:jackson-module-scala_2.13",
+        "com.fasterxml.jackson.core:jackson-core",
+        "com.fasterxml.jackson.core:jackson-annotations",
+        "com.fasterxml.jackson.core:jackson-databind",
+    ]),
+    "org.codehaus.janino:janino:3.0.16",
+    "org.codehaus.janino:commons-compiler:3.0.16",
     "org.apache.hive:hive-metastore:2.3.9",
     "io.delta:delta-core_2.12:2.0.2",
 ], excluded_artifacts = ["org.slf4j:slf4j-log4j12"])
@@ -81,7 +90,20 @@ spark_3_2_repo = repo(
         "org.apache.avro:avro-mapred:1.8.2",
         "org.apache.hive:hive-metastore:2.3.9",
         "org.apache.hive:hive-exec:3.1.2",
-
+        versioned_artifacts("3.7.0-M11", [
+            "org.json4s:json4s-ast_2.12",
+            "org.json4s:json4s-core_2.12",
+            "org.json4s:json4s-jackson_2.12",
+        ]),
+        versioned_artifacts("2.12.5", [
+            "com.fasterxml.jackson.module:jackson-module-scala_2.12",
+            "com.fasterxml.jackson.module:jackson-module-scala_2.13",
+            "com.fasterxml.jackson.core:jackson-core",
+            "com.fasterxml.jackson.core:jackson-annotations",
+            "com.fasterxml.jackson.core:jackson-databind",
+        ]),
+        "org.codehaus.janino:janino:3.0.16",
+        "org.codehaus.janino:commons-compiler:3.0.16",
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
         "io.delta:delta-core_2.12:2.0.2",
@@ -125,7 +147,20 @@ spark_3_5_repo = repo(
         "org.apache.avro:avro-mapred:1.8.2",
         "org.apache.hive:hive-metastore:2.3.9",
         "org.apache.hive:hive-exec:3.1.2",
-
+        versioned_artifacts("3.7.0-M11", [
+            "org.json4s:json4s-ast_2.12",
+            "org.json4s:json4s-core_2.12",
+            "org.json4s:json4s-jackson_2.12",
+        ]),
+        versioned_artifacts("2.12.5", [
+            "com.fasterxml.jackson.module:jackson-module-scala_2.12",
+            "com.fasterxml.jackson.module:jackson-module-scala_2.13",
+            "com.fasterxml.jackson.core:jackson-core",
+            "com.fasterxml.jackson.core:jackson-annotations",
+            "com.fasterxml.jackson.core:jackson-databind",
+        ]),
+        "org.codehaus.janino:janino:3.1.9",
+        "org.codehaus.janino:commons-compiler:3.1.9",
         # Monitoring
         "io.prometheus.jmx:jmx_prometheus_javaagent:0.20.0",
         "io.delta:delta-core_2.12:2.0.2",
