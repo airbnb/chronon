@@ -180,7 +180,7 @@ jobs:
               conda activate chronon_py
               # Increase if we see OOM.
               export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-              sbt ';project spark_embedded; ++ 2.13.6; ai.chronon.spark.test.TableUtilsTest'
+              sbt ';project spark_embedded; ++ 2.13.6; testOnly ai.chronon.spark.test.TableUtilsTest'
         - store_test_results:
             path: /chronon/spark/target/test-reports
         - store_test_results:
