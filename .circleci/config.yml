@@ -58,7 +58,7 @@ jobs:
                   when: on_fail
 
     "Scala 13 -- Tests":
-        executor: docker_baseimg_executor_xxlarge
+        executor: docker_baseimg_executor
         steps:
             - checkout
             - run:
@@ -67,7 +67,7 @@ jobs:
                   command: |
                       conda activate chronon_py
                       # Increase if we see OOM.
-                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=8G -Xmx8G -Xms4G"
                       sbt "++ 2.13.6 test"
             - store_test_results:
                   path: /chronon/spark/target/test-reports
