@@ -245,7 +245,7 @@ case object Iceberg extends Format {
         val partitionStruct = row.getStruct(0)
         partitionStruct.schema.fieldNames.zipWithIndex.map {
           case (fieldName, idx) =>
-            fieldName -> partitionStruct.getString(idx)
+            fieldName -> partitionStruct.get(idx).toString
         }.toMap
       }
   }
