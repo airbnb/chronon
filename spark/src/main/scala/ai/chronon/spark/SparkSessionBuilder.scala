@@ -113,9 +113,20 @@ object SparkSessionBuilder {
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.kryo.registrationRequired", s"${localWarehouseLocation.isEmpty}")
+        // ── use an in‐memory Derby metastore rather than disk + BoneCP ──
+        .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:metastore_db;create=true")
+        .config("spark.hadoop.javax.jdo.option.ConnectionDriverName", "org.apache.derby.jdbc.EmbeddedDriver")
+        .config("spark.hadoop.javax.jdo.option.ConnectionUserName", "APP")
+        .config("spark.hadoop.javax.jdo.option.ConnectionPassword", "APP")
+        .config("spark.ui.enabled", "false")
+        .config("spark.chronon.outputParallelismOverride", "2")
+        .config("spark.chronon.group_by.parallelism", "2")
+        .config("spark.sql.shuffle.partitions", "2")
+        .config("spark.default.parallelism", "2")
+        .config("spark.testing", "true")
+        .config("spark.sql.adaptive.enabled", true)
         .config("spark.local.dir", s"/tmp/$userName/$name")
         .config("spark.sql.warehouse.dir", s"$warehouseDir/data")
-        .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
         .config("spark.driver.bindAddress", "127.0.0.1")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
@@ -144,6 +155,7 @@ object SparkSessionBuilder {
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
+        .config("spark.ui.enabled", "false")
         .config("spark.local.dir", s"/tmp/$userName/chronon-spark-streaming")
         .config("spark.kryo.registrationRequired", "true")
     } else {
