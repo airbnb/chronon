@@ -202,7 +202,7 @@ class ChrononIcebergKryoRegistrator extends ChrononKryoRegistrator {
       "org.apache.iceberg.SnapshotRef",
       "org.apache.iceberg.SnapshotRefType",
       "org.apache.iceberg.spark.source.SerializableTableWithSize$SerializableMetadataTableWithSize",
-      "org.apache.iceberg.MetadataTableType",
+      "org.apache.iceberg.MetadataTableType"
     )
     additionalIcebergNames.foreach(name => doRegister(name, kryo))
   }
