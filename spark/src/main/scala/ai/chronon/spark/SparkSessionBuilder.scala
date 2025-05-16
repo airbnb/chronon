@@ -66,7 +66,7 @@ object SparkSessionBuilder {
           "spark.jars.packages" -> "org.apache.iceberg:iceberg-spark-runtime-3.2_1.12:1.1.0"
         )
         // TODO add an iceberg kryo registrator
-        (configMap, "ai.chronon.spark.ChrononKryoRegistrator")
+        (configMap, "ai.chronon.spark.ChrononIcebergKryoRegistrator")
       case _ => (Map.empty, "ai.chronon.spark.ChrononKryoRegistrator")
     }
 

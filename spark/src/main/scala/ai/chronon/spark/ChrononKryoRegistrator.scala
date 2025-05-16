@@ -178,3 +178,32 @@ class ChrononDeltaLakeKryoRegistrator extends ChrononKryoRegistrator {
     additionalDeltaNames.foreach(name => doRegister(name, kryo))
   }
 }
+
+class ChrononIcebergKryoRegistrator extends ChrononKryoRegistrator {
+  override def registerClasses(kryo: Kryo): Unit = {
+    super.registerClasses(kryo)
+    val additionalIcebergNames = Seq(
+      "org.apache.iceberg.spark.source.SerializableTableWithSize",
+      "org.apache.iceberg.encryption.PlaintextEncryptionManager",
+      "org.apache.iceberg.hadoop.HadoopFileIO",
+      "org.apache.iceberg.SerializableTable$SerializableConfSupplier",
+      "org.apache.iceberg.util.SerializableMap",
+      "org.apache.iceberg.LocationProviders$DefaultLocationProvider",
+      "org.apache.iceberg.spark.source.SparkWrite$TaskCommit",
+      "org.apache.iceberg.DataFile",
+      "org.apache.iceberg.GenericDataFile",
+      "org.apache.iceberg.FileContent",
+      "org.apache.iceberg.FileFormat",
+      "org.apache.iceberg.SerializableByteBufferMap",
+      "org.apache.iceberg.PartitionData",
+      "org.apache.iceberg.types.Types$StructType",
+      "org.apache.iceberg.types.Types$NestedField",
+      "org.apache.iceberg.types.Types$StringType",
+      "org.apache.iceberg.SnapshotRef",
+      "org.apache.iceberg.SnapshotRefType",
+      "org.apache.iceberg.spark.source.SerializableTableWithSize$SerializableMetadataTableWithSize",
+      "org.apache.iceberg.MetadataTableType",
+    )
+    additionalIcebergNames.foreach(name => doRegister(name, kryo))
+  }
+}
