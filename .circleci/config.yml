@@ -153,7 +153,34 @@ jobs:
               conda activate chronon_py
               # Increase if we see OOM.
               export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-              sbt ';project spark_embedded; ++ 2.13.6; testOnly ai.chronon.spark.test.TableUtilsFormatTest ai.chronon.spark.test.TableUtilsTest'
+              sbt ';project spark_embedded; ++ 2.13.6; testOnly ai.chronon.spark.test.TableUtilsFormatTest'
+        - store_test_results:
+            path: /chronon/spark/target/test-reports
+        - store_test_results:
+            path: /chronon/aggregator/target/test-reports
+        - run:
+            name: Compress spark-warehouse
+            command: |
+              cd /tmp/ && tar -czvf spark-warehouse.tar.gz chronon/spark-warehouse
+            when: on_fail
+        - store_artifacts:
+            path: /tmp/spark-warehouse.tar.gz
+            destination: spark_warehouse.tar.gz
+            when: on_fail
+    "Scala 13 -- Iceberg Table Utils Tests":
+      executor: docker_baseimg_executor
+      steps:
+        - checkout
+        - run:
+            name: Run Scala 13 tests for Iceberg Table Utils
+            environment:
+              format_test: iceberg
+            shell: /bin/bash -leuxo pipefail
+            command: |
+              conda activate chronon_py
+              # Increase if we see OOM.
+              export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+              sbt ';project spark_embedded; ++ 2.13.6; ai.chronon.spark.test.TableUtilsTest'
         - store_test_results:
             path: /chronon/spark/target/test-reports
         - store_test_results:
@@ -191,5 +218,8 @@ workflows:
                   requires:
                       - "Pull Docker Image"
             - "Scala 13 -- Iceberg Format Tests":
+                  requires:
+                      - "Pull Docker Image"
+            - "Scala 13 -- Iceberg Table Utils Tests":
                   requires:
                       - "Pull Docker Image"
