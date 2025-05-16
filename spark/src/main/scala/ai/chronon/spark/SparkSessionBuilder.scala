@@ -23,6 +23,7 @@ import org.apache.spark.SPARK_VERSION
 import java.io.File
 import java.util.logging.Logger
 import scala.util.Properties
+import java.util.UUID
 
 object SparkSessionBuilder {
   @transient private lazy val logger = LoggerFactory.getLogger(getClass)
@@ -97,6 +98,7 @@ object SparkSessionBuilder {
     val builder = if (sys.env.getOrElse(FormatTestEnvVar, "hive") == "iceberg") {
       //iceberg can't use derby as a metastore
       //https://github.com/apache/iceberg/issues/7847
+      val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/${UUID.randomUUID}/metastore_db;create=true"
       baseBuilder
         .master("local[*]")
         .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
@@ -105,6 +107,7 @@ object SparkSessionBuilder {
         .config("spark.sql.catalog.spark_catalog.type", "hadoop")
         .config("spark.sql.catalog.spark_catalog.warehouse", s"$warehouseDir/data")
         .config("spark.jars.packages", "org.apache.iceberg:iceberg-spark-runtime-3.2_1.12:1.1.0")
+        .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
         .config("spark.driver.bindAddress", "127.0.0.1")
         .config("spark.chronon.table_write.format", "iceberg")
         .config("spark.chronon.table_read.format", "iceberg")
