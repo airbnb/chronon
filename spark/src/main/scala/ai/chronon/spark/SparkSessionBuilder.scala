@@ -62,7 +62,7 @@ object SparkSessionBuilder {
           "spark.chronon.table_read.format" -> "iceberg",
           "spark.sql.catalog.local" -> "org.apache.iceberg.spark.SparkCatalog",
           "spark.sql.catalog.spark_catalog.type" -> "hadoop",
-          "spark.sql.catalog.spark_catalog.warehouse" -> s"$warehouseDir/data",
+          "spark.sql.catalog.spark_catalog.warehouse" -> s"$warehouseDir/data"
         )
         // TODO add an iceberg kryo registrator
         (configMap, "ai.chronon.spark.ChrononIcebergKryoRegistrator")
