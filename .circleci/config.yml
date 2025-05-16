@@ -140,12 +140,12 @@ jobs:
                       sbt +scalafmtCheck
     # run these separately as we need a isolated JVM to not have Spark session settings interfere with other runs
     # long term goal is to refactor the current testing spark session builder and avoid adding new single test to CI
-    "Scala 12 -- Iceberg Format Tests":
+    "Scala 13 -- Iceberg Format Tests":
       executor: docker_baseimg_executor
       steps:
         - checkout
         - run:
-            name: Run Scala 12 tests for Iceberg format
+            name: Run Scala 13 tests for Iceberg format
             environment:
               format_test: iceberg
             shell: /bin/bash -leuxo pipefail
@@ -153,8 +153,7 @@ jobs:
               conda activate chronon_py
               # Increase if we see OOM.
               export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-              # spark_embedded only because we don't want to install a ton of jars on the uber if they're not needed
-              sbt '++ 2.12.12' "project spark_embedded" "testOnly ai.chronon.spark.test.TableUtilsFormatTest"
+              sbt '++ 2.13.6' "testOnly ai.chronon.spark.test.TableUtilsFormatTest"
         - store_test_results:
             path: /chronon/spark/target/test-reports
         - store_test_results:

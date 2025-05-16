@@ -42,8 +42,6 @@ ThisBuild / assembly / test := {}
 val use_spark_3_5 = settingKey[Boolean]("Flag to build for 3.5")
 ThisBuild / use_spark_3_5 := false 
 
-ThisBuild / scalaVersion := "2.13.6"
-
 def buildTimestampSuffix = ";build.timestamp=" + new java.util.Date().getTime
 lazy val publishSettings = Seq(
   publishTo := {
@@ -200,7 +198,7 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     ),
     None,
     None,
-    Some(icebergVersion)
+    Some(icebergVersion),
   ),
   "jackson" -> VersionDependency(
     Seq(
