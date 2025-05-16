@@ -40,6 +40,8 @@ object SparkSessionBuilder {
             additionalConfig: Option[Map[String, String]] = None,
             enforceKryoSerializer: Boolean = true): SparkSession = {
 
+    val userName = Properties.userName
+    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
     // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
     // between Spark sessions created in existing chronon tests that need the hive format and some specific tests
     // that require a format override like delta lake.
@@ -51,6 +53,19 @@ object SparkSessionBuilder {
           "spark.chronon.table_write.format" -> "delta"
         )
         (configMap, "ai.chronon.spark.ChrononDeltaLakeKryoRegistrator")
+        (configMap, "ai.chronon.spark.ChrononKryoRegistrator")
+      case Some("iceberg") =>
+        val configMap = Map(
+          "spark.sql.extensions" -> "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+          "spark.sql.catalog.spark_catalog" -> "org.apache.iceberg.spark.SparkSessionCatalog",
+          "spark.chronon.table_write.format" -> "iceberg",
+          "spark.chronon.table_read.format" -> "iceberg",
+          "spark.sql.catalog.local" -> "org.apache.iceberg.spark.SparkCatalog",
+          "spark.sql.catalog.spark_catalog.type" -> "hadoop",
+          "spark.sql.catalog.spark_catalog.warehouse" -> s"$warehouseDir/data",
+          "spark.jars.packages" -> "org.apache.iceberg:iceberg-spark-runtime-3.2_1.12:1.1.0"
+        )
+        // TODO add an iceberg kryo registrator
         (configMap, "ai.chronon.spark.ChrononKryoRegistrator")
       case _ => (Map.empty, "ai.chronon.spark.ChrononKryoRegistrator")
     }
@@ -92,26 +107,7 @@ object SparkSessionBuilder {
       baseBuilder.config("spark.sql.legacy.allowCreatingManagedTableUsingNonemptyLocation", "true")
     }
 
-    val userName = Properties.userName
-    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
-
-    val builder = if (sys.env.getOrElse(FormatTestEnvVar, "hive") == "iceberg") {
-      //iceberg can't use derby as a metastore
-      //https://github.com/apache/iceberg/issues/7847
-      val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/${UUID.randomUUID}/metastore_db;create=true"
-      baseBuilder
-        .master("local[*]")
-        .config("spark.sql.extensions", "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
-        .config("spark.sql.catalog.spark_catalog", "org.apache.iceberg.spark.SparkSessionCatalog")
-        .config("spark.sql.catalog.local", "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.spark_catalog.type", "hadoop")
-        .config("spark.sql.catalog.spark_catalog.warehouse", s"$warehouseDir/data")
-        .config("spark.jars.packages", "org.apache.iceberg:iceberg-spark-runtime-3.2_1.12:1.1.0")
-        .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
-        .config("spark.driver.bindAddress", "127.0.0.1")
-        .config("spark.chronon.table_write.format", "iceberg")
-        .config("spark.chronon.table_read.format", "iceberg")
-    } else if (local) {
+    val builder = if (local) {
       logger.info(s"Building local spark session with warehouse at $warehouseDir")
       val metastoreDb = s"jdbc:derby:;databaseName=$warehouseDir/metastore_db;create=true"
       baseBuilder
