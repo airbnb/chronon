@@ -420,6 +420,90 @@ class JoinTest {
     assertEquals(diff.count(), 0)
   }
 
+ @Test
+  def testEventsEventsTemporalLongDs(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    spark.conf.set("spark.chronon.partition.format", "yyyy-MM-dd")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val joinConf = getEventsEventsTemporal("temporal", namespace)
+    val viewsSchema = List(
+      Column("user", api.StringType, 10000),
+      Column("item", api.StringType, 100),
+      Column("time_spent_ms", api.LongType, 5000)
+    )
+
+    val viewsTable = s"$namespace.view_temporal"
+    DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200)
+      .withColumn("ds", col("ds").cast("long"))
+      .save(viewsTable, Map("tblProp1" -> "1"))
+
+    val viewsSource = Builders.Source.events(
+      table = viewsTable,
+      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = yearAgo)
+    )
+    val viewsGroupBy = Builders.GroupBy(
+      sources = Seq(viewsSource),
+      keyColumns = Seq("item"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
+        Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
+        Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
+        // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
+        // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
+      ),
+      metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
+    )
+
+    // left side
+    val itemQueries = List(Column("item", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries"
+    val itemQueriesDf = DataFrameGen
+      .events(spark, itemQueries, 1000, partitions = 100)
+    // duplicate the events
+    itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
+
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
+    (new Analyzer(tableUtils, joinConf, monthAgo, today)).run()
+    val join = new Join(joinConf = joinConf, endPartition = dayAndMonthBefore, tableUtils)
+    val computed = join.computeJoin(Some(100))
+    computed.show()
+
+    val expected = tableUtils.sql(s"""
+                                     |WITH
+                                     |   queries AS (SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore')
+                                     | SELECT queries.item, queries.ts, queries.ds, part.user_unit_test_item_views_ts_min, part.user_unit_test_item_views_ts_max, part.user_unit_test_item_views_time_spent_ms_average
+                                     | FROM (SELECT queries.item,
+                                     |        queries.ts,
+                                     |        queries.ds,
+                                     |        MIN(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_unit_test_item_views_ts_min,
+                                     |        MAX(IF(queries.ts > $viewsTable.ts, $viewsTable.ts, null)) as user_unit_test_item_views_ts_max,
+                                     |        AVG(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_unit_test_item_views_time_spent_ms_average
+                                     |     FROM queries left outer join $viewsTable
+                                     |     ON queries.item = $viewsTable.item
+                                     |     WHERE $viewsTable.item IS NOT NULL AND $viewsTable.ds >= '$yearAgo' AND $viewsTable.ds <= '$dayAndMonthBefore'
+                                     |     GROUP BY queries.item, queries.ts, queries.ds) as part
+                                     | JOIN queries
+                                     | ON queries.item <=> part.item AND queries.ts <=> part.ts AND queries.ds <=> part.ds
+                                     |""".stripMargin)
+    expected.show()
+
+    val diff = Comparison.sideBySide(computed, expected, List("item", "ts", "ds"))
+    val queriesBare =
+      tableUtils.sql(s"SELECT item, ts, ds from $itemQueriesTable where ds >= '$start' and ds <= '$dayAndMonthBefore'")
+    assertEquals(queriesBare.count(), computed.count())
+    if (diff.count() > 0) {
+      logger.debug(s"Diff count: ${diff.count()}")
+      logger.debug(s"diff result rows")
+      diff
+        .replaceWithReadableTime(Seq("ts", "a_user_unit_test_item_views_ts_max", "b_user_unit_test_item_views_ts_max"),
+                                 dropOriginal = true)
+        .show()
+    }
+    assertEquals(diff.count(), 0)
+  }
+
   @Test
   def testEventsEventsCumulative(): Unit = {
     val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
