@@ -596,4 +596,39 @@ class TableUtilsTest {
     assert(tableUtils.allPartitions(tableName).size == 4)
   }
 
+    @Test
+  def testInsertPartitionsRemoveColumnsLongDs(): Unit = {
+    val tableName = "db.test_table_long_2"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val columns1 = Array(
+      StructField("long_field", LongType),
+      StructField("int_field", IntType),
+      StructField("string_field", StringType)
+    )
+    val df1 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1
+          :+ StructField("double_field", DoubleType)
+          :+ StructField("ds", LongType)
+      ),
+      List(
+        Row(1L, 2, "3", 4.0, 20221001L)
+      )
+    )
+
+    val df2 = makeDf(
+      spark,
+      StructType(
+        tableName,
+        columns1 :+ StructField("ds", LongType)
+      ),
+      List(
+        Row(5L, 6, "7", 20221002L)
+      )
+    )
+    testInsertPartitions(tableName, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
+  }
+
 }
