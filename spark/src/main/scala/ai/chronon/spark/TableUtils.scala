@@ -990,16 +990,34 @@ case class TableUtils(sparkSession: SparkSession) {
     // notably, the unit test iceberg integration uses hadoop because of
     // https://github.com/apache/iceberg/issues/7847
     if (partitions.nonEmpty && tableExists(tableName)) {
-      val partitionSpecs = partitions
-        .map { partition =>
-          val mainSpec = s"$partitionColumn='$partition'"
-          val specs = mainSpec +: subPartitionFilters.map {
-            case (key, value) => s"${key}='${value}'"
-          }.toSeq
-          specs.mkString("PARTITION (", ",", ")")
-        }
-        .mkString(",")
-      val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
+      val dropSql = tableFormatProvider.readFormat(tableName) match {
+        // really this is Dsv1 vs Dsv2, not hive vs iceberg,
+        // but we break this way since only Iceberg is migrated to Dsv2
+        case Iceberg =>
+          // Build WHERE clause:  (ds='2024-05-01' OR ds='2024-05-02') [AND k='v' AND …]
+          val mainPred = partitions
+            .map(p => s"$partitionColumn='${p}'")
+            .mkString("(", " OR ", ")")
+
+          val extraPred = subPartitionFilters
+            .map { case (k, v) => s"$k='${v}'" }
+            .mkString(" AND ")
+
+          val where = Seq(mainPred, extraPred).filter(_.nonEmpty).mkString(" AND ")
+
+          s"DELETE FROM $tableName WHERE $where"
+        case _ =>
+          val partitionSpecs = partitions
+            .map { partition =>
+              val mainSpec = s"$partitionColumn='$partition'"
+              val specs = mainSpec +: subPartitionFilters.map {
+                case (key, value) => s"${key}='${value}'"
+              }.toSeq
+              specs.mkString("PARTITION (", ",", ")")
+            }
+            .mkString(",")
+          s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
+      }
       sql(dropSql)
     } else {
       logger.info(s"$tableName doesn't exist, please double check before drop partitions")

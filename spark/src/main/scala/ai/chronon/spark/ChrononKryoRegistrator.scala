@@ -147,8 +147,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$8",
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5",
       "scala.collection.immutable.ArraySeq$ofRef",
-      "org.apache.spark.sql.catalyst.expressions.GenericInternalRow",
-      "org.apache.iceberg.BaseFile$1"
+      "org.apache.spark.sql.catalyst.expressions.GenericInternalRow"
     )
     names.foreach(name => doRegister(name, kryo))
 
@@ -214,7 +213,8 @@ class ChrononIcebergKryoRegistrator extends ChrononKryoRegistrator {
       "org.apache.iceberg.SnapshotRef",
       "org.apache.iceberg.SnapshotRefType",
       "org.apache.iceberg.spark.source.SerializableTableWithSize$SerializableMetadataTableWithSize",
-      "org.apache.iceberg.MetadataTableType"
+      "org.apache.iceberg.MetadataTableType",
+      "org.apache.iceberg.BaseFile$1"
     )
     additionalIcebergNames.foreach(name => doRegister(name, kryo))
   }
