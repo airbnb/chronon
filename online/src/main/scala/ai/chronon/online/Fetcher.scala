@@ -234,6 +234,18 @@ class Fetcher(val kvStore: KVStore,
   }
 
   override def fetchJoin(requests: scala.collection.Seq[Request],
+                joinConf: Option[Join] = None): Future[scala.collection.Seq[Response]] = {
+
+    // Split requests into batches of size 32
+    val batchSize = 32 // make tunable
+
+    val batches = requests.grouped(batchSize).toSeq
+    val batchFutures: Seq[Future[Seq[Response]]] =
+      batches.map(batch => doFetchJoin(batch, joinConf))
+    Future.sequence(batchFutures).map(_.flatten)
+  }
+
+  private def doFetchJoin(requests: scala.collection.Seq[Request],
                          joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
     val internalResponsesF = super.fetchJoin(requests, joinConf)
