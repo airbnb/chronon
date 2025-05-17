@@ -379,7 +379,6 @@ case class TableUtils(sparkSession: SparkSession) {
 
   val minWriteShuffleParallelism = 200
 
-  sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
 
   def preAggRepartition(df: DataFrame): DataFrame =
