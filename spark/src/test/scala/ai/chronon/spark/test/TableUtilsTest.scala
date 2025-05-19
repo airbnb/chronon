@@ -32,8 +32,6 @@ import org.junit.Test
 import java.time.Instant
 import scala.util.{Random, Try}
 
-
-
 class SimpleAddUDF extends UDF {
   def evaluate(value: Int): Int = {
     value + 20
@@ -77,10 +75,12 @@ class TableUtilsTest {
       Seq(
         types.StructField("name", types.StringType, nullable = true),
         types.StructField("age", types.IntegerType, nullable = false),
-        types.StructField("address", types.StructType(Seq(
-          types.StructField("street", types.StringType, nullable = true),
-          types.StructField("city", types.StringType, nullable = true)
-        )))
+        types.StructField("address",
+                          types.StructType(
+                            Seq(
+                              types.StructField("street", types.StringType, nullable = true),
+                              types.StructField("city", types.StringType, nullable = true)
+                            )))
       )
     )
     val expectedFieldNames = Seq("name", "age", "address", "address.street", "address.city")
@@ -288,13 +288,11 @@ class TableUtilsTest {
          |""".stripMargin)
     assertEquals(updated.count(), 2)
     assertTrue(
-      updated
-        .collect()
-        .sameElements(
-          List(
-            Row(1L, 2, "2022-10-01", "2022-11-01"),
-            Row(3L, 8, "2022-10-05", "2022-11-03")
-          )))
+      updated.collect().toSet ==
+        Set(
+          Row(1L, 2, "2022-10-01", "2022-11-01"),
+          Row(3L, 8, "2022-10-05", "2022-11-03")
+        ))
   }
 
   @Test
@@ -342,7 +340,9 @@ class TableUtilsTest {
                       PartitionRange("2022-10-05", "2022-10-05")(tableUtils)))
   }
 
-  private def prepareTestDataWithSubPartitionsWithView(tableName: String, viewName: String, partitionColOpt: Option[String] = None): Unit = {
+  private def prepareTestDataWithSubPartitionsWithView(tableName: String,
+                                                       viewName: String,
+                                                       partitionColOpt: Option[String] = None): Unit = {
     prepareTestDataWithSubPartitions(tableName, partitionColOpt)
     tableUtils.sql(s"CREATE OR REPLACE VIEW $viewName AS SELECT * FROM $tableName")
   }
@@ -369,10 +369,10 @@ class TableUtilsTest {
         Row(3L, "2022-11-03", "2022-11-03")
       )
     )
-    tableUtils.insertPartitions(df1,
-                                tableName,
-                                partitionColumns = Seq(partitionColOpt.getOrElse(tableUtils.partitionColumn),
-                                  Constants.LabelPartitionColumn))
+    tableUtils.insertPartitions(
+      df1,
+      tableName,
+      partitionColumns = Seq(partitionColOpt.getOrElse(tableUtils.partitionColumn), Constants.LabelPartitionColumn))
 
   }
 
@@ -458,14 +458,16 @@ class TableUtilsTest {
     // test that chronon_archived flag exists and is set to true
     val tblProps = tableUtils.sql(s"SHOW TBLPROPERTIES $dbName.$archiveTableName").collect()
     val mapVal = readTblPropertiesMap(tblProps)
-    assert(mapVal.getOrElse("chronon_archived","false") == "true")
+    assert(mapVal.getOrElse("chronon_archived", "false") == "true")
 
     // test after a un-archive we can remove chronon_archived property
     tableUtils.sql(s"ALTER TABLE $dbName.$archiveTableName RENAME TO $tableName")
-    tableUtils.alterTableProperties(tableName, properties = Map("chronon_archived" -> "true"), unsetProperties = Seq("chronon_archived"))
+    tableUtils.alterTableProperties(tableName,
+                                    properties = Map("chronon_archived" -> "true"),
+                                    unsetProperties = Seq("chronon_archived"))
     val tblPropsAfter = tableUtils.sql(s"SHOW TBLPROPERTIES $tableName").collect()
     val mapValAfter = readTblPropertiesMap(tblPropsAfter)
-    assert(mapValAfter.getOrElse("chronon_archived","false") == "false")
+    assert(mapValAfter.getOrElse("chronon_archived", "false") == "false")
   }
 
   @Test
@@ -489,7 +491,8 @@ class TableUtilsTest {
     val tableName = s"$dbName.test_table"
     val viewName = s"$dbName.v_test_table"
     tableUtils.sql(s"CREATE DATABASE IF NOT EXISTS $dbName")
-    tableUtils.sql(s"CREATE TABLE IF NOT EXISTS $tableName (test INT, test_col STRING) PARTITIONED BY (ds STRING) STORED AS PARQUET")
+    tableUtils.sql(
+      s"CREATE TABLE IF NOT EXISTS $tableName (test INT, test_col STRING) PARTITIONED BY (ds STRING) STORED AS PARQUET")
     tableUtils.sql(s"CREATE OR REPLACE VIEW $viewName AS SELECT test, test_col FROM $tableName")
 
     val table_format = tableUtils.tableReadFormat(tableName)
@@ -514,7 +517,7 @@ class TableUtilsTest {
     val viewName = "db.v_test_table_with_sub_partition"
     val partitionCol = "custom_partition_date"
     prepareTestDataWithSubPartitionsWithView(tableName, viewName, partitionColOpt = Some(partitionCol))
-    val partitions = tableUtils.partitions(viewName, partitionColOpt=Some(partitionCol))
+    val partitions = tableUtils.partitions(viewName, partitionColOpt = Some(partitionCol))
     assertEquals(Seq("2022-11-01", "2022-11-02", "2022-11-03").sorted, partitions.sorted)
   }
 
@@ -524,7 +527,9 @@ class TableUtilsTest {
     val viewName = "db.v_test_table_with_sub_partition"
     val partitionCol = "custom_partition_date"
     prepareTestDataWithSubPartitionsWithView(tableName, viewName, partitionColOpt = Some(partitionCol))
-    val partitions = tableUtils.partitions(viewName, subPartitionsFilter=Map("label_ds" -> "2022-11-02"), partitionColOpt=Some(partitionCol))
+    val partitions = tableUtils.partitions(viewName,
+                                           subPartitionsFilter = Map("label_ds" -> "2022-11-02"),
+                                           partitionColOpt = Some(partitionCol))
     assertEquals(Seq("2022-11-01", "2022-11-02").sorted, partitions.sorted)
   }
 
@@ -563,10 +568,10 @@ class TableUtilsTest {
     )
 
     val rows = List(
-        Row(20220101L, 1, "event1", "2022-01-01", 4), // 2022-01-01 with hr=1
-        Row(20220102L, 2, "event2", "2022-01-02", 2), // 2022-01-02 with hr=2
-        Row(20220103L, 10, "event1", "2022-01-03", 9), // 2022-01-03 with hr=10
-        Row(20220104L, 12, "event1", "20224-01-04", 12) // 2022-01-04 with hr=12
+      Row(20220101L, 1, "event1", "2022-01-01", 4), // 2022-01-01 with hr=1
+      Row(20220102L, 2, "event2", "2022-01-02", 2), // 2022-01-02 with hr=2
+      Row(20220103L, 10, "event1", "2022-01-03", 9), // 2022-01-03 with hr=10
+      Row(20220104L, 12, "event1", "20224-01-04", 12) // 2022-01-04 with hr=12
     )
 
     val df1 = makeDf(
@@ -578,17 +583,14 @@ class TableUtilsTest {
       rows
     )
     val partitionColumns = Seq("dateint", "hour", "event_type")
-    tableUtils.insertPartitions(df1,
-                            tableName,
-                            partitionColumns = partitionColumns,
-                            )
+    tableUtils.insertPartitions(df1, tableName, partitionColumns = partitionColumns)
     assert(tableUtils.tableExists(tableName))
     val partitions = tableUtils.partitions(tableName, Map.empty, partitionColOpt = Some("dateint"))
     assert(partitions.size == 4)
     assert(tableUtils.allPartitions(tableName).size == 4)
   }
 
-    @Test
+  @Test
   def testInsertPartitionsRemoveColumnsLongDs(): Unit = {
     val tableName = "db.test_table_long_2"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
