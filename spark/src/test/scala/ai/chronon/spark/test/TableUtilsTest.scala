@@ -556,7 +556,7 @@ class TableUtilsTest {
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
     val structFields = Array(
       StructField("dateint", LongType),
-      StructField("hr", IntType),
+      StructField("hour", IntType),
       StructField("event_type", StringType),
       StructField("label_ds", StringType),
       StructField("feature_value", IntType)
@@ -577,7 +577,7 @@ class TableUtilsTest {
       ),
       rows
     )
-    val partitionColumns = Seq("dateint", "hr", "event_type")
+    val partitionColumns = Seq("dateint", "hour", "event_type")
     tableUtils.insertPartitions(df1,
                             tableName,
                             partitionColumns = partitionColumns,
