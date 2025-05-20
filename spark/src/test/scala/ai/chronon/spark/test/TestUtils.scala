@@ -25,7 +25,32 @@ import ai.chronon.spark.TableUtils
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
-import scala.util.ScalaJavaConversions.JListOps
+import scala.util.ScalaJavaConversions.{JListOps, ListOps}
+
+case class GroupByTestSuite(
+                             name: String,
+                             groupByConf: GroupBy,
+                             groupByData: DataFrame
+                           )
+
+case class JoinTestSuite(
+                          joinConf: Join,
+                          groupBys: Seq[GroupByTestSuite],
+                          fetchExpectations: (Map[String, AnyRef], Map[String, AnyRef])
+                        )
+
+object JoinTestSuite {
+
+  def apply(joinConf: Join, groupBys: Seq[GroupByTestSuite]): JoinTestSuite = {
+    val suite = JoinTestSuite(joinConf, groupBys)
+    assert(
+      groupBys.map(_.groupByConf.metaData.name) ==
+        joinConf.joinParts.toScala
+          .map(_.groupBy.metaData.name)
+    )
+    suite
+  }
+}
 
 object TestUtils {
   def createViewsGroupBy(namespace: String,

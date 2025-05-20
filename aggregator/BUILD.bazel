@@ -57,13 +57,13 @@ scala_library(
            ]),
 )
 
-scala_test_suite(
+scala_junit_test_suite(
     name = "test",
     srcs = glob(["src/test/scala/ai/chronon/aggregator/test/*.scala"]),
+    suffixes = ["Test"],
     visibility = ["//visibility:public"],
     deps = [
                ":aggregator",
-               ":test-lib",
                "//api:api-lib",
                "//api:api-models",
                maven_artifact("junit:junit"),

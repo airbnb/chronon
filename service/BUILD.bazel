@@ -24,10 +24,13 @@ java_library(
     ],
 )
 
-scala_test_suite(
+scala_junit_test_suite(
     name = "test",
     srcs = glob(["src/test/java/ai/chronon/service/handlers/*.java"]),
-    visibility = ["//visibility:public"],
+    strip_prefix = "src/test/java/ai/chronon/service/handlers",
+    # prefixes = ["ai.chronon.service.handlers"],
+    # suffixes = ["Test"],
+    visibility = ["//visibility:private"],
     deps = [
         ":service",
         "//online",
@@ -38,5 +41,6 @@ scala_test_suite(
         maven_artifact("io.vertx:vertx-unit"),
         maven_artifact("io.vertx:vertx-core"),
         maven_artifact("io.vertx:vertx-web"),
+        maven_artifact("io.vertx:vertx-codegen"),
     ],
 )
