@@ -43,6 +43,10 @@ mvn_settings.xml
 
 # Release folder
 releases
+target
 
 # bazel
-bazel-*
+bazel-bin
+bazel-chronon
+bazel-out
+bazel-testlogs

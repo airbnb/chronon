@@ -71,10 +71,6 @@ SPARK_LIBS_PROVIDED = [
         name = "jackson-databind",
         org = "com.fasterxml.jackson.core",
     ),
-    scala_jar(
-        name = "jackson-module-scala",
-        org = "com.fasterxml.jackson.module",
-    ),
     jar(
         name = "kryo_shaded",
         org = "com.esotericsoftware",
@@ -85,10 +81,6 @@ SPARK_LIBS_PROVIDED = [
     ),
     scala_jar(
         name = "json4s-jackson",
-        org = "org.json4s",
-    ),
-    scala_jar(
-        name = "json4s-core",
         org = "org.json4s",
     ),
     scala_jar(
@@ -134,22 +126,22 @@ MAVEN_LIBS_PROVIDED = [
         name = "jackson-databind",
         org = "com.fasterxml.jackson.core",
     ),
-    scala_jar(
-        name = "json4s-jackson",
-        org = "org.json4s",
-    ),
-    scala_jar(
-        name = "json4s-core",
-        org = "org.json4s",
-    ),
-    scala_jar(
-        name = "json4s-ast",
-        org = "org.json4s",
-    ),
-    scala_jar(
-        name = "json4s-scalap",
-        org = "org.json4s",
-    ),
+    #    scala_jar(
+    #        name = "json4s-jackson",
+    #        org = "org.json4s",
+    #    ),
+    #    scala_jar(
+    #        name = "json4s-core",
+    #        org = "org.json4s",
+    #    ),
+    #    scala_jar(
+    #        name = "json4s-ast",
+    #        org = "org.json4s",
+    #    ),
+    #    scala_jar(
+    #        name = "json4s-scalap",
+    #        org = "org.json4s",
+    #    ),
     jar(
         name = "guava",
         org = "com.google.guava",

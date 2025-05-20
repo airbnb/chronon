@@ -45,7 +45,6 @@ spark_3_1_repo = repo(name = "spark_3_1", artifacts = [
         "org.json4s:json4s-core_2.12",
         "org.json4s:json4s-jackson_2.12",
     ]),
-<<<<<<< HEAD
     versioned_artifacts("2.10.0", [
         "com.fasterxml.jackson.core:jackson-core",
         "com.fasterxml.jackson.core:jackson-annotations",
@@ -91,7 +90,6 @@ spark_3_2_repo = repo(
         "org.apache.avro:avro:1.8.2",
         "org.apache.avro:avro-mapred:1.8.2",
         "org.apache.hive:hive-metastore:2.3.9",
-
         "org.apache.hive:hive-exec:3.1.2",
         versioned_artifacts("3.7.0-M11", [
             "org.json4s:json4s-ast_2.12",
@@ -152,13 +150,6 @@ spark_3_5_repo = repo(
             "org.json4s:json4s-ast_2.12",
             "org.json4s:json4s-core_2.12",
             "org.json4s:json4s-jackson_2.12",
-        ]),
-        versioned_artifacts("2.12.5", [
-            "com.fasterxml.jackson.module:jackson-module-scala_2.12",
-            "com.fasterxml.jackson.module:jackson-module-scala_2.13",
-            "com.fasterxml.jackson.core:jackson-core",
-            "com.fasterxml.jackson.core:jackson-annotations",
-            "com.fasterxml.jackson.core:jackson-databind",
         ]),
         "org.codehaus.janino:janino:3.1.9",
         "org.codehaus.janino:commons-compiler:3.1.9",
