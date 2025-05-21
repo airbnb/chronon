@@ -16,16 +16,16 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, JoinPart, TimeUnit, Window}
-import ai.chronon.spark.Extensions._
 import ai.chronon.online.Metrics
+import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.util.sketch.BloomFilter
+import org.slf4j.LoggerFactory
 
 import scala.collection.JavaConverters._
 import scala.collection.Seq
@@ -255,17 +255,11 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
       leftDf
     }
 
-    // apply key-renaming to key columns
-    val keyRenamedRight = joinPart.rightToLeft.foldLeft(rightDf) {
-      case (rightDf, (rightKey, leftKey)) => rightDf.withColumnRenamed(rightKey, leftKey)
-    }
-
-    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
-                                                                     tableUtils.partitionColumn,
-                                                                     Constants.TimePartitionColumn,
-                                                                     Constants.LabelPartitionColumn)
-    val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
-    val prefixedRight = keyRenamedRight.prefixColumnNames(joinPart.fullPrefix, valueColumns)
+    val renamedRightDf = rightDf.renameRightColumnsForJoin(joinPart,
+                                                           Set(Constants.TimeColumn,
+                                                               tableUtils.partitionColumn,
+                                                               Constants.TimePartitionColumn,
+                                                               Constants.LabelPartitionColumn))
 
     val partName = joinPart.groupBy.metaData.name
 
@@ -274,11 +268,11 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
                |${updatedLeftDf.schema.pretty}
                |
                |Right Schema:
-               |${prefixedRight.schema.pretty}
+               |${renamedRightDf.schema.pretty}
                |
                |""".stripMargin)
 
-    updatedLeftDf.validateJoinKeys(prefixedRight, partLeftKeys)
-    updatedLeftDf.join(prefixedRight, partLeftKeys, "left_outer")
+    updatedLeftDf.validateJoinKeys(renamedRightDf, partLeftKeys)
+    updatedLeftDf.join(renamedRightDf, partLeftKeys, "left_outer")
   }
 }
