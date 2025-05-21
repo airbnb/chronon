@@ -83,7 +83,7 @@ object Extensions {
         .groupBy(col(TableUtils(dataFrame.sparkSession).partitionColumn))
         .count()
         .collect()
-        .map(row => row.getString(0) -> row.getLong(1))
+        .map(row => row.get(0).toString -> row.getLong(1))
         .toMap
       DfWithStats(dataFrame, partitionCounts)
     }
