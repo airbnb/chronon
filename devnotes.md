@@ -46,8 +46,15 @@ This project supports both Bazel and SBT. Bazel's hermetic nature simplifies set
 ### Bazel Setup
 
 1. Bazel is hermetic and does not require additional environment setup, except for the installation of Thrift@0.13.
+2. Install bazelisk:
 
-2. Ensure you have a `WORKSPACE` file and `BUILD` files in the appropriate directories.
+   - For macOS:
+     ```shell
+     brew install bazelisk
+     ```
+
+   - For Linux:
+     Follow the instructions on the [Bazelisk GitHub page](
 
 3. Common Bazel Commands:
     - Build all targets:
