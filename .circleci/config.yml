@@ -10,6 +10,11 @@ executors:
         working_directory: /chronon
         docker:
             - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
+    docker_baseimg_executor_xxlarge:
+      resource_class: 2xlarge
+      working_directory: /chronon
+      docker:
+        - image: houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2
 
 jobs:
     "Pull Docker Image":
@@ -27,7 +32,7 @@ jobs:
                     docker pull houpy0829/chronon-ci:base--f87f50dc520f7a73894ae024eb78bd305d5b08e2 || true
 
     "Scala 12 -- Spark 3 Tests":
-        executor: docker_baseimg_executor
+        executor: docker_baseimg_executor_xxlarge
         steps:
             - checkout
             - run:
@@ -62,7 +67,7 @@ jobs:
                   command: |
                       conda activate chronon_py
                       # Increase if we see OOM.
-                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=8G -Xmx8G -Xms4G"
                       sbt "++ 2.13.6 test"
             - store_test_results:
                   path: /chronon/spark/target/test-reports

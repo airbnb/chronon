@@ -260,6 +260,8 @@ struct MetaData {
     14: optional bool historicalBackfill
     // Optional expected deprecation date
     15: optional string deprecationDate
+    // Description for the object holding this metadata
+    16: optional string description
 }
 
 // Equivalent to a FeatureSet in chronon terms
@@ -298,6 +300,7 @@ struct ExternalPart {
 struct Derivation {
     1: optional string name
     2: optional string expression
+    3: optional MetaData metaData
 }
 
 // A Temporal join - with a root source, with multiple groupby's.

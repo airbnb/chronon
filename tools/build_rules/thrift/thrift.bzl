@@ -16,6 +16,8 @@ def _thrift_java_library_impl(ctx):
 
         # Command for generating Java from Thrift
         command = """
+        export PATH="$JAVA_HOME/bin:$PATH"
+
         mkdir -p {gen_java_dir} && \
         {thrift_path} -strict -gen java -out {gen_java_dir} {src} && \
         find {gen_java_dir} -exec touch -t 198001010000 {{}} + && \
@@ -42,6 +44,10 @@ def _thrift_java_library_impl(ctx):
         inputs = ctx.files.srcs,
         command = combined_command,
         progress_message = "Generating Java code from {} Thrift files".format(len(ctx.files.srcs)),
+        env = {
+            "JAVA_HOME": ctx.attr._jdk[java_common.JavaRuntimeInfo].java_home,
+        },
+        tools = [ctx.attr._jdk[java_common.JavaRuntimeInfo].files],
     )
 
     return [DefaultInfo(files = depset(outputs))]
@@ -55,6 +61,10 @@ _thrift_java_library = rule(
             doc = "List of .thrift source files",
         ),
         "thrift_binary": attr.string(),
+        "_jdk": attr.label(
+            default = Label("@bazel_tools//tools/jdk:current_java_runtime"),
+            providers = [java_common.JavaRuntimeInfo],
+        ),
     },
 )
 
@@ -118,6 +128,10 @@ def _thrift_python_library_impl(ctx):
         inputs = ctx.files.srcs,
         command = combined_command,
         progress_message = "Generating Python code from Thrift files: %s" % ", ".join([src.path for src in ctx.files.srcs]),
+        env = {
+            "JAVA_HOME": ctx.attr._jdk[java_common.JavaRuntimeInfo].java_home,
+        },
+        tools = [ctx.attr._jdk[java_common.JavaRuntimeInfo].files],
     )
 
     return [DefaultInfo(files = depset(all_outputs))]
@@ -128,6 +142,10 @@ _thrift_python_library_gen = rule(
         "srcs": attr.label_list(allow_files = [".thrift"]),
         "thrift_binary": attr.string(),
         "namespace": attr.string(),
+        "_jdk": attr.label(
+            default = Label("@bazel_tools//tools/jdk:current_java_runtime"),
+            providers = [java_common.JavaRuntimeInfo],
+        ),
     },
 )
 
