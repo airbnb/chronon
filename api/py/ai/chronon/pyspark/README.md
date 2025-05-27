@@ -111,9 +111,9 @@ This interface defines operations that vary by platform (Notebooks, Jupyter, etc
 
 Concrete implementations for specific notebook environments:
 
-- **NotebooksPlatform**: Implements platform-specific operations for Notebooks
-- **NotebooksGroupBy**: Executes GroupBy objects in Notebooks
-- **NotebooksJoin**: Executes Join objects in Notebooks
+- **JupyterPlatform**: Implements platform-specific operations for Notebooks
+- **JupyterGroupBy**: Executes GroupBy objects in Notebooks
+- **JupyterJoin**: Executes Join objects in Notebooks
 
 ```
 ┌─────────────────────────┐
@@ -143,7 +143,7 @@ Concrete implementations for specific notebook environments:
          │                        │
          │                        │
 ┌────────▼──────────┐    ┌────────▼──────────┐
-│ NotebooksGroupBy │    │  NotebooksJoin   │
+│ JupyterGroupBy    │    │  JupyterJoin      │
 ├───────────────────┤    ├───────────────────┤
 │                   │    │                   │
 ├───────────────────┤    ├───────────────────┤
@@ -166,21 +166,18 @@ Concrete implementations for specific notebook environments:
             │
             │
 ┌───────────▼────────────────┐
-│  NotebooksPlatform        │
-├────────────────────────────┤
-│ - dbutils: DBUtils         │
+│  JupyterPlatform           │
 ├────────────────────────────┤
 │ + register_udfs()          │
 │ + get_executable_join_cls()│
 │ + start_log_capture()      │
 │ + end_log_capture()        │
-│ + get_notebooks_user()    │
 └────────────────────────────┘
 ```
 
 ## Flow of Execution
 
-When a user calls a method like `NotebooksGroupBy(group_by, py_spark_session).run()`, the following sequence occurs:
+When a user calls a method like `JupyterGroupBy(group_by, py_spark_session).run()`, the following sequence occurs:
 
 1. **Object Preparation**:
     - The Python thrift object (GroupBy, Join) is copied and updated with appropriate dates (This interface is meant to be used to run prototypes over smaller date ranges and not full backfills)
@@ -295,7 +292,7 @@ Here's a minimal example of setting up and using the Chronon Python interface in
 ```python
 # Import the required modules
 from pyspark.sql import SparkSession
-from ai.chronon.pyspark.notebooks import NotebooksGroupBy, NotebooksJoin
+from ai.chronon.pyspark.jupyter_platform import JupyterGroupBy, JupyterJoin
 from ai.chronon.api.ttypes import GroupBy, Join
 from ai.chronon.group_by import Aggregation, Operation, Window, TimeUnit
 
@@ -303,7 +300,7 @@ from ai.chronon.group_by import Aggregation, Operation, Window, TimeUnit
 my_group_by = GroupBy(...)
 
 # Create an executable
-executable = NotebooksGroupBy(my_group_by, spark)
+executable = JupyterGroupBy(my_group_by, spark)
 
 # Run the executable
 result_df = executable.run(start_date='20250101', end_date='20250107')

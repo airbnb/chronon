@@ -1,23 +1,7 @@
 from __future__ import annotations
 
-try:
-    from pyspark.dbutils import DBUtils
-except ImportError:
-    class DBUtils:
-        def __init__(self, spark):
-            print("Mock DBUtils: Notebooks-specific features will not work.")
-        def fs(self):
-            return self
-        def ls(self, path):
-            print(f"Mock ls called on path: {path}")
-            return []
-        def mkdirs(self, path):
-            print(f"Mock mkdirs called on path: {path}")
-        def put(self, path, content, overwrite):
-            print(f"Mock put called on path: {path} with content and overwrite={overwrite}")
+from typing import cast
 
-
-from pyspark.dbutils import DBUtils
 from pyspark.sql import SparkSession
 from typing_extensions import override
 
@@ -34,7 +18,7 @@ from ai.chronon.pyspark.executables import (
 )
 
 
-class NotebooksPlatform(PlatformInterface):
+class JupyterPlatform(PlatformInterface):
     """
     Notebooks-specific implementation of the platform interface.
     """
@@ -47,7 +31,6 @@ class NotebooksPlatform(PlatformInterface):
             spark: The SparkSession to use
         """
         super().__init__(spark)
-        self.dbutils: DBUtils = DBUtils(self.spark)
         self.register_udfs()
 
     @override
@@ -58,7 +41,7 @@ class NotebooksPlatform(PlatformInterface):
     @override
     def get_executable_join_cls(self) -> type[JoinExecutable]:
         """Get the Notebooks-specific join executable class."""
-        return NotebooksJoin
+        return JupyterJoin
 
     @override
     def start_log_capture(self, job_name: str) -> tuple[int, str]:
@@ -71,8 +54,7 @@ class NotebooksPlatform(PlatformInterface):
         Returns:
             A tuple of (start_position, job_name)
         """
-        # return (os.path.getsize(NOTEBOOKS_JVM_LOG_FILE), job_name) --> Commented by odincol
-        return (0, job_name)                                        # --> Refactored by odincol
+        pass
 
     @override
     def end_log_capture(self, capture_token: tuple[int, str]) -> None:
@@ -82,27 +64,10 @@ class NotebooksPlatform(PlatformInterface):
         Args:
             capture_token: The token returned by start_log_capture
         """
-        start_position, job_name = capture_token
-
-        print("\n\n", "*" * 10, f" BEGIN LOGS FOR {job_name} ", "*" * 10)
-        # with open(NOTEBOOKS_JVM_LOG_FILE, "r") as file_handler:   --> Commented by odincol
-        #     _ = file_handler.seek(start_position)
-        #     print(file_handler.read())
-        print("*" * 10, f" END LOGS FOR {job_name} ", "*" * 10, "\n\n")
-
-    def get_notebooks_user(self) -> str:
-        """
-        Get the current Notebooks user.
-
-        Returns:
-            The username of the current Notebooks user
-        """
-        #user_email = self.dbutils.notebook.entry_point.getDbutils().notebook( --> Commented by odincol
-        #).getContext().userName().get()
-        return "" #user_email.split('@')[0].lower()                          # --> Refactored by odincol
+        pass
 
 
-class NotebooksGroupBy(GroupByExecutable):
+class JupyterGroupBy(GroupByExecutable):
     """Class for executing GroupBy objects in Notebooks."""
 
     def __init__(self, group_by: GroupBy, spark_session: SparkSession):
@@ -118,7 +83,6 @@ class NotebooksGroupBy(GroupByExecutable):
         self.obj: GroupBy = self.platform.set_metadata(
             obj=self.obj,
             mod_prefix=NOTEBOOKS_ROOT_DIR_FOR_IMPORTED_FEATURES,
-            name_prefix=cast(NotebooksPlatform, self.platform).get_notebooks_user(),
             output_namespace=NOTEBOOKS_OUTPUT_NAMESPACE
         )
 
@@ -130,10 +94,10 @@ class NotebooksGroupBy(GroupByExecutable):
         Returns:
             The Notebooks platform interface
         """
-        return NotebooksPlatform(self.spark)
+        return JupyterPlatform(self.spark)
 
 
-class NotebooksJoin(JoinExecutable):
+class JupyterJoin(JoinExecutable):
     """Class for executing Join objects in Notebooks."""
 
     def __init__(self, join: Join, spark_session: SparkSession):
@@ -149,7 +113,6 @@ class NotebooksJoin(JoinExecutable):
         self.obj: Join = self.platform.set_metadata(
             obj=self.obj,
             mod_prefix=NOTEBOOKS_ROOT_DIR_FOR_IMPORTED_FEATURES,
-            name_prefix=cast(NotebooksPlatform, self.platform).get_notebooks_user(),
             output_namespace=NOTEBOOKS_OUTPUT_NAMESPACE
         )
 
@@ -161,4 +124,4 @@ class NotebooksJoin(JoinExecutable):
         Returns:
             The Notebooks platform interface
         """
-        return NotebooksPlatform(self.spark)
+        return JupyterPlatform(self.spark)

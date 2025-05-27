@@ -14,6 +14,6 @@ PARTITION_COLUMN_FORMAT: str = '%Y%m%d'
 # --------------------------------------------------------------------------
 # Notebooks Constants
 # --------------------------------------------------------------------------
-NOTEBOOKS_OUTPUT_NAMESPACE: Optional[str] = None
-NOTEBOOKS_JVM_LOG_FILE: str = "/notebooks/chronon_logfile.log"
-NOTEBOOKS_ROOT_DIR_FOR_IMPORTED_FEATURES: str = "src"
+JUPYTER_OUTPUT_NAMESPACE: Optional[str] = None
+JUPYTER_JVM_LOG_FILE: str = "/jupyter/chronon_logfile.log"
+JUPYTER_ROOT_DIR_FOR_IMPORTED_FEATURES: str = "src"
