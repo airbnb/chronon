@@ -29,7 +29,7 @@ spark_3_1_repo = repo(name = "spark_3_1", artifacts = [
     "org.apache.curator:apache-curator:2.12.0",
     "org.apache.datasketches:datasketches-java:2.0.0",
     "org.apache.datasketches:datasketches-memory:1.3.0",
-    "org.apache.hive:hive-exec:2.3.9",
+    "org.apache.hive:hive-exec:2.3.7",
     "org.apache.kafka:kafka_2.12:2.6.3",
     versioned_artifacts("3.1.1", [
         "org.apache.spark:spark-streaming_2.12",

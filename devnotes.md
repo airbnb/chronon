@@ -53,9 +53,6 @@ This project supports both Bazel and SBT. Bazel's hermetic nature simplifies set
      brew install bazelisk
      ```
 
-   - For Linux:
-     Follow the instructions on the [Bazelisk GitHub page](
-
 3. Common Bazel Commands:
     - Build all targets:
       ```shell
