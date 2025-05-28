@@ -239,15 +239,9 @@ case object Iceberg extends Format {
   override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
       sparkSession: SparkSession): Seq[Map[String, String]] = {
     sparkSession.sqlContext
-      .sql(s"SELECT partition FROM $tableName" ++ ".partitions")
+      .sql(s"SHOW PARTITIONS $tableName")
       .collect()
-      .map { row =>
-        val partitionStruct = row.getStruct(0)
-        partitionStruct.schema.fieldNames.zipWithIndex.map {
-          case (fieldName, idx) =>
-            fieldName -> partitionStruct.get(idx).toString
-        }.toMap
-      }
+      .map(row => parseHivePartition(row.getString(0)))
   }
 
   private def getIcebergPartitions(tableName: String,
