@@ -13,6 +13,7 @@ lazy val spark3_1_1 = "3.1.1"
 lazy val spark3_2_1 = "3.2.1"
 lazy val spark3_5_3 = "3.5.3"
 lazy val tmp_warehouse = "/tmp/chronon/"
+lazy val icebergVersion = "1.1.0"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
@@ -188,6 +189,16 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     Some("0.6.1"),
     Some("1.0.1"),
     Some("2.0.2")
+  ),
+  //3.2 is the minimum version for iceberg
+  // due to INSERT_INTO support without specifying iceberg format
+  "iceberg32" -> VersionDependency(
+    Seq(
+      "org.apache.iceberg" %% "iceberg-spark-runtime-3.2",
+    ),
+    None,
+    None,
+    Some(icebergVersion),
   ),
   "jackson" -> VersionDependency(
     Seq(
@@ -415,7 +426,7 @@ lazy val spark_uber = (project in file("spark"))
     libraryDependencies ++= (if (use_spark_3_5.value) 
       fromMatrix(scalaVersion.value, "jackson", "spark-all-3-5/provided", "delta-core/provided")
     else
-      fromMatrix(scalaVersion.value, "jackson", "spark-all/provided", "delta-core/provided"))
+      fromMatrix(scalaVersion.value, "jackson", "spark-all/provided", "delta-core/provided", "iceberg32/provided")),
   )
 
 lazy val spark_embedded = (project in file("spark"))
@@ -427,7 +438,7 @@ lazy val spark_embedded = (project in file("spark"))
     libraryDependencies ++= (if (use_spark_3_5.value) 
       fromMatrix(scalaVersion.value, "spark-all-3-5", "delta-core")
     else
-      fromMatrix(scalaVersion.value, "spark-all", "delta-core")),
+      fromMatrix(scalaVersion.value, "spark-all", "delta-core", "iceberg32")),
     target := target.value.toPath.resolveSibling("target-embedded").toFile,
     Test / test := {}
   )
