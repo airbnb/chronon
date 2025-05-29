@@ -20,6 +20,7 @@ import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api._
 import junit.framework.TestCase
 import org.junit.Assert._
+import org.junit.Test
 
 import java.util
 import scala.collection.JavaConverters._
@@ -49,6 +50,7 @@ object TestRow {
 }
 
 class RowAggregatorTest extends TestCase {
+  @Test
   def testUpdate(): Unit = {
     val rows = List(
       TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), Map("A" -> 1, "B" -> 2)),

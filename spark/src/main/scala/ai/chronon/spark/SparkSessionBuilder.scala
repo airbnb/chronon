@@ -58,7 +58,12 @@ object SparkSessionBuilder {
 
     if (local) {
       //required to run spark locally with hive support enabled - for sbt test
-      System.setSecurityManager(null)
+      try {
+        System.setSecurityManager(null)
+      } catch {
+        case (t: java.lang.SecurityException) if t.getMessage.contains("GoogleTestSecurityManager") =>
+          // Running on Bazel, allow it.
+      }
     }
     val userName = Properties.userName
     val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
@@ -113,6 +118,7 @@ object SparkSessionBuilder {
         .config("spark.local.dir", s"/tmp/$userName/$name")
         .config("spark.sql.warehouse.dir", s"$warehouseDir/data")
         .config("spark.driver.bindAddress", "127.0.0.1")
+        .config("spark.ui.enabled", "false")
     } else {
       // hive jars need to be available on classpath - no needed for local testing
       baseBuilder
@@ -140,6 +146,7 @@ object SparkSessionBuilder {
         .config("spark.ui.enabled", "false")
         .config("spark.local.dir", s"/tmp/$userName/chronon-spark-streaming")
         .config("spark.kryo.registrationRequired", "true")
+        .config("spark.ui.enabled", "false")
     } else {
       baseBuilder
     }

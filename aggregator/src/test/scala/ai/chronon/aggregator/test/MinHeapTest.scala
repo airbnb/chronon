@@ -19,11 +19,14 @@ package ai.chronon.aggregator.test
 import ai.chronon.aggregator.base.MinHeap
 import junit.framework.TestCase
 import org.junit.Assert._
+import org.junit.Test
 
 import java.util
 import scala.collection.JavaConverters._
 
 class MinHeapTest extends TestCase {
+
+  @Test
   def testInserts(): Unit = {
     val mh = new MinHeap[Int](maxSize = 4, Ordering.Int)
 
