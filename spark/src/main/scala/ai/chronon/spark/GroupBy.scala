@@ -546,12 +546,23 @@ object GroupBy {
 
       df
     }
+    //make it parameterized
+    val incrementalAgg = true
+    if (incrementalAgg) {
+      new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
+        keyColumns,
+        nullFiltered,
+        mutationDfFn,
+        finalize = false)
+    } else {
+      new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
+        keyColumns,
+        nullFiltered,
+        mutationDfFn,
+        finalize = finalize)
 
-    new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
-                keyColumns,
-                nullFiltered,
-                mutationDfFn,
-                finalize = finalize)
+    }
+
   }
 
   def getIntersectedRange(source: api.Source,
