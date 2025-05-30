@@ -1,6 +1,7 @@
 # Chronon Python Interface for PySpark Environments
 
 ## Table of Contents
+
 1. [Introduction](#introduction)
 2. [Architecture Overview](#architecture-overview)
 3. [Core Components](#core-components)
@@ -10,9 +11,13 @@
 
 ## Introduction
 
-The Chronon PySpark Interface provides a clean, object-oriented framework for executing Chronon feature definitions directly within a PySpark environment, like Notebooks Notebooks. This interface streamlines the developer experience by removing the need to switch between multiple tools, allowing rapid prototyping and iteration of Chronon feature engineering workflows.
+The Chronon PySpark Interface provides a clean, object-oriented framework for executing Chronon feature definitions
+directly within a PySpark environment, like Notebooks Notebooks. This interface streamlines the developer experience by
+removing the need to switch between multiple tools, allowing rapid prototyping and iteration of Chronon feature
+engineering workflows.
 
 This library enables users to:
+
 - Run and Analyze GroupBy and Join operations in a type-safe manner
 - Execute feature computations within notebook environments like Notebooks
 - Implement platform-specific behavior while preserving a consistent interface
@@ -62,9 +67,11 @@ Python Environment                  |                 JVM Environment
 
 - **Py4J**: Enables Python code to dynamically access Java objects, methods, and fields across the JVM boundary
 - **PySpark**: Uses Py4J to communicate with the Spark JVM, translating Python calls into Spark's Java/Scala APIs
-- **Thrift Objects**: Chronon features defined as Python thrift objects are converted to Java thrift objects for execution
+- **Thrift Objects**: Chronon features defined as Python thrift objects are converted to Java thrift objects for
+  execution
 
-This design ensures that Python users can access the full power of Chronon's JVM-based computation engine all from a centralized Python environment.
+This design ensures that Python users can access the full power of Chronon's JVM-based computation engine all from a
+centralized Python environment.
 
 ## Core Components
 
@@ -105,7 +112,8 @@ class PlatformInterface(ABC):
     """
 ```
 
-This interface defines operations that vary by platform (Notebooks, Jupyter, etc.) and must be implemented by platform-specific classes.
+This interface defines operations that vary by platform (Notebooks, Jupyter, etc.) and must be implemented by
+platform-specific classes.
 
 ### Platform-Specific Implementations
 
@@ -180,7 +188,8 @@ Concrete implementations for specific notebook environments:
 When a user calls a method like `JupyterGroupBy(group_by, py_spark_session).run()`, the following sequence occurs:
 
 1. **Object Preparation**:
-    - The Python thrift object (GroupBy, Join) is copied and updated with appropriate dates (This interface is meant to be used to run prototypes over smaller date ranges and not full backfills)
+    - The Python thrift object (GroupBy, Join) is copied and updated with appropriate dates (This interface is meant to
+      be used to run prototypes over smaller date ranges and not full backfills)
     - Underlying join sources are executed if needed
 
 2. **JVM Conversion**:
@@ -212,24 +221,24 @@ class JupyterPlatform(PlatformInterface):
     def __init__(self, spark: SparkSession):
         super().__init__(spark)
         # Initialize Jupyter-specific components
-    
+
     @override
     def register_udfs(self) -> None:
         # Register any necessary UDFs for Jupyter
         # Recall that UDFs are registered to the shared spark-sql engine
         # So you can register python and or scala udfs and use them on both spark sessions
         pass
-    
+
     @override
     def get_executable_join_cls(self) -> type[JoinExecutable]:
         # Return the Jupyter-specific join executable class
         return JupyterJoin
-        
+
     @override
     def start_log_capture(self, job_name: str) -> Any:
         # Start capturing logs in Jupyter
         pass
-    
+
     @override
     def end_log_capture(self, capture_token: Any) -> None:
         # End log capturing and print the logs in Jupyter
@@ -252,6 +261,7 @@ class JupyterGroupBy(GroupByExecutable):
     @override
     def get_platform(self) -> PlatformInterface:
         return JupyterPlatform(self.spark)
+
 
 class JupyterJoin(JoinExecutable):
     def __init__(self, join: Join, spark_session: SparkSession):
@@ -283,11 +293,13 @@ When implementing a platform interface, pay special attention to these methods:
 2. **Python Dependencies**:
     - pyspark (tested on both 3.1 and 3.3)
 
-3. **Log File**: You will need to make sure that your Chronon JVM logs are writting to single file. This is generally platform specific.
+3. **Log File**: You will need to make sure that your Chronon JVM logs are writting to single file. This is generally
+   platform specific.
 
 ### Example Setup
 
-Here's a minimal example of setting up and using the Chronon Python interface in a Notebooks notebook. It assumes that you have already included the necessary jars in your cluster dependencies.
+Here's a minimal example of setting up and using the Chronon Python interface in a Notebooks notebook. It assumes that
+you have already included the necessary jars in your cluster dependencies.
 
 ```python
 # Import the required modules

@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-from typing import cast
-
-from pyspark.sql import SparkSession
-from typing_extensions import override
-
 from ai.chronon.api.ttypes import GroupBy, Join
 from ai.chronon.pyspark.constants import (
-    # NOTEBOOKS_JVM_LOG_FILE, --> Commented by ONUR
-    NOTEBOOKS_OUTPUT_NAMESPACE,
-    NOTEBOOKS_ROOT_DIR_FOR_IMPORTED_FEATURES,
+    JUPYTER_OUTPUT_NAMESPACE,
+    JUPYTER_ROOT_DIR_FOR_IMPORTED_FEATURES,
 )
 from ai.chronon.pyspark.executables import (
     GroupByExecutable,
     JoinExecutable,
     PlatformInterface,
 )
+from pyspark.sql import SparkSession
+from typing_extensions import override
 
 
 class JupyterPlatform(PlatformInterface):
@@ -82,8 +78,8 @@ class JupyterGroupBy(GroupByExecutable):
 
         self.obj: GroupBy = self.platform.set_metadata(
             obj=self.obj,
-            mod_prefix=NOTEBOOKS_ROOT_DIR_FOR_IMPORTED_FEATURES,
-            output_namespace=NOTEBOOKS_OUTPUT_NAMESPACE
+            mod_prefix=JUPYTER_ROOT_DIR_FOR_IMPORTED_FEATURES,
+            output_namespace=JUPYTER_OUTPUT_NAMESPACE
         )
 
     @override
@@ -112,8 +108,8 @@ class JupyterJoin(JoinExecutable):
 
         self.obj: Join = self.platform.set_metadata(
             obj=self.obj,
-            mod_prefix=NOTEBOOKS_ROOT_DIR_FOR_IMPORTED_FEATURES,
-            output_namespace=NOTEBOOKS_OUTPUT_NAMESPACE
+            mod_prefix=JUPYTER_ROOT_DIR_FOR_IMPORTED_FEATURES,
+            output_namespace=JUPYTER_OUTPUT_NAMESPACE
         )
 
     @override

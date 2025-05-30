@@ -5,13 +5,13 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from typing import Any, Generic, TypeVar, cast
 
-from py4j.java_gateway import JVMView, JavaObject
-from pyspark.sql import DataFrame, SparkSession
-
 from ai.chronon.api.ttypes import (
     GroupBy, Join, JoinPart, JoinSource, Query, Source, StagingQuery
 )
 from ai.chronon.pyspark.constants import PARTITION_COLUMN_FORMAT
+from py4j.java_gateway import JVMView, JavaObject
+from pyspark.sql import DataFrame, SparkSession
+
 from ai.chronon.repo.serializer import thrift_simple_json
 from ai.chronon.utils import (
     __set_name as set_name, get_max_window_for_gb_in_days, output_table_name
@@ -42,10 +42,10 @@ class PySparkExecutable(Generic[T], ABC):
         self.platform: PlatformInterface = self.get_platform()
         self.java_spark_session: JavaObject = self.spark._jsparkSession
         self.default_start_date: str = (
-            datetime.now() - timedelta(days=8)
+                datetime.now() - timedelta(days=8)
         ).strftime(PARTITION_COLUMN_FORMAT)
         self.default_end_date: str = (
-            datetime.now() - timedelta(days=1)
+                datetime.now() - timedelta(days=1)
         ).strftime(PARTITION_COLUMN_FORMAT)
 
     @abstractmethod
@@ -59,7 +59,7 @@ class PySparkExecutable(Generic[T], ABC):
         pass
 
     def _update_query_dates(
-        self, query: Query, start_date: str, end_date: str
+            self, query: Query, start_date: str, end_date: str
     ) -> Query:
         """
         Update start and end dates of a query.
@@ -78,7 +78,7 @@ class PySparkExecutable(Generic[T], ABC):
         return query_copy
 
     def _update_source_dates(
-        self, source: Source, start_date: str, end_date: str
+            self, source: Source, start_date: str, end_date: str
     ) -> Source:
         """
         Update start and end dates of a source.
@@ -101,7 +101,7 @@ class PySparkExecutable(Generic[T], ABC):
         return source_copy
 
     def _execute_underlying_join_sources(
-        self, group_bys: list[GroupBy], start_date: str, end_date: str, step_days: int
+            self, group_bys: list[GroupBy], start_date: str, end_date: str, step_days: int
     ) -> None:
         """
         Execute underlying join sources.
@@ -132,8 +132,8 @@ class PySparkExecutable(Generic[T], ABC):
                 group_by)
 
             shifted_start_date = (
-                datetime.strptime(start_date, PARTITION_COLUMN_FORMAT) -
-                timedelta(days=max_window_for_gb_in_days)
+                    datetime.strptime(start_date, PARTITION_COLUMN_FORMAT) -
+                    timedelta(days=max_window_for_gb_in_days)
             ).strftime(PARTITION_COLUMN_FORMAT)
 
             for js in group_by_join_sources:
@@ -235,7 +235,7 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
     """Interface for executing GroupBy objects"""
 
     def _update_source_dates_for_group_by(
-        self, group_by: GroupBy, start_date: str, end_date: str
+            self, group_by: GroupBy, start_date: str, end_date: str
     ) -> GroupBy:
         """
         Update start and end dates of sources in GroupBy.
@@ -258,11 +258,11 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
         return group_by
 
     def run(
-        self,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        step_days: int = 30,
-        skip_execution_of_underlying_join: bool = False
+            self,
+            start_date: str | None = None,
+            end_date: str | None = None,
+            step_days: int = 30,
+            skip_execution_of_underlying_join: bool = False
     ) -> DataFrame:
         """
         Execute the GroupBy object.
@@ -350,10 +350,10 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
             raise e
 
     def analyze(
-        self,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        enable_hitter_analysis: bool = False
+            self,
+            start_date: str | None = None,
+            end_date: str | None = None,
+            enable_hitter_analysis: bool = False
     ) -> None:
         """
         Analyze the GroupBy object.
@@ -414,7 +414,7 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
     """Interface for executing Join objects"""
 
     def _update_source_dates_for_join_parts(
-        self, join_parts: list[JoinPart], start_date: str, end_date: str
+            self, join_parts: list[JoinPart], start_date: str, end_date: str
     ) -> list[JoinPart]:
         """
         Update start and end dates of sources in JoinParts.
@@ -438,13 +438,13 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
         return join_parts
 
     def run(
-        self,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        step_days: int = 30,
-        skip_first_hole: bool = False,
-        sample_num_of_rows: int | None = None,
-        skip_execution_of_underlying_join: bool = False
+            self,
+            start_date: str | None = None,
+            end_date: str | None = None,
+            step_days: int = 30,
+            skip_first_hole: bool = False,
+            sample_num_of_rows: int | None = None,
+            skip_execution_of_underlying_join: bool = False
     ) -> DataFrame:
         """
         Execute the Join object with Join-specific parameters.
@@ -531,10 +531,10 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
             raise e
 
     def analyze(
-        self,
-        start_date: str | None = None,
-        end_date: str | None = None,
-        enable_hitter_analysis: bool = False
+            self,
+            start_date: str | None = None,
+            end_date: str | None = None,
+            enable_hitter_analysis: bool = False
     ) -> None:
         """
         Analyze the Join object.
@@ -702,11 +702,11 @@ class PlatformInterface(ABC):
         _ = self.spark.sql(f"DROP TABLE IF EXISTS {table_name}")
 
     def set_metadata(
-        self,
-        obj: GroupBy | Join | StagingQuery,
-        mod_prefix: str,
-        name_prefix: str | None = None,
-        output_namespace: str | None = None
+            self,
+            obj: GroupBy | Join | StagingQuery,
+            mod_prefix: str,
+            name_prefix: str | None = None,
+            output_namespace: str | None = None
     ) -> T:
         """
         Set the metadata for the object.
