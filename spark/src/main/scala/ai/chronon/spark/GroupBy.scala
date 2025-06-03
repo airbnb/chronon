@@ -461,18 +461,19 @@ object GroupBy {
            bloomMapOpt: Option[util.Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true,
-           showDf: Boolean = false): GroupBy = {
+           showDf: Boolean = false,
+           incrementalAgg: Boolean = false): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala
       .map { source =>
         renderDataSourceQuery(groupByConf,
-                              source,
-                              groupByConf.getKeyColumns.toScala,
-                              queryRange,
-                              tableUtils,
-                              groupByConf.maxWindow,
-                              groupByConf.inferredAccuracy)
+          source,
+          groupByConf.getKeyColumns.toScala,
+          queryRange,
+          tableUtils,
+          groupByConf.maxWindow,
+          groupByConf.inferredAccuracy)
 
       }
       .map {
@@ -543,26 +544,18 @@ object GroupBy {
         logger.info(s"printing mutation data for groupBy: ${groupByConf.metaData.name}")
         df.prettyPrint()
       }
-
       df
     }
-    //make it parameterized
-    val incrementalAgg = true
-    if (incrementalAgg) {
-      new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
-        keyColumns,
-        nullFiltered,
-        mutationDfFn,
-        finalize = false)
+    val finalizeValue = if (incrementalAgg) {
+      !incrementalAgg
     } else {
-      new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
+      finalize
+    }
+    new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
         keyColumns,
         nullFiltered,
         mutationDfFn,
-        finalize = finalize)
-
-    }
-
+        finalize = finalizeValue)
   }
 
   def getIntersectedRange(source: api.Source,
@@ -681,12 +674,51 @@ object GroupBy {
     query
   }
 
+  def saveAndGetIncDf(
+                       groupByConf: api.GroupBy,
+                       range: PartitionRange,
+                       tableUtils: TableUtils,
+                     ): GroupBy = {
+    val incOutputTable = groupByConf.metaData.incOutputTable
+    val tableProps = Option(groupByConf.metaData.tableProperties)
+      .map(_.toScala)
+      .orNull
+    //range should be modified to incremental range
+    val incGroupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true, incrementalAgg = true)
+    val incOutputDf = incGroupByBackfill.snapshotEvents(range)
+    incOutputDf.save(incOutputTable, tableProps)
+
+    val maxWindow = groupByConf.maxWindow.get
+    val sourceQueryableRange = PartitionRange(
+      range.start,
+      tableUtils.partitionSpec.minus(range.end, maxWindow)
+    )(tableUtils)
+
+    val incTableFirstPartition: Option[String] = tableUtils.firstAvailablePartition(incOutputTable)
+    val incTableLastPartition: Option[String] = tableUtils.lastAvailablePartition(incOutputTable)
+
+    val incTableRange = PartitionRange(
+      incTableFirstPartition.get,
+      incTableLastPartition.get
+    )(tableUtils)
+
+    val incDfQuery = incTableRange.intersect(sourceQueryableRange).genScanQuery(null, incOutputTable)
+    val incDf: DataFrame = tableUtils.sql(incDfQuery)
+
+    new GroupBy(
+      incGroupByBackfill.aggregations,
+      incGroupByBackfill.keyColumns,
+      incDf
+    )
+  }
+
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,
                       tableUtils: TableUtils,
                       stepDays: Option[Int] = None,
                       overrideStartPartition: Option[String] = None,
-                      skipFirstHole: Boolean = true): Unit = {
+                      skipFirstHole: Boolean = true,
+                      incrementalAgg: Boolean = true): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
@@ -725,7 +757,12 @@ object GroupBy {
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               logger.info(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
-              val groupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true)
+              val groupByBackfill = if (incrementalAgg) {
+                saveAndGetIncDf(groupByConf, range, tableUtils)
+                //from(groupByConf, range, tableUtils, computeDependency = true)
+              } else {
+                from(groupByConf, range, tableUtils, computeDependency = true)
+              }
               val outputDf = groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
