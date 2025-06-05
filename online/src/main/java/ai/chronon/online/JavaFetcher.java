@@ -20,6 +20,7 @@ import ai.chronon.online.Fetcher.Request;
 import ai.chronon.online.Fetcher.Response;
 import ai.chronon.online.FutureConverters;
 
+import scala.Some;
 import scala.collection.Iterator;
 import scala.collection.Seq;
 import scala.Option;
@@ -29,6 +30,7 @@ import scala.concurrent.Future;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -37,15 +39,15 @@ public class JavaFetcher {
     Fetcher fetcher;
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null, Option.apply(32));
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null, Option.apply(32));
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, FlagStore flagStore, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null, Option.apply(32));
     }
 
     /* user builder pattern to create JavaFetcher
@@ -66,7 +68,8 @@ public class JavaFetcher {
                 builder.callerName,
                 builder.flagStore,
                 builder.disableErrorThrows,
-                builder.executionContextOverride);
+                builder.executionContextOverride,
+                builder.joinFetchParallelChunkSize.isPresent() ? Option.apply(builder.joinFetchParallelChunkSize.get()) : Option.empty());
     }
 
     public static class Builder {
@@ -80,6 +83,8 @@ public class JavaFetcher {
         private FlagStore flagStore;
         private Boolean disableErrorThrows;
         private ExecutionContext executionContextOverride;
+
+        private Optional<Integer> joinFetchParallelChunkSize = Optional.of(32);
 
         public Builder(KVStore kvStore, String metaDataSet, Long timeoutMillis,
                        Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
@@ -112,6 +117,11 @@ public class JavaFetcher {
 
         public Builder executionContextOverride(ExecutionContext executionContextOverride) {
             this.executionContextOverride = executionContextOverride;
+            return this;
+        }
+
+        public Builder joinFetchParallelChunkSize(Integer joinFetchParallelChunkSize) {
+            this.joinFetchParallelChunkSize = Optional.ofNullable(joinFetchParallelChunkSize);
             return this;
         }
 

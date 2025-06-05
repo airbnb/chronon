@@ -94,7 +94,8 @@ class Fetcher(val kvStore: KVStore,
               callerName: String = null,
               flagStore: FlagStore = null,
               disableErrorThrows: Boolean = false,
-              executionContextOverride: ExecutionContext = null)
+              executionContextOverride: ExecutionContext = null,
+              joinFetchParallelChunkSize: Option[Int] = Some(32))
     extends FetcherBase(kvStore,
                         metaDataSet,
                         timeoutMillis,
@@ -234,19 +235,22 @@ class Fetcher(val kvStore: KVStore,
   }
 
   override def fetchJoin(requests: scala.collection.Seq[Request],
-                joinConf: Option[Join] = None): Future[scala.collection.Seq[Response]] = {
+                         joinConf: Option[Join] = None): Future[scala.collection.Seq[Response]] = {
 
-    // Split requests into batches of size 32
-    val batchSize = 32 // make tunable
-
-    val batches = requests.grouped(batchSize).toSeq
-    val batchFutures: Seq[Future[Seq[Response]]] =
-      batches.map(batch => doFetchJoin(batch, joinConf))
-    Future.sequence(batchFutures).map(_.flatten)
+    if (joinFetchParallelChunkSize.isDefined) {
+      // If a chunk size is defined, split the requests into batches and process them in parallel
+      val batches = requests.grouped(joinFetchParallelChunkSize.get).toSeq
+      val batchFutures: Seq[Future[Seq[Response]]] =
+        batches.map(batch => doFetchJoin(batch, joinConf))
+      Future.sequence(batchFutures).map(_.flatten)
+    } else {
+      // If no chunk size is defined, process all requests in a single batch
+      doFetchJoin(requests, joinConf)
+    }
   }
 
   private def doFetchJoin(requests: scala.collection.Seq[Request],
-                         joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
+                          joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
     val internalResponsesF = super.fetchJoin(requests, joinConf)
     val externalResponsesF = fetchExternal(requests)
