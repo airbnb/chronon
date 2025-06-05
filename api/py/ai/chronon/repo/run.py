@@ -419,7 +419,7 @@ class Runner:
                 print("Checking to see if a streaming job by the name {} already exists".format(self.app_name))
                 running_apps = []
                 try:
-                    running_apps = check_output("{}".format(self.list_apps_cmd)).decode("utf-8").split("\n")
+                    running_apps = check_output("{} {} {}".format(self.list_apps_cmd, os.environ.get("EMR_CLUSTER"), self.app_name)).decode("utf-8").split("\n")
                 except subprocess.CalledProcessError as e:
                     print("Failed to retrieve running apps. Error:")
                     print(e.output.decode("utf-8"))
