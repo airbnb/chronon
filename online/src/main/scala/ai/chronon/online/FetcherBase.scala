@@ -45,8 +45,7 @@ class FetcherBase(kvStore: KVStore,
                   debug: Boolean = false,
                   flagStore: FlagStore = null,
                   disableErrorThrows: Boolean = false,
-                  executionContextOverride: ExecutionContext = null,
-                  joinFetchParallelChunkSize: Option[Int] = Some(32))
+                  executionContextOverride: ExecutionContext = null)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis, executionContextOverride)
     with FetcherCache {
   import FetcherBase._

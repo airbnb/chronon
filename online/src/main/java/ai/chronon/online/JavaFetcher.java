@@ -84,7 +84,7 @@ public class JavaFetcher {
         private Boolean disableErrorThrows;
         private ExecutionContext executionContextOverride;
 
-        private Optional<Integer> joinFetchParallelChunkSize = Optional.of(32);
+        private Optional<Integer> joinFetchParallelChunkSize = Optional.empty();
 
         public Builder(KVStore kvStore, String metaDataSet, Long timeoutMillis,
                        Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
@@ -203,6 +203,23 @@ public class JavaFetcher {
         Future<FetcherResponseWithTs> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoin(scalaRequests, Option.empty()));
         // Convert responses to CompletableFuture
         return convertResponsesWithTs(scalaResponses, false, startTs);
+    }
+
+    public List<CompletableFuture<List<JavaResponse>>> fetchJoinChunked(List<JavaRequest> requests, int chunkSizeOverride) {
+        long startTs = System.currentTimeMillis();
+        // Convert java requests to scala requests
+        Seq<Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
+        // Get responses from the fetcher
+        Seq<Future<Seq<Response>>> scalaChunkedResponses = this.fetcher.fetchJoinChunked(scalaRequests, chunkSizeOverride, Option.empty());
+        // Convert responses to CompletableFuture
+        List<CompletableFuture<List<JavaResponse>>> futures = new ArrayList<>(scalaChunkedResponses.size());
+        Iterator<Future<Seq<Response>>> it = scalaChunkedResponses.iterator();
+        while (it.hasNext()) {
+            Future<FetcherResponseWithTs> scalaResponse = this.fetcher.withTs(it.next());
+            CompletableFuture<List<JavaResponse>> javaResponse = convertResponsesWithTs(scalaResponse, false, startTs);
+            futures.add(javaResponse);
+        }
+        return futures;
     }
 
     private void instrument(List<String> requestNames, boolean isGroupBy, String metricName, Long startTs) {
