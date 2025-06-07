@@ -70,6 +70,11 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
     .toArray
     .zip(columnAggregators.map(_.irType))
 
+  val incSchema = aggregationParts
+    .map(_.incOutputColumnName)
+    .toArray
+    .zip(columnAggregators.map(_.irType))
+
   val outputSchema: Array[(String, DataType)] = aggregationParts
     .map(_.outputColumnName)
     .toArray

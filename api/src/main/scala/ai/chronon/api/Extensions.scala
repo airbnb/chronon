@@ -177,7 +177,12 @@ object Extensions {
 
     def outputColumnName =
       s"${aggregationPart.inputColumn}_$opSuffix${aggregationPart.window.suffix}${bucketSuffix}"
+
+    def incOutputColumnName =
+      s"${aggregationPart.inputColumn}_$opSuffix${bucketSuffix}"
+
   }
+
 
   implicit class AggregationOps(aggregation: Aggregation) {
 

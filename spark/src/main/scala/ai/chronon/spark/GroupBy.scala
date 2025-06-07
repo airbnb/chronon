@@ -18,6 +18,7 @@ package ai.chronon.spark
 
 import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
+import ai.chronon.aggregator.windowing.HopsAggregator.HopIr
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
@@ -41,7 +42,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               val inputDf: DataFrame,
               val mutationDfFn: () => DataFrame = null,
               skewFilter: Option[String] = None,
-              finalize: Boolean = true)
+              finalize: Boolean = true,
+              incAgg: Boolean = false
+             )
     extends Serializable {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
@@ -88,7 +91,11 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   lazy val aggPartWithSchema = aggregationParts.zip(columnAggregators.map(_.outputType))
 
   lazy val postAggSchema: StructType = {
-    val valueChrononSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
+    val valueChrononSchema = if (finalize) {
+      windowAggregator.outputSchema
+    } else {
+      windowAggregator.irSchema
+    }
     SparkConversions.fromChrononSchema(valueChrononSchema)
   }
 
@@ -141,12 +148,13 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     }
 
   def snapshotEventsBase(partitionRange: PartitionRange,
-                         resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
+                         resolution: Resolution = DailyResolution,
+                         incAgg: Boolean = true): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
     // add 1 day to the end times to include data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val shiftedEndTimes = endTimes.map(_ + tableUtils.partitionSpec.spanMillis)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
-    val hops = hopsAggregate(endTimes.min, resolution)
+    val hops = hopsAggregate(endTimes.min, resolution, incAgg)
 
     hops
       .flatMap {
@@ -356,12 +364,43 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
   }
 
+  //def dfToOutputArrayType(df: DataFrame): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+  //  val keyBuilder: Row => KeyWithHash =
+  //    FastHashing.generateKeyBuilder(keyColumns.toArray, df.schema)
+
+  //  df.rdd
+  //    .keyBy(keyBuilder)
+  //    .mapValues(SparkConversions.toChrononRow(_, tsIndex))
+  //    .mapValues(windowAggregator.toTimeSortedArray)
+  //}
+
+  def flattenOutputArrayType(hopsArrays: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)]): RDD[(Array[Any], Array[Any])] = {
+    hopsArrays.flatMap { case (keyWithHash: KeyWithHash, hopsArray: HopsAggregator.OutputArrayType) =>
+      val hopsArrayHead: Array[HopIr] = hopsArray.headOption.get
+      hopsArrayHead.map { array: HopIr =>
+        // the last element is a timestamp, we need to drop it
+        // and add it to the key
+        val timestamp = array.last.asInstanceOf[Long]
+        val withoutTimestamp = array.dropRight(1)
+        ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp)), withoutTimestamp)
+      }
+    }
+  }
+
+  def convertHopsToDf(range: PartitionRange,
+                             schema: Array[(String, ai.chronon.api.DataType)]
+                            ): DataFrame = {
+    val hops = hopsAggregate(range.toTimePoints.min, DailyResolution)
+    val hopsDf = flattenOutputArrayType(hops)
+    toDf(hopsDf, Seq((tableUtils.partitionColumn, StringType)), Some(SparkConversions.fromChrononSchema(schema)))
+  }
+
   // convert raw data into IRs, collected by hopSizes
   // TODO cache this into a table: interface below
   // Class HopsCacher(keySchema, irSchema, resolution) extends RddCacher[(KeyWithHash, HopsOutput)]
   //  buildTableRow((keyWithHash, hopsOutput)) -> GenericRowWithSchema
   //  buildRddRow(GenericRowWithSchema) -> (keyWithHash, hopsOutput)
-  def hopsAggregate(minQueryTs: Long, resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+  def hopsAggregate(minQueryTs: Long, resolution: Resolution, incAgg: Boolean = false): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
     val hopsAggregator =
       new HopsAggregator(minQueryTs, aggregations, selectedSchema, resolution)
     val keyBuilder: Row => KeyWithHash =
@@ -378,9 +417,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   }
 
   protected[spark] def toDf(aggregateRdd: RDD[(Array[Any], Array[Any])],
-                            additionalFields: Seq[(String, DataType)]): DataFrame = {
+                            additionalFields: Seq[(String, DataType)], schema: Option[StructType] = None): DataFrame = {
     val finalKeySchema = StructType(keySchema ++ additionalFields.map { case (name, typ) => StructField(name, typ) })
-    KvRdd(aggregateRdd, finalKeySchema, postAggSchema).toFlatDf
+    KvRdd(aggregateRdd, finalKeySchema, schema.getOrElse(postAggSchema)).toFlatDf
   }
 
   private def normalizeOrFinalize(ir: Array[Any]): Array[Any] =
@@ -555,7 +594,9 @@ object GroupBy {
         keyColumns,
         nullFiltered,
         mutationDfFn,
-        finalize = finalizeValue)
+        finalize = finalizeValue,
+      incAgg = incrementalAgg,
+    )
   }
 
   def getIntersectedRange(source: api.Source,
@@ -685,13 +726,16 @@ object GroupBy {
       .orNull
     //range should be modified to incremental range
     val incGroupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true, incrementalAgg = true)
-    val incOutputDf = incGroupByBackfill.snapshotEvents(range)
-    incOutputDf.save(incOutputTable, tableProps)
+    val selectedSchema = incGroupByBackfill.selectedSchema
+    //TODO is there any other way to get incSchema?
+    val incSchema = new RowAggregator(selectedSchema, incGroupByBackfill.aggregations.flatMap(_.unWindowed)).incSchema
+    val hopsDf = incGroupByBackfill.convertHopsToDf(range, incSchema)
+    hopsDf.save(incOutputTable, tableProps)
 
     val maxWindow = groupByConf.maxWindow.get
     val sourceQueryableRange = PartitionRange(
-      range.start,
-      tableUtils.partitionSpec.minus(range.end, maxWindow)
+      tableUtils.partitionSpec.minus(range.start, maxWindow),
+      range.end
     )(tableUtils)
 
     val incTableFirstPartition: Option[String] = tableUtils.firstAvailablePartition(incOutputTable)
