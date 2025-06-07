@@ -560,11 +560,11 @@ class TableUtilsTest {
     val tableName = "db.test_long_partitions"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
     val structFields = Array(
-      StructField("dateint", LongType),
+      StructField("dateInt", LongType),
       StructField("hour", IntType),
-      StructField("event_type", StringType),
-      StructField("label_ds", StringType),
-      StructField("feature_value", IntType)
+      StructField("eventType", StringType),
+      StructField("labelDs", StringType),
+      StructField("featureValue", IntType)
     )
 
     val rows = List(
@@ -582,7 +582,7 @@ class TableUtilsTest {
       ),
       rows
     )
-    val partitionColumns = Seq("dateint", "hour", "event_type")
+    val partitionColumns = Seq("dateInt", "hour", "eventType")
     tableUtils.insertPartitions(df1, tableName, partitionColumns = partitionColumns)
     assert(tableUtils.tableExists(tableName))
     val partitions = tableUtils.partitions(tableName, Map.empty, partitionColOpt = Some("dateint"))
@@ -595,16 +595,16 @@ class TableUtilsTest {
     val tableName = "db.test_table_long_2"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
     val columns1 = Array(
-      StructField("long_field", LongType),
-      StructField("int_field", IntType),
-      StructField("string_field", StringType)
+      StructField("longField", LongType),
+      StructField("intField", IntType),
+      StructField("stringField", StringType)
     )
     val df1 = makeDf(
       spark,
       StructType(
         tableName,
         columns1
-          :+ StructField("double_field", DoubleType)
+          :+ StructField("doubleField", DoubleType)
           :+ StructField("ds", LongType)
       ),
       List(

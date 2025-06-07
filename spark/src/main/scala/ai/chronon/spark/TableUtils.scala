@@ -1007,6 +1007,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
           s"DELETE FROM $tableName WHERE $where"
         case _ =>
+        // default case is for Hive
           val partitionSpecs = partitions
             .map { partition =>
               val mainSpec = s"$partitionColumn='$partition'"

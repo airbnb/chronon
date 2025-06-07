@@ -450,8 +450,6 @@ class JoinTest {
         Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "time_spent_ms"),
         Builders.Aggregation(operation = Operation.MIN, inputColumn = "ts"),
         Builders.Aggregation(operation = Operation.MAX, inputColumn = "ts")
-        // Builders.Aggregation(operation = Operation.APPROX_UNIQUE_COUNT, inputColumn = "ts")
-        // sql - APPROX_COUNT_DISTINCT(IF(queries.ts > $viewsTable.ts, time_spent_ms, null)) as user_ts_approx_unique_count
       ),
       metaData = Builders.MetaData(name = "unit_test.item_views", namespace = namespace)
     )
@@ -462,7 +460,7 @@ class JoinTest {
     val itemQueriesDf = DataFrameGen
       .events(spark, itemQueries, 1000, partitions = 100)
     // duplicate the events
-    itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable) //.union(itemQueriesDf)
+    itemQueriesDf.union(itemQueriesDf).save(itemQueriesTable)
 
     val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
     (new Analyzer(tableUtils, joinConf, monthAgo, today)).run()
