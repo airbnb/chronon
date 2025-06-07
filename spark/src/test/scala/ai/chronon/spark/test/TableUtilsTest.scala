@@ -585,7 +585,7 @@ class TableUtilsTest {
     val partitionColumns = Seq("dateInt", "hour", "eventType")
     tableUtils.insertPartitions(df1, tableName, partitionColumns = partitionColumns)
     assert(tableUtils.tableExists(tableName))
-    val partitions = tableUtils.partitions(tableName, Map.empty, partitionColOpt = Some("dateint"))
+    val partitions = tableUtils.partitions(tableName, Map.empty, partitionColOpt = Some("dateInt"))
     assert(partitions.size == 4)
     assert(tableUtils.allPartitions(tableName).size == 4)
   }
