@@ -53,7 +53,6 @@ object SparkSessionBuilder {
           "spark.chronon.table_write.format" -> "delta"
         )
         (configMap, "ai.chronon.spark.ChrononDeltaLakeKryoRegistrator")
-        (configMap, "ai.chronon.spark.ChrononKryoRegistrator")
       case Some("iceberg") =>
         val configMap = Map(
           "spark.sql.extensions" -> "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
@@ -64,7 +63,6 @@ object SparkSessionBuilder {
           "spark.sql.catalog.spark_catalog.type" -> "hadoop",
           "spark.sql.catalog.spark_catalog.warehouse" -> s"$warehouseDir/data"
         )
-        // TODO add an iceberg kryo registrator
         (configMap, "ai.chronon.spark.ChrononIcebergKryoRegistrator")
       case _ => (Map.empty, "ai.chronon.spark.ChrononKryoRegistrator")
     }
