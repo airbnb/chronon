@@ -711,23 +711,23 @@ case class TableUtils(sparkSession: SparkSession) {
                                           stats: Option[DfStats],
                                           sortByCols: Seq[String] = Seq.empty,
                                           partitionCols: Seq[String] = Seq.empty): Unit = {
-  val useAqeRoute = sparkSession.conf.getOption("spark.sql.adaptive.enabled").contains("true") &&
-                    sparkSession.conf.getOption("spark.sql.adaptive.coalescePartitions.enabled").contains("true")
+    val useAqeRoute = sparkSession.conf.getOption("spark.sql.adaptive.enabled").contains("true") &&
+      sparkSession.conf.getOption("spark.sql.adaptive.coalescePartitions.enabled").contains("true")
 
-  if (useAqeRoute) {
-    if (df.head(1).isEmpty) {
-      logger.info(s"Input DataFrame for table $tableName is empty. Nothing to write.")
-      return
-    }
-    val sortedDf = df.sortWithinPartitions(sortByCols.map(col).toSeq: _*) 
-    val writer = sortedDf.write.mode(saveMode)
-    writer.insertInto(tableName)
+    if (useAqeRoute) {
+      if (df.head(1).isEmpty) {
+        logger.info(s"Input DataFrame for table $tableName is empty. Nothing to write.")
+        return
+      }
+      val sortedDf = df.sortWithinPartitions(sortByCols.map(col).toSeq: _*)
+      val writer = sortedDf.write.mode(saveMode)
+      writer.insertInto(tableName)
 
-    logger.info(s"Successfully finished writing to $tableName using AQE.")
-  } else {
-    // get row count and table partition count statistics
-    // to determine shuffle parallelism, count only top-level/first partition column
-    // assumed to be the date partition. If not given, use default
+      logger.info(s"Successfully finished writing to $tableName using AQE.")
+    } else {
+      // get row count and table partition count statistics
+      // to determine shuffle parallelism, count only top-level/first partition column
+      // assumed to be the date partition. If not given, use default
       val partitionCol = partitionCols.headOption.getOrElse(partitionColumn)
       val (rowCount: Long, tablePartitionCount: Int) =
         if (df.schema.fieldNames.contains(partitionCol)) {
