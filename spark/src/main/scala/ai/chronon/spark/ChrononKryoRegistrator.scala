@@ -148,7 +148,10 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.catalyst.InternalRow$$anonfun$getAccessor$5",
       "scala.collection.immutable.ArraySeq$ofRef",
       "org.apache.spark.sql.catalyst.expressions.GenericInternalRow",
-      "scala.math.Ordering$Reverse"
+      "scala.math.Ordering$Reverse",
+      "java.lang.invoke.SerializedLambda",
+      "org.apache.spark.sql.catalyst.InternalRow$",
+      "org.apache.spark.util.collection.BitSet"
     )
     names.foreach(name => doRegister(name, kryo))
 
