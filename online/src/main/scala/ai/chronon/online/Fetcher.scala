@@ -94,7 +94,8 @@ class Fetcher(val kvStore: KVStore,
               callerName: String = null,
               flagStore: FlagStore = null,
               disableErrorThrows: Boolean = false,
-              executionContextOverride: ExecutionContext = null)
+              executionContextOverride: ExecutionContext = null,
+              joinFetchParallelChunkSize: Option[Int] = None)
     extends FetcherBase(kvStore,
                         metaDataSet,
                         timeoutMillis,
@@ -234,7 +235,29 @@ class Fetcher(val kvStore: KVStore,
   }
 
   override def fetchJoin(requests: scala.collection.Seq[Request],
-                         joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
+                         joinConf: Option[Join] = None): Future[scala.collection.Seq[Response]] = {
+
+    if (joinFetchParallelChunkSize.isDefined) {
+      // If a chunk size is defined, split the requests into batches and process them in parallel
+      val batchFutures = fetchJoinChunked(requests, joinFetchParallelChunkSize.get, joinConf)
+      Future.sequence(batchFutures).map(_.flatten)
+    } else {
+      // If no chunk size is defined, process all requests in a single batch
+      doFetchJoin(requests, joinConf)
+    }
+  }
+
+  def fetchJoinChunked(requests: scala.collection.Seq[Request],
+                       chunkSizeOverride: Int,
+                       joinConf: Option[Join] = None): scala.collection.Seq[Future[scala.collection.Seq[Response]]] = {
+    val batches = requests.grouped(chunkSizeOverride).toSeq
+    val batchFutures: Seq[Future[Seq[Response]]] =
+      batches.map(batch => doFetchJoin(batch, joinConf))
+    batchFutures
+  }
+
+  private def doFetchJoin(requests: scala.collection.Seq[Request],
+                          joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val ts = System.currentTimeMillis()
     val internalResponsesF = super.fetchJoin(requests, joinConf)
     val externalResponsesF = fetchExternal(requests)
