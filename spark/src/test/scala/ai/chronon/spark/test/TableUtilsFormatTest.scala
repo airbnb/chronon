@@ -89,7 +89,7 @@ class TableUtilsFormatTest {
         Row(5L, 6, "7", "2022-10-02")
       )
     )
-    testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
+     testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
   }
 
   @Test
