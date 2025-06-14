@@ -147,15 +147,16 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       toDf(snapshotEntitiesBase, Seq(tableUtils.partitionColumn -> StringType))
     }
 
-  def snapshotEventsBase(partitionRange: PartitionRange,
-                         resolution: Resolution = DailyResolution,
-                         incAgg: Boolean = true): RDD[(Array[Any], Array[Any])] = {
-    val endTimes: Array[Long] = partitionRange.toTimePoints
+  def computeHopsAggregate(endTimes: Array[Long], resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+    hopsAggregate(endTimes.min, resolution)
+  }
+
+  def computeSawtoothAggregate(hops: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)],
+                               endTimes: Array[Long],
+                               resolution: Resolution): RDD[(Array[Any], Array[Any])] = {
     // add 1 day to the end times to include data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val shiftedEndTimes = endTimes.map(_ + tableUtils.partitionSpec.spanMillis)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
-    val hops = hopsAggregate(endTimes.min, resolution, incAgg)
-
     hops
       .flatMap {
         case (keys, hopsArrays) =>
@@ -167,6 +168,15 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
             else Some((keys.data :+ tableUtils.partitionSpec.at(endTimes(i)), result))
           }
       }
+  }
+
+  def snapshotEventsBase(partitionRange: PartitionRange,
+                         resolution: Resolution = DailyResolution,
+                         incAgg: Boolean = true): RDD[(Array[Any], Array[Any])] = {
+    val endTimes: Array[Long] = partitionRange.toTimePoints
+
+    val hops = computeHopsAggregate(endTimes, resolution)
+    computeSawtoothAggregate(hops, endTimes, resolution)
   }
 
   // Calculate snapshot accurate windows for ALL keys at pre-defined "endTimes"
@@ -364,14 +374,13 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
   }
 
-  //def dfToOutputArrayType(df: DataFrame): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+  //def convertDfToOutputArrayType(df: DataFrame): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
   //  val keyBuilder: Row => KeyWithHash =
   //    FastHashing.generateKeyBuilder(keyColumns.toArray, df.schema)
 
   //  df.rdd
   //    .keyBy(keyBuilder)
   //    .mapValues(SparkConversions.toChrononRow(_, tsIndex))
-  //    .mapValues(windowAggregator.toTimeSortedArray)
   //}
 
   def flattenOutputArrayType(hopsArrays: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)]): RDD[(Array[Any], Array[Any])] = {
@@ -382,17 +391,16 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
         // and add it to the key
         val timestamp = array.last.asInstanceOf[Long]
         val withoutTimestamp = array.dropRight(1)
-        ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp)), withoutTimestamp)
+        ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), withoutTimestamp)
       }
     }
   }
 
-  def convertHopsToDf(range: PartitionRange,
+  def convertHopsToDf(hops: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)],
                              schema: Array[(String, ai.chronon.api.DataType)]
                             ): DataFrame = {
-    val hops = hopsAggregate(range.toTimePoints.min, DailyResolution)
     val hopsDf = flattenOutputArrayType(hops)
-    toDf(hopsDf, Seq((tableUtils.partitionColumn, StringType)), Some(SparkConversions.fromChrononSchema(schema)))
+    toDf(hopsDf, Seq(tableUtils.partitionColumn -> StringType, Constants.TimeColumn -> LongType), Some(SparkConversions.fromChrononSchema(schema)))
   }
 
   // convert raw data into IRs, collected by hopSizes
@@ -728,8 +736,10 @@ object GroupBy {
     val incGroupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true, incrementalAgg = true)
     val selectedSchema = incGroupByBackfill.selectedSchema
     //TODO is there any other way to get incSchema?
-    val incSchema = new RowAggregator(selectedSchema, incGroupByBackfill.aggregations.flatMap(_.unWindowed)).incSchema
-    val hopsDf = incGroupByBackfill.convertHopsToDf(range, incSchema)
+    val incFlattendAgg = new RowAggregator(selectedSchema, incGroupByBackfill.aggregations.flatMap(_.unWindowed))
+      val incSchema = incFlattendAgg.incSchema
+    val hops = incGroupByBackfill.computeHopsAggregate(range.toTimePoints, DailyResolution)
+    val hopsDf = incGroupByBackfill.convertHopsToDf(hops, incSchema)
     hopsDf.save(incOutputTable, tableProps)
 
     val maxWindow = groupByConf.maxWindow.get
@@ -746,14 +756,27 @@ object GroupBy {
       incTableLastPartition.get
     )(tableUtils)
 
+    //val dfQuery = groupByConf.
     val incDfQuery = incTableRange.intersect(sourceQueryableRange).genScanQuery(null, incOutputTable)
     val incDf: DataFrame = tableUtils.sql(incDfQuery)
+    //incGroupByBackfill.computeSawtoothAggregate(incDf, range.toTimePoints, DailyResolution)
+
+    val a = incFlattendAgg.aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
+      val newAgg = agg.deepCopy()
+      newAgg.setInputColumn(part.incOutputColumnName)
+      newAgg
+    }
+
 
     new GroupBy(
-      incGroupByBackfill.aggregations,
-      incGroupByBackfill.keyColumns,
-      incDf
+      a,
+      groupByConf.getKeyColumns.toScala,
+      incDf,
+      () => null,
+      finalize = true,
+      incAgg = false,
     )
+
   }
 
   def computeBackfill(groupByConf: api.GroupBy,
@@ -801,7 +824,7 @@ object GroupBy {
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               logger.info(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
-              val groupByBackfill = if (incrementalAgg) {
+              val groupByBackfill: GroupBy = if (incrementalAgg) {
                 saveAndGetIncDf(groupByConf, range, tableUtils)
                 //from(groupByConf, range, tableUtils, computeDependency = true)
               } else {

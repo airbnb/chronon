@@ -116,6 +116,57 @@ class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.HashS
   }
 }
 
+class AverageIR extends SimpleAggregator[Array[Any], Array[Any], Double] {
+  override def outputType: DataType = DoubleType
+
+  override def irType: DataType =
+    StructType(
+      "AvgIr",
+      Array(StructField("sum", DoubleType), StructField("count", IntType))
+    )
+
+  override def prepare(input: Array[Any]): Array[Any] = {
+    Array(input(0).asInstanceOf[Double], input(1).asInstanceOf[Int])
+  }
+
+  // mutating
+  override def update(ir: Array[Any], input: Array[Any]): Array[Any] = {
+    val inputSum = input(0).asInstanceOf[Double]
+    val inputCount = input(1).asInstanceOf[Int]
+    ir.update(0, ir(0).asInstanceOf[Double] + inputSum)
+    ir.update(1, ir(1).asInstanceOf[Int] + inputCount)
+    ir
+  }
+
+  // mutating
+  override def merge(ir1: Array[Any], ir2: Array[Any]): Array[Any] = {
+    ir1.update(0, ir1(0).asInstanceOf[Double] + ir2(0).asInstanceOf[Double])
+    ir1.update(1, ir1(1).asInstanceOf[Int] + ir2(1).asInstanceOf[Int])
+    ir1
+  }
+
+  override def finalize(ir: Array[Any]): Double =
+    ir(0).asInstanceOf[Double] / ir(1).asInstanceOf[Int].toDouble
+
+  override def delete(ir: Array[Any], input: Array[Any]): Array[Any] = {
+    val inputSum = input(0).asInstanceOf[Double]
+    val inputCount = input(1).asInstanceOf[Int]
+    ir.update(0, ir(0).asInstanceOf[Double] - inputSum)
+    ir.update(1, ir(1).asInstanceOf[Int] - inputCount)
+    ir
+  }
+
+  override def clone(ir: Array[Any]): Array[Any] = {
+    val arr = new Array[Any](ir.length)
+    ir.copyToArray(arr)
+    arr
+  }
+
+  override def isDeletable: Boolean = true
+}
+
+
+
 class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def outputType: DataType = DoubleType
 
