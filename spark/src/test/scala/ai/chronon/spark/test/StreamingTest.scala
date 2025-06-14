@@ -22,14 +22,14 @@ import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Windo
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
-import ai.chronon.online.{MetadataStore}
+import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
-import org.apache.spark.sql.{SparkSession}
+import org.apache.spark.sql.SparkSession
+import org.junit.Test
 
 import java.util.TimeZone
-
 import scala.collection.JavaConverters.{asScalaBufferConverter, _}
 
 object StreamingTest {
@@ -49,6 +49,7 @@ class StreamingTest extends TestCase {
   private val yesterday = tableUtils.partitionSpec.before(today)
   private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
 
+  @Test
   def testStructInStreaming(): Unit = {
     tableUtils.createDatabase(namespace)
     val topicName = "fake_topic"

@@ -19,8 +19,11 @@ package ai.chronon.aggregator.test
 import ai.chronon.aggregator.base.ApproxDistinctCount
 import junit.framework.TestCase
 import org.junit.Assert._
+import org.junit.Test
 
 class ApproxDistinctTest extends TestCase {
+
+  @Test
   def testErrorBound(uniques: Int, errorBound: Int, lgK: Int): Unit = {
     val uniqueElems = 1 to uniques
     val duplicates = uniqueElems ++ uniqueElems ++ uniqueElems
@@ -32,6 +35,7 @@ class ApproxDistinctTest extends TestCase {
     assertTrue(Math.abs(estimated - uniques) < errorBound)
   }
 
+  @Test
   def testMergingErrorBound(uniques: Int, errorBound: Int, lgK: Int, merges: Int): Unit = {
     val chunkSize = uniques / merges
     assert(chunkSize > 0)
@@ -50,12 +54,14 @@ class ApproxDistinctTest extends TestCase {
     assertTrue(Math.abs(estimated - uniques) < errorBound)
   }
 
+  @Test
   def testErrorBounds(): Unit = {
     testErrorBound(uniques = 100, errorBound = 1, lgK = 10)
     testErrorBound(uniques = 1000, errorBound = 20, lgK = 10)
     testErrorBound(uniques = 10000, errorBound = 300, lgK = 10)
   }
 
+  @Test
   def testMergingErrorBounds(): Unit = {
     testMergingErrorBound(uniques = 100, errorBound = 1, lgK = 10, merges = 10)
     testMergingErrorBound(uniques = 1000, errorBound = 20, lgK = 10, merges = 4)

@@ -24,10 +24,10 @@ scala_library(
     ]),
     visibility = ["//visibility:public"],
     deps = [
-        "//api:api-models",
-        "//api:api-lib",
-        "//third_party/java/spark:spark-libs",
         "//aggregator",
+        "//api:api-lib",
+        "//api:api-models",
+        "//third_party/java/spark:spark-libs",
         maven_artifact("com.esotericsoftware:kryo"),
         scala_artifact("org.json4s:json4s-core"),
         scala_artifact("org.json4s:json4s-jackson"),
@@ -61,10 +61,10 @@ scala_library(
     srcs = glob(["src/test/scala/ai/chronon/online/**/*.scala"]),
     visibility = ["//visibility:public"],
     deps = [
-        "//api:api-models",
-        "//api:api-lib",
         ":online",
         "//aggregator",
+        "//api:api-lib",
+        "//api:api-models",
         "//third_party/java/spark:spark-libs",
         maven_artifact("com.esotericsoftware:kryo"),
         scala_artifact("org.json4s:json4s-core"),
@@ -102,10 +102,11 @@ scala_library(
     ),
 )
 
-scala_test_suite(
+scala_junit_test_suite(
     name = "test",
     srcs = glob(["src/test/scala/ai/chronon/online/**/*.scala"]),
-    visibility = ["//visibility:public"],
+    strip_prefix = "src/test/scala/ai/chronon/online",
+    visibility = ["//visibility:private"],
     deps = [
         ":online",
         ":test-lib",
@@ -113,6 +114,13 @@ scala_test_suite(
         "//api:api-lib",
         "//api:api-models",
         "//third_party/java/spark:spark-libs",
+        maven_artifact("com.fasterxml.jackson.core:jackson-core"),
+        maven_artifact("com.fasterxml.jackson.core:jackson-databind"),
+        scala_artifact("org.scalactic:scalactic"),
+        scala_artifact("org.scalatest:scalatest-matchers-core"),
+        scala_artifact("org.scalatest:scalatest-core"),
+        maven_artifact("org.scalatest:scalatest-compatible"),
+        scala_artifact("org.scalatest:scalatest-shouldmatchers"),
         scala_artifact("org.scalatestplus:mockito-3-4"),
         maven_artifact("org.mockito:mockito-core"),
         maven_artifact("org.apache.thrift:libthrift"),
@@ -123,7 +131,9 @@ scala_test_suite(
         maven_artifact("com.github.ben-manes.caffeine:caffeine"),
         maven_artifact("junit:junit"),
         maven_artifact("com.novocode:junit-interface"),
-    ],
+    ] + select_for_scala_version(before_2_13 = [
+        maven_artifact("com.fasterxml.jackson.module:jackson-module-scala_2.12"),
+    ]),
 )
 
 genrule(

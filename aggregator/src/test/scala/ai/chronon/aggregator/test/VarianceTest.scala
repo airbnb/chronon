@@ -20,6 +20,7 @@ import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.base.Variance
 import junit.framework.TestCase
 import org.junit.Assert._
+import org.junit.Test
 
 class VarianceTest extends TestCase {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -59,6 +60,7 @@ class VarianceTest extends TestCase {
     assertTrue((naiveResult - welfordResult) / naiveResult < 0.0000001)
   }
 
+  @Test
   def testVariance: Unit = {
     compare(1000000)
     compare(1000000, min = 100000, max = 100001)
