@@ -390,3 +390,11 @@ def test_get_dependencies_with_events(query_with_partition_column: Query):
     partition_col = query_with_partition_column.partitionColumn or "ds"
     expected_spec = f"event_table/{partition_col}={{{{ macros.ds_add(ds, -2) }}}}"
     assert dep["spec"] == expected_spec
+
+def test_is_valid_ttype_enum_value_valid():
+    assert utils.is_valid_ttype_enum_value(api.Accuracy.TEMPORAL, api.Accuracy)
+    assert utils.is_valid_ttype_enum_value(api.Accuracy.SNAPSHOT, api.Accuracy)
+
+def test_is_valid_ttype_enum_value_invalid():
+    assert not utils.is_valid_ttype_enum_value(-1, api.Accuracy)
+    assert not utils.is_valid_ttype_enum_value(100, api.Accuracy)
