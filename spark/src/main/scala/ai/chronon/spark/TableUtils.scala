@@ -238,7 +238,9 @@ case object Iceberg extends Format {
 
   override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
       sparkSession: SparkSession): Seq[Map[String, String]] = {
-    sparkSession.read.format("iceberg").load(s"$tableName.partitions")
+    sparkSession.read
+      .format("iceberg")
+      .load(s"$tableName.partitions")
       .select("partition")
       .collect()
       .map { row =>
