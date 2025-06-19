@@ -150,11 +150,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     } else {
       toDf(snapshotEntitiesBase, Seq(tableUtils.partitionColumn -> StringType))
     }
-
-  def computeHopsAggregate(endTimes: Array[Long], resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
-    hopsAggregate(endTimes.min, resolution)
-  }
-
+  
   def computeSawtoothAggregate(hops: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)],
                                endTimes: Array[Long],
                                resolution: Resolution): RDD[(Array[Any], Array[Any])] = {
@@ -179,7 +175,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
                          incAgg: Boolean = true): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
 
-    val hops = computeHopsAggregate(endTimes, resolution)
+    val hops = hopsAggregate(endTimes.min, resolution)
     computeSawtoothAggregate(hops, endTimes, resolution)
   }
 
@@ -378,21 +374,10 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
   }
 
-  //def convertDfToOutputArrayType(df: DataFrame): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
-  //  val keyBuilder: Row => KeyWithHash =
-  //    FastHashing.generateKeyBuilder(keyColumns.toArray, df.schema)
-
-  //  df.rdd
-  //    .keyBy(keyBuilder)
-  //    .mapValues(SparkConversions.toChrononRow(_, tsIndex))
-  //}
-
   def flattenOutputArrayType(hopsArrays: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)]): RDD[(Array[Any], Array[Any])] = {
     hopsArrays.flatMap { case (keyWithHash: KeyWithHash, hopsArray: HopsAggregator.OutputArrayType) =>
       val hopsArrayHead: Array[HopIr] = hopsArray.headOption.get
       hopsArrayHead.map { array: HopIr =>
-        // the last element is a timestamp, we need to drop it
-        // and add it to the key
         val timestamp = array.last.asInstanceOf[Long]
         val withoutTimestamp = array.dropRight(1)
         ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), withoutTimestamp)
@@ -412,7 +397,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   // Class HopsCacher(keySchema, irSchema, resolution) extends RddCacher[(KeyWithHash, HopsOutput)]
   //  buildTableRow((keyWithHash, hopsOutput)) -> GenericRowWithSchema
   //  buildRddRow(GenericRowWithSchema) -> (keyWithHash, hopsOutput)
-  def hopsAggregate(minQueryTs: Long, resolution: Resolution, incAgg: Boolean = false): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+  def hopsAggregate(minQueryTs: Long, resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
     val hopsAggregator =
       new HopsAggregator(minQueryTs, aggregations, selectedSchema, resolution)
     val keyBuilder: Row => KeyWithHash =
@@ -755,7 +740,7 @@ object GroupBy {
 
     val incrementalSchema = incrementalGroupByBackfill.incrementalSchema
 
-    val hops = incrementalGroupByBackfill.computeHopsAggregate(range.toTimePoints, DailyResolution)
+    val hops = incrementalGroupByBackfill.hopsAggregate(range.toTimePoints.min, DailyResolution)
     val hopsDf = incrementalGroupByBackfill.convertHopsToDf(hops, incrementalSchema)
     hopsDf.save(incrementalOutputTable, tableProps)
 
