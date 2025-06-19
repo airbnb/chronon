@@ -70,8 +70,8 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
     .toArray
     .zip(columnAggregators.map(_.irType))
 
-  val incSchema = aggregationParts
-    .map(_.incOutputColumnName)
+  val incrementalOutputSchema = aggregationParts
+    .map(_.incrementalOutputColumnName)
     .toArray
     .zip(columnAggregators.map(_.irType))
 

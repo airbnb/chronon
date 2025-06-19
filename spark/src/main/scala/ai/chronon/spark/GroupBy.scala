@@ -23,7 +23,7 @@ import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
+import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro, Source}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
@@ -43,7 +43,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               val mutationDfFn: () => DataFrame = null,
               skewFilter: Option[String] = None,
               finalize: Boolean = true,
-              incAgg: Boolean = false
+              incrementalMode: Boolean = false
              )
     extends Serializable {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -98,6 +98,10 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     }
     SparkConversions.fromChrononSchema(valueChrononSchema)
   }
+
+  lazy val flattenedAgg: RowAggregator = new RowAggregator(selectedSchema, aggregations.flatMap(_.unWindowed))
+  lazy val incrementalSchema: Array[(String, api.DataType)] = flattenedAgg.incrementalOutputSchema
+
 
   @transient
   protected[spark] lazy val windowAggregator: RowAggregator =
@@ -509,7 +513,7 @@ object GroupBy {
            skewFilter: Option[String] = None,
            finalize: Boolean = true,
            showDf: Boolean = false,
-           incrementalAgg: Boolean = false): GroupBy = {
+           incrementalMode: Boolean = false): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala
@@ -593,17 +597,21 @@ object GroupBy {
       }
       df
     }
-    val finalizeValue = if (incrementalAgg) {
-      !incrementalAgg
+
+    //if incrementalMode is enabled, we do not compute finalize values
+    //IR values are stored in the table
+    val finalizeValue = if (incrementalMode) {
+      false
     } else {
       finalize
     }
+
     new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
         keyColumns,
         nullFiltered,
         mutationDfFn,
         finalize = finalizeValue,
-      incAgg = incrementalAgg,
+        incrementalMode = incrementalMode,
     )
   }
 
@@ -723,58 +731,77 @@ object GroupBy {
     query
   }
 
-  def saveAndGetIncDf(
+  /**
+    * Computes and saves the output of hopsAggregation.
+    * HopsAggregate computes event level data to daily aggregates and saves the output in IR format
+    *
+    * @param groupByConf
+    * @param range
+    * @param tableUtils
+    */
+  def computeIncrementalDf(
+                            groupByConf: api.GroupBy,
+                            range: PartitionRange,
+                            tableUtils: TableUtils,
+                          ): GroupBy = {
+
+    val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
+    val tableProps = Option(groupByConf.metaData.tableProperties)
+      .map(_.toScala)
+      .orNull
+
+    val incrementalGroupByBackfill =
+      from(groupByConf, range, tableUtils, computeDependency = true, incrementalMode = true)
+
+    val incrementalSchema = incrementalGroupByBackfill.incrementalSchema
+
+    val hops = incrementalGroupByBackfill.computeHopsAggregate(range.toTimePoints, DailyResolution)
+    val hopsDf = incrementalGroupByBackfill.convertHopsToDf(hops, incrementalSchema)
+    hopsDf.save(incrementalOutputTable, tableProps)
+
+    incrementalGroupByBackfill
+  }
+
+  def fromIncrementalDf(
                        groupByConf: api.GroupBy,
                        range: PartitionRange,
                        tableUtils: TableUtils,
                      ): GroupBy = {
-    val incOutputTable = groupByConf.metaData.incOutputTable
-    val tableProps = Option(groupByConf.metaData.tableProperties)
-      .map(_.toScala)
-      .orNull
-    //range should be modified to incremental range
-    val incGroupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true, incrementalAgg = true)
-    val selectedSchema = incGroupByBackfill.selectedSchema
-    //TODO is there any other way to get incSchema?
-    val incFlattendAgg = new RowAggregator(selectedSchema, incGroupByBackfill.aggregations.flatMap(_.unWindowed))
-      val incSchema = incFlattendAgg.incSchema
-    val hops = incGroupByBackfill.computeHopsAggregate(range.toTimePoints, DailyResolution)
-    val hopsDf = incGroupByBackfill.convertHopsToDf(hops, incSchema)
-    hopsDf.save(incOutputTable, tableProps)
 
-    val maxWindow = groupByConf.maxWindow.get
+
+    val incrementalGroupByBackfill: GroupBy = computeIncrementalDf(groupByConf, range, tableUtils)
+
+    val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
     val sourceQueryableRange = PartitionRange(
-      tableUtils.partitionSpec.minus(range.start, maxWindow),
+      tableUtils.partitionSpec.minus(range.start, groupByConf.maxWindow.get),
       range.end
     )(tableUtils)
 
-    val incTableFirstPartition: Option[String] = tableUtils.firstAvailablePartition(incOutputTable)
-    val incTableLastPartition: Option[String] = tableUtils.lastAvailablePartition(incOutputTable)
+    val incTableFirstPartition: Option[String] = tableUtils.firstAvailablePartition(incrementalOutputTable)
+    val incTableLastPartition: Option[String] = tableUtils.lastAvailablePartition(incrementalOutputTable)
 
     val incTableRange = PartitionRange(
       incTableFirstPartition.get,
       incTableLastPartition.get
     )(tableUtils)
 
-    //val dfQuery = groupByConf.
-    val incDfQuery = incTableRange.intersect(sourceQueryableRange).genScanQuery(null, incOutputTable)
-    val incDf: DataFrame = tableUtils.sql(incDfQuery)
-    //incGroupByBackfill.computeSawtoothAggregate(incDf, range.toTimePoints, DailyResolution)
+    val incrementalDf: DataFrame = tableUtils.sql(
+      incTableRange.intersect(sourceQueryableRange).genScanQuery(null, incrementalOutputTable)
+    )
 
-    val a = incFlattendAgg.aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
+    val incrementalAggregations = incrementalGroupByBackfill.flattenedAgg.aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
       val newAgg = agg.deepCopy()
-      newAgg.setInputColumn(part.incOutputColumnName)
+      newAgg.setInputColumn(part.incrementalOutputColumnName)
       newAgg
     }
 
-
     new GroupBy(
-      a,
+      incrementalAggregations,
       groupByConf.getKeyColumns.toScala,
-      incDf,
+      incrementalDf,
       () => null,
       finalize = true,
-      incAgg = false,
+      incrementalMode = false,
     )
 
   }
@@ -785,7 +812,7 @@ object GroupBy {
                       stepDays: Option[Int] = None,
                       overrideStartPartition: Option[String] = None,
                       skipFirstHole: Boolean = true,
-                      incrementalAgg: Boolean = true): Unit = {
+                      incrementalMode: Boolean = true): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
@@ -824,9 +851,8 @@ object GroupBy {
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               logger.info(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
-              val groupByBackfill: GroupBy = if (incrementalAgg) {
-                saveAndGetIncDf(groupByConf, range, tableUtils)
-                //from(groupByConf, range, tableUtils, computeDependency = true)
+              val groupByBackfill: GroupBy = if (incrementalMode) {
+                fromIncrementalDf(groupByConf, range, tableUtils)
               } else {
                 from(groupByConf, range, tableUtils, computeDependency = true)
               }

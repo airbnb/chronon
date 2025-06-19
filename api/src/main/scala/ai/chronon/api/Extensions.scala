@@ -98,7 +98,7 @@ object Extensions {
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
-    def incOutputTable = s"${metaData.outputNamespace}.${metaData.cleanName}_inc"
+    def incrementalOutputTable = s"${metaData.outputNamespace}.${metaData.cleanName}_inc"
     def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
     def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
@@ -178,7 +178,7 @@ object Extensions {
     def outputColumnName =
       s"${aggregationPart.inputColumn}_$opSuffix${aggregationPart.window.suffix}${bucketSuffix}"
 
-    def incOutputColumnName =
+    def incrementalOutputColumnName =
       s"${aggregationPart.inputColumn}_$opSuffix${bucketSuffix}"
 
   }
