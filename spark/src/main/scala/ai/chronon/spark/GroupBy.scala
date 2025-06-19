@@ -152,8 +152,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     }
 
   def snapshotEventsBase(partitionRange: PartitionRange,
-                         resolution: Resolution = DailyResolution,
-                         incAgg: Boolean = true): RDD[(Array[Any], Array[Any])] = {
+                         resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
     // add 1 day to the end times to include data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val shiftedEndTimes = endTimes.map(_ + tableUtils.partitionSpec.spanMillis)
