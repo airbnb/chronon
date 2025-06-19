@@ -155,11 +155,11 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
                          resolution: Resolution = DailyResolution,
                          incAgg: Boolean = true): RDD[(Array[Any], Array[Any])] = {
     val endTimes: Array[Long] = partitionRange.toTimePoints
-
-    val hops = hopsAggregate(endTimes.min, resolution)
     // add 1 day to the end times to include data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val shiftedEndTimes = endTimes.map(_ + tableUtils.partitionSpec.spanMillis)
     val sawtoothAggregator = new SawtoothAggregator(aggregations, selectedSchema, resolution)
+    val hops = hopsAggregate(endTimes.min, resolution)
+
     hops
       .flatMap {
         case (keys, hopsArrays) =>
