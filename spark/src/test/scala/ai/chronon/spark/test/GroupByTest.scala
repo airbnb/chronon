@@ -23,6 +23,7 @@ import ai.chronon.api.{Aggregation, Builders, Constants, Derivation, DoubleType,
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
+import ai.chronon.spark.test.TestUtils.makeDf
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
@@ -423,6 +424,7 @@ class GroupByTest {
              additionalAgg = aggs)
   }
 
+
   private def createTestSource(windowSize: Int = 365, suffix: String = ""): (Source, String) = {
     lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
@@ -693,5 +695,97 @@ class GroupByTest {
              namespace = namespace,
              tableUtils = tableUtils,
              additionalAgg = aggs)
+  }
+
+  @Test
+  def testIncrementalMode(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+
+    val namespace = "test_incremental_group_by"
+
+    val schema =
+      ai.chronon.api.StructType(
+        "test_incremental_group_by",
+        Array(
+          ai.chronon.api.StructField("user", StringType),
+          ai.chronon.api.StructField("purchase_price", IntType),
+          ai.chronon.api.StructField("ds", StringType),
+          ai.chronon.api.StructField("ts", LongType)
+        )
+      )
+
+
+    val sourceTable = "test_incremental_group_by_" + Random.alphanumeric.take(6).mkString
+    val data = List(
+        Row("user1", 100, "2025-06-01", 1748772000000L),
+        Row("user2", 200, "2025-06-01", 1748772000000L),
+        Row("user3", 300, "2025-06-01", 1748772000000L),
+    )
+    val df = makeDf(spark, schema, data).save(s"${namespace}.${sourceTable}")
+
+
+    val source = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("ts", "user", "purchase_price", "ds"),
+        startPartition = "2025-06-01"),
+      table = sourceTable
+    )
+
+    // Define aggregations
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.SUM, "purchase_price", Seq(new Window(3, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "purchase_price", Seq(new Window(3, TimeUnit.DAYS)))
+    )
+
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = aggregations,
+      metaData = Builders.MetaData(name = "intermediate_output_gb", namespace = "test_incremental_group_by", team = "chronon"),
+      backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+        new Window(60, TimeUnit.DAYS)),
+    )
+
+    val outputTableName = groupByConf.metaData.incrementalOutputTable
+
+    GroupBy.computeIncrementalDf(
+        groupByConf,
+        PartitionRange("2025-06-01", "2025-06-01"),
+        tableUtils
+    )
+
+    //check if the table exists
+    assertTrue(s"Output table $outputTableName should exist", spark.catalog.tableExists(outputTableName))
+    
+    // Create GroupBy with incrementalMode = true
+    /*
+    val incrementalGroupBy = new GroupBy(
+      aggregations = aggregations,
+      keyColumns = Seq("user"),
+      inputDf = df,
+      incrementalMode = true
+    )
+     */
+    
+    // Test that incremental schema is available
+    //val incrementalSchema = incrementalGroupBy.incrementalSchema
+    //assertNotNull("Incremental schema should not be null", incrementalSchema)
+    //assertEquals("Should have correct number of incremental schema columns",
+    //            aggregations.length, incrementalSchema.length)
+
+
+    // Test that we can compute snapshot events
+    //val result = incrementalGroupBy.snapshotEvents(PartitionRange("2025-06-01", "2025-06-01"))
+    //println("================================")
+    //println(df.show())
+    //println(result.show())
+    //println("================================")
+    //assertNotNull("Should be able to compute snapshot events", result)
+    //assertTrue("Result should have data", result.count() > 100)
+    
+    // Verify that result contains expected columns
+    //val resultColumns = result.columns.toSet
+    //assertTrue("Result should contain user column", resultColumns.contains("user"))
+    //assertTrue("Result should contain partition column", resultColumns.contains(tableUtils.partitionColumn))
   }
 }
