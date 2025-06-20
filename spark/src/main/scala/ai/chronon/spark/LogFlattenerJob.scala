@@ -34,7 +34,7 @@ import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{IterableOps, MapOps}
 import scala.util.{Failure, Success, Try}
 
-import ai.chronon.online.OnlineDerivationUtil.timeFields
+import ai.chronon.online.DerivationUtils.timeFields
 
 /**
   * Purpose of LogFlattenerJob is to unpack serialized Avro data from online requests and flatten each field
