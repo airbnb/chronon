@@ -497,12 +497,12 @@ object GroupBy {
     val inputDf = groupByConf.sources.toScala
       .map { source =>
         renderDataSourceQuery(groupByConf,
-          source,
-          groupByConf.getKeyColumns.toScala,
-          queryRange,
-          tableUtils,
-          groupByConf.maxWindow,
-          groupByConf.inferredAccuracy)
+                              source,
+                              groupByConf.getKeyColumns.toScala,
+                              queryRange,
+                              tableUtils,
+                              groupByConf.maxWindow,
+                              groupByConf.inferredAccuracy)
 
       }
       .map {
@@ -790,7 +790,7 @@ object GroupBy {
                       stepDays: Option[Int] = None,
                       overrideStartPartition: Option[String] = None,
                       skipFirstHole: Boolean = true,
-                      incrementalMode: Boolean = true): Unit = {
+                      incrementalMode: Boolean = false): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
