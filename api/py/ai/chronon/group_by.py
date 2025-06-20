@@ -349,6 +349,7 @@ def GroupBy(
     tags: Dict[str, str] = None,
     derivations: List[ttypes.Derivation] = None,
     deprecation_date: str = None,
+    is_incremental: bool = False,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
@@ -556,6 +557,7 @@ def GroupBy(
         backfillStartDate=backfill_start_date,
         accuracy=accuracy,
         derivations=derivations,
+        isIncremental=is_incremental,
     )
     validate_group_by(group_by)
     return group_by
