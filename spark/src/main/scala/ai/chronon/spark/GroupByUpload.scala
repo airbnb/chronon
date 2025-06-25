@@ -53,7 +53,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
         .map { row =>
           keyBuilder(row).data -> valuesIndices.map(row.get)
         }
-      
+
       logger.info(
         s"""
            |pre-agg upload:
