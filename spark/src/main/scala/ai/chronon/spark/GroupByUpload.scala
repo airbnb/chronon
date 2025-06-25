@@ -54,8 +54,7 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
           keyBuilder(row).data -> valuesIndices.map(row.get)
         }
 
-      logger.info(
-        s"""
+      logger.info(s"""
            |pre-agg upload:
            |  input schema: ${groupBy.inputDf.schema.catalogString}
            |    key schema: ${groupBy.keySchema.catalogString}
