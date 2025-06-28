@@ -33,12 +33,12 @@ LOGGER = logging.getLogger()
 
 
 def collector(
-    op: ttypes.Operation,
-) -> Callable[[ttypes.Operation], Tuple[ttypes.Operation, Dict[str, str]]]:
+    op: int,
+) -> Callable[[int], Tuple[int, Dict[str, str]]]:
     return lambda k: (op, {"k": str(k)})
 
 
-def generic_collector(op: ttypes.Operation, required, **kwargs):
+def generic_collector(op: int, required, **kwargs):
     def _collector(*args, **other_args):
         arguments = kwargs.copy() if kwargs else {}
         for idx, arg in enumerate(required):
@@ -123,8 +123,8 @@ def op_to_str(operation: OperationType):
 
 # See docs/Aggregations.md
 def Aggregation(
-    input_column: str = None,
-    operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
+    input_column: Optional[str] = None,
+    operation: Optional[Union[int, Tuple[int, Dict[str, str]]]] = None,
     windows: Optional[List[ttypes.Window]] = None,
     buckets: Optional[List[str]] = None,
     tags: Optional[Dict[str, str]] = None,
@@ -154,12 +154,14 @@ def Aggregation(
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
+    assert utils.is_valid_ttype_enum_value(operation, ttypes.Operation), f"Invalid operation: {operation}"
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
     agg.tags = tags
     return agg
 
 
-def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
+def Window(length: int, timeUnit: int) -> ttypes.Window:
+    assert utils.is_valid_ttype_enum_value(timeUnit, ttypes.TimeUnit), f"Invalid timeUnit: {timeUnit}"
     return ttypes.Window(length, timeUnit)
 
 
@@ -344,7 +346,7 @@ def GroupBy(
     env: Optional[Dict[str, Dict[str, str]]] = None,
     table_properties: Optional[Dict[str, str]] = None,
     output_namespace: Optional[str] = None,
-    accuracy: Optional[ttypes.Accuracy] = None,
+    accuracy: Optional[int] = None,
     lag: int = 0,
     offline_schedule: str = "@daily",
     name: Optional[str] = None,
@@ -475,6 +477,8 @@ def GroupBy(
         A GroupBy object containing specified aggregations.
     """
     assert sources, "Sources are not specified"
+    if accuracy is not None:
+        assert utils.is_valid_ttype_enum_value(accuracy, ttypes.Accuracy), f"Invalid accuracy: {accuracy}"
 
     agg_inputs = []
     if aggregations is not None:
