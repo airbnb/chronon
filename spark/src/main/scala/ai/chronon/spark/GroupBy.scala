@@ -367,7 +367,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
 
-    inputDf.rdd
+    tableUtils
+      .preAggRepartition(inputDf.rdd)
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, tsIndex))
       .aggregateByKey(zeroValue = hopsAggregator.init())(
