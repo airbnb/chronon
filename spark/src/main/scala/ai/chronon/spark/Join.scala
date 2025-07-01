@@ -48,15 +48,16 @@ import scala.util.{Failure, Success, Try}
 case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
 object CoveringSet {
+
+  private def arraysEqualFunc(colName: String, expected: Seq[String]): Column = {
+    // Avoid direct comparison of arrays because Iceberg cannot support Array literals in filter pushdown.
+    size(array_except(col(colName), typedLit(expected))) === 0 && size(col(colName)) === expected.size
+  }
+
   def toFilterCondition(coveringSets: Seq[CoveringSet]): Column = {
-    val excludedConditions: Seq[Column] = coveringSets.map { coveringSet =>
-      val coveringSetLit = coveringSet.hashes.map(lit)
-      val coveringSetsArray = array(coveringSetLit: _*)          // A list of all acceptable coveringSets
-      col(Constants.MatchedHashes) === coveringSetsArray
-    }
+    val excludedConditions = coveringSets.map { cs => arraysEqualFunc(Constants.MatchedHashes, cs.hashes) }
 
     val disjunction = excludedConditions.reduceOption(_ || _).getOrElse(lit(false))
-
     col(Constants.MatchedHashes).isNull || !disjunction
   }
 }
