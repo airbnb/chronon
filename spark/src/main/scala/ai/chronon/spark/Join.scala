@@ -24,7 +24,7 @@ import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{Column, DataFrame}
 import org.apache.spark.sql.functions._
 import org.apache.spark.util.sketch.BloomFilter
 
@@ -48,17 +48,17 @@ import scala.util.{Failure, Success, Try}
 case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
 object CoveringSet {
-  def toFilterExpression(coveringSets: Seq[CoveringSet]): String = {
-    val coveringSetHashExpression = "(" +
-      coveringSets
-        .map { coveringSet =>
-          val hashes = coveringSet.hashes.map("'" + _.trim + "'").mkString(", ")
-          s"array($hashes)"
-        }
-        .mkString(", ") +
-      ")"
 
-    s"( ${Constants.MatchedHashes} IS NULL ) OR ( ${Constants.MatchedHashes} NOT IN $coveringSetHashExpression )"
+  private def arraysEqualFunc(colName: String, expected: Seq[String]): Column = {
+    // Avoid direct comparison of arrays because Iceberg cannot support Array literals in filter pushdown.
+    size(array_except(col(colName), typedLit(expected))) === 0 && size(col(colName)) === expected.size
+  }
+
+  def toFilterCondition(coveringSets: Seq[CoveringSet]): Column = {
+    val excludedConditions = coveringSets.map { cs => arraysEqualFunc(Constants.MatchedHashes, cs.hashes) }
+
+    val disjunction = excludedConditions.reduceOption(_ || _).getOrElse(lit(false))
+    col(Constants.MatchedHashes).isNull || !disjunction
   }
 }
 
@@ -621,7 +621,7 @@ class Join(joinConf: api.Join,
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
       return Some(bootstrapDfWithStats)
     }
-    val filterExpr = CoveringSet.toFilterExpression(coveringSets)
+    val filterExpr = CoveringSet.toFilterCondition(coveringSets)
     logger.info(s"Using covering set filter: $filterExpr")
     val filteredDf = bootstrapDf.where(filterExpr)
     val filteredCount = filteredDf.count()
