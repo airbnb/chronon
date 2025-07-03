@@ -58,8 +58,11 @@ object Fetcher {
   case class SeriesStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
   case class ResponseWithContext(request: Request,
+                                 joinCodec: Option[JoinCodec],
+                                 ctx: Metrics.Context,
                                  derivedValues: Map[String, AnyRef],
-                                 baseValues: Map[String, AnyRef]) {
+                                 baseValues: Map[String, AnyRef],
+                                 modelTransformsValues: Option[Map[String, AnyRef]] = None) {
     def combinedValues: Map[String, AnyRef] = baseValues ++ derivedValues
   }
   case class ColumnSpec(groupByName: String,
@@ -95,14 +98,16 @@ class Fetcher(val kvStore: KVStore,
               flagStore: FlagStore = null,
               disableErrorThrows: Boolean = false,
               executionContextOverride: ExecutionContext = null,
-              joinFetchParallelChunkSize: Option[Int] = None)
+              joinFetchParallelChunkSize: Option[Int] = None,
+              modelBackend: ModelBackend = null)
     extends FetcherBase(kvStore,
                         metaDataSet,
                         timeoutMillis,
                         debug,
                         flagStore,
                         disableErrorThrows,
-                        executionContextOverride) {
+                        executionContextOverride,
+                        modelBackend) {
   private def reportCallerNameFetcherVersion(): Unit = {
     val message = s"CallerName: ${Option(callerName).getOrElse("N/A")}, FetcherVersion: ${BuildInfo.version}"
     val ctx = Metrics.Context(Environment.Fetcher)
@@ -256,9 +261,9 @@ class Fetcher(val kvStore: KVStore,
     batchFutures
   }
 
-  private def doFetchJoin(requests: scala.collection.Seq[Request],
-                          joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
-    val ts = System.currentTimeMillis()
+  private def fetchJoinPreModelTransforms(requests: scala.collection.Seq[Request],
+                                          joinConf: Option[api.Join],
+                                          requestStartTs: Long): Future[scala.collection.Seq[ResponseWithContext]] = {
     val internalResponsesF = super.fetchJoin(requests, joinConf)
     val externalResponsesF = fetchExternal(requests)
     val combinedResponsesF = internalResponsesF.zip(externalResponsesF).map {
@@ -334,8 +339,7 @@ class Fetcher(val kvStore: KVStore,
                 val finalizedDerivedMap = derivedMap ++ baseMapExceptions
                 val requestEndTs = System.currentTimeMillis()
                 ctx.distribution("derivation.latency.millis", requestEndTs - derivationStartTs)
-                ctx.distribution("overall.latency.millis", requestEndTs - ts)
-                val response = ResponseWithContext(request, finalizedDerivedMap, baseMap)
+                val response = ResponseWithContext(request, Some(joinCodec), ctx, finalizedDerivedMap, baseMap)
                 // Refresh joinCodec if it has partial failure
                 if (hasPartialFailure) {
                   getJoinCodecs.refresh(joinName)
@@ -346,14 +350,36 @@ class Fetcher(val kvStore: KVStore,
                 getJoinCodecs.refresh(joinName)
                 ctx.incrementException(exception)
                 ResponseWithContext(internalResponse.request,
+                                    None,
+                                    ctx,
                                     Map("join_codec_fetch_exception" -> exception.traceString),
                                     Map.empty)
             }
         }
     }
-
     combinedResponsesF
-      .map(_.iterator.map(logResponse(_, ts)).toSeq)
+  }
+
+  private def doFetchJoin(requests: scala.collection.Seq[Request],
+                          joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
+
+    val requestStartTs = System.currentTimeMillis()
+    val responsesPreModelTransforms: Future[scala.collection.Seq[ResponseWithContext]] =
+      fetchJoinPreModelTransforms(requests, joinConf, requestStartTs)
+    val responsesPostModelTransforms =
+      FetcherModelUtils.fetchModelTransforms(responsesPreModelTransforms, this.modelBackend)
+    val requestEndTs = System.currentTimeMillis()
+    responsesPostModelTransforms.foreach {
+      _.foreach { resp =>
+        resp.ctx.distribution("overall.latency.millis", requestEndTs - requestStartTs)
+      }
+    }
+    val loggedResponses = responsesPostModelTransforms.map(_.iterator.map(logResponse(_, requestStartTs)).toSeq)
+    loggedResponses.map { responses =>
+      responses.map { resp =>
+        Response(resp.request, Success(resp.modelTransformsValues.getOrElse(resp.derivedValues)))
+      }
+    }
   }
 
   private def encode(loggingContext: Option[Metrics.Context],
@@ -393,7 +419,7 @@ class Fetcher(val kvStore: KVStore,
     tryOnce(null, tries, totalTries = tries)
   }
 
-  private def logResponse(resp: ResponseWithContext, ts: Long): Response = {
+  private def logResponse(resp: ResponseWithContext, ts: Long): ResponseWithContext = {
     val loggingStartTs = System.currentTimeMillis()
     val loggingContext = resp.request.context.map(_.withSuffix("logging_request"))
     val loggingTs = resp.request.atMillis.getOrElse(ts)
@@ -407,19 +433,19 @@ class Fetcher(val kvStore: KVStore,
 
         // Exit early if sample percent is 0
         if (samplePercent == 0) {
-          return Response(resp.request, Success(resp.derivedValues))
+          return resp
         }
 
-        val keyBytesTry: Try[Array[Byte]] = encode(loggingContext.map(_.withSuffix("encode_key")),
-                                                   codec.keySchema,
-                                                   codec.keyCodec,
-                                                   resp.request.keys,
-                                                   cast = true)
-        if (keyBytesTry.isFailure) {
-          loggingContext.foreach(_.withSuffix("encode_key").incrementException(keyBytesTry.failed.get))
-          throw keyBytesTry.failed.get
-        }
-        val keyBytes = keyBytesTry.get
+        val keyBytes = encode(loggingContext.map(_.withSuffix("encode_key")),
+                              codec.keySchema,
+                              codec.keyCodec,
+                              resp.request.keys,
+                              cast = true).recover {
+          case e: Throwable =>
+            loggingContext.foreach(_.withSuffix("encode_key").incrementException(e))
+            throw e
+        }.get
+
         val hash = if (samplePercent > 0) {
           Math.abs(HashUtils.md5Long(keyBytes))
         } else {
@@ -427,11 +453,7 @@ class Fetcher(val kvStore: KVStore,
         }
         val shouldPublishLog = (hash > 0) && ((hash % (100 * 1000)) <= (samplePercent * 1000))
         if (shouldPublishLog || debug) {
-          val values = if (codec.conf.join.logFullValues) {
-            resp.combinedValues
-          } else {
-            resp.derivedValues
-          }
+          val values = codec.buildLoggingValues(resp)
 
           if (debug) {
             logger.info(s"Logging ${resp.request.keys} : ${hash % 100000}: $samplePercent")
@@ -443,13 +465,14 @@ class Fetcher(val kvStore: KVStore,
                |""".stripMargin)
           }
 
-          val valueBytesTry: Try[Array[Byte]] =
-            encode(loggingContext.map(_.withSuffix("encode_value")), codec.valueSchema, codec.valueCodec, values)
-          if (valueBytesTry.isFailure) {
-            loggingContext.foreach(_.withSuffix("encode_value").incrementException(valueBytesTry.failed.get))
-            throw valueBytesTry.failed.get
-          }
-          val valueBytes = valueBytesTry.get
+          val valueBytes = encode(loggingContext.map(_.withSuffix("encode_value")),
+                                  codec.valueSchema,
+                                  codec.valueCodec,
+                                  values).recover {
+            case e: Throwable =>
+              loggingContext.foreach(_.withSuffix("encode_value").incrementException(e))
+              throw e
+          }.get
 
           val loggableResponse = LoggableResponse(
             keyBytes,
@@ -502,7 +525,7 @@ class Fetcher(val kvStore: KVStore,
     if (joinCodecTry.isSuccess && joinCodecTry.get._2) {
       getJoinCodecs.refresh(resp.request.name)
     }
-    Response(resp.request, Success(resp.derivedValues))
+    resp
   }
 
   // Pulling external features in a batched fashion across services in-parallel
