@@ -406,7 +406,8 @@ object GroupBy {
                         queryRange: PartitionRange,
                         tableUtils: TableUtils,
                         computeDependency: Boolean = true,
-                        showDf: Boolean = false): api.GroupBy = {
+                        showDf: Boolean = false,
+                        groupByBackfill: Boolean = false): api.GroupBy = {
     val result = groupByConf.deepCopy()
     val newSources: java.util.List[api.Source] = groupByConf.sources.toScala.map { source =>
       if (source.isSetJoinSource) {
@@ -416,7 +417,7 @@ object GroupBy {
         // materialize the table with the right end date. QueryRange.end could be shifted for temporal events
         val beforeDs = tableUtils.partitionSpec.before(queryRange.end)
         val isPreShifted =
-          groupByConf.dataModel == DataModel.Events && groupByConf.inferredAccuracy == Accuracy.TEMPORAL
+          groupByConf.dataModel == DataModel.Events && groupByConf.inferredAccuracy == Accuracy.TEMPORAL && !groupByBackfill
         val endDate = if (isPreShifted) beforeDs else queryRange.end
 
         val join = new Join(joinConf, endDate, tableUtils, showDf = showDf)
@@ -462,9 +463,11 @@ object GroupBy {
            bloomMapOpt: Option[util.Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true,
-           showDf: Boolean = false): GroupBy = {
+           showDf: Boolean = false,
+           groupByBackfill: Boolean = false): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
-    val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
+    val groupByConf =
+      replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf, groupByBackfill)
     val inputDf = groupByConf.sources.toScala
       .map { source =>
         val partitionColumn = tableUtils.getPartitionColumn(source.query)
@@ -734,7 +737,8 @@ object GroupBy {
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               logger.info(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
-              val groupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true)
+              val groupByBackfill =
+                from(groupByConf, range, tableUtils, computeDependency = true, groupByBackfill = true)
               val outputDf = groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
