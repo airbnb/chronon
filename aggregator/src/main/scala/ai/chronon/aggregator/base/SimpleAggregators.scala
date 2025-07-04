@@ -649,7 +649,8 @@ class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggre
 
   override def normalize(ir: util.Set[String]): Any = new util.ArrayList[String](ir)
 
-  override def denormalize(ir: Any): util.Set[String] = new util.HashSet[String](ir.asInstanceOf[util.ArrayList[String]])
+  override def denormalize(ir: Any): util.Set[String] =
+    new util.HashSet[String](ir.asInstanceOf[util.ArrayList[String]])
 }
 
 // Based on CPC sketch (a faster, smaller and more accurate version of HLL)
