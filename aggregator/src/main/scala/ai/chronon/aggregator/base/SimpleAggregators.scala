@@ -25,6 +25,7 @@ import com.yahoo.sketches.kll.KllFloatsSketch
 import com.yahoo.sketches.{ArrayOfDoublesSerDe, ArrayOfItemsSerDe, ArrayOfLongsSerDe, ArrayOfStringsSerDe}
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
+import java.security.MessageDigest
 import java.util
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -599,19 +600,33 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
   }
 }
 
-class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggregator[T, util.Set[T], Long] {
-  override def prepare(input: T): util.Set[T] = {
-    val result = new util.HashSet[T](k)
-    result.add(input)
+class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggregator[T, util.Set[String], Long] {
+  private def toBytes(input: T): Array[Byte] = {
+    val bos = new ByteArrayOutputStream()
+    val out = new ObjectOutputStream(bos)
+    out.writeObject(input)
+    out.flush()
+    bos.toByteArray
+  }
+
+  private def md5Hex(bytes: Array[Byte]): String =
+    MessageDigest.getInstance("MD5").digest(bytes).map("%02x".format(_)).mkString
+
+  private def hashInput(input: T): String =
+    md5Hex(toBytes(input))
+
+  override def prepare(input: T): util.Set[String] = {
+    val result = new util.HashSet[String](k)
+    result.add(hashInput(input))
     result
   }
 
-  override def update(ir: util.Set[T], input: T): util.Set[T] = {
+  override def update(ir: util.Set[String], input: T): util.Set[String] = {
     if (ir.size() >= k) {
       return ir
     }
 
-    ir.add(input)
+    ir.add(hashInput(input))
     ir
   }
 
@@ -619,7 +634,7 @@ class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggre
 
   override def irType: DataType = ListType(inputType)
 
-  override def merge(ir1: util.Set[T], ir2: util.Set[T]): util.Set[T] = {
+  override def merge(ir1: util.Set[String], ir2: util.Set[String]): util.Set[String] = {
     ir2.asScala.foreach(v =>
       if (ir1.size() < k) {
         ir1.add(v)
@@ -628,13 +643,13 @@ class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggre
     ir1
   }
 
-  override def finalize(ir: util.Set[T]): Long = ir.size()
+  override def finalize(ir: util.Set[String]): Long = ir.size()
 
-  override def clone(ir: util.Set[T]): util.Set[T] = new util.HashSet[T](ir)
+  override def clone(ir: util.Set[String]): util.Set[String] = new util.HashSet[String](ir)
 
-  override def normalize(ir: util.Set[T]): Any = new util.ArrayList[T](ir)
+  override def normalize(ir: util.Set[String]): Any = new util.ArrayList[String](ir)
 
-  override def denormalize(ir: Any): util.Set[T] = new util.HashSet[T](ir.asInstanceOf[util.ArrayList[T]])
+  override def denormalize(ir: Any): util.Set[String] = new util.HashSet[String](ir.asInstanceOf[util.ArrayList[String]])
 }
 
 // Based on CPC sketch (a faster, smaller and more accurate version of HLL)

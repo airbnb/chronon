@@ -727,6 +727,7 @@ class GroupByTest {
 
   @Test
   def testBoundedUniqueCounts(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource(suffix = "_bounded_counts")
     val tableUtils = TableUtils(spark)
     val namespace = "test_bounded_counts"
