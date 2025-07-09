@@ -635,7 +635,7 @@ class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggre
   override def irType: DataType = ListType(StringType)
 
   override def merge(ir1: util.Set[String], ir2: util.Set[String]): util.Set[String] = {
-    ir2.asScala.foreach(v =>
+    ir2.iterator().asScala.foreach(v =>
       if (ir1.size() < k) {
         ir1.add(v)
       })
