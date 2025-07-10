@@ -600,7 +600,12 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
   }
 }
 
-class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggregator[T, util.Set[String], Long] {
+object BoundedUniqueCount {
+  private val SentinelSet: util.Set[Any] = new util.HashSet[Any]()
+  private val SentinelMarker: String = "__SENTINEL__"
+}
+
+class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggregator[T, util.Set[Any], Long] {
   private def toBytes(input: T): Array[Byte] = {
     val bos = new ByteArrayOutputStream()
     val out = new ObjectOutputStream(bos)
@@ -612,29 +617,45 @@ class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggre
   private def md5Hex(bytes: Array[Byte]): String =
     MessageDigest.getInstance("MD5").digest(bytes).map("%02x".format(_)).mkString
 
-  private def hashInput(input: T): String =
-    md5Hex(toBytes(input))
+  private def processInput(input: T): Any = {
+    inputType match {
+      case IntType | LongType | DoubleType | FloatType | ShortType | BinaryType =>
+        input
+      case _ =>
+        md5Hex(toBytes(input))
+    }
+  }
 
-  override def prepare(input: T): util.Set[String] = {
-    val result = new util.HashSet[String](k)
-    result.add(hashInput(input))
+  override def prepare(input: T): util.Set[Any] = {
+    val result = new util.HashSet[Any](k)
+    result.add(processInput(input))
     result
   }
 
-  override def update(ir: util.Set[String], input: T): util.Set[String] = {
-    if (ir.size() >= k) {
-      return ir
+  override def update(ir: util.Set[Any], input: T): util.Set[Any] = {
+    if (ir == BoundedUniqueCount.SentinelSet || ir.size() >= k) {
+      return BoundedUniqueCount.SentinelSet
     }
 
-    ir.add(hashInput(input))
+    ir.add(processInput(input))
     ir
   }
 
   override def outputType: DataType = LongType
 
-  override def irType: DataType = ListType(StringType)
+  override def irType: DataType =
+    inputType match {
+      case IntType | LongType | DoubleType | FloatType | ShortType | BinaryType =>
+        ListType(inputType)
+      case _ =>
+        ListType(StringType)
+    }
 
-  override def merge(ir1: util.Set[String], ir2: util.Set[String]): util.Set[String] = {
+  override def merge(ir1: util.Set[Any], ir2: util.Set[Any]): util.Set[Any] = {
+    if (ir1 == BoundedUniqueCount.SentinelSet || ir2 == BoundedUniqueCount.SentinelSet) {
+      return BoundedUniqueCount.SentinelSet
+    }
+
     ir2
       .iterator()
       .asScala
@@ -643,17 +664,47 @@ class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggre
           ir1.add(v)
         })
 
-    ir1
+    if (ir1.size() >= k) {
+      BoundedUniqueCount.SentinelSet
+    } else {
+      ir1
+    }
   }
 
-  override def finalize(ir: util.Set[String]): Long = ir.size()
+  override def finalize(ir: util.Set[Any]): Long = {
+    if (ir == BoundedUniqueCount.SentinelSet) {
+      k
+    } else {
+      ir.size()
+    }
+  }
 
-  override def clone(ir: util.Set[String]): util.Set[String] = new util.HashSet[String](ir)
+  override def clone(ir: util.Set[Any]): util.Set[Any] = {
+    if (ir == BoundedUniqueCount.SentinelSet) {
+      BoundedUniqueCount.SentinelSet
+    } else {
+      new util.HashSet[Any](ir)
+    }
+  }
 
-  override def normalize(ir: util.Set[String]): Any = new util.ArrayList[String](ir)
+  override def normalize(ir: util.Set[Any]): Any = {
+    if (ir == BoundedUniqueCount.SentinelSet) {
+      val list = new util.ArrayList[Any]()
+      list.add(BoundedUniqueCount.SentinelMarker)
+      list
+    } else {
+      new util.ArrayList[Any](ir)
+    }
+  }
 
-  override def denormalize(ir: Any): util.Set[String] =
-    new util.HashSet[String](ir.asInstanceOf[util.ArrayList[String]])
+  override def denormalize(ir: Any): util.Set[Any] = {
+    val list = ir.asInstanceOf[util.ArrayList[Any]]
+    if (list.size() == 1 && list.get(0) == BoundedUniqueCount.SentinelMarker) {
+      BoundedUniqueCount.SentinelSet
+    } else {
+      new util.HashSet[Any](list)
+    }
+  }
 }
 
 // Based on CPC sketch (a faster, smaller and more accurate version of HLL)
