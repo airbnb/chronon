@@ -123,6 +123,8 @@ object SparkSessionBuilder {
         .config("spark.default.parallelism", "2")
         .config("spark.testing", "true")
         .config("spark.sql.adaptive.enabled", true)
+        .config("spark.sql.adaptive.coalescePartitions.enabled", true)
+        .config("spark.sql.adaptive.skewJoin.enabled", true)
         .config("spark.local.dir", s"/tmp/$userName/$name")
         .config("spark.sql.warehouse.dir", s"$warehouseDir/data")
         .config("spark.driver.bindAddress", "127.0.0.1")
