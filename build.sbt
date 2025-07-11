@@ -1,5 +1,6 @@
 import sbt.Keys._
 import sbt.Test
+import xerial.sbt.Sonatype.autoImport._
 
 import scala.io.StdIn
 import scala.sys.process._
@@ -39,18 +40,16 @@ ThisBuild / developers := List(
 )
 ThisBuild / assembly / test := {}
 
+import xerial.sbt.Sonatype.sonatypeCentralHost
+ThisBuild / sonatypeCredentialHost := sonatypeCentralHost
+
 val use_spark_3_5 = settingKey[Boolean]("Flag to build for 3.5")
-ThisBuild / use_spark_3_5 := false 
+ThisBuild / use_spark_3_5 := false
 
 def buildTimestampSuffix = ";build.timestamp=" + new java.util.Date().getTime
 lazy val publishSettings = Seq(
   publishTo := {
-    if (isSnapshot.value) {
-      Some("snapshots" at sys.env.getOrElse("CHRONON_SNAPSHOT_REPO", "unknown-repo") + buildTimestampSuffix)
-    } else {
-      val nexus = "https://s01.oss.sonatype.org/"
-      Some("releases" at nexus + "service/local/staging/deploy/maven2")
-    }
+    sonatypePublishToBundle.value
   },
   publishMavenStyle := true
 )
@@ -72,6 +71,8 @@ lazy val releaseSettings = Seq(
     tagRelease,
     // publishArtifacts,                              // This native step doesn't handle gpg signing (workaround below)
     releaseStepCommandAndRemaining("+ publishSigned"),
+    // Upload the staged bundle to Central Portal
+    // releaseStepCommand("sonatypeCentralUpload"),   // not working and requires a manual workaround
     releaseStepInputTask(releasePromptTask), // Manual user prompt to wait for confirmation before proceeding
     releaseStepInputTask(python_api, " release"), // This step handles the release of Python packages
     setNextVersion,
@@ -311,8 +312,8 @@ releasePromptTask := {
   var wait = true
   while (wait) {
     println(s"""
-            |[WARNING] Scala artifacts have been published to the Sonatype staging.
-            |Please verify the Java builds are in order before proceeding with the Python API release.
+            |[WARNING] Scala artifacts have been generated in target/sonatype-staging/<version>/
+            |Please manually upload the artifacts to Maven Central, before proceeding with the Python API release.
             |Python release is irreversible. So proceed with caution.
             |""".stripMargin)
     val userInput = StdIn.readLine(s"Do you want to continue with the release: (y)es (n)o ? ").trim.toLowerCase
