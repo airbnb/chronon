@@ -155,12 +155,14 @@ def Aggregation(
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
-    
+
     if operation == ttypes.Operation.UNIQUE_COUNT:
-        print("Warning: When using UNIQUE_COUNT operation, please consider using BOUNDED_UNIQUE_COUNT_K or APPROX_UNIQUE_COUNT for better performance and scalability.")
+        print("Warning: When using UNIQUE_COUNT operation, \
+            please consider using BOUNDED_UNIQUE_COUNT_K or APPROX_UNIQUE_COUNT for better performance and scalability.")
     elif operation == ttypes.Operation.HISTOGRAM:
-        print("Warning: When using HISTOGRAM operation, please consider using APPROX_HISTOGRAM_K for better performance and bounded memory usage.")
-    
+        print("Warning: When using HISTOGRAM operation, \
+            please consider using APPROX_HISTOGRAM_K for better performance and bounded memory usage.")
+
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
     agg.tags = tags
     return agg
