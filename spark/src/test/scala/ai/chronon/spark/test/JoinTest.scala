@@ -1258,9 +1258,10 @@ class JoinTest {
     )
 
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val (_, aggregationsMetadata) =
-      new Analyzer(tableUtils, joinConfWithExternal, monthAgo, today).analyzeJoin(joinConfWithExternal, enableHitter = false)
-    aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
+    val aggregationsMetadata = new Analyzer(tableUtils, joinConfWithExternal, monthAgo, today)
+      .analyzeJoin(joinConfWithExternal, enableHitter = false)
+      .finalOutputMetadata
+    aggregationsMetadata.foreach(agg => { assertTrue(agg.operation == "Derivation") })
     aggregationsMetadata.exists(_.name == "user_txn_count_30d")
     aggregationsMetadata.exists(_.name == "item")
   }
@@ -1294,9 +1295,10 @@ class JoinTest {
     )
 
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val (_, aggregationsMetadata) =
-      new Analyzer(tableUtils, joinConfWithDerivationWithKey, monthAgo, today).analyzeJoin(joinConfWithDerivationWithKey, enableHitter = false)
-    aggregationsMetadata.foreach(agg => {assertTrue(agg.operation == "Derivation")})
+    val aggregationsMetadata = new Analyzer(tableUtils, joinConfWithDerivationWithKey, monthAgo, today)
+      .analyzeJoin(joinConfWithDerivationWithKey, enableHitter = false)
+      .finalOutputMetadata
+    aggregationsMetadata.foreach(agg => { assertTrue(agg.operation == "Derivation") })
     aggregationsMetadata.exists(_.name == f"${viewsGroupBy.metaData.name}_time_spent_ms_average")
     aggregationsMetadata.exists(_.name == f"${viewGroupByWithKepMapping.metaData.name}_time_spent_ms_average")
     aggregationsMetadata.exists(_.name == "item")

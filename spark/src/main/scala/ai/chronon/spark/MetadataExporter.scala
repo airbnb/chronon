@@ -104,7 +104,7 @@ object MetadataExporter {
           val join = ThriftJsonCodec.fromJsonFile[api.Join](path, check = false)
           try {
             val joinAnalysis = analyzer.analyzeJoin(join, validateTablePermission = false)
-            val featureMetadata: Seq[Map[String, String]] = joinAnalysis._2.toSeq.map(_.asMap)
+            val featureMetadata: Seq[Map[String, String]] = joinAnalysis.finalOutputMetadata.toSeq.map(_.asMap)
             configData + { "features" -> featureMetadata }
           } catch {
             // Exception while analyzing join
