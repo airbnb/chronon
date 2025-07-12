@@ -155,6 +155,16 @@ def Aggregation(
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
+
+    if operation == ttypes.Operation.UNIQUE_COUNT:
+        LOGGER.warning("When using UNIQUE_COUNT operation, please consider using "
+                       "BOUNDED_UNIQUE_COUNT_K or APPROX_UNIQUE_COUNT "
+                       "for better performance and scalability.")
+    elif operation == ttypes.Operation.HISTOGRAM:
+        LOGGER.warning("When using HISTOGRAM operation, please consider using "
+                       "APPROX_HISTOGRAM_K for better performance and "
+                       "bounded memory usage.")
+
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
     agg.tags = tags
     return agg
@@ -516,7 +526,7 @@ def GroupBy(
         elif isinstance(source, ttypes.Source):
             return source
         else:
-            print("unrecognized " + str(source))
+            LOGGER.warning("unrecognized " + str(source))
 
     if not isinstance(sources, list):
         sources = [sources]
