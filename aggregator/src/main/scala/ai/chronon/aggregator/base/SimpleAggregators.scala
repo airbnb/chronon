@@ -158,6 +158,15 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
   }
 
   override def isDeletable: Boolean = true
+
+  override def normalize(ir: Array[Any]): util.ArrayList[Any] = {
+    new util.ArrayList[Any](ir.toList.asJava)
+  }
+
+  override def denormalize(normalized: Any): Array[Any] = {
+    val list = normalized.asInstanceOf[util.ArrayList[Any]].asScala
+    Array(list(0), list(1).asInstanceOf[Number].intValue())
+  }
 }
 
 // Welford algo for computing variance

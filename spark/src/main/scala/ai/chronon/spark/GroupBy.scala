@@ -212,19 +212,19 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   }
 
   def reconstructFromDailyIRs(dailyIRsDf: DataFrame): DataFrame = {
-    val keys = keyColumns.toArray
+    val keys = (keyColumns :+ tableUtils.partitionColumn).toArray  
     val keyBuilder = FastHashing.generateKeyBuilder(keys, dailyIRsDf.schema)
     
     val reconstructedRdd = dailyIRsDf.rdd
       .keyBy(keyBuilder)
       .map { case (keyWithHash, row) =>
         val ir = getIRFromRow(row)
-        (keyWithHash.data, ir)
+        (keyWithHash, ir)
       }
       .reduceByKey { (ir1, ir2) =>
         windowAggregator.merge(ir1, ir2)
       }
-      .map { case (keys, mergedIR) =>
+      .map { case (keyWithHash, mergedIR) =>
         val finalizedResult = if (aggregations.hasWindows) {
           windowAggregator.finalize(mergedIR)
         } else {
@@ -232,10 +232,10 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
             aggregator.finalize(irValue)
           }
         }
-        (keys, finalizedResult)
+        (keyWithHash.data, finalizedResult)
       }
     
-    toDf(reconstructedRdd, Seq(tableUtils.partitionColumn -> StringType))
+    toDf(reconstructedRdd, Seq())
   }
 
   def snapshotEventsBase(partitionRange: PartitionRange,
