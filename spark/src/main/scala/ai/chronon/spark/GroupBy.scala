@@ -35,6 +35,9 @@ import org.slf4j.LoggerFactory
 import java.util
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
+import com.google.gson.{Gson, JsonParser}
+import com.google.gson.reflect.TypeToken
+import scala.collection.JavaConverters._
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
@@ -139,6 +142,101 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     } else {
       toDf(snapshotEntitiesBase, Seq(tableUtils.partitionColumn -> StringType))
     }
+
+  def snapshotEntitiesBaseWithDailyIRs: RDD[(Array[Any], Array[Any])] = {
+    val keys = (keyColumns :+ tableUtils.partitionColumn).toArray
+    val keyBuilder = FastHashing.generateKeyBuilder(keys, inputDf.schema)
+    val (preppedInputDf, irUpdateFunc) = if (aggregations.hasWindows) {
+      val partitionTs = "ds_ts"
+      val inputWithPartitionTs = inputDf.withPartitionBasedTimestamp(partitionTs)
+      val partitionTsIndex = inputWithPartitionTs.schema.fieldIndex(partitionTs)
+      val updateFunc = (ir: Array[Any], row: Row) => {
+        windowAggregator.updateWindowed(ir,
+                                        SparkConversions.toChrononRow(row, tsIndex),
+                                        row.getLong(partitionTsIndex) + tableUtils.partitionSpec.spanMillis)
+        ir
+      }
+      inputWithPartitionTs -> updateFunc
+    } else {
+      val updateFunc = (ir: Array[Any], row: Row) => {
+        windowAggregator.update(ir, SparkConversions.toChrononRow(row, tsIndex))
+        ir
+      }
+      inputDf -> updateFunc
+    }
+
+    tableUtils
+      .preAggRepartition(preppedInputDf)
+      .rdd
+      .keyBy(keyBuilder)
+      .aggregateByKey(windowAggregator.init)(seqOp = irUpdateFunc, combOp = windowAggregator.merge)
+      .map { case (keyWithHash, ir) => keyWithHash.data -> ir }
+  }
+
+  def toDailyIRsDf: DataFrame = {
+    val dailyIRsRdd = snapshotEntitiesBaseWithDailyIRs.map { case (keys, ir) =>
+      val serializedIR = serializeNormalizedIRs(ir)
+      Row.fromSeq(keys.toSeq :+ serializedIR)
+    }
+    
+    val keyFields = keyColumns.map(col => StructField(col, inputDf.schema(col).dataType, nullable = true))
+    val partitionField = StructField(tableUtils.partitionColumn, StringType, nullable = true)
+    val irField = StructField("serialized_ir", StringType, nullable = true)
+    val schema = StructType(keyFields :+ partitionField :+ irField)
+    
+    sparkSession.createDataFrame(dailyIRsRdd, schema)
+  }
+
+  private def serializeNormalizedIRs(ir: Array[Any]): String = {
+    val gson = new Gson()
+    val normalizedIRs = ir.zip(columnAggregators).map { case (irValue, aggregator) =>
+      aggregator.normalize(irValue)
+    }
+    gson.toJson(normalizedIRs)
+  }
+
+  private def deserializeNormalizedIRs(serializedIR: String): Array[Any] = {
+    val gson = new Gson()
+    val listType = new TypeToken[java.util.List[Object]]() {}.getType
+    val normalizedList: java.util.List[Object] = gson.fromJson(serializedIR, listType)
+    val normalizedArray = normalizedList.asScala.toArray
+    
+    normalizedArray.zip(columnAggregators).map { case (normalizedValue, aggregator) =>
+      aggregator.denormalize(normalizedValue)
+    }
+  }
+
+  private def getIRFromRow(row: Row): Array[Any] = {
+    val serializedIR = row.getAs[String]("serialized_ir")
+    deserializeNormalizedIRs(serializedIR)
+  }
+
+  def reconstructFromDailyIRs(dailyIRsDf: DataFrame): DataFrame = {
+    val keys = keyColumns.toArray
+    val keyBuilder = FastHashing.generateKeyBuilder(keys, dailyIRsDf.schema)
+    
+    val reconstructedRdd = dailyIRsDf.rdd
+      .keyBy(keyBuilder)
+      .map { case (keyWithHash, row) =>
+        val ir = getIRFromRow(row)
+        (keyWithHash.data, ir)
+      }
+      .reduceByKey { (ir1, ir2) =>
+        windowAggregator.merge(ir1, ir2)
+      }
+      .map { case (keys, mergedIR) =>
+        val finalizedResult = if (aggregations.hasWindows) {
+          windowAggregator.finalize(mergedIR)
+        } else {
+          mergedIR.zip(columnAggregators).map { case (irValue, aggregator) =>
+            aggregator.finalize(irValue)
+          }
+        }
+        (keys, finalizedResult)
+      }
+    
+    toDf(reconstructedRdd, Seq(tableUtils.partitionColumn -> StringType))
+  }
 
   def snapshotEventsBase(partitionRange: PartitionRange,
                          resolution: Resolution = DailyResolution): RDD[(Array[Any], Array[Any])] = {

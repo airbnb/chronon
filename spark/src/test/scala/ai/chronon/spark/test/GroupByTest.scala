@@ -70,6 +70,17 @@ class GroupByTest {
       println("diff result rows")
     }
     assertEquals(0, diff.count())
+    
+    // Test incremental mode with daily IRs
+    val dailyIRsDf = groupBy.toDailyIRsDf
+    val reconstructedDf = groupBy.reconstructFromDailyIRs(dailyIRsDf)
+    
+    val incrementalDiff = Comparison.sideBySide(actualDf, reconstructedDf, List("user", tableUtils.partitionColumn))
+    if (incrementalDiff.count() > 0) {
+      incrementalDiff.show()
+      println("incremental mode diff result rows")
+    }
+    assertEquals(0, incrementalDiff.count())
   }
 
   @Test
