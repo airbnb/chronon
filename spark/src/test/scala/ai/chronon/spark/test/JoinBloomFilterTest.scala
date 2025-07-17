@@ -1,11 +1,21 @@
 package ai.chronon.spark.test
 
-
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.StructField
 import ai.chronon.api.Builders.Derivation
-import ai.chronon.api.{Accuracy, Builders, Constants, JoinPart, LongType, Operation, PartitionSpec, StringType, TimeUnit, Window}
+import ai.chronon.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  JoinPart,
+  LongType,
+  Operation,
+  PartitionSpec,
+  StringType,
+  TimeUnit,
+  Window
+}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.{logger, renderDataSourceQuery}
@@ -28,18 +38,18 @@ import scala.util.Random
 import scala.util.ScalaJavaConversions.ListOps
 import scala.util.Try
 
-
-class JoinBloomFilterTest{
+class JoinBloomFilterTest {
   val dummySpark: SparkSession = SparkSessionBuilder.build("JoinBloomFilterTest", local = true)
   private val dummyTableUtils = TableUtils(dummySpark)
   private val today = dummyTableUtils.partitionSpec.at(System.currentTimeMillis())
   private val monthAgo = dummyTableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
   private val yearAgo = dummyTableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
   private val dayAndMonthBefore = dummyTableUtils.partitionSpec.before(monthAgo)
-  
+
   @Test
   def testSkipBloomFilterJoinBackfill(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)

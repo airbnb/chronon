@@ -153,7 +153,7 @@ class BoundedUniqueCountTest extends TestCase {
     val boundedDistinctCount = new BoundedUniqueCount[Array[Byte]](BinaryType, 5)
     val bytes1 = Array[Byte](1, 2, 3)
     val bytes2 = Array[Byte](4, 5, 6)
-    
+
     var ir = boundedDistinctCount.prepare(bytes1)
     ir = boundedDistinctCount.update(ir, bytes1)
     ir = boundedDistinctCount.update(ir, bytes2)
@@ -200,7 +200,7 @@ class BoundedUniqueCountTest extends TestCase {
     assertEquals(ai.chronon.api.ListType(DoubleType), doubleBoundedDistinctCount.irType)
     assertEquals(ai.chronon.api.ListType(FloatType), floatBoundedDistinctCount.irType)
     assertEquals(ai.chronon.api.ListType(BinaryType), binaryBoundedDistinctCount.irType)
-    
+
     // For non-numeric types, irType should be ListType(StringType)
     assertEquals(ai.chronon.api.ListType(StringType), stringBoundedDistinctCount.irType)
   }

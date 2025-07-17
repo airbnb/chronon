@@ -4,7 +4,18 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.StructField
 import ai.chronon.api.Builders.Derivation
-import ai.chronon.api.{Accuracy, Builders, Constants, JoinPart, LongType, Operation, PartitionSpec, StringType, TimeUnit, Window}
+import ai.chronon.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  JoinPart,
+  LongType,
+  Operation,
+  PartitionSpec,
+  StringType,
+  TimeUnit,
+  Window
+}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.{logger, renderDataSourceQuery}
@@ -36,10 +47,11 @@ class JoinBasicTests {
   private val monthAgo = dummyTableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
   private val yearAgo = dummyTableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
   private val dayAndMonthBefore = dummyTableUtils.partitionSpec.before(monthAgo)
-  
+
   @Test
   def testJoinDifferentPartitionColumns(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
@@ -51,11 +63,15 @@ class JoinBasicTests {
     )
     val namePartitionColumn = "name_date"
     val namesTable = s"$namespace.names"
-    DataFrameGen.entities(spark, namesSchema, 1000, partitions = 200, partitionColOpt = Some(namePartitionColumn)).save(namesTable, partitionColumns = Seq(namePartitionColumn))
+    DataFrameGen
+      .entities(spark, namesSchema, 1000, partitions = 200, partitionColOpt = Some(namePartitionColumn))
+      .save(namesTable, partitionColumns = Seq(namePartitionColumn))
 
     val namesSource = Builders.Source.entities(
-      query =
-        Builders.Query(selects = Builders.Selects("name"), startPartition = yearAgo, endPartition = dayAndMonthBefore, partitionColumn = namePartitionColumn),
+      query = Builders.Query(selects = Builders.Selects("name"),
+                             startPartition = yearAgo,
+                             endPartition = dayAndMonthBefore,
+                             partitionColumn = namePartitionColumn),
       snapshotTable = namesTable
     )
 
@@ -76,14 +92,16 @@ class JoinBasicTests {
     val userPartitionColumn = "user_date"
     val userSchema = List(Column("user", api.StringType, 100))
     val usersTable = s"$namespace.users"
-    DataFrameGen.entities(spark, userSchema, 1000, partitions = 200, partitionColOpt = Some(userPartitionColumn))
+    DataFrameGen
+      .entities(spark, userSchema, 1000, partitions = 200, partitionColOpt = Some(userPartitionColumn))
       .dropDuplicates()
       .save(usersTable, partitionColumns = Seq(userPartitionColumn))
 
     val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
     val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
-      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> "user"), startPartition = start, partitionColumn = userPartitionColumn),
+      left = Builders.Source.entities(
+        Builders.Query(selects = Map("user" -> "user"), startPartition = start, partitionColumn = userPartitionColumn),
         snapshotTable = usersTable),
       joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "chronon")
@@ -128,10 +146,11 @@ class JoinBasicTests {
     }
     assertEquals(diffCount, 0)
   }
-  
+
   @Test
   def testEntitiesEntities(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
@@ -263,7 +282,8 @@ class JoinBasicTests {
     */
   @Test
   def testSelectedJoinParts(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
@@ -385,7 +405,8 @@ class JoinBasicTests {
 
   @Test
   def testEntitiesEntitiesNoHistoricalBackfill(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
@@ -443,7 +464,8 @@ class JoinBasicTests {
 
   @Test
   def testNoAgg(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)

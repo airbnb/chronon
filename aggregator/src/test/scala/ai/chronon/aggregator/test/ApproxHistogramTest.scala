@@ -41,11 +41,12 @@ class ApproxHistogramTest extends TestCase {
     assertTrue(ir2.isApprox)
 
     val ir = approxHistogram.merge(ir1, ir2)
-    assertEquals(toHashMap(Map(
-                   "4" -> 8,
-                   "6" -> 6,
-                   "5" -> 5
-                 )),
+    assertEquals(toHashMap(
+                   Map(
+                     "4" -> 8,
+                     "6" -> 6,
+                     "5" -> 5
+                   )),
                  approxHistogram.finalize(ir))
     assertTrue(ir.isApprox)
     assertTrue(ir.histogram.isEmpty)
@@ -64,11 +65,13 @@ class ApproxHistogramTest extends TestCase {
 
     val ir = approxHistogram.merge(ir1, ir2)
 
-    assertEquals(toHashMap(Map(
-      "2" -> 4,
-      "4" -> 4,
-      "3" -> 3
-    )), approxHistogram.finalize(ir))
+    assertEquals(toHashMap(
+                   Map(
+                     "2" -> 4,
+                     "4" -> 4,
+                     "3" -> 3
+                   )),
+                 approxHistogram.finalize(ir))
     assertTrue(!ir.isApprox)
     assertTrue(ir.sketch.isEmpty)
   }
@@ -86,11 +89,13 @@ class ApproxHistogramTest extends TestCase {
 
     val ir = approxHistogram.merge(ir1, ir2)
 
-    assertEquals(toHashMap(Map(
-      "4" -> 4,
-      "3" -> 3,
-      "2" -> 2
-    )), approxHistogram.finalize(ir))
+    assertEquals(toHashMap(
+                   Map(
+                     "4" -> 4,
+                     "3" -> 3,
+                     "2" -> 2
+                   )),
+                 approxHistogram.finalize(ir))
 
     assertTrue(ir.isApprox)
     assertTrue(ir.histogram.isEmpty)
@@ -109,11 +114,13 @@ class ApproxHistogramTest extends TestCase {
 
     val ir = approxHistogram.merge(ir1, ir2)
 
-    assertEquals(toHashMap(Map(
-      "5" -> 5,
-      "2" -> 4,
-      "3" -> 3
-    )), approxHistogram.finalize(ir))
+    assertEquals(toHashMap(
+                   Map(
+                     "5" -> 5,
+                     "2" -> 4,
+                     "3" -> 3
+                   )),
+                 approxHistogram.finalize(ir))
     assertTrue(ir.isApprox)
     assert(ir.histogram.isEmpty)
   }

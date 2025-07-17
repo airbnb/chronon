@@ -277,7 +277,8 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.BOUNDED_UNIQUE_COUNT,
                              argMap = Map("k" -> "5"),
                              inputColumn = "user",
-                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))),
+                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))
+      ),
       metaData = Builders.MetaData(name = "unit_test/vendor_ratings", namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
