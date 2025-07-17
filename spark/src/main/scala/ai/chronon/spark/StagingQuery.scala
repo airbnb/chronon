@@ -16,11 +16,11 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
-import ai.chronon.api.ParametricMacro
 import ai.chronon.api.Extensions._
+import ai.chronon.api.ParametricMacro
 import ai.chronon.spark.Extensions._
+import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
 import scala.util.ScalaJavaConversions._
@@ -46,7 +46,12 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
     if (stagingQueryConf.startPartition == null) {
-      tableUtils.sql(stagingQueryConf.query).save(outputTable)
+      if (Option(stagingQueryConf.createView).getOrElse(false)) {
+        val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS ${stagingQueryConf.query}"
+        tableUtils.sql(createViewSql)
+      } else {
+        tableUtils.sql(stagingQueryConf.query).save(outputTable)
+      }
       return
     }
     val overrideStart = overrideStartPartition.getOrElse(stagingQueryConf.startPartition)
@@ -77,9 +82,16 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
             val renderedQuery =
               StagingQuery.substitute(tableUtils, stagingQueryConf.query, range.start, range.end, endPartition)
             logger.info(s"Rendered Staging Query to run is:\n$renderedQuery")
-            val df = tableUtils.sql(renderedQuery)
-            tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols, autoExpand = enableAutoExpand.get)
-            logger.info(s"Wrote to table $outputTable, into partitions: $range $progress")
+
+            if (Option(stagingQueryConf.createView).getOrElse(false)) {
+              val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS $renderedQuery"
+              tableUtils.sql(createViewSql)
+              logger.info(s"Created view $outputTable $range $progress")
+            } else {
+              val df = tableUtils.sql(renderedQuery)
+              tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols, autoExpand = enableAutoExpand.get)
+              logger.info(s"Wrote to table $outputTable, into partitions: $range $progress")
+            }
         }
         logger.info(s"Finished writing Staging Query data to $outputTable")
       } catch {
