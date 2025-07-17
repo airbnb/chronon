@@ -46,6 +46,11 @@ struct StagingQuery {
     * Spark SQL setup statements. Used typically to register UDFs.
     **/
     4: optional list<string> setups
+    /**
+    * If true, creates a view in the warehouse (for intermediate tables).
+    * If false, creates a table in the warehouse (for final tables).
+    **/
+    5: optional bool createView = false
 }
 
 struct EventSource {

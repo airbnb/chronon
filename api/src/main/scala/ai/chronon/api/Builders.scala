@@ -306,13 +306,15 @@ object Builders {
         query: String = null,
         metaData: MetaData = null,
         startPartition: String = null,
-        setups: Seq[String] = null
+        setups: Seq[String] = null,
+        createView: Boolean = null
     ): StagingQuery = {
       val stagingQuery = new StagingQuery()
       stagingQuery.setQuery(query)
       stagingQuery.setMetaData(metaData)
       stagingQuery.setStartPartition(startPartition)
       if (setups != null) stagingQuery.setSetups(setups.toJava)
+      if (createView != null) stagingQuery.setCreateView(createView)
       stagingQuery
     }
   }
