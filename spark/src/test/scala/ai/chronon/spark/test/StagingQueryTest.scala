@@ -89,8 +89,11 @@ class StagingQueryTest {
     val expectedWithOverrideStartPartition =
       tableUtils.sql(s"select * from $viewName where ds = '$today' AND user IS NOT NULL")
 
-    val computedWithOverrideStartPartition = tableUtils.sql(s"select * from ${stagingQueryConf.metaData.outputTable} WHERE user IS NOT NULL")
-    val diffWithOverrideStartPartition = Comparison.sideBySide(expectedWithOverrideStartPartition, computedWithOverrideStartPartition, List("user", "ts", "ds"))
+    val computedWithOverrideStartPartition =
+      tableUtils.sql(s"select * from ${stagingQueryConf.metaData.outputTable} WHERE user IS NOT NULL")
+    val diffWithOverrideStartPartition = Comparison.sideBySide(expectedWithOverrideStartPartition,
+                                                               computedWithOverrideStartPartition,
+                                                               List("user", "ts", "ds"))
     if (diffWithOverrideStartPartition.count() > 0) {
       println(s"Actual count: ${expectedWithOverrideStartPartition.count()}")
       println(expectedWithOverrideStartPartition.show())

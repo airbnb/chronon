@@ -51,7 +51,7 @@ class ExtensionsTest {
       (2, 20240104L),
       (3, 20240104L)
     ).toDF("key", "ds")
-    
+
     val dfWithStats: DfWithStats = DfWithStats(df)
     val stats = dfWithStats.stats
 

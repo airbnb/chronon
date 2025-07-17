@@ -89,7 +89,7 @@ class TableUtilsFormatTest {
         Row(5L, 6, "7", "2022-10-02")
       )
     )
-     testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
+    testInsertPartitions(spark, tableUtils, tableName, format, df1, df2, ds1 = "2022-10-01", ds2 = "2022-10-02")
   }
 
   @Test
@@ -150,7 +150,7 @@ object TableUtilsFormatTest {
       ) yield {
         name1 == name2 && dtype1 != dtype2
       }
-      ).filter(identity)
+    ).filter(identity)
 
     if (inconsistentColumns.nonEmpty) {
       val insertTry = Try(tableUtils.insertPartitions(df2, tableName, autoExpand = true))

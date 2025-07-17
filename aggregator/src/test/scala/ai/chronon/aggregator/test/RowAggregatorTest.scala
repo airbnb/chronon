@@ -85,7 +85,7 @@ class RowAggregatorTest extends TestCase {
     val mapAvg = new java.util.HashMap[String, Double]()
     mapAvg.put("A", 3.0)
     mapAvg.put("B", 1.0)
-    mapAvg.put("D", 3.0)  // sum = -3 / count = -1
+    mapAvg.put("D", 3.0) // sum = -3 / count = -1
     mapAvg.put(null, 2.0)
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(

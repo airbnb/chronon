@@ -54,7 +54,7 @@ class DataRangeTest {
     val (scanQuery, _) = partitionRange.scanQueryStringAndDf(
       source.getEvents.query,
       testTable,
-      fillIfAbsent=Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull).toMap
+      fillIfAbsent = Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull).toMap
     )
 
     val expected: String =
@@ -97,7 +97,7 @@ class DataRangeTest {
       source.getEvents.query,
       testTable,
       fillIfAbsent = Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull,
-        customPartitionCol -> null).toMap,
+                         customPartitionCol -> null).toMap,
       partitionColOpt = Some(customPartitionCol)
     )
 
@@ -126,7 +126,7 @@ class DataRangeTest {
 
     val clauses = range.whereClauses("ds")
 
-    assertEquals(Seq("ds >= '2023-01-01'",  "ds <= '2023-01-02'"), clauses)
+    assertEquals(Seq("ds >= '2023-01-01'", "ds <= '2023-01-02'"), clauses)
   }
 
   @Test
