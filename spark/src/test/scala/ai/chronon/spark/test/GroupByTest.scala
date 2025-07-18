@@ -701,7 +701,8 @@ class GroupByTest {
   def testIncrementalMode(): Unit = {
     lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncremental" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
-
+    val namespace = "incremental"
+    tableUtils.createDatabase(namespace)
     val schema = List(
       Column("user", StringType, 10), // ts = last 10 days
       Column("session_length", IntType, 2),
@@ -713,64 +714,40 @@ class GroupByTest {
     println(s"Input DataFrame: ${df.count()}")
 
     val aggregations: Seq[Aggregation] = Seq(
-        Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
-        Builders.Aggregation(Operation.UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+        //Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+        //Builders.Aggregation(Operation.UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
         Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
     )
 
-
-    val groupByConf = Builders.GroupBy(
-      sources = Seq(source),
-      keyColumns = Seq("user"),
-      aggregations = aggregations,
-      metaData = Builders.MetaData(name = "intermediate_output_gb", namespace = namespace, team = "chronon"),
-      backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
-        new Window(60, TimeUnit.DAYS)),
+    val tableProps: Map[String, String] = Map(
+      "source" -> "chronon"
     )
 
-    val outputTableName = groupByConf.metaData.incrementalOutputTable
+    val groupBy = new GroupBy(aggregations, Seq("user"), df)
+    groupBy.computeIncrementalDf("incremental.testIncrementalOutput", PartitionRange("2025-05-01", "2025-06-01"), tableProps)
 
-    GroupBy.computeIncrementalDf(
-        groupByConf,
-        PartitionRange("2025-06-01", "2025-06-01"),
-        tableUtils
-    )
+    val actualIncrementalDf = spark.sql(s"select * from incremental.testIncrementalOutput where ds='2025-05-11'")
+    df.createOrReplaceTempView("test_incremental_input")
+    //spark.sql(s"select * from test_incremental_input where user='user7' and ds='2025-05-11'").show(numRows=100)
 
-    //check if the table exists
-    assertTrue(s"Output table $outputTableName should exist", spark.catalog.tableExists(outputTableName))
+    spark.sql(s"select * from incremental.testIncrementalOutput where ds='2025-05-11'").show()
 
-    val df1 = spark.sql(s"SELECT * FROM $outputTableName").toDF()
-    println(s"Table output ${df1.show()}")
-    
-    // Create GroupBy with incrementalMode = true
-    /*
-    val incrementalGroupBy = new GroupBy(
-      aggregations = aggregations,
-      keyColumns = Seq("user"),
-      inputDf = df,
-      incrementalMode = true
-    )
-     */
-    
-    // Test that incremental schema is available
-    //val incrementalSchema = incrementalGroupBy.incrementalSchema
-    //assertNotNull("Incremental schema should not be null", incrementalSchema)
-    //assertEquals("Should have correct number of incremental schema columns",
-    //            aggregations.length, incrementalSchema.length)
+    val query =
+      s"""
+         |select user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000 as ts, sum(session_length) as session_length_sum
+         |from test_incremental_input
+         |where ds='2025-05-11'
+         |group by user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000
+         |""".stripMargin
 
+    val expectedDf = spark.sql(query)
 
-    // Test that we can compute snapshot events
-    //val result = incrementalGroupBy.snapshotEvents(PartitionRange("2025-06-01", "2025-06-01"))
-    //println("================================")
-    //println(df.show())
-    //println(result.show())
-    //println("================================")
-    //assertNotNull("Should be able to compute snapshot events", result)
-    //assertTrue("Result should have data", result.count() > 100)
-    
-    // Verify that result contains expected columns
-    //val resultColumns = result.columns.toSet
-    //assertTrue("Result should contain user column", resultColumns.contains("user"))
-    //assertTrue("Result should contain partition column", resultColumns.contains(tableUtils.partitionColumn))
+    val diff = Comparison.sideBySide(actualIncrementalDf, expectedDf, List("user", tableUtils.partitionColumn))
+    if (diff.count() > 0) {
+      diff.show()
+      println("diff result rows")
+    }
+    assertEquals(0, diff.count())
+
   }
 }

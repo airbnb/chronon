@@ -419,6 +419,16 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       windowAggregator.normalize(ir)
     }
 
+
+    def computeIncrementalDf(incrementalOutputTable: String,
+                             range: PartitionRange,
+                             tableProps: Map[String, String]) = {
+
+      val hops = hopsAggregate(range.toTimePoints.min, DailyResolution)
+      println(s"Saving incremental hops to ${hops.map(x  => x._1.data.mkString(",")).take(20)}.")
+      val hopsDf: DataFrame = convertHopsToDf(hops, incrementalSchema)
+      hopsDf.save(incrementalOutputTable, tableProps)
+    }
 }
 
 // TODO: truncate queryRange for caching
@@ -723,19 +733,15 @@ object GroupBy {
                             tableUtils: TableUtils,
                           ): GroupBy = {
 
-    val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
-    val tableProps = Option(groupByConf.metaData.tableProperties)
+    val incrementalOutputTable: String = groupByConf.metaData.incrementalOutputTable
+    val tableProps: Map[String, String] = Option(groupByConf.metaData.tableProperties)
       .map(_.toScala)
       .orNull
 
     val incrementalGroupByBackfill =
       from(groupByConf, range, tableUtils, computeDependency = true, incrementalMode = true)
 
-    val incrementalSchema = incrementalGroupByBackfill.incrementalSchema
-
-    val hops = incrementalGroupByBackfill.hopsAggregate(range.toTimePoints.min, DailyResolution)
-    val hopsDf = incrementalGroupByBackfill.convertHopsToDf(hops, incrementalSchema)
-    hopsDf.save(incrementalOutputTable, tableProps)
+    incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, range, tableProps)
 
     incrementalGroupByBackfill
   }
