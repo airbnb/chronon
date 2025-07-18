@@ -101,6 +101,7 @@ class GroupByTest {
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+
     val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
     val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
     val datesViewName = "test_group_by_snapshot_events_output_range"
@@ -748,6 +749,61 @@ class GroupByTest {
       println("diff result rows")
     }
     assertEquals(0, diff.count())
+  }
 
+  @Test
+  def testSnapshotIncrementalEvents(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val schema = List(
+      Column("user", StringType, 10), // ts = last 10 days
+      Column("session_length", IntType, 2),
+      Column("rating", DoubleType, 2000)
+    )
+
+    val outputDates = CStream.genPartitions(10, tableUtils.partitionSpec)
+
+    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
+    df.drop("ts") // snapshots don't need ts.
+    val viewName = "test_group_by_snapshot_events"
+    df.createOrReplaceTempView(viewName)
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS))),
+        Builders.Aggregation(Operation.SUM, "rating", Seq(new Window(10, TimeUnit.DAYS)))
+    )
+
+    val groupBy = new GroupBy(aggregations, Seq("user"), df)
+    val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+
+    val groupByIncremental = new GroupBy(aggregations, Seq("user"), df, incrementalMode = true)
+    val actualDfIncremental = groupByIncremental.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+
+    val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
+    val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
+    val datesViewName = "test_group_by_snapshot_events_output_range"
+    outputDatesDf.createOrReplaceTempView(datesViewName)
+    val expectedDf = df.sqlContext.sql(s"""
+                                          |select user,
+                                          |       $datesViewName.ds,
+                                          |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*(10-1)) * 1000, session_length, null)) AS session_length_sum_10d,
+                                          |       SUM(IF(ts  >= (unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') - 86400*(10-1)) * 1000, rating, null)) AS rating_sum_10d
+                                          |FROM $viewName CROSS JOIN $datesViewName
+                                          |WHERE ts < unix_timestamp($datesViewName.ds, 'yyyy-MM-dd') * 1000 + ${tableUtils.partitionSpec.spanMillis}
+                                          |group by user, $datesViewName.ds
+                                          |""".stripMargin)
+
+    val diff = Comparison.sideBySide(actualDf, expectedDf, List("user", tableUtils.partitionColumn))
+    if (diff.count() > 0) {
+      diff.show()
+      println("diff result rows")
+    }
+    assertEquals(0, diff.count())
+
+    val diffIncremental = Comparison.sideBySide(actualDfIncremental, expectedDf, List("user", tableUtils.partitionColumn))
+    if (diffIncremental.count() > 0) {
+      diffIncremental.show()
+      println("diff result rows incremental")
+    }
+    assertEquals(0, diffIncremental.count())
   }
 }
