@@ -19,8 +19,9 @@ import pytest
 
 import ai.chronon.api.ttypes as api
 from ai.chronon import utils
-from ai.chronon.api.ttypes import EntitySource, EventSource, Query, Source
+from ai.chronon.api.ttypes import Query
 from ai.chronon.repo.serializer import file2thrift, json2thrift
+from ai.chronon.source import EventSource, EntitySource
 from ai.chronon.utils import get_dependencies, wait_for_simple_schema
 
 
@@ -365,12 +366,11 @@ def test_wait_for_simple_schema_with_subpartition(query_with_partition_column: Q
 
 
 def test_get_dependencies_with_entities_mutation(query_with_partition_column: Query):
-    entity = EntitySource(
-        snapshotTable="snap_table",
-        mutationTable="mut_table",
+    src = EntitySource(
+        snapshot_table="snap_table",
+        mutation_table="mut_table",
         query=query_with_partition_column,
     )
-    src = Source(entities=entity)
     deps_json = get_dependencies(src, lag=0)
     assert len(deps_json) == 2
     deps = [json.loads(d) for d in deps_json]
@@ -382,8 +382,7 @@ def test_get_dependencies_with_entities_mutation(query_with_partition_column: Qu
 
 
 def test_get_dependencies_with_events(query_with_partition_column: Query):
-    event = EventSource(table="event_table", query=query_with_partition_column)
-    src = Source(events=event)
+    src = EventSource(table="event_table", query=query_with_partition_column)
     deps_json = get_dependencies(src, lag=2)
     assert len(deps_json) == 1
     dep = json.loads(deps_json[0])
