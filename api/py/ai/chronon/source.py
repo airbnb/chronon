@@ -14,9 +14,13 @@ def EventSource(
     """
 
     :param table: Points to a table that has historical data for the input events
-    :param query: Contains row level transformations and filtering expressed as Spark SQL statements. Applied to both table and topic
+    :param query:
+        Contains row level transformations and filtering expressed as Spark SQL statements.
+        Applied to both table and topic
     :param topic: (Optional) Kafka topic that can be listened to for realtime updates
-    :param is_cumulative: Indicates that each new partition contains not just the current day's events but the entire set of events since the beginning
+    :param is_cumulative:
+        Indicates that each new partition contains not just the current day's events but the entire set of events
+        since the beginning
     :return:
       A source object of kind EventSource
     """
