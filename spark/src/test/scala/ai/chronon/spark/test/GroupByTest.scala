@@ -699,49 +699,31 @@ class GroupByTest {
 
   @Test
   def testIncrementalMode(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncremental" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
 
-    val namespace = "test_incremental_group_by"
-
-    val schema =
-      ai.chronon.api.StructType(
-        "test_incremental_group_by",
-        Array(
-          ai.chronon.api.StructField("user", StringType),
-          ai.chronon.api.StructField("purchase_price", IntType),
-          ai.chronon.api.StructField("ds", StringType),
-          ai.chronon.api.StructField("ts", LongType)
-        )
-      )
-
-
-    val sourceTable = "test_incremental_group_by_" + Random.alphanumeric.take(6).mkString
-    val data = List(
-        Row("user1", 100, "2025-06-01", 1748772000000L),
-        Row("user2", 200, "2025-06-01", 1748772000000L),
-        Row("user3", 300, "2025-06-01", 1748772000000L),
-    )
-    val df = makeDf(spark, schema, data).save(s"${namespace}.${sourceTable}")
-
-
-    val source = Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("ts", "user", "purchase_price", "ds"),
-        startPartition = "2025-06-01"),
-      table = sourceTable
+    val schema = List(
+      Column("user", StringType, 10), // ts = last 10 days
+      Column("session_length", IntType, 2),
+      Column("rating", DoubleType, 2000)
     )
 
-    // Define aggregations
+    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
+
+    println(s"Input DataFrame: ${df.count()}")
+
     val aggregations: Seq[Aggregation] = Seq(
-      Builders.Aggregation(Operation.SUM, "purchase_price", Seq(new Window(3, TimeUnit.DAYS))),
-      Builders.Aggregation(Operation.COUNT, "purchase_price", Seq(new Window(3, TimeUnit.DAYS)))
+        Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+        Builders.Aggregation(Operation.UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+        Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
     )
+
 
     val groupByConf = Builders.GroupBy(
       sources = Seq(source),
       keyColumns = Seq("user"),
       aggregations = aggregations,
-      metaData = Builders.MetaData(name = "intermediate_output_gb", namespace = "test_incremental_group_by", team = "chronon"),
+      metaData = Builders.MetaData(name = "intermediate_output_gb", namespace = namespace, team = "chronon"),
       backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
         new Window(60, TimeUnit.DAYS)),
     )
@@ -756,6 +738,9 @@ class GroupByTest {
 
     //check if the table exists
     assertTrue(s"Output table $outputTableName should exist", spark.catalog.tableExists(outputTableName))
+
+    val df1 = spark.sql(s"SELECT * FROM $outputTableName").toDF()
+    println(s"Table output ${df1.show()}")
     
     // Create GroupBy with incrementalMode = true
     /*
