@@ -9,14 +9,13 @@ This is important because it means that when we serve the model online, inferenc
 To see how we do this, let's take a look at the left side of the join definition (taken from [Quickstart Training Set Join](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/joins/quickstart/training_set.py)).
 
 ```python
-source = Source(
-    events=EventSource(
-        table="data.checkouts", 
-        query=Query(
-            selects=select("user_id"), # The primary key used to join various GroupBys together
-            time_column="ts", # The event time used to compute feature values as-of
-            ) 
-    ))
+source = EventSource(
+  table="data.checkouts", 
+  query=Query(
+      selects=select("user_id"), # The primary key used to join various GroupBys together
+      time_column="ts", # The event time used to compute feature values as-of
+      ) 
+)
 
 v1 = Join(  
     left=source,
@@ -292,7 +291,7 @@ v1 = StagingQuery(
 # ml_models/zipline/joins/team_name/model.py
 v1 = Join(
   # driver table can be either output of a staging_query or custom hive table
-  left=HiveEventSource(
+  left=EventSource(
     namespace="db_name",
     table=get_staging_query_output_table_name(driver_table.v1),
     query=Query(...)
@@ -365,7 +364,7 @@ v1 = StagingQuery(
 # ml_models/zipline/joins/team_name/model.py
 v1 = Join(
   # it's important to use the SAME staging query before and after. 
-  left=HiveEventSource(
+  left=EventSource(
     namespace="db_name",
     table=get_staging_query_output_table_name(driver_table.v1),
     query=Query(...)
@@ -395,7 +394,7 @@ If indeed something like that happened, or if you must use a different left tabl
 ```python
 v2 = Join(
   # if you must use a different driver table
-  left=HiveEventSource(
+  left=EventSource(
     namespace="db_name",
     table=get_staging_query_output_table_name(driver_table.v2),
     query=Query(...)
@@ -419,7 +418,7 @@ Steps
 # local variable to support sharing the same config values across two joins
 right_parts_production = [...]
 right_parts_experimental = [...]
-driver_table = HiveEventSource(
+driver_table = EventSource(
   namespace="db_name",
   table=get_staging_query_output_table_name(driver_table.v1),
   query=Query(wheres=downsampling_filters)
@@ -467,7 +466,7 @@ v1 = StagingQuery(
 # ml_models/zipline/joins/team_name/model.py
 # local variable to support sharing the same config values across two joins
 right_parts = [...]
-driver_table = HiveEventSource(
+driver_table = EventSource(
   namespace="db_name",
   table=get_staging_query_output_table_name(driver_table.v1),
   query=Query(wheres=downsampling_filters)
@@ -608,7 +607,7 @@ CHRONON_TO_LEGACY_NAME_MAPPING_DICT = {
 }
 v1 = Join(
   # driver table with union history
-  left=HiveEventSource(
+  left=EventSource(
     namespace="db_name",
     table=get_staging_query_output_table_name(driver_table.v1),
     query=Query(...)
@@ -633,7 +632,7 @@ Goal
 3. Register the backfill table as a bootstrap part in the join
 ```python
 backfill_2023_05_01 = Join(
-   left=HiveEventSource(
+   left=EventSource(
       namespace="db_name",
       table=get_staging_query_output_table_name(driver_table.v1),
       query=Query(

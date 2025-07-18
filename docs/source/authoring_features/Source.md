@@ -21,14 +21,13 @@ All sources are basically composed of the following pieces*:
 Taken from the [returns.py](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/returns.py) example GroupBy in the quickstart tutorial.
 
 ```python
-source = Source(
-    events=EventSource(
-        table="data.returns", # This points to the log table with historical return events
-        topic="events.returns", # Streaming event 
-        query=Query(
-            selects=select("user_id","refund_amt"), # Select the fields we care about
-            time_column="ts") # The event time
-    ))
+source = EventSource(
+    table="data.returns", # This points to the log table with historical return events
+    topic="events.returns", # Streaming event 
+    query=Query(
+        selects=select("user_id","refund_amt"), # Select the fields we care about
+        time_column="ts") # The event time
+)
 ```
 
 Key points:
@@ -43,14 +42,13 @@ Key points:
 Modified from the above example.
 
 ```python
-source = Source(
-    events=EventSource(
-        table="data.returns",
-        topic=None, # This makes it a batch source
-        query=Query(
-            selects=select("user_id","refund_amt"),
-        )
-    ))
+source = EventSource(
+    table="data.returns",
+    topic=None, # This makes it a batch source
+    query=Query(
+        selects=select("user_id","refund_amt"),
+    )
+)
 ```
 
 Key points:
@@ -64,7 +62,7 @@ Key points:
 Here is an example of a streaming EntitySource, modeled after a hypothetical "users" table.
 
 ```python
-user_activity = Source(entities=EntitySource(
+user_activity = EntitySource(
   snapshotTable="db_snapshots.users",
   mutationTable="db_mutations.users",
   mutationTopic="events.users_mutations",
@@ -87,13 +85,12 @@ As you can see, a pre-requisite to using the streaming `EntitySource` is a chang
 Taken from the [users.py](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/users.py) example GroupBy in the quickstart tutorial.
 
 ```python
-source = Source(
-    entities=EntitySource(
-        snapshotTable="data.users", # This points to a table that contains daily snapshots of the entire product catalog
-        query=Query(
-            selects=select("user_id","account_created_ds","email_verified"), # Select the fields we care about
-        )
-    ))
+source = EntitySource(
+    snapshotTable="data.users", # This points to a table that contains daily snapshots of the entire product catalog
+    query=Query(
+        selects=select("user_id","account_created_ds","email_verified"), # Select the fields we care about
+    )
+)
 ```
 
 This is similar to the above, however, it only contains the `snapshotTable`, and not the batch and streaming mutations sources.

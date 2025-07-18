@@ -4,6 +4,9 @@ Python API
 .. automodule:: ai.chronon.group_by
    :members:
 
+.. automodule:: ai.chronon.source
+   :members:
+
 .. automodule:: ai.chronon.join
    :members:
 
@@ -11,4 +14,4 @@ Python API
    :members:
 
 .. automodule:: ai.chronon.api.ttypes
-   :members: StagingQuery, EventSource, EntitySource, Window, Aggregation
+   :members: StagingQuery, Window, Aggregation
