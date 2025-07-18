@@ -13,11 +13,12 @@ def EventSource(
 ) -> ttypes.Source:
     """
 
-    :param table:
-    :param topic:
-    :param query:
-    :param is_cumulative:
+    :param table: Points to a table that has historical data for the input events
+    :param query: Contains row level transformations and filtering expressed as Spark SQL statements. Applied to both table and topic
+    :param topic: (Optional) Kafka topic that can be listened to for realtime updates
+    :param is_cumulative: Indicates that each new partition contains not just the current day's events but the entire set of events since the beginning
     :return:
+      A source object of kind EventSource
     """
     return ttypes.Source(
         events=ttypes.EventSource(
@@ -39,11 +40,12 @@ def EntitySource(
 ) -> ttypes.Source:
     """
 
-    :param snapshot_table:
-    :param mutation_table:
-    :param query:
-    :param mutation_topic:
+    :param snapshot_table: Points to a table that contains periodical snapshots of the entire dataset
+    :param query: Contains row level transformations and filtering expressed as Spark SQL statements
+    :param mutation_table: (Optional) Points to a table that contains all changes applied to the dataset
+    :param mutation_topic: (Optional) Kafka topic that delivers changes in realtime
     :return:
+      A source object of kind EntitySource
     """
     return ttypes.Source(
         entities=ttypes.EntitySource(
@@ -62,9 +64,10 @@ def JoinSource(
 ) -> ttypes.Source:
     """
 
-    :param join:
-    :param query:
+    :param join: Output of downstream Join operation
+    :param query: Contains row level transformations and filtering expressed as Spark SQL statements
     :return:
+      A source object of kind JoinSource
     """
     return ttypes.Source(
         joinSource=ttypes.JoinSource(
