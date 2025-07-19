@@ -245,8 +245,8 @@ class Analyzer(tableUtils: TableUtils,
 
     val keySchema = groupBy.keySchema.map { field =>
       field.name -> SparkConversions.toChrononType(field.name, field.dataType)
-    }.toMap
-    val valueSchema = schema.fields.map { field => field.name -> field.fieldType }.toMap
+    }
+    val valueSchema = schema.fields.map { field => field.name -> field.fieldType }
 
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
@@ -278,15 +278,15 @@ class Analyzer(tableUtils: TableUtils,
     AnalyzeGroupByResult(keySchema, valueSchema, aggMetadata, noAccessTables)
   }
 
-  case class AnalyzeGroupByResult(keySchema: Map[String, DataType],
-                                  valueSchema: Map[String, DataType],
+  case class AnalyzeGroupByResult(keySchema: Seq[(String, DataType)],
+                                  valueSchema: Seq[(String, DataType)],
                                   outputMetadata: Array[AggregationMetadata],
                                   noAccessTables: Set[String])
 
-  case class AnalyzeJoinResult(leftSchema: Map[String, DataType],
-                               rightSchema: Map[String, DataType],
-                               keySchema: Map[String, DataType],
-                               finalOutputSchema: Map[String, DataType],
+  case class AnalyzeJoinResult(leftSchema: Seq[(String, DataType)],
+                               rightSchema: Seq[(String, DataType)],
+                               keySchema: Seq[(String, DataType)],
+                               finalOutputSchema: Seq[(String, DataType)],
                                finalOutputMetadata: ListBuffer[AggregationMetadata])
 
   def analyzeJoin(joinConf: api.Join,
@@ -330,7 +330,6 @@ class Analyzer(tableUtils: TableUtils,
 
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
-      .toMap
     val joinIntermediateValuesMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbStartPartitions = mutable.Map[String, List[String]]()
@@ -371,7 +370,7 @@ class Analyzer(tableUtils: TableUtils,
                             part.getGroupBy.getMetaData.getName)
       }
       // Run validation checks.
-      keysWithError ++= runSchemaValidation(leftSchema, analyzeGroupByResult.keySchema, part.rightToLeft)
+      keysWithError ++= runSchemaValidation(leftSchema.toMap, analyzeGroupByResult.keySchema.toMap, part.rightToLeft)
       val subPartitionFilters =
         part.groupBy.sources.toScala.map(source => source.table -> source.subPartitionFilters).toMap
       dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel,
@@ -399,8 +398,7 @@ class Analyzer(tableUtils: TableUtils,
       }
     }
 
-    val rightSchema: Map[String, DataType] =
-      joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
+    val rightSchema = joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType))
 
     val keyColumns: List[String] = joinConf.joinParts.toScala
       .flatMap(joinPart => {
@@ -439,7 +437,7 @@ class Analyzer(tableUtils: TableUtils,
     val finalOutputSchema = finalOutputMetadata.map {
       case AggregationMetadata(name, columnType, _, _, _, _) =>
         (name, columnType)
-    }.toMap
+    }
 
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
@@ -722,13 +720,13 @@ class Analyzer(tableUtils: TableUtils,
                  joinConf.metaData.tableProps)
   }
 
-  private def exportSchema(keySchema: Map[String, DataType],
-                           valueSchema: Map[String, DataType],
+  private def exportSchema(keySchema: Seq[(String, DataType)],
+                           valueSchema: Seq[(String, DataType)],
                            table: String,
                            partition: String,
                            tableProperties: Map[String, String]): Unit = {
     import tableUtils.sparkSession.implicits._
-    def toFields(schema: Map[String, DataType]): Seq[Field] = {
+    def toFields(schema: Seq[(String, DataType)]): Seq[Field] = {
       schema.toSeq.map {
         case (name, dataType: DataType) => Field(name, SparkConversions.fromChrononType(dataType).catalogString)
       }
