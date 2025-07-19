@@ -49,7 +49,11 @@ ThisBuild / use_spark_3_5 := false
 def buildTimestampSuffix = ";build.timestamp=" + new java.util.Date().getTime
 lazy val publishSettings = Seq(
   publishTo := {
-    sonatypePublishToBundle.value
+    if (isSnapshot.value) {
+      Some("snapshots" at sys.env.getOrElse("CHRONON_SNAPSHOT_REPO", "unknown-repo") + buildTimestampSuffix)
+    } else {
+      sonatypePublishToBundle.value
+    }
   },
   publishMavenStyle := true
 )
