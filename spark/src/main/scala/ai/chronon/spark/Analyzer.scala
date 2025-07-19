@@ -193,8 +193,7 @@ class Analyzer(tableUtils: TableUtils,
                      includeOutputTableName: Boolean = false,
                      enableHitter: Boolean = false,
                      skipTimestampCheck: Boolean = skipTimestampCheck,
-                     validateTablePermission: Boolean = validateTablePermission)
-      : (Array[AggregationMetadata], Map[String, DataType], Set[String]) = {
+                     validateTablePermission: Boolean = validateTablePermission): AnalyzeGroupByResult = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -241,6 +240,12 @@ class Analyzer(tableUtils: TableUtils,
     } else {
       groupBy.outputSchema
     }
+
+    val keySchema = groupBy.keySchema.map { field =>
+      field.name -> SparkConversions.toChrononType(field.name, field.dataType)
+    }.toMap
+    val valueSchema = schema.fields.map { field => field.name -> field.fieldType }.toMap
+
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
     } else {
@@ -253,13 +258,11 @@ class Analyzer(tableUtils: TableUtils,
              |----- OUTPUT TABLE NAME -----
              |${groupByConf.metaData.outputTable}
                """.stripMargin)
-      val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
-      schema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
       logger.info(s"""
            |----- KEY SCHEMA -----
            |${keySchema.mkString("\n")}
            |----- OUTPUT SCHEMA -----
-           |${schema.mkString("\n")}
+           |${valueSchema.mkString("\n")}
            |------ END --------------
            |""".stripMargin)
     }
@@ -270,15 +273,17 @@ class Analyzer(tableUtils: TableUtils,
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
     }
 
-    val keySchemaMap = groupBy.keySchema.map { field =>
-      field.name -> SparkConversions.toChrononType(field.name, field.dataType)
-    }.toMap
-    (aggMetadata, keySchemaMap, noAccessTables)
-
+    AnalyzeGroupByResult(keySchema, valueSchema, aggMetadata, noAccessTables)
   }
+
+  case class AnalyzeGroupByResult(keySchema: Map[String, DataType],
+                                  valueSchema: Map[String, DataType],
+                                  outputMetadata: Array[AggregationMetadata],
+                                  noAccessTables: Set[String])
 
   case class AnalyzeJoinResult(leftSchema: Map[String, DataType],
                                rightSchema: Map[String, DataType],
+                               keySchema: Map[String, DataType],
                                finalOutputSchema: Map[String, DataType],
                                finalOutputMetadata: ListBuffer[AggregationMetadata])
 
@@ -346,7 +351,7 @@ class Analyzer(tableUtils: TableUtils,
       .getOrElse(Seq.empty)
 
     joinConf.joinParts.toScala.foreach { part =>
-      val (aggMetadata, gbKeySchema, rightNoAccessTables) =
+      val analyzeGroupByResult =
         analyzeGroupBy(
           part.groupBy,
           part.fullPrefix,
@@ -355,7 +360,7 @@ class Analyzer(tableUtils: TableUtils,
           skipTimestampCheck = skipTimestampCheck || leftNoAccessTables.nonEmpty,
           validateTablePermission = validateTablePermission
         )
-      joinIntermediateValuesMetadata ++= aggMetadata.map { aggMeta =>
+      joinIntermediateValuesMetadata ++= analyzeGroupByResult.outputMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
                             aggMeta.operation,
@@ -364,14 +369,14 @@ class Analyzer(tableUtils: TableUtils,
                             part.getGroupBy.getMetaData.getName)
       }
       // Run validation checks.
-      keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
+      keysWithError ++= runSchemaValidation(leftSchema, analyzeGroupByResult.keySchema, part.rightToLeft)
       val subPartitionFilters =
         part.groupBy.sources.toScala.map(source => source.table -> source.subPartitionFilters).toMap
       dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel,
                                                           part.groupBy,
                                                           unfilledRanges,
                                                           subPartitionFilters)
-      noAccessTables ++= rightNoAccessTables
+      noAccessTables ++= analyzeGroupByResult.noAccessTables
       // list any startPartition dates for conflict checks
       val gbStartPartition = part.groupBy.sources.toScala
         .map(_.query.startPartition)
@@ -395,25 +400,26 @@ class Analyzer(tableUtils: TableUtils,
     val rightSchema: Map[String, DataType] =
       joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
 
+    val keyColumns: List[String] = joinConf.joinParts.toScala
+      .flatMap(joinPart => {
+        val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
+        if (joinPart.keyMapping == null) keyCols
+        else {
+          keyCols.map(key => {
+            if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
+            else key
+          })
+        }
+      })
+      .distinct
+    val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
+
     // Derive the join online fetching output schema with metadata
     val finalOutputMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
-      val keyColumns: List[String] = joinConf.joinParts.toScala
-        .flatMap(joinPart => {
-          val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
-          if (joinPart.keyMapping == null) keyCols
-          else {
-            keyCols.map(key => {
-              if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
-              else key
-            })
-          }
-        })
-        .distinct
       val tsDsSchema: Map[String, DataType] = {
         Map("ts" -> api.StringType, "ds" -> api.StringType)
       }
       val sparkSchema = {
-        val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
         val schema: Seq[(String, DataType)] = keySchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
         StructType(SparkConversions.fromChrononSchema(schema))
       }
@@ -445,6 +451,8 @@ class Analyzer(tableUtils: TableUtils,
            |${leftSchema.mkString("\n")}
            |------ RIGHT SIDE SCHEMA ----
            |${rightSchema.mkString("\n")}
+           |------ KEY SCHEMA ----
+           |${keySchema.mkString("\n")}
            |------ FINAL OUTPUT SCHEMA ----
            |${finalOutputSchema.mkString("\n")}
            |------ END ------------------
@@ -494,6 +502,7 @@ class Analyzer(tableUtils: TableUtils,
     AnalyzeJoinResult(
       leftSchema,
       rightSchema,
+      keySchema,
       finalOutputSchema,
       finalOutputMetadata
     )

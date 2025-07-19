@@ -485,8 +485,8 @@ class AnalyzerTest {
     )
 
     val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
-    val (_, _, noAccessTables) = analyzer.analyzeGroupBy(tableGroupBy)
-    assertEquals(1, noAccessTables.size)
+    val analyzerResult = analyzer.analyzeGroupBy(tableGroupBy)
+    assertEquals(1, analyzerResult.noAccessTables.size)
   }
 
   @Test(expected = classOf[java.lang.AssertionError])
