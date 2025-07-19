@@ -238,8 +238,10 @@ case object Iceberg extends Format {
 
   override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
       sparkSession: SparkSession): Seq[Map[String, String]] = {
-    sparkSession.sqlContext
-      .sql(s"SELECT partition FROM $tableName" ++ ".partitions")
+    sparkSession.read
+      .format("iceberg")
+      .load(s"$tableName.partitions")
+      .select("partition")
       .collect()
       .map { row =>
         val partitionStruct = row.getStruct(0)
@@ -942,8 +944,18 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def getTableProperties(tableName: String): Option[Map[String, String]] = {
     try {
-      val tableId = sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
-      Some(sparkSession.sessionState.catalog.getTempViewOrPermanentTableMetadata(tableId).properties)
+      tableFormatProvider.readFormat(tableName) match {
+        case Iceberg =>
+          val props = sparkSession
+            .sql(s"SHOW TBLPROPERTIES $tableName")
+            .collect()
+            .map(row => row.getString(0) -> row.getString(1))
+            .toMap
+          Some(props)
+        case _ =>
+          val tableId = sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
+          Some(sparkSession.sessionState.catalog.getTempViewOrPermanentTableMetadata(tableId).properties)
+      }
     } catch {
       case _: Exception => None
     }

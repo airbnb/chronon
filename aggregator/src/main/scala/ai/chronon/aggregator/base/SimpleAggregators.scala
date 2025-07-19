@@ -25,6 +25,7 @@ import com.yahoo.sketches.kll.KllFloatsSketch
 import com.yahoo.sketches.{ArrayOfDoublesSerDe, ArrayOfItemsSerDe, ArrayOfLongsSerDe, ArrayOfStringsSerDe}
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
+import java.security.MessageDigest
 import java.util
 import scala.collection.mutable
 import scala.jdk.CollectionConverters._
@@ -596,6 +597,113 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
     val result = new util.HashMap[String, Long](map.size())
     map.asScala.foreach({ case (k, v) => result.put(String.valueOf(k), v) })
     result
+  }
+}
+
+object BoundedUniqueCount {
+  private val SentinelSet: util.Set[Any] = new util.HashSet[Any]()
+  private val SentinelMarker: String = "__SENTINEL__"
+}
+
+class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggregator[T, util.Set[Any], Long] {
+  private def toBytes(input: T): Array[Byte] = {
+    val bos = new ByteArrayOutputStream()
+    val out = new ObjectOutputStream(bos)
+    out.writeObject(input)
+    out.flush()
+    bos.toByteArray
+  }
+
+  private def md5Hex(bytes: Array[Byte]): String =
+    MessageDigest.getInstance("MD5").digest(bytes).map("%02x".format(_)).mkString
+
+  private def processInput(input: T): Any = {
+    inputType match {
+      case IntType | LongType | DoubleType | FloatType | ShortType | BinaryType =>
+        input
+      case _ =>
+        md5Hex(toBytes(input))
+    }
+  }
+
+  override def prepare(input: T): util.Set[Any] = {
+    val result = new util.HashSet[Any](k)
+    result.add(processInput(input))
+    result
+  }
+
+  override def update(ir: util.Set[Any], input: T): util.Set[Any] = {
+    if (ir == BoundedUniqueCount.SentinelSet || ir.size() >= k) {
+      return BoundedUniqueCount.SentinelSet
+    }
+
+    ir.add(processInput(input))
+    ir
+  }
+
+  override def outputType: DataType = LongType
+
+  override def irType: DataType =
+    inputType match {
+      case IntType | LongType | DoubleType | FloatType | ShortType | BinaryType =>
+        ListType(inputType)
+      case _ =>
+        ListType(StringType)
+    }
+
+  override def merge(ir1: util.Set[Any], ir2: util.Set[Any]): util.Set[Any] = {
+    if (ir1 == BoundedUniqueCount.SentinelSet || ir2 == BoundedUniqueCount.SentinelSet) {
+      return BoundedUniqueCount.SentinelSet
+    }
+
+    ir2
+      .iterator()
+      .asScala
+      .foreach(v =>
+        if (ir1.size() < k) {
+          ir1.add(v)
+        })
+
+    if (ir1.size() >= k) {
+      BoundedUniqueCount.SentinelSet
+    } else {
+      ir1
+    }
+  }
+
+  override def finalize(ir: util.Set[Any]): Long = {
+    if (ir == BoundedUniqueCount.SentinelSet) {
+      k
+    } else {
+      ir.size()
+    }
+  }
+
+  override def clone(ir: util.Set[Any]): util.Set[Any] = {
+    if (ir == BoundedUniqueCount.SentinelSet) {
+      BoundedUniqueCount.SentinelSet
+    } else {
+      new util.HashSet[Any](ir)
+    }
+  }
+
+  override def normalize(ir: util.Set[Any]): Any = {
+    if (ir == BoundedUniqueCount.SentinelSet) {
+      val list = new util.ArrayList[Any]()
+      list.add(BoundedUniqueCount.SentinelMarker)
+      list
+    } else {
+      new util.ArrayList[Any](ir)
+    }
+  }
+
+  override def denormalize(ir: Any): util.Set[Any] = {
+    val list = ir.asInstanceOf[util.ArrayList[Any]]
+    if (list.size() == 1 && list.get(0) == BoundedUniqueCount.SentinelMarker) {
+      BoundedUniqueCount.SentinelSet
+    } else {
+      new util.HashSet[Any](list)
+    }
   }
 }
 

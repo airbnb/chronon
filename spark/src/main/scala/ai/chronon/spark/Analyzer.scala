@@ -276,12 +276,16 @@ class Analyzer(tableUtils: TableUtils,
 
   }
 
-  def analyzeJoin(
-      joinConf: api.Join,
-      enableHitter: Boolean = false,
-      validateTablePermission: Boolean = true,
-      validationAssert: Boolean = false,
-      skipTimestampCheck: Boolean = skipTimestampCheck): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+  case class AnalyzeJoinResult(leftSchema: Map[String, DataType],
+                               rightSchema: Map[String, DataType],
+                               finalOutputSchema: Map[String, DataType],
+                               finalOutputMetadata: ListBuffer[AggregationMetadata])
+
+  def analyzeJoin(joinConf: api.Join,
+                  enableHitter: Boolean = false,
+                  validateTablePermission: Boolean = true,
+                  validationAssert: Boolean = false,
+                  skipTimestampCheck: Boolean = skipTimestampCheck): AnalyzeJoinResult = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
@@ -389,6 +393,45 @@ class Analyzer(tableUtils: TableUtils,
 
     val rightSchema: Map[String, DataType] =
       joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
+
+    // Derive the join online fetching output schema with metadata
+    val finalOutputMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
+      val keyColumns: List[String] = joinConf.joinParts.toScala
+        .flatMap(joinPart => {
+          val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
+          if (joinPart.keyMapping == null) keyCols
+          else {
+            keyCols.map(key => {
+              if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
+              else key
+            })
+          }
+        })
+        .distinct
+      val tsDsSchema: Map[String, DataType] = {
+        Map("ts" -> api.StringType, "ds" -> api.StringType)
+      }
+      val sparkSchema = {
+        val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
+        val schema: Seq[(String, DataType)] = keySchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
+        StructType(SparkConversions.fromChrononSchema(schema))
+      }
+      val dummyOutputDf = tableUtils.sparkSession
+        .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
+      val finalOutputColumns: Array[Column] =
+        joinConf.derivationsScala.finalOutputColumn(rightSchema.toArray.map(_._1)).toArray
+      val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+      val columns = SparkConversions.toChrononSchema(
+        StructType(derivedDummyOutputDf.schema.filterNot(tup => tsDsSchema.contains(tup.name))))
+      ListBuffer(columns.map { tup => toAggregationMetadata(tup._1, tup._2, joinConf.hasDerivations) }: _*)
+    } else {
+      joinIntermediateValuesMetadata
+    }
+    val finalOutputSchema = finalOutputMetadata.map {
+      case AggregationMetadata(name, columnType, _, _, _, _) =>
+        (name, columnType)
+    }.toMap
+
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
@@ -401,6 +444,8 @@ class Analyzer(tableUtils: TableUtils,
            |${leftSchema.mkString("\n")}
            |------ RIGHT SIDE SCHEMA ----
            |${rightSchema.mkString("\n")}
+           |------ FINAL OUTPUT SCHEMA ----
+           |${finalOutputSchema.mkString("\n")}
            |------ END ------------------
            |""".stripMargin)
     }
@@ -443,41 +488,14 @@ class Analyzer(tableUtils: TableUtils,
         )
       }
     }
-    // Derive the join online fetching output schema with metadata
-    val joinOutputValuesMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
-      val keyColumns: List[String] = joinConf.joinParts.toScala
-        .flatMap(joinPart => {
-          val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
-          if (joinPart.keyMapping == null) keyCols
-          else {
-            keyCols.map(key => {
-              if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
-              else key
-            })
-          }
-        })
-        .distinct
-      val tsDsSchema: Map[String, DataType] = {
-        Map("ts" -> api.StringType, "ds" -> api.StringType)
-      }
-      val sparkSchema = {
-        val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
-        val schema: Seq[(String, DataType)] = keySchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
-        StructType(SparkConversions.fromChrononSchema(schema))
-      }
-      val dummyOutputDf = tableUtils.sparkSession
-        .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
-      val finalOutputColumns: Array[Column] =
-        joinConf.derivationsScala.finalOutputColumn(rightSchema.toArray.map(_._1)).toArray
-      val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
-      val columns = SparkConversions.toChrononSchema(
-        StructType(derivedDummyOutputDf.schema.filterNot(tup => tsDsSchema.contains(tup.name))))
-      ListBuffer(columns.map { tup => toAggregationMetadata(tup._1, tup._2, joinConf.hasDerivations) }: _*)
-    } else {
-      joinIntermediateValuesMetadata
-    }
-    // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
-    (leftSchema ++ rightSchema, joinOutputValuesMetadata)
+
+    // Return analyzer result including schema at each step, as well as final output's metadata for export
+    AnalyzeJoinResult(
+      leftSchema,
+      rightSchema,
+      finalOutputSchema,
+      finalOutputMetadata
+    )
   }
 
   // validate the schema of the left and right side of the join and make sure the types match

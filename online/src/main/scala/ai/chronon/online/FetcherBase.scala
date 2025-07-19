@@ -354,6 +354,9 @@ class FetcherBase(kvStore: KVStore,
     val validRequests =
       requests.filter(r => r.keys == null || r.keys.values == null || !r.keys.values.exists(_ == null))
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
+      request.context
+        .getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupBy = request.name))
+        .increment("group_by_request.count")
       val groupByServingInfoTry = getGroupByServingInfo(request.name)
         .recover {
           case ex: Throwable =>
@@ -366,7 +369,6 @@ class FetcherBase(kvStore: KVStore,
         .map { groupByServingInfo =>
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
-          context.increment("group_by_request.count")
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {
