@@ -16,23 +16,23 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
+import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.api._
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
-import org.apache.spark.sql.{Column, DataFrame, Row, types}
-import org.apache.spark.sql.functions.{col, from_unixtime, lit, sum, when}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{StringType, StructType}
-import ai.chronon.api.DataModel.{DataModel, Entities, Events}
+import org.apache.spark.sql.{Column, DataFrame, Row, types}
+import org.slf4j.LoggerFactory
 
-import scala.collection.{Seq, immutable, mutable}
 import scala.collection.mutable.ListBuffer
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.collection.{Seq, immutable, mutable}
+import scala.util.ScalaJavaConversions.ListOps
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -69,7 +69,8 @@ class Analyzer(tableUtils: TableUtils,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
                silenceMode: Boolean = false,
-               skipTimestampCheck: Boolean = false) {
+               skipTimestampCheck: Boolean = false,
+               validateTablePermission: Boolean = true) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
@@ -187,13 +188,13 @@ class Analyzer(tableUtils: TableUtils,
     AggregationMetadata(columnName, columnType, operation, "Unbounded", columnName)
   }
 
-  def analyzeGroupBy(
-      groupByConf: api.GroupBy,
-      prefix: String = "",
-      includeOutputTableName: Boolean = false,
-      enableHitter: Boolean = false,
-      skipTimestampCheck: Boolean = skipTimestampCheck,
-      validateTablePermission: Boolean = false): (Array[AggregationMetadata], Map[String, DataType], Set[String]) = {
+  def analyzeGroupBy(groupByConf: api.GroupBy,
+                     prefix: String = "",
+                     includeOutputTableName: Boolean = false,
+                     enableHitter: Boolean = false,
+                     skipTimestampCheck: Boolean = skipTimestampCheck,
+                     validateTablePermission: Boolean = validateTablePermission)
+      : (Array[AggregationMetadata], Map[String, DataType], Set[String]) = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -283,7 +284,7 @@ class Analyzer(tableUtils: TableUtils,
 
   def analyzeJoin(joinConf: api.Join,
                   enableHitter: Boolean = false,
-                  validateTablePermission: Boolean = true,
+                  validateTablePermission: Boolean = validateTablePermission,
                   validationAssert: Boolean = false,
                   skipTimestampCheck: Boolean = skipTimestampCheck): AnalyzeJoinResult = {
     val name = "joins/" + joinConf.metaData.name
@@ -352,7 +353,7 @@ class Analyzer(tableUtils: TableUtils,
           includeOutputTableName = true,
           enableHitter = enableHitter,
           skipTimestampCheck = skipTimestampCheck || leftNoAccessTables.nonEmpty,
-          validateTablePermission = true
+          validateTablePermission = validateTablePermission
         )
       joinIntermediateValuesMetadata ++= aggMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
@@ -697,14 +698,26 @@ class Analyzer(tableUtils: TableUtils,
       case confPath: String =>
         if (confPath.contains("/joins/")) {
           val joinConf = parseConf[api.Join](confPath)
-          analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+          analyzeJoin(joinConf,
+                      enableHitter = enableHitter,
+                      skipTimestampCheck = skipTimestampCheck,
+                      validateTablePermission = validateTablePermission)
         } else if (confPath.contains("/group_bys/")) {
           val groupByConf = parseConf[api.GroupBy](confPath)
-          analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+          analyzeGroupBy(groupByConf,
+                         enableHitter = enableHitter,
+                         skipTimestampCheck = skipTimestampCheck,
+                         validateTablePermission = validateTablePermission)
         }
       case groupByConf: api.GroupBy =>
-        analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+        analyzeGroupBy(groupByConf,
+                       enableHitter = enableHitter,
+                       skipTimestampCheck = skipTimestampCheck,
+                       validateTablePermission = validateTablePermission)
       case joinConf: api.Join =>
-        analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+        analyzeJoin(joinConf,
+                    enableHitter = enableHitter,
+                    skipTimestampCheck = skipTimestampCheck,
+                    validateTablePermission = validateTablePermission)
     }
 }

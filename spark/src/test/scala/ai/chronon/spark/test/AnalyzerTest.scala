@@ -485,7 +485,7 @@ class AnalyzerTest {
     )
 
     val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
-    val (_, _, noAccessTables) = analyzer.analyzeGroupBy(tableGroupBy, validateTablePermission = true)
+    val (_, _, noAccessTables) = analyzer.analyzeGroupBy(tableGroupBy)
     assertEquals(1, noAccessTables.size)
   }
 

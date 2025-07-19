@@ -531,6 +531,12 @@ object Driver {
           descr = "skip sampling and timestamp checks - setting to true will result in timestamp checks being skipped",
           default = Some(false)
         )
+      val skipTablePermissionCheck: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          descr = "skip table permission check - setting to true will skip the table permission check",
+          default = Some(false)
+        )
 
       override def subcommandName() = "analyzer_util"
     }
@@ -545,7 +551,8 @@ object Driver {
                    args.sample(),
                    args.enableHitter(),
                    silenceMode = false,
-                   skipTimestampCheck = args.skipTimestampCheck()).run
+                   skipTimestampCheck = args.skipTimestampCheck(),
+                   validateTablePermission = !args.skipTablePermissionCheck()).run()
     }
   }
 
