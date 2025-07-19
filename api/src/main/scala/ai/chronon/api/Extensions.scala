@@ -102,6 +102,7 @@ object Extensions {
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
     def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
     def loggedTable = s"${outputTable}_logged"
+    def schemaTable = s"${outputTable}_schema"
 
     def bootstrapTable = s"${outputTable}_bootstrap"
 

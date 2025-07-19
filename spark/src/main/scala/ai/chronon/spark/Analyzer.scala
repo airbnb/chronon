@@ -61,6 +61,8 @@ class ItemSketchSerializable extends Serializable {
   }
 }
 
+case class Field(name: String, data_type: String)
+
 class Analyzer(tableUtils: TableUtils,
                conf: Any,
                startDate: String,
@@ -702,31 +704,70 @@ class Analyzer(tableUtils: TableUtils,
       .toMap
   }
 
-  def run(): Unit =
+  private def exportGroupBySchema(analyzeGroupByResult: AnalyzeGroupByResult,
+                                  groupByConf: api.GroupBy,
+                                  partition: String): Unit = {
+    exportSchema(analyzeGroupByResult.keySchema,
+                 analyzeGroupByResult.valueSchema,
+                 groupByConf.metaData.schemaTable,
+                 partition,
+                 groupByConf.metaData.tableProps)
+  }
+
+  private def exportJoinSchema(analyzeJoinResult: AnalyzeJoinResult, joinConf: api.Join, partition: String): Unit = {
+    exportSchema(analyzeJoinResult.keySchema,
+                 analyzeJoinResult.finalOutputSchema,
+                 joinConf.metaData.schemaTable,
+                 partition,
+                 joinConf.metaData.tableProps)
+  }
+
+  private def exportSchema(keySchema: Map[String, DataType],
+                           valueSchema: Map[String, DataType],
+                           table: String,
+                           partition: String,
+                           tableProperties: Map[String, String]): Unit = {
+    import tableUtils.sparkSession.implicits._
+    def toFields(schema: Map[String, DataType]): Seq[Field] = {
+      schema.toSeq.map {
+        case (name, dataType: DataType) => Field(name, SparkConversions.fromChrononType(dataType).catalogString)
+      }
+    }
+    val keys = toFields(keySchema)
+    val values = toFields(valueSchema)
+    val df = Seq((keys, values, partition)).toDF("key_schema", "value_schema", tableUtils.partitionColumn)
+    tableUtils.insertPartitions(df, table, tableProperties)
+  }
+
+  private def runAnalyzeJoin(joinConf: api.Join, exportSchema: Boolean = false): Unit = {
+    val analyzeJoinResult = analyzeJoin(joinConf,
+                                        enableHitter = enableHitter,
+                                        skipTimestampCheck = skipTimestampCheck,
+                                        validateTablePermission = validateTablePermission)
+    if (exportSchema) {
+      exportJoinSchema(analyzeJoinResult, joinConf, endDate)
+    }
+  }
+
+  private def runAnalyzeGroupBy(groupByConf: api.GroupBy, exportSchema: Boolean = false): Unit = {
+    val analyzeGroupByResult = analyzeGroupBy(groupByConf,
+                                              enableHitter = enableHitter,
+                                              skipTimestampCheck = skipTimestampCheck,
+                                              validateTablePermission = validateTablePermission)
+    if (exportSchema) {
+      exportGroupBySchema(analyzeGroupByResult, groupByConf, endDate)
+    }
+  }
+
+  def run(exportSchema: Boolean = false): Unit =
     conf match {
       case confPath: String =>
         if (confPath.contains("/joins/")) {
-          val joinConf = parseConf[api.Join](confPath)
-          analyzeJoin(joinConf,
-                      enableHitter = enableHitter,
-                      skipTimestampCheck = skipTimestampCheck,
-                      validateTablePermission = validateTablePermission)
+          runAnalyzeJoin(parseConf[api.Join](confPath), exportSchema)
         } else if (confPath.contains("/group_bys/")) {
-          val groupByConf = parseConf[api.GroupBy](confPath)
-          analyzeGroupBy(groupByConf,
-                         enableHitter = enableHitter,
-                         skipTimestampCheck = skipTimestampCheck,
-                         validateTablePermission = validateTablePermission)
+          runAnalyzeGroupBy(parseConf[api.GroupBy](confPath), exportSchema)
         }
-      case groupByConf: api.GroupBy =>
-        analyzeGroupBy(groupByConf,
-                       enableHitter = enableHitter,
-                       skipTimestampCheck = skipTimestampCheck,
-                       validateTablePermission = validateTablePermission)
-      case joinConf: api.Join =>
-        analyzeJoin(joinConf,
-                    enableHitter = enableHitter,
-                    skipTimestampCheck = skipTimestampCheck,
-                    validateTablePermission = validateTablePermission)
+      case groupByConf: api.GroupBy => runAnalyzeGroupBy(groupByConf, exportSchema)
+      case joinConf: api.Join       => runAnalyzeJoin(joinConf, exportSchema)
     }
 }

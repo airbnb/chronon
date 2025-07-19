@@ -99,6 +99,8 @@ class AnalyzerTest {
     logger.info(expectedSchema.mkString("\n"))
 
     assertTrue(expectedSchema sameElements analyzerSchema)
+
+    analyzer
   }
 
   @Test(expected = classOf[java.lang.AssertionError])

@@ -19,7 +19,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
-import ai.chronon.online.{Api, Fetcher, MetadataDirWalker, MetadataEndPoint, MetadataStore}
+import ai.chronon.online._
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -44,8 +44,8 @@ import java.net.URI
 import java.nio.file.{Files, Paths}
 import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, Future}
 import scala.io.Source
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
@@ -537,6 +537,12 @@ object Driver {
           descr = "skip table permission check - setting to true will skip the table permission check",
           default = Some(false)
         )
+      val exportSchema: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          descr = "export schema from analyzer result into a schema table, default is false",
+          default = Some(false)
+        )
 
       override def subcommandName() = "analyzer_util"
     }
@@ -552,7 +558,7 @@ object Driver {
                    args.enableHitter(),
                    silenceMode = false,
                    skipTimestampCheck = args.skipTimestampCheck(),
-                   validateTablePermission = !args.skipTablePermissionCheck()).run()
+                   validateTablePermission = !args.skipTablePermissionCheck()).run(args.exportSchema())
     }
   }
 
