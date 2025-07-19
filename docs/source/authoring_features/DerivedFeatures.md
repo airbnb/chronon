@@ -61,7 +61,7 @@ from ai.chronon.group_by import (
    Window,
    TimeUnit,
 )
-from ai.chronon.api.ttypes import EventSource
+from ai.chronon.source import EventSource
 from ai.chronon.query import Query, select
 
 transactions_source = EventSource(
@@ -98,7 +98,7 @@ File `joins/sample/txn_fraud.py`
 
 ```python
 from group_bys.sample_team import card_features
-from ai.chronon.api.ttypes import EventSource
+from ai.chronon.source import EventSource
 from ai.chronon.join import Join, JoinPart, Derivation
 
 v1 = Join(
@@ -143,15 +143,15 @@ from ai.chronon.group_by import (
    Window,
    TimeUnit,
 )
-from ai.chronon.api.ttypes import EventSource
+from ai.chronon.source import EventSource
 from ai.chronon.query import Query, select
 
 
 # TODO Add data tests
 ip_successes_source = EventSource(
-       table="namespace.ip_successes",
-       topic="ip_successes_kafka_topic",
-       query=Query(selects=select("ip", "success")),
+   table="namespace.ip_successes",
+   topic="ip_successes_kafka_topic",
+   query=Query(selects=select("ip", "success")),
 )
 
 
@@ -177,7 +177,7 @@ File `joins/sample/txn_fraud.py`
 
 ```python
 from group_bys.sample_team import merchant_features
-from ai.chronon.api.ttypes import EventSource
+from ai.chronon.source import EventSource
 from ai.chronon.join import Join, JoinPart, Derivation
 
 v1 = Join(

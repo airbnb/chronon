@@ -29,7 +29,8 @@
         },
         "startPartition": "2021-03-01",
         "setups": []
-      }
+      },
+      "customJson": "{}"
     }
   },
   "joinParts": [
@@ -64,7 +65,8 @@
                 "endPartition": "2021-04-09",
                 "timeColumn": "UNIX_TIMESTAMP(ts) * 1000",
                 "setups": []
-              }
+              },
+              "customJson": "{}"
             }
           },
           {
@@ -78,7 +80,8 @@
                 "startPartition": "2021-03-01",
                 "timeColumn": "__timestamp",
                 "setups": []
-              }
+              },
+              "customJson": "{}"
             }
           }
         ],
