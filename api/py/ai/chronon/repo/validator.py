@@ -317,13 +317,7 @@ class ChrononRepoValidator(object):
                         )
                     )
             if derivation.name != "*":
-                # Do not validate the name conflict for keys
-                if derivation.name in derived_columns and derivation.name not in key_cols:
-                    errors.append(
-                        "Incorrect derivation name {} due to output column name conflict".format(derivation.name)
-                    )
-                else:
-                    derived_columns.add(derivation.name)
+                derived_columns.add(derivation.name)
         return errors
 
     def _validate_join(self, join: Join) -> List[str]:
