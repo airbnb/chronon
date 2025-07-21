@@ -717,7 +717,7 @@ case class TableUtils(sparkSession: SparkSession) {
       sparkSession.conf.getOption("spark.sql.adaptive.coalescePartitions.enabled").contains("true")
 
     if (useAqeRoute) {
-      if (df.head(1).isEmpty) {
+      if (df.isEmpty) {
         logger.info(s"Input DataFrame for table $tableName is empty. Nothing to write.")
         return
       }
