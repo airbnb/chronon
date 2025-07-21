@@ -594,6 +594,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def sql(query: String): DataFrame = {
     val partitionCount = sparkSession.sparkContext.getConf.getInt("spark.default.parallelism", 1000)
+    val autoCoalesceEnabled = sparkSession.conf.get("spark.sql.adaptive.coalescePartitions.enabled", "true").toBoolean
     val sw = new StringWriter()
     val pw = new PrintWriter(sw)
     new Throwable().printStackTrace(pw)
@@ -603,7 +604,7 @@ case class TableUtils(sparkSession: SparkSession) {
       .filter(_.contains("chronon"))
       .map(_.replace("at ai.chronon.spark.", ""))
       .mkString("\n")
-    if (!sparkSession.conf.get("spark.sql.adaptive.coalescePartitions.enabled", "true").toBoolean) {
+    if (!autoCoalesceEnabled) {
       logger.info(
         s"\n----[Running query coalesced into at most $partitionCount partitions]----\n$query\n----[End of Query]----\n\n Query call path (not an error stack trace): \n$stackTraceStringPretty \n\n --------")
     } else {
@@ -614,7 +615,7 @@ case class TableUtils(sparkSession: SparkSession) {
       // Run the query
       val df = sparkSession.sql(query)
       // if aqe auto coalesce is disabled, apply manual coalesce
-      val finalDf = if (!sparkSession.conf.get("spark.sql.adaptive.coalescePartitions.enabled", "true").toBoolean) {
+      val finalDf = if (!autoCoalesceEnabled) {
         df.coalesce(partitionCount)
       } else {
         logger.info(s"AQE auto coalesce is enabled, skipping manual coalesce")
