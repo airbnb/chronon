@@ -16,6 +16,7 @@ import os
 import unittest
 
 from ai.chronon import group_by
+from ai.chronon import source
 from ai.chronon.api import ttypes
 from ai.chronon.api import ttypes as api
 from ai.chronon.group_by import Derivation
@@ -27,7 +28,7 @@ from helper import compare_lineages
 
 class TestParseJoin(unittest.TestCase):
     def setUp(self):
-        gb_event_source = ttypes.EventSource(
+        gb_event_source = source.EventSource(
             table="gb_table",
             topic=None,
             query=ttypes.Query(
@@ -59,17 +60,15 @@ class TestParseJoin(unittest.TestCase):
         )
 
         self.join = Join(
-            left=api.Source(
-                events=api.EventSource(
-                    table="join_event_table",
-                    query=api.Query(
-                        startPartition="2020-04-09",
-                        selects={
-                            "subject": "subject",
-                            "event_id": "event",
-                        },
-                        timeColumn="CAST(ts AS DOUBLE)",
-                    ),
+            left=source.EventSource(
+                table="join_event_table",
+                query=api.Query(
+                    startPartition="2020-04-09",
+                    selects={
+                        "subject": "subject",
+                        "event_id": "event",
+                    },
+                    timeColumn="CAST(ts AS DOUBLE)",
                 ),
             ),
             output_namespace="test_db",
