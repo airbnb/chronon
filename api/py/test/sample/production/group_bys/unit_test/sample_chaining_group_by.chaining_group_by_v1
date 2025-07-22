@@ -46,8 +46,7 @@
                 "startPartition": "2021-04-09",
                 "timeColumn": "ts",
                 "setups": []
-              },
-              "customJson": "{}"
+              }
             }
           },
           "joinParts": [
@@ -79,8 +78,7 @@
                         "startPartition": "2021-04-09",
                         "timeColumn": "ts",
                         "setups": []
-                      },
-                      "customJson": "{}"
+                      }
                     }
                   }
                 ],

@@ -30,8 +30,7 @@
         "startPartition": "2023-03-01",
         "timeColumn": "UNIX_TIMESTAMP(ts_created_at_utc) * 1000",
         "setups": []
-      },
-      "customJson": "{}"
+      }
     }
   },
   "joinParts": [
@@ -64,8 +63,7 @@
                 "startPartition": "2023-03-01",
                 "timeColumn": "UNIX_TIMESTAMP(ts) * 1000",
                 "setups": []
-              },
-              "customJson": "{}"
+              }
             }
           }
         ],

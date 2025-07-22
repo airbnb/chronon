@@ -32,8 +32,7 @@
         },
         "startPartition": "2021-03-01",
         "setups": []
-      },
-      "customJson": "{}"
+      }
     }
   },
   "joinParts": [
@@ -67,8 +66,7 @@
                 },
                 "startPartition": "2021-03-01",
                 "setups": []
-              },
-              "customJson": "{}"
+              }
             }
           }
         ],

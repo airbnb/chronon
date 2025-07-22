@@ -30,7 +30,7 @@ def EventSource(
             topic=topic,
             query=query,
             isCumulative=is_cumulative,
-            customJson=json.dumps(kwargs),
+            customJson=json.dumps(kwargs) if kwargs else None,
         )
     )
 
@@ -57,7 +57,7 @@ def EntitySource(
             mutationTable=mutation_table,
             query=query,
             mutationTopic=mutation_topic,
-            customJson=json.dumps(kwargs),
+            customJson=json.dumps(kwargs) if kwargs else None,
         )
     )
 

@@ -26,8 +26,7 @@
           "startPartition": "2023-03-01",
           "timeColumn": "UNIX_TIMESTAMP(ts) * 1000",
           "setups": []
-        },
-        "customJson": "{}"
+        }
       }
     }
   ],
