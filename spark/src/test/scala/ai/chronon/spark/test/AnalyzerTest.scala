@@ -654,7 +654,7 @@ class AnalyzerTest {
         Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "100"), inputColumn = "view_map")
       ),
       derivations = Seq(
-        Builders.Derivation.wildcard(),
+        Builders.Derivation.star(),
         Builders.Derivation(
           name = "time_spent_ms_avg_last_7d_diff",
           expression = "time_spent_ms_last_7d - time_spent_ms_average_7d"
@@ -700,7 +700,7 @@ class AnalyzerTest {
       ),
       externalParts = Seq(externalPart),
       derivations = Seq(
-        Builders.Derivation.wildcard(),
+        Builders.Derivation.star(),
         Builders
           .Derivation(
             expression = "prefix_analyzer_test_complex_gb_time_spent_ms_sum_7d / ext_contextual_user_tenure",

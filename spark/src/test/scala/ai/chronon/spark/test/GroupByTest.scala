@@ -374,7 +374,7 @@ class GroupByTest {
     val (source, endPartition) = createTestSource(30)
     val tableUtils = TableUtils(spark)
     val namespace = "test_analyzer_testGroupByDerivation"
-    val derivation = Builders.Derivation(name = "*", expression = "*")
+    val derivation = Builders.Derivation.star()
     val groupByConf =
       getSampleGroupBy("unit_analyze_test_item_views", source, namespace, Seq.empty, derivations = Seq(derivation))
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())

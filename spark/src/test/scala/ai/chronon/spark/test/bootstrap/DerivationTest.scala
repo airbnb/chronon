@@ -53,9 +53,7 @@ class DerivationTest {
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
 
     val derivation1 = Builders.Derivation(name = "user_amount_30d_avg", expression = "amount_dollars_sum_30d / 30")
-    val derivation2 = Builders.Derivation(
-      name = "*"
-    )
+    val derivation2 = Builders.Derivation.star()
 
     val groupByWithDerivation = groupBy
       .setDerivations(
@@ -87,9 +85,7 @@ class DerivationTest {
         )
       ),
       derivations = Seq(
-        Builders.Derivation(
-          name = "*"
-        ),
+        Builders.Derivation.star(),
         // contextual feature rename
         Builders.Derivation(
           name = "user_txn_count_30d",
@@ -408,7 +404,7 @@ class DerivationTest {
       joinParts = Seq(joinPart),
       derivations =
         (if (wildcardSelection) {
-           Seq(Derivation("*", "*"))
+           Seq(Derivation.star())
          } else {
            Seq.empty
          }) :+ Builders.Derivation(
@@ -581,10 +577,7 @@ class DerivationTest {
             name = "context_1",
             expression = "ext_contextual_context_1"
           ),
-          Builders.Derivation(
-            name = "*",
-            expression = "*"
-          )
+          Builders.Derivation.star()
         ),
         "test_2"
       ))
@@ -648,7 +641,7 @@ class DerivationTest {
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     groupBy.setBackfillStartDate(today)
     groupBy.setDerivations(
-      Seq(Builders.Derivation(name = "*"),
+      Seq(Builders.Derivation.star(),
           Builders.Derivation(
             name = "amount_dollars_avg_15d",
             expression = "amount_dollars_sum_15d / 15"

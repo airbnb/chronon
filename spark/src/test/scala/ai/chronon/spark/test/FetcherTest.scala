@@ -194,7 +194,7 @@ class FetcherTest extends TestCase {
       accuracy = Accuracy.TEMPORAL,
       metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_gb", namespace = namespace, team = "chronon"),
       derivations = Seq(
-        Builders.Derivation(name = "*", expression = "*"),
+        Builders.Derivation.star(),
         Builders.Derivation(name = "rating_average_1d_same", expression = "rating_average_1d")
       )
     )
@@ -326,7 +326,7 @@ class FetcherTest extends TestCase {
       metaData = Builders.MetaData(name = "unit_test/vendor_credit_derivation", namespace = namespace),
       derivations = Seq(
         Builders.Derivation("credit_sum_3d_test_rename", "credit_sum_3d"),
-        Builders.Derivation("*", "*")
+        Builders.Derivation.star()
       )
     )
 
@@ -387,7 +387,7 @@ class FetcherTest extends TestCase {
                                    team = "chronon",
                                    consistencySamplePercent = 30),
       derivations = Seq(
-        Builders.Derivation("*", "*"),
+        Builders.Derivation.star(),
         Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"),
         Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2"),
         Builders.Derivation("derived_ds", "from_unixtime(ts/1000, 'yyyy-MM-dd')"),
@@ -674,7 +674,7 @@ class FetcherTest extends TestCase {
     val namespace = "derivation_fetch"
     val joinConf = generateMutationData(namespace)
     val derivations = Seq(
-      Builders.Derivation(name = "*", expression = "*"),
+      Builders.Derivation.star(),
       Builders.Derivation(name = "unit_test_fetcher_mutations_gb_rating_sum_plus",
                           expression = "unit_test_fetcher_mutations_gb_rating_sum + 1"),
       Builders.Derivation(name = "listing_id_renamed", expression = "listing_id")
@@ -687,8 +687,8 @@ class FetcherTest extends TestCase {
   def testTemporalFetchJoinDerivationRenameOnly(): Unit = {
     val namespace = "derivation_fetch_rename_only"
     val joinConf = generateMutationData(namespace)
-    val derivations = Seq(Builders.Derivation(name = "*", expression = "*"),
-                          Builders.Derivation(name = "listing_id_renamed", expression = "listing_id"))
+    val derivations =
+      Seq(Builders.Derivation.star(), Builders.Derivation(name = "listing_id_renamed", expression = "listing_id"))
     joinConf.setDerivations(derivations.toJava)
 
     compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)

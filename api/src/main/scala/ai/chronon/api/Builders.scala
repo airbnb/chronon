@@ -351,7 +351,7 @@ object Builders {
       derivation
     }
 
-    def wildcard(): Derivation = {
+    def star(): Derivation = {
       val derivation = new Derivation()
       derivation.setName("*")
       derivation.setExpression("*")

@@ -1275,9 +1275,7 @@ class JoinTest {
 
     joinConfWithExternal.setDerivations(
       Seq(
-        Builders.Derivation(
-          name = "*"
-        ),
+        Builders.Derivation.star(),
         // contextual feature rename
         Builders.Derivation(
           name = "user_txn_count_30d",
@@ -1319,9 +1317,7 @@ class JoinTest {
 
     joinConfWithDerivationWithKey.setDerivations(
       Seq(
-        Builders.Derivation(
-          name = "*"
-        ),
+        Builders.Derivation.star(),
         Builders.Derivation(
           name = "item",
           expression = "item"
