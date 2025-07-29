@@ -222,9 +222,7 @@ class Analyzer(tableUtils: TableUtils,
                 groupByConf.keyColumns.toScala.toArray,
                 groupByConf.sources.toScala.map(_.table).mkString(","))
       else ""
-    val schema = if (groupByConf.isSetBackfillStartDate && groupByConf.hasDerivations) {
-      // handle group by backfill mode for derivations
-      // todo: add the similar logic to join derivations
+    val schema = if (groupByConf.hasDerivations) {
       val keyAndPartitionFields =
         groupBy.keySchema.fields ++ Seq(
           org.apache.spark.sql.types
@@ -737,7 +735,7 @@ class Analyzer(tableUtils: TableUtils,
     tableUtils.insertPartitions(df, table, tableProperties)
   }
 
-  private def runAnalyzeJoin(joinConf: api.Join, exportSchema: Boolean = false): Unit = {
+  def runAnalyzeJoin(joinConf: api.Join, exportSchema: Boolean = false): AnalyzeJoinResult = {
     val analyzeJoinResult = analyzeJoin(joinConf,
                                         enableHitter = enableHitter,
                                         skipTimestampCheck = skipTimestampCheck,
@@ -745,9 +743,10 @@ class Analyzer(tableUtils: TableUtils,
     if (exportSchema) {
       exportJoinSchema(analyzeJoinResult, joinConf, endDate)
     }
+    analyzeJoinResult
   }
 
-  private def runAnalyzeGroupBy(groupByConf: api.GroupBy, exportSchema: Boolean = false): Unit = {
+  private def runAnalyzeGroupBy(groupByConf: api.GroupBy, exportSchema: Boolean = false): AnalyzeGroupByResult = {
     val analyzeGroupByResult = analyzeGroupBy(groupByConf,
                                               enableHitter = enableHitter,
                                               skipTimestampCheck = skipTimestampCheck,
@@ -755,6 +754,7 @@ class Analyzer(tableUtils: TableUtils,
     if (exportSchema) {
       exportGroupBySchema(analyzeGroupByResult, groupByConf, endDate)
     }
+    analyzeGroupByResult
   }
 
   def run(exportSchema: Boolean = false): Unit =

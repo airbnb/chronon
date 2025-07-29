@@ -18,11 +18,12 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
+import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{col, lit}
+import org.apache.spark.sql.functions.{col, lit, to_json}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
@@ -99,8 +100,6 @@ class AnalyzerTest {
     logger.info(expectedSchema.mkString("\n"))
 
     assertTrue(expectedSchema sameElements analyzerSchema)
-
-    analyzer
   }
 
   @Test(expected = classOf[java.lang.AssertionError])
@@ -575,7 +574,9 @@ class AnalyzerTest {
     )
   }
 
-  def getTestEventSource(namespace: String, partitionColOpt: Option[String] = None): api.Source = {
+  def getTestEventSource(namespace: String,
+                         partitionColOpt: Option[String] = None,
+                         selects: Option[Map[String, String]] = None): api.Source = {
     val spark: SparkSession =
       SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val viewsSchema = List(
@@ -592,9 +593,8 @@ class AnalyzerTest {
       case Some(partition) => df.save(viewsTable, partitionColumns = Seq(partition))
       case None            => df.save(viewsTable)
     }
-
     Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"),
+      query = Builders.Query(selects = selects.getOrElse(Builders.Selects("time_spent_ms")),
                              startPartition = oneYearAgo,
                              partitionColumn = partitionColOpt.orNull),
       table = viewsTable
@@ -623,6 +623,170 @@ class AnalyzerTest {
       metaData = Builders.MetaData(name = name, namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
+  }
+
+  def getComplexGroupBy(name: String, namespace: String): api.GroupBy = {
+    // Create a GroupBy that generate features with complex data type for schema testing
+    // Should cover STRUCT, LIST, MAP scenarios
+    val source = getTestEventSource(
+      namespace,
+      selects = Some(
+        Builders.Selects.exprs(
+          "time_spent_ms" -> "time_spent_ms",
+          "view_struct" -> "NAMED_STRUCT('item_id', item_id, 'time_spent_ms', time_spent_ms)",
+          "view_map" -> "MAP(item_id, time_spent_ms)"
+        ))
+    )
+    Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE,
+                             inputColumn = "time_spent_ms",
+                             windows = Seq(new Window(7, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.SUM,
+                             inputColumn = "time_spent_ms",
+                             windows = Seq(new Window(7, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.LAST,
+                             inputColumn = "time_spent_ms",
+                             windows = Seq(new Window(7, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "100"), inputColumn = "view_struct"),
+        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "100"), inputColumn = "view_map")
+      ),
+      derivations = Seq(
+        Builders.Derivation.wildcard(),
+        Builders.Derivation(
+          name = "time_spent_ms_avg_last_7d_diff",
+          expression = "time_spent_ms_last_7d - time_spent_ms_average_7d"
+        )
+      ),
+      metaData = Builders.MetaData(name = name, namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+  }
+
+  @Test
+  def testJoinAnalyzerSchemaExport(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // GroupBy
+    val complexGroupBy = getComplexGroupBy("analyzer_test.complex_gb", namespace)
+
+    // Left side
+    val itemQueries = List(Column("item", api.StringType, 100), Column("user_id", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries_table"
+    DataFrameGen
+      .events(spark, itemQueries, 1000, partitions = 100)
+      .save(itemQueriesTable)
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
+
+    // externalParts
+    val externalPart = Builders.ExternalPart(
+      externalSource = Builders.ContextualSource(
+        fields = Array(
+          StructField("user_tenure", LongType)
+        )
+      )
+    )
+
+    // join
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = complexGroupBy, prefix = "prefix", keyMapping = Map("user_id" -> "user"))
+      ),
+      externalParts = Seq(externalPart),
+      derivations = Seq(
+        Builders.Derivation.wildcard(),
+        Builders
+          .Derivation(
+            expression = "prefix_analyzer_test_complex_gb_time_spent_ms_sum_7d / ext_contextual_user_tenure",
+            name = "analyzer_test_time_spent_ms_sum_7d_per_tenure"
+          )
+      ),
+      metaData = Builders.MetaData(name = "analyzer_test.complex_join", namespace = namespace, team = "chronon")
+    )
+
+    // run analyzer and validate output schema
+    val analyzer = new Analyzer(tableUtils,
+                                joinConf,
+                                oneMonthAgo,
+                                today,
+                                enableHitter = false,
+                                skipTimestampCheck = true,
+                                validateTablePermission = false)
+    val analyzerResult = analyzer.runAnalyzeJoin(joinConf, exportSchema = true)
+
+    // expected schema
+    val expectedLeftSchema = Seq(
+      ("item", api.StringType),
+      ("user_id", api.StringType),
+      ("ts", api.LongType),
+      ("ds", api.StringType)
+    )
+    val structTypeName = "View_struct_last100ElementStruct"
+    val expectedRightSchema = Seq(
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_average_7d", api.DoubleType),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_sum_7d", api.LongType),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_last_7d", api.LongType),
+      ("prefix_analyzer_test_complex_gb_view_struct_last100",
+       api.ListType(
+         api.StructType(structTypeName,
+                        Array(StructField("item_id", api.StringType), StructField("time_spent_ms", api.LongType))))),
+      ("prefix_analyzer_test_complex_gb_view_map_last100", api.ListType(api.MapType(api.StringType, api.LongType))),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff", api.DoubleType),
+      ("ext_contextual_user_tenure", api.LongType)
+    )
+
+    val expectedKeySchema = Seq(
+      ("user_id", api.StringType)
+    )
+    val expectedOutputSchema = Seq(
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_average_7d", api.DoubleType),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_sum_7d", api.LongType),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_last_7d", api.LongType),
+      ("prefix_analyzer_test_complex_gb_view_struct_last100",
+       api.ListType(
+         api.StructType(structTypeName,
+                        Array(StructField("item_id", api.StringType), StructField("time_spent_ms", api.LongType))))),
+      ("prefix_analyzer_test_complex_gb_view_map_last100", api.ListType(api.MapType(api.StringType, api.LongType))),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff", api.DoubleType),
+      ("ext_contextual_user_tenure", api.LongType),
+      ("analyzer_test_time_spent_ms_sum_7d_per_tenure", api.DoubleType)
+    )
+
+    // Assertions on analyzer result
+    assertEquals(expectedLeftSchema, analyzerResult.leftSchema)
+    assertEquals(expectedRightSchema, analyzerResult.rightSchema)
+    assertEquals(expectedKeySchema, analyzerResult.keySchema)
+    assertEquals(expectedOutputSchema, analyzerResult.finalOutputSchema)
+
+    // Validate exported schema
+    val schema = tableUtils.sparkSession
+      .table(joinConf.metaData.schemaTable)
+      .select(to_json(col("key_schema")).as("key_schema"), to_json(col("value_schema")).as("value_schema"))
+      .head
+    val keySchema = schema.getString(0)
+    val valueSchema = schema.getString(1)
+
+    val keySchemaExpected = """[{"name":"user_id","data_type":"string"}]"""
+    val valueSchemaExpected =
+      """[
+        |{"name":"prefix_analyzer_test_complex_gb_time_spent_ms_average_7d","data_type":"double"},
+        |{"name":"prefix_analyzer_test_complex_gb_time_spent_ms_sum_7d","data_type":"bigint"},
+        |{"name":"prefix_analyzer_test_complex_gb_time_spent_ms_last_7d","data_type":"bigint"},
+        |{"name":"prefix_analyzer_test_complex_gb_view_struct_last100","data_type":"array<struct<item_id:string,time_spent_ms:bigint>>"},
+        |{"name":"prefix_analyzer_test_complex_gb_view_map_last100","data_type":"array<map<string,bigint>>"},
+        |{"name":"prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff","data_type":"double"},
+        |{"name":"ext_contextual_user_tenure","data_type":"bigint"},
+        |{"name":"analyzer_test_time_spent_ms_sum_7d_per_tenure","data_type":"double"}
+        |]""".stripMargin.replaceAll("\\s+", "")
+
+    assertEquals(keySchemaExpected, keySchema)
+    assertEquals(valueSchemaExpected, valueSchema)
   }
 
 }

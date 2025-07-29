@@ -350,6 +350,13 @@ object Builders {
       }
       derivation
     }
+
+    def wildcard(): Derivation = {
+      val derivation = new Derivation()
+      derivation.setName("*")
+      derivation.setExpression("*")
+      derivation
+    }
   }
 
 }

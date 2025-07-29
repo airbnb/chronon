@@ -311,8 +311,10 @@ class GroupByTest {
     val namespace = "test_analyzer_testGroupByAnalyzer"
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val (aggregationsMetadata, _, _) =
-      new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val aggregationsMetadata =
+      new Analyzer(tableUtils, groupByConf, endPartition, today)
+        .analyzeGroupBy(groupByConf, enableHitter = false)
+        .outputMetadata
     val outputTable = backfill(name = "unit_analyze_test_item_views",
                                source = source,
                                endPartition = endPartition,
@@ -349,8 +351,10 @@ class GroupByTest {
                                                          new Window(60, TimeUnit.DAYS))
     )
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val (aggregationsMetadata, _, _) =
-      new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val aggregationsMetadata =
+      new Analyzer(tableUtils, groupByConf, endPartition, today)
+        .analyzeGroupBy(groupByConf, enableHitter = false)
+        .outputMetadata
 
     print(aggregationsMetadata)
     assertTrue(aggregationsMetadata.length == 2)
@@ -374,8 +378,10 @@ class GroupByTest {
     val groupByConf =
       getSampleGroupBy("unit_analyze_test_item_views", source, namespace, Seq.empty, derivations = Seq(derivation))
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val (aggregationsMetadata, _, _) =
-      new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val aggregationsMetadata =
+      new Analyzer(tableUtils, groupByConf, endPartition, today)
+        .analyzeGroupBy(groupByConf, enableHitter = false)
+        .outputMetadata
     val outputTable = backfill(name = "unit_analyze_test_item_views",
                                source = source,
                                endPartition = endPartition,
