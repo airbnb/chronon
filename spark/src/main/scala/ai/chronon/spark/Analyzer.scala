@@ -19,7 +19,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api._
+import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
@@ -731,7 +731,7 @@ class Analyzer(tableUtils: TableUtils,
     }
     val keys = toFields(keySchema)
     val values = toFields(valueSchema)
-    val df = Seq((keys, values, partition)).toDF("key_schema", "value_schema", tableUtils.partitionColumn)
+    val df = Seq((keys, values, partition)).toSeq.toDF("key_schema", "value_schema", tableUtils.partitionColumn)
     tableUtils.insertPartitions(df, table, tableProperties)
   }
 
