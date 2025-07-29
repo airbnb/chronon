@@ -190,6 +190,14 @@ class Analyzer(tableUtils: TableUtils,
     AggregationMetadata(columnName, columnType, operation, "Unbounded", columnName)
   }
 
+  private def stringifySchema(schema: Seq[(String, DataType)]): String = {
+    schema
+      .map {
+        case (name, dataType) => s" $name => $dataType"
+      }
+      .mkString("\n")
+  }
+
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,
@@ -260,9 +268,9 @@ class Analyzer(tableUtils: TableUtils,
                """.stripMargin)
       logger.info(s"""
            |----- KEY SCHEMA -----
-           |${keySchema.mkString("\n")}
+           |${stringifySchema(keySchema)}
            |----- OUTPUT SCHEMA -----
-           |${valueSchema.mkString("\n")}
+           |${stringifySchema(valueSchema)}
            |------ END --------------
            |""".stripMargin)
     }
@@ -418,7 +426,9 @@ class Analyzer(tableUtils: TableUtils,
         Map("ts" -> api.StringType, "ds" -> api.StringType)
       }
       val sparkSchema = {
-        val schema: Seq[(String, DataType)] = keySchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
+        // Allow leftSchema to be used as input to derivations. This is only valid for offline joins, and we
+        // assume that this requirement has been validated
+        val schema: Seq[(String, DataType)] = leftSchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
         StructType(SparkConversions.fromChrononSchema(schema))
       }
       val dummyOutputDf = tableUtils.sparkSession
@@ -446,13 +456,13 @@ class Analyzer(tableUtils: TableUtils,
            |----- OUTPUT TABLE NAME -----
            |${joinConf.metaData.outputTable}
            |------ LEFT SIDE SCHEMA -------
-           |${leftSchema.mkString("\n")}
+           |${stringifySchema(leftSchema)}
            |------ RIGHT SIDE SCHEMA ----
-           |${rightSchema.mkString("\n")}
+           |${stringifySchema(rightSchema)}
            |------ KEY SCHEMA ----
-           |${keySchema.mkString("\n")}
+           |${stringifySchema(keySchema)}
            |------ FINAL OUTPUT SCHEMA ----
-           |${finalOutputSchema.mkString("\n")}
+           |${stringifySchema(finalOutputSchema)}
            |------ END ------------------
            |""".stripMargin)
     }

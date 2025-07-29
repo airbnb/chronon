@@ -703,8 +703,8 @@ class AnalyzerTest {
         Builders.Derivation.star(),
         Builders
           .Derivation(
-            expression = "prefix_analyzer_test_complex_gb_time_spent_ms_sum_7d / ext_contextual_user_tenure",
-            name = "analyzer_test_time_spent_ms_sum_7d_per_tenure"
+            expression = "prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff / ext_contextual_user_tenure",
+            name = "analyzer_test_time_spent_ms_sum_7d_diff_per_tenure"
           )
       ),
       metaData = Builders.MetaData(name = "analyzer_test.complex_join", namespace = namespace, team = "chronon")
@@ -755,7 +755,7 @@ class AnalyzerTest {
       ("prefix_analyzer_test_complex_gb_view_map_last100", api.ListType(api.MapType(api.StringType, api.LongType))),
       ("prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff", api.DoubleType),
       ("ext_contextual_user_tenure", api.LongType),
-      ("analyzer_test_time_spent_ms_sum_7d_per_tenure", api.DoubleType)
+      ("analyzer_test_time_spent_ms_sum_7d_diff_per_tenure", api.DoubleType)
     )
 
     // Assertions on analyzer result
@@ -782,7 +782,7 @@ class AnalyzerTest {
         |{"name":"prefix_analyzer_test_complex_gb_view_map_last100","data_type":"array<map<string,bigint>>"},
         |{"name":"prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff","data_type":"double"},
         |{"name":"ext_contextual_user_tenure","data_type":"bigint"},
-        |{"name":"analyzer_test_time_spent_ms_sum_7d_per_tenure","data_type":"double"}
+        |{"name":"analyzer_test_time_spent_ms_sum_7d_diff_per_tenure","data_type":"double"}
         |]""".stripMargin.replaceAll("\\s+", "")
 
     assertEquals(keySchemaExpected, keySchema)
