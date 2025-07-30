@@ -33,7 +33,7 @@ import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.LoggerFactory
 
 import java.util
-import scala.collection.{Seq, immutable, mutable}
+import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
