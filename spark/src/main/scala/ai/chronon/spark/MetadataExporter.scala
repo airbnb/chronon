@@ -213,10 +213,10 @@ object MetadataExporter {
   }
 
   def run(inputPath: String,
-          outputPathOpt: Option[String],
-          outputTableNameOpt: Option[String],
-          ds: Option[String],
-          outputTablePropertiesJson: Option[String]): Unit = {
+          outputPathOpt: Option[String] = None,
+          outputTableNameOpt: Option[String] = None,
+          ds: Option[String] = None,
+          outputTablePropertiesJson: Option[String] = None): Unit = {
     if (outputPathOpt.isDefined) {
       processEntities(inputPath, outputPathOpt.get)
     } else if (outputTableNameOpt.isDefined) {
