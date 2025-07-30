@@ -20,7 +20,7 @@ import logging
 import os
 import re
 from collections import defaultdict
-from typing import Dict, List, Set
+from typing import Dict, List
 
 from ai.chronon.api.ttypes import Derivation, ExternalPart, GroupBy, Join, Source
 from ai.chronon.group_by import get_output_col_names
@@ -96,17 +96,17 @@ def get_group_by_output_columns(group_by: GroupBy) -> List[str]:
     """
     From the group_by object, get the final output columns after derivations.
     """
-    output_columns = set(get_pre_derived_group_by_columns(group_by))
+    output_columns = get_pre_derived_group_by_columns(group_by)
     if group_by.derivations:
         return build_derived_columns(output_columns, group_by.derivations)
     else:
-        return list(output_columns)
+        return output_columns
 
 
 def get_pre_derived_join_internal_features(join: Join) -> List[str]:
     internal_features = []
     for jp in join.joinParts:
-        pre_derived_group_by_features = set(get_pre_derived_group_by_features(jp.groupBy))
+        pre_derived_group_by_features = get_pre_derived_group_by_features(jp.groupBy)
         derived_group_by_features = build_derived_columns(pre_derived_group_by_features, jp.groupBy.derivations)
         for col in derived_group_by_features:
             prefix = jp.prefix + "_" if jp.prefix else ""
@@ -156,22 +156,29 @@ def get_pre_derived_join_features(join: Join) -> Dict[FeatureDisplayKeys, List[s
     return columns
 
 
-def build_derived_columns(pre_derived_columns: Set[str], derivations: List[Derivation]) -> List[str]:
+def build_derived_columns(pre_derived_columns: List[str], derivations: List[Derivation]) -> List[str]:
     """
     Build the derived columns from pre-derived columns and derivations.
+    Mimics Extensions.scala -> DerivationOps -> derivationProjection
     """
+    if not derivations:
+        return pre_derived_columns
+
     # if derivations contain star, then all columns are included except the columns which are renamed
-    output_columns = pre_derived_columns
-    if derivations:
-        found = any(derivation.expression == "*" for derivation in derivations)
-        if not found:
-            output_columns.clear()
-        for derivation in derivations:
-            if found and is_identifier(derivation.expression):
-                output_columns.remove(derivation.expression)
-            if derivation.name != "*":
-                output_columns.add(derivation.name)
-    return list(output_columns)
+    is_wildcard = any(derivation.expression == "*" for derivation in derivations)
+    all_expressions = {derivation.expression for derivation in derivations}
+    if is_wildcard:
+        wildcard_derivations = [c for c in pre_derived_columns if c not in all_expressions]
+    else:
+        wildcard_derivations = []
+
+    output_columns = []
+    for derivation in derivations:
+        if derivation.name == "*":
+            output_columns.extend(wildcard_derivations)
+        else:
+            output_columns.append(derivation.name)
+    return output_columns
 
 
 def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
@@ -189,9 +196,7 @@ def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
         pre_derived_columns_list.extend(value_list)
 
     if join.derivations:
-        columns[FeatureDisplayKeys.DERIVED_COLUMNS] = build_derived_columns(
-            set(pre_derived_columns_list), join.derivations
-        )
+        columns[FeatureDisplayKeys.DERIVED_COLUMNS] = build_derived_columns(pre_derived_columns_list, join.derivations)
         columns[FeatureDisplayKeys.OUTPUT_COLUMNS] = columns[FeatureDisplayKeys.DERIVED_COLUMNS]
         return columns
     else:
