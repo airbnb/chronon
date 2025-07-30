@@ -157,17 +157,16 @@ object MetadataExporter {
     val dfWithPartitions = dfRaw
       .withColumn("ds", lit(ds))
       .withColumn("entityType",
-        when($"path".contains(GROUPBY_PATH_SUFFIX), "groupBy")
-          .when($"path".contains(JOIN_PATH_SUFFIX), "join")
-          .otherwise("unknown")
-      )
+                  when($"path".contains(GROUPBY_PATH_SUFFIX), "groupBy")
+                    .when($"path".contains(JOIN_PATH_SUFFIX), "join")
+                    .otherwise("unknown"))
 
     // Step 3: insert data into hive table
     tableUtils.insertPartitions(
       dfWithPartitions,
-        tableName,
-        tableProperties,
-        partitionColumns
+      tableName,
+      tableProperties,
+      partitionColumns
     )
 
     logger.info(s"${tableName} : Wrote to output table successfully")
