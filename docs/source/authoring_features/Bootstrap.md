@@ -58,7 +58,7 @@ Bootstrap table is a precomputed table which contains precomputed feature values
 
 ## API w/ Examples
 
-`payments_driver.v1` is a StagingQuery based on the log table of v1 Join, optionally unioned with historical data before logging is available. v1_source is a HiveEventSource based on this StagingQuery, used as `left` of v1 Join.
+`payments_driver.v1` is a StagingQuery based on the log table of v1 Join, optionally unioned with historical data before logging is available. v1_source is a EventSource based on this StagingQuery, used as `left` of v1 Join.
 
 
 ```python

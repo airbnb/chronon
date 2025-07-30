@@ -370,24 +370,25 @@ def GroupBy(
     :param sources:
         can be constructed as entities or events or joinSource::
 
-            import ai.chronon.api.ttypes as chronon
-            events = chronon.Source(events=chronon.Events(
+            import ai.chronon.query as query
+            import ai.chronon.source as source
+            events = source.EventSource(
                 table=YOUR_TABLE,
                 topic=YOUR_TOPIC #  <- OPTIONAL for serving
-                query=chronon.Query(...)
-                isCumulative=False  # <- defaults to false.
+                query=query.Query(...)
+                is_cumulative=False  # <- defaults to false.
             ))
             Or
-            entities = chronon.Source(entities=chronon.Entities(
-                snapshotTable=YOUR_TABLE,
-                mutationTopic=YOUR_TOPIC,
-                mutationTable=YOUR_MUTATION_TABLE
-                query=chronon.Query(...)
+            entities = source.EntitySource(
+                snapshot_table=YOUR_TABLE,
+                mutation_topic=YOUR_TOPIC,
+                mutation_table=YOUR_MUTATION_TABLE
+                query=query.Query(...)
             ))
             or
-            joinSource =  chronon.Source(joinSource=chronon.JoinSource(
+            joinSource = source.JoinSource(
                 join = YOUR_CHRONON_PARENT_JOIN,
-                query = chronon.Query(...)
+                query = query.Query(...)
             ))
 
         Multiple sources can be supplied to backfill the historical values with their respective start and end

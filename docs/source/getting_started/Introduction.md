@@ -28,19 +28,18 @@ This GroupBy aggregates metrics about a user's previous purchases in various win
 """
 
 # This source is raw purchase events. Every time a user makes a purchase, it will be one entry in this source.
-source = Source(
-    events=EventSource(
-        table="data.purchases", # This points to the log table in the warehouse with historical purchase events, updated in batch daily
-        topic= "events/purchases", # The streaming source topic that can be listened to for realtime events
-        query=Query(
-            selects=select(
-                user="user_id",
-                price="purchase_price * (1 - merchant_fee_percent/100)"
-            ), # Select the fields we care about
-            time_column="ts"  # The event time
-        ) 
-    )
+source = EventSource(
+    table="data.purchases", # This points to the log table in the warehouse with historical purchase events, updated in batch daily
+    topic= "events/purchases", # The streaming source topic that can be listened to for realtime events
+    query=Query(
+        selects=select(
+            user="user_id",
+            price="purchase_price * (1 - merchant_fee_percent/100)"
+        ), # Select the fields we care about
+        time_column="ts"  # The event time
+    ) 
 )
+
 
 window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]] # Define some window sizes to use below
 
