@@ -554,12 +554,21 @@ object Driver {
       val inputRootPath: ScallopOption[String] =
         opt[String](required = true, descr = "Base path of config repo to export from")
       val outputRootPath: ScallopOption[String] =
-        opt[String](required = true, descr = "Base path to write output metadata files to")
+        opt[String](required = false, descr = "Base path to write output metadata files to")
+      val outputTableName: ScallopOption[String] =
+        opt[String](required = false, descr = "Hive table to write output metadata to")
+      val outputTablePropertiesJson: ScallopOption[String] =
+        opt[String](required = false, descr = "Optional output table properties in JSON format")
       override def subcommandName() = "metadata-export"
     }
 
     def run(args: Args): Unit = {
-      MetadataExporter.run(args.inputRootPath(), args.outputRootPath())
+      val dsOpt: Option[String] = if (args.endDate().isEmpty) None else Some(args.endDate())
+      MetadataExporter.run(args.inputRootPath(),
+                           args.outputRootPath.toOption,
+                           args.outputTableName.toOption,
+                           dsOpt,
+                           args.outputTablePropertiesJson.toOption)
     }
   }
 
