@@ -157,11 +157,13 @@ object MetadataExporter {
     // Step 2: Add ds and entityType (extracted from path)
     val dfWithPartitions = dfRaw
       .withColumn("ds", lit(ds))
-      .withColumn("entityType",
-                  when($"path".contains(GROUPBY_PATH_SUFFIX), "groupBy")
-                    .when($"path".contains(JOIN_PATH_SUFFIX), "join")
-                    .when($"path".contains(STAGING_QUERY_PATH_SUFFIX), "stagingQueries")
-                    .otherwise("unknown"))
+      .withColumn(
+        "entityType",
+        when($"path".contains(GROUPBY_PATH_SUFFIX), "groupBy")
+          .when($"path".contains(JOIN_PATH_SUFFIX), "join")
+          .when($"path".contains(STAGING_QUERY_PATH_SUFFIX), "stagingQueries")
+          .otherwise("unknown")
+      )
 
     // Step 3: insert data into hive table
     tableUtils.insertPartitions(
