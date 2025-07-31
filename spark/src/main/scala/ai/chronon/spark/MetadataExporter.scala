@@ -36,6 +36,7 @@ object MetadataExporter {
 
   val GROUPBY_PATH_SUFFIX = "/group_bys"
   val JOIN_PATH_SUFFIX = "/joins"
+  val STAGING_QUERY_PATH_SUFFIX = "/staging_queries"
 
   val mapper = new ObjectMapper()
   mapper.registerModule(DefaultScalaModule)
@@ -159,6 +160,7 @@ object MetadataExporter {
       .withColumn("entityType",
                   when($"path".contains(GROUPBY_PATH_SUFFIX), "groupBy")
                     .when($"path".contains(JOIN_PATH_SUFFIX), "join")
+                    .when($"path".contains(STAGING_QUERY_PATH_SUFFIX), "stagingQueries")
                     .otherwise("unknown"))
 
     // Step 3: insert data into hive table
