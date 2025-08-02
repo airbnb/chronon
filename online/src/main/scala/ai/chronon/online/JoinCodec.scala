@@ -23,7 +23,7 @@ import com.google.gson.Gson
 
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.JMapOps
-import ai.chronon.online.OnlineDerivationUtil.{
+import ai.chronon.online.DerivationUtils.{
   DerivationFunc,
   buildDerivationFunction,
   buildDerivedFields,
@@ -55,6 +55,11 @@ case class JoinCodec(conf: JoinOps, keySchema: StructType, baseValueSchema: Stru
     StructType(name, fields)
   }
 
+  @transient lazy val fullDerivedSchema: StructType = {
+    val name = s"join_full_derived_${conf.join.metaData.cleanName}"
+    mergeSchema(name, baseValueSchema, derivedSchema)
+  }
+
   @transient lazy val valueSchema: StructType = {
     val name = s"join_combined_${conf.join.metaData.cleanName}"
     if (!conf.hasModelTransforms) {
@@ -75,13 +80,13 @@ case class JoinCodec(conf: JoinOps, keySchema: StructType, baseValueSchema: Stru
   def buildLoggingValues(resp: ResponseWithContext): Map[String, AnyRef] = {
     if (!conf.hasModelTransforms) {
       if (conf.join.logFullValues) {
-        resp.combinedValues
+        resp.baseValues ++ resp.derivedValues.getOrElse(Map.empty)
       } else {
-        resp.derivedValues
+        resp.derivedValues.getOrElse(Map.empty)
       }
     } else {
       if (conf.join.logFullValues) {
-        resp.combinedValues ++ resp.modelTransformsValues.getOrElse(Map.empty)
+        resp.baseValues ++ resp.derivedValues.getOrElse(Map.empty) ++ resp.modelTransformsValues.getOrElse(Map.empty)
       } else {
         resp.modelTransformsValues.getOrElse(Map.empty)
       }
