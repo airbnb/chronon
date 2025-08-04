@@ -261,8 +261,8 @@ class Fetcher(val kvStore: KVStore,
   }
 
   def fetchBaseJoin(requests: scala.collection.Seq[Request],
-                    joinConf: Option[api.Join],
-                    requestStartTs: Long): Future[scala.collection.Seq[ResponseWithContext]] = {
+                    joinConf: Option[api.Join]): Future[scala.collection.Seq[ResponseWithContext]] = {
+    val requestStartTs = System.currentTimeMillis()
     val internalResponsesF = super.fetchJoin(requests, joinConf)
     val externalResponsesF = fetchExternal(requests)
     internalResponsesF.zip(externalResponsesF).map {
@@ -403,9 +403,7 @@ class Fetcher(val kvStore: KVStore,
 
   private def doFetchJoin(requests: scala.collection.Seq[Request],
                           joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
-
-    val requestStartTs = System.currentTimeMillis()
-    val baseValuesF = fetchBaseJoin(requests, joinConf, requestStartTs)
+    val baseValuesF = fetchBaseJoin(requests, joinConf)
     val derivedValuesF = fetchDerivations(baseValuesF)
     val modelTransformsF = fetchModelTransforms(derivedValuesF)
     instrumentAndLog(modelTransformsF)

@@ -809,47 +809,47 @@ class GroupByTest {
 
   @Test
   def testTemporalEventsWithDateintPartition(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
-    
+
     val eventData = Seq(
       ("user1", 1640995200000L, 100, 20231201L), // 2021-12-31 + session_length 100 + dateint 20231201
       ("user1", 1641081600000L, 150, 20231202L), // 2022-01-01 + session_length 150 + dateint 20231202
       ("user2", 1641168000000L, 200, 20231201L), // 2022-01-02 + session_length 200 + dateint 20231201
       ("user2", 1641254400000L, 250, 20231202L), // 2022-01-03 + session_length 250 + dateint 20231202
-      ("user1", 1641340800000L, 300, 20231203L), // 2022-01-04 + session_length 300 + dateint 20231203
+      ("user1", 1641340800000L, 300, 20231203L) // 2022-01-04 + session_length 300 + dateint 20231203
     )
-    
+
     import spark.implicits._
     val eventDf = eventData.toDF("user", Constants.TimeColumn, "session_length", tableUtils.partitionColumn)
-    
+
     val queryData = Seq(
       ("user1", 1641168000000L, 20231202L), // Query at 2022-01-02 with dateint 20231202
-      ("user2", 1641254400000L, 20231202L), // Query at 2022-01-03 with dateint 20231202
+      ("user2", 1641254400000L, 20231202L) // Query at 2022-01-03 with dateint 20231202
     )
-    
+
     val queryDf = queryData.toDF("user", Constants.TimeColumn, tableUtils.partitionColumn)
-    
+
     val aggregations: Seq[Aggregation] = Seq(
-      Builders.Aggregation(
-        Operation.AVERAGE,
-        "session_length",
-        Seq(new Window(1, TimeUnit.DAYS), new Window(2, TimeUnit.DAYS))))
-    
+      Builders.Aggregation(Operation.AVERAGE,
+                           "session_length",
+                           Seq(new Window(1, TimeUnit.DAYS), new Window(2, TimeUnit.DAYS))))
+
     val keys = Seq("user").toArray
     val groupBy = new GroupBy(aggregations, keys, eventDf)
-    
+
     val resultDf = groupBy.temporalEvents(queryDf)
-    
+
     val resultCount = resultDf.count()
     assertTrue("Should have temporal aggregation results", resultCount > 0)
-    
+
     val expectedColumns = Set("user", Constants.TimeColumn) ++
       aggregations.flatMap(_.unpack.map(agg => s"session_length_${agg.operation}_${agg.window.millis}"))
     val actualColumns = resultDf.columns.toSet
-    assertTrue("Result should contain user and timestamp columns", 
+    assertTrue("Result should contain user and timestamp columns",
                actualColumns.contains("user") && actualColumns.contains(Constants.TimeColumn))
-    
+
     println("Temporal events result with dateint partition:")
     resultDf.show()
   }
