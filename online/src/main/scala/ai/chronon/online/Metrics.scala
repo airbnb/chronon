@@ -61,6 +61,8 @@ object Metrics {
     val FreshnessMinutes = "freshness.minutes"
     val LatencyMillis = "latency.millis"
     val LagMillis: String = "lag.millis"
+    val FetchBaseJoinLagMillis = "fetch_base_join_lag.millis"
+    val FetchJoinLagMillis = "fetch_join_lag.millis"
     val BatchLagMillis: String = "micro_batch_lag.millis"
     val QueryDelaySleepMillis: String = "chain.query_delay_sleep.millis"
     val LatencyMinutes = "latency.minutes"

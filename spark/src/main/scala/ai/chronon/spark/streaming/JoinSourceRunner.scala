@@ -17,7 +17,7 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, SourceOps, JoinOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, SourceOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, ResponseWithContext}
 import ai.chronon.online.KVStore.PutRequest
@@ -77,7 +77,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
                              joinBaseSchema: StructType,
                              joinFullDerivedSchema: StructType,
                              joinOutputSchema: StructType,
-                             joinSourceSchema: StructType)
+                             joinSourceSchema: StructType,
+                             joinBaseSchemaWithMetadata: StructType,
+                             joinFullDerivedSchemaWithMetadata: StructType)
       extends Serializable
 
   val valueZSchema: api.StructType = groupByConf.dataModel match {
@@ -178,7 +180,19 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     enrichedQuery
   }
 
-  private def buildSchemas(leftSchema: StructType): Schemas = {
+  private def buildSchemas(decoded: DataStream, reqColumns: Seq[String]): Schemas = {
+
+    val leftSchema = StructType(
+      decoded.df.schema
+        .filter(field =>
+          reqColumns
+          // handle nested struct, only the parent struct is needed here
+            .map(col => if (col.contains(".")) col.split("\\.")(0) else col)
+            .contains(field.name))
+        .toSet
+        .toArray
+    )
+
     val source = groupByConf.streamingSource
     assert(source.get.isSetJoinSource, s"No JoinSource found in the groupBy: ${groupByConf.metaData.name}")
     assert(source.isDefined, s"No streaming source present in the groupBy: ${groupByConf.metaData.name}")
@@ -214,6 +228,12 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       leftSourceSchema ++ SparkConversions.fromChrononSchema(joinCodec.valueSchema))
     val joinSourceSchema: StructType = outputSchema(joinOutputSchema, enrichQuery(joinSource.query))
 
+    // Metadata schema
+    val chainingFetchTsSchema = StructType(
+      Seq(StructField(Constants.ChainingRequestTs, LongType), StructField(Constants.ChainingFetchTs, LongType)))
+    val joinBaseSchemaWithMetadata = StructType(joinBaseSchema ++ chainingFetchTsSchema)
+    val joinFullDerivedSchemaWithMetadata = StructType(joinFullDerivedSchema ++ chainingFetchTsSchema)
+
     // GroupBy -> JoinSource (Join + outer_query)
     // Join ->
     //   Join.left -> (left.(table, mutation_stream, etc) + inner_query)
@@ -237,14 +257,24 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
        |  ${joinSourceSchema.catalogString}
        |""".stripMargin)
 
-    Schemas(joinCodec,
-            leftStreamSchema,
-            leftSourceSchema,
-            joinBaseValueSchema,
-            joinBaseSchema,
-            joinFullDerivedSchema,
-            joinOutputSchema,
-            joinSourceSchema)
+    logger.info(s"""
+                   |left columns ${leftSourceSchema.fieldNames.mkString(",")}
+                   |reqColumns ${reqColumns.mkString(",")}
+                   |Fetching upstream join to enrich the stream... Fetching lag time: $lagMillis
+                   |""".stripMargin)
+
+    Schemas(
+      joinCodec,
+      leftStreamSchema,
+      leftSourceSchema,
+      joinBaseValueSchema,
+      joinBaseSchema,
+      joinFullDerivedSchema,
+      joinOutputSchema,
+      joinSourceSchema,
+      joinBaseSchemaWithMetadata,
+      joinFullDerivedSchemaWithMetadata
+    )
   }
 
   private def servingInfoProxy: GroupByServingInfoParsed =
@@ -343,67 +373,20 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     }
   }
 
-  def chainedStreamingQuery: DataStreamWriter[Row] = {
-    val joinSource = groupByConf.streamingSource.get.getJoinSource
+  private def arrayToRow(values: Any, schema: StructType): Row = {
+    val genericRow = SparkConversions
+      .toSparkRowSparkType(values, schema)
+      .asInstanceOf[Row]
 
-    joinSource.join.setups.foreach(session.sql)
-    groupByConf.setups.foreach(session.sql)
+    // Attach schema to genericRow so that it can be used in the next stage of mapPartitions
+    new GenericRowWithSchema(genericRow.toSeq.toArray, schema).asInstanceOf[Row]
+  }
 
-    val left = joinSource.join.left
-    val topic = TopicInfo.parse(left.topic)
-
-    val stream = buildStream(topic)
-    val decoded = decode(repartition(stream))
-
-    val leftStreamingQuery = groupByConf.buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
-
-    def applyQuery(df: DataFrame, query: api.Query): DataFrame = {
-      val queryParts = groupByConf.buildQueryParts(query)
-      logger.info(s"""
-           |decoded schema: ${decoded.df.schema.catalogString}
-           |queryParts: $queryParts
-           |df schema: ${df.schema.prettyJson}
-           |""".stripMargin)
-
-      // apply left.query
-      val selected = queryParts.selects.map(_.toSeq).map(exprs => df.selectExpr(exprs: _*)).getOrElse(df)
-      selected.filter(queryParts.wheres.map("(" + _ + ")").mkString(" AND "))
-    }
-
-    val leftSource: Dataset[Row] = applyQuery(decoded.df, left.query)
-    // key format joins/<team>/join_name
-    val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
-    logger.info(s"Upstream join request name: $joinRequestName")
-
-    val tableUtils = TableUtils(session)
-    // the decoded schema is in lower case
-    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery).map(_.toLowerCase).toSet.toSeq
-
-    val leftSchema = StructType(
-      decoded.df.schema
-        .filter(field =>
-          reqColumns
-          // handle nested struct, only the parent struct is needed here
-            .map(col => if (col.contains(".")) col.split("\\.")(0) else col)
-            .contains(field.name))
-        .toSet
-        .toArray
-    )
-
-    val schemas = buildSchemas(leftSchema)
-    val chainingFetchTsSchema = StructType(
-      Seq(StructField(Constants.ChainingRequestTs, LongType), StructField(Constants.ChainingFetchTs, LongType)))
-    val joinBaseSchemaWithMetadata = StructType(schemas.joinBaseSchema ++ chainingFetchTsSchema)
-    val joinFullDerivedSchemaWithMetadata = StructType(schemas.joinFullDerivedSchema ++ chainingFetchTsSchema)
-    val leftColumns = schemas.leftSourceSchema.fieldNames
-
-    logger.info(s"""
-         |left columns ${leftColumns.mkString(",")}
-         |reqColumns ${reqColumns.mkString(",")}
-         |Fetching upstream join to enrich the stream... Fetching lag time: $lagMillis
-         |""".stripMargin)
-
-    val enrichedBase = leftSource.mapPartitions(
+  private def enrichBaseJoin(leftSource: DataFrame,
+                             joinRequestName: String,
+                             joinSource: JoinSource,
+                             schemas: Schemas): DataFrame = {
+    leftSource.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
           val shouldSample = Math.random() <= 0.1
@@ -412,7 +395,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           // Convert left rows to fetcher requests
           val rowsScala = rows.toScala.toArray
           val requests = rowsScala.map { row =>
-            val keyMap = row.getValuesMap[AnyRef](leftColumns)
+            val keyMap = row.getValuesMap[AnyRef](schemas.leftSourceSchema.fieldNames)
             val eventTs = row.getAs[Long](eventTimeColumn)
             context.distribution(Metrics.Name.LagMillis, System.currentTimeMillis() - eventTs)
             val ts = if (useEventTimeForQuery) Some(eventTs) else None
@@ -450,8 +433,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             logger.info(logMessage)
           }
 
-          val fetchStartTs = System.currentTimeMillis()
-          val responsesFuture = fetcher.fetchBaseJoin(requests, Option(joinSource.join), fetchStartTs)
+          val responsesFuture = fetcher.fetchBaseJoin(requests, Option(joinSource.join))
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects
           val responses = Await.result(responsesFuture, 5.second)
@@ -473,36 +455,34 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           }
 
           // convert to spark rows, appended with fetch start ts
-          responses.iterator.map {
-            response =>
-              val baseValuesMap = response.request.keys ++ response.baseValues
-              val baseValues = schemas.joinBaseSchema.fieldNames.map(f => baseValuesMap.getOrElse(f, null))
+          responses.iterator.map { response =>
+            val baseValuesMap = response.request.keys ++ response.baseValues
+            val baseValues = schemas.joinBaseSchema.fieldNames.map(f => baseValuesMap.getOrElse(f, null))
 
-              // Attach request_ts and fetch_start_ts as metadata for logging/instrumentation purpose
-              val metaData: Array[Any] = Array(response.request.atMillis.orNull, fetchStartTs)
-              val baseValuesWithMetadata = baseValues ++ metaData
-              val genericRow = SparkConversions
-                .toSparkRowSparkType(baseValuesWithMetadata, joinBaseSchemaWithMetadata)
-                .asInstanceOf[Row]
+            // Attach request_ts and fetch_start_ts as metadata for logging/instrumentation purpose
+            val metaData: Array[Any] = Array(response.request.atMillis.orNull, response.requestStartTs)
+            val baseValuesWithMetadata = baseValues ++ metaData
+            val row = arrayToRow(baseValuesWithMetadata, schemas.joinBaseSchemaWithMetadata)
 
-              // Need to attach schema so that in next stage of mapPartitions, the row objects have schema
-              new GenericRowWithSchema(genericRow.toSeq.toArray, joinBaseSchemaWithMetadata).asInstanceOf[Row]
+            // Instrumentation
+            val eventTs = row.getAs[Long](eventTimeColumn)
+            context.distribution(Metrics.Name.FetchBaseJoinLagMillis, System.currentTimeMillis() - eventTs)
+
+            row
           }.toJava
         }
       },
-      EncoderUtil(joinBaseSchemaWithMetadata)
+      EncoderUtil(schemas.joinBaseSchemaWithMetadata)
     )
-    val derived = DerivationUtils
-      .applyDerivation(
-        joinSource.join,
-        enrichedBase,
-        schemas.joinBaseValueSchema.fieldNames,
-        schemas.leftSourceSchema.fieldNames,
-        includeAllBase = true // preserve all base columns for join logging purpose
-      )
-      .select(joinFullDerivedSchemaWithMetadata.fieldNames.map(col): _*)
+  }
 
-    val enriched = derived.mapPartitions(
+  private def enrichModelTransforms(
+      derived: DataFrame,
+      joinRequestName: String,
+      joinSource: JoinSource,
+      schemas: Schemas
+  ): DataFrame = {
+    derived.mapPartitions(
       new MapPartitionsFunction[Row, Row] {
         override def call(rows: util.Iterator[Row]): util.Iterator[Row] = {
           val shouldSample = Math.random() <= 0.1
@@ -513,7 +493,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           val rowsScala = rows.toScala.toArray
           val derivedValues = rowsScala.map {
             row =>
-              val keyMap = row.getValuesMap[AnyRef](leftColumns)
+              val keyMap = row.getValuesMap[AnyRef](schemas.leftSourceSchema.fieldNames)
               val atMillis = Option(row.getAs[Long](Constants.ChainingRequestTs))
               val request = Request(joinRequestName, keys = keyMap, atMillis = atMillis)
               val requestStartTs = row.getAs[Long](Constants.ChainingFetchTs) // must be non null
@@ -551,16 +531,36 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           responses.iterator.map { response =>
             val valuesMap = response.request.keys ++ response.values.get
             val values = schemas.joinOutputSchema.fieldNames.map(f => valuesMap.getOrElse(f, null))
-            SparkConversions
-              .toSparkRowSparkType(values, schemas.joinOutputSchema)
-              .asInstanceOf[Row]
+            val row = arrayToRow(values, schemas.joinOutputSchema)
+
+            // Instrumentation
+            val eventTs = row.getAs[Long](eventTimeColumn)
+            ctx.distribution(Metrics.Name.FetchJoinLagMillis, System.currentTimeMillis() - eventTs)
+
+            row
           }.toJava
         }
       },
       EncoderUtil(schemas.joinOutputSchema)
     )
+  }
 
-    val joinSourceDf = applyQuery(enriched, joinSource.query)
+  private def applyQuery(df: DataFrame, query: api.Query, decoded: DataStream): DataFrame = {
+    val queryParts = groupByConf.buildQueryParts(query)
+    logger.info(s"""
+                   |decoded schema: ${decoded.df.schema.catalogString}
+                   |queryParts: $queryParts
+                   |df schema: ${df.schema.prettyJson}
+                   |""".stripMargin)
+
+    // apply left.query
+    val selected = queryParts.selects.map(_.toSeq).map(exprs => df.selectExpr(exprs: _*)).getOrElse(df)
+    selected.filter(queryParts.wheres.map("(" + _ + ")").mkString(" AND "))
+  }
+
+  private def writeToKVStore(
+      joinSourceDf: DataFrame
+  ): DataStreamWriter[Row] = {
     val writer = joinSourceDf.writeStream.outputMode("append").trigger(Trigger.ProcessingTime(microBatchIntervalMillis))
     val putRequestHelper = PutRequestHelper(joinSourceDf.schema)
 
@@ -605,5 +605,62 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
         }
       }
     }
+  }
+
+  def chainedStreamingQuery: DataStreamWriter[Row] = {
+    val joinSource = groupByConf.streamingSource.get.getJoinSource
+
+    joinSource.join.setups.foreach(session.sql)
+    groupByConf.setups.foreach(session.sql)
+
+    val left = joinSource.join.left
+    val topic = TopicInfo.parse(left.topic)
+
+    val stream = buildStream(topic)
+    val decoded = decode(repartition(stream))
+
+    val leftStreamingQuery = groupByConf.buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
+
+    val leftSource: Dataset[Row] = applyQuery(decoded.df, left.query, decoded)
+    // key format joins/<team>/join_name
+    val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
+    logger.info(s"Upstream join request name: $joinRequestName")
+
+    val tableUtils = TableUtils(session)
+    // the decoded schema is in lower case
+    val reqColumns = tableUtils.getColumnsFromQuery(leftStreamingQuery).map(_.toLowerCase).toSet.toSeq
+
+    // Build schemas for each stages of the chaining transformation
+    val schemas = buildSchemas(decoded, reqColumns)
+
+    // Enrich each left source rows with base columns (pre-derivations) of the join source
+    val enrichedBase = enrichBaseJoin(
+      leftSource,
+      joinRequestName,
+      joinSource,
+      schemas
+    )
+
+    // Apply derivations on top of the base columns
+    val derived = DerivationUtils
+      .applyDerivation(
+        joinSource.join,
+        enrichedBase,
+        schemas.joinBaseValueSchema.fieldNames,
+        schemas.leftSourceSchema.fieldNames,
+        includeAllBase = true // preserve all base columns for join logging purpose
+      )
+      .select(schemas.joinFullDerivedSchemaWithMetadata.fieldNames.map(col): _*)
+
+    // Apply model transformations on top of the derived columns if necessary
+    val enriched = enrichModelTransforms(
+      derived,
+      joinRequestName,
+      joinSource,
+      schemas
+    )
+
+    // Map to downstream chained GroupBy's inputs and write to KVStore
+    writeToKVStore(applyQuery(enriched, joinSource.query, decoded))
   }
 }
