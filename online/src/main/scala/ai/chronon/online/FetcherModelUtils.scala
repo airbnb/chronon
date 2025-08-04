@@ -16,169 +16,239 @@
 
 package ai.chronon.online
 
-import ai.chronon.api.Extensions.{ModelTransformOps, ThrowableOps}
+import ai.chronon.api.Extensions.ModelTransformOps
 import ai.chronon.api.ModelTransform
 import ai.chronon.online.Fetcher.ResponseWithContext
 import org.slf4j.{Logger, LoggerFactory}
 
-import scala.collection.Seq
+import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
-
-// Unique identifier for a model request, used to join inference result back to the original join request
-case class ModelRequestIdentifier(joinName: String, modelName: String, prefix: Option[String]) {
-  def stringRep: String = (Seq(joinName) ++ prefix.toSeq ++ Seq(modelName)).mkString("_")
-}
-case class ModelTransformRequest(model: ModelTransform,
-                                 modelRequestIdentifier: ModelRequestIdentifier,
-                                 inputs: Map[String, AnyRef])
-case class ModelTransformResponse(modelRequestIdentifier: ModelRequestIdentifier,
-                                  outputs: Map[String, AnyRef],
-                                  exceptions: Map[String, Throwable])
 
 object FetcherModelUtils {
 
   @transient implicit lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
+  private case class ModelTransformContext(joinName: String, resultMap: mutable.HashMap[String, AnyRef])
+  private case class ModelTransformInput(modelTransform: ModelTransform,
+                                         inputs: Map[String, AnyRef],
+                                         context: ModelTransformContext)
+
   /*
-   * Convert each join request into a list of ModelTransformRequest, with ModelRequestIdentifier as join key
+   * For each join request, builds a list of ModelTransformInputs based on model transforms metadata and
+   * derivation output, and also builds a mutable result map in order to collect results.
    */
-  private def buildModelTransformRequests(joinRequest: ResponseWithContext): Seq[ModelTransformRequest] = {
+  private def buildModelTransformInputs(joinRequest: ResponseWithContext): Seq[ModelTransformInput] = {
     if (joinRequest.joinCodec.isEmpty) {
       Seq.empty
     } else {
-      val joinName = joinRequest.joinCodec.get.conf.join.metaData.name
       val requests = joinRequest.joinCodec.get.conf.modelTransformsListScala.map { modelTransform =>
-        val modelName = modelTransform.model.metaData.name
-        val prefix = Option(modelTransform.prefix)
-        ModelTransformRequest(modelTransform,
-                              ModelRequestIdentifier(joinName, modelName, prefix),
-                              joinRequest.derivedValues.get)
+        val mappedInputs = modelTransform.mapInputs(joinRequest.derivedValues.get)
+        ModelTransformInput(
+          modelTransform,
+          mappedInputs,
+          ModelTransformContext(
+            joinRequest.joinCodec.get.conf.join.metaData.name,
+            // Initialize a mutable HashMap to collect results later on
+            new mutable.HashMap[String, AnyRef]()
+          )
+        )
       }
       requests
     }
   }
 
   /*
-   * Given a list of ModelTransformRequest, run inference via ModelBackend, handling input/output mapping in the process
+   * Given a list of join requests and their model transform inputs/contexts, this method builds the
+   * RunModelInferenceRequests (inputs to ModelBackend) and keep track of the contexts.
    */
-  private def runModelTransforms(modelRequests: Seq[ModelTransformRequest], modelBackend: ModelBackend)(implicit
-      executionContext: ExecutionContext): Future[Seq[ModelTransformResponse]] = {
-    val requestsByModel = modelRequests.groupBy(_.model)
+  private def buildUniqueRunModelInferenceRequestsWithContexts(
+      joinToModelTransformInputs: Seq[(ResponseWithContext, Seq[ModelTransformInput])]
+  ): Seq[(RunModelInferenceRequest, Seq[ModelTransformContext])] = {
+
+    joinToModelTransformInputs
+      .flatMap {
+        case (_, modelTransformInputs) =>
+          modelTransformInputs
+            .map { input =>
+              // Convert ModelTransformInput to RunModelInferenceRequest
+              val model = input.modelTransform.model
+              val mappedInputs = input.inputs
+              val runModelInferenceRequest = RunModelInferenceRequest(model, Seq(mappedInputs))
+              (runModelInferenceRequest, input.context)
+            }
+      }
+      // This will dedupe RunModelInferenceRequests and map each unique RunModelInferenceRequest
+      // to the list of ModelTransformContexts that need to be updated
+      .groupBy(_._1)
+      .mapValues(_.map(_._2))
+      .toSeq
+  }
+
+  /*
+   * Given a list of RunModelInferenceRequests and their backtracked result map list, this method
+   * first re-groups the requests by model, then runs model inference using model backend, and finally
+   * writes the results back to the mutable result maps.
+   */
+  private def runModelInferenceRequestsAndCollectResults(
+      runModelInferenceRequestsWithResultMap: Seq[(RunModelInferenceRequest, Seq[ModelTransformContext])],
+      modelBackend: ModelBackend
+  )(implicit executionContext: ExecutionContext): Future[Iterable[Unit]] = {
+
+    // First, group by model because each model inference call can handle only 1 model
+    val requestsByModel = runModelInferenceRequestsWithResultMap.groupBy(_._1.model)
     val futures = requestsByModel.map {
-      case (modelTransform, requests) =>
-        val identifiers = requests.map(_.modelRequestIdentifier)
-        val modelName = modelTransform.model.metaData.name
-        val mappedInputs = requests.map(_.inputs).map(modelTransform.mapInputs)
-        val joins = identifiers.map(_.joinName).distinct.sorted.mkString(",")
+      case (model, requests) =>
+        val mergedRequest = requests.map(_._1).reduce(_ merge _)
+        val modelTransformContexts: Seq[Seq[ModelTransformContext]] = requests.map(_._2)
+
+        val modelName = model.metaData.name
+        // Build the metric tag for join by simply concatenating all join names
+        val joins = modelTransformContexts.flatten.map(_.joinName).distinct.sorted.mkString(",")
         val ctx = Metrics.Context(environment = Metrics.Environment.ModelTransform, join = joins, model = modelName)
         val startTs = System.currentTimeMillis()
         ctx.increment(Metrics.Name.RequestCount)
-        val runModelInferenceRequest = RunModelInferenceRequest(modelTransform.model, mappedInputs)
-        val runModelInferenceResponseFuture = modelBackend.runModelInference(runModelInferenceRequest)
-        val modelResponses = runModelInferenceResponseFuture
-          .map { resp =>
-            val endTs = System.currentTimeMillis()
-            ctx.distribution(Metrics.Name.LatencyMillis, endTs - startTs)
-            resp
-          }
-          .map(_.outputs)
-          .map { outputs =>
-            outputs.zip(requests).map {
-              case (outputs, modelRequest) =>
-                val modelRequestIdentifier = modelRequest.modelRequestIdentifier
-                val mappedOutputs = modelTransform.mapOutputs(outputs)
-                ModelTransformResponse(modelRequestIdentifier, mappedOutputs, Map.empty)
-            }
+        ctx.increment(Metrics.Name.RequestBatchSize)
+
+        modelBackend
+          .runModelInference(mergedRequest)
+          .map { response =>
+            assert(
+              response.outputs.size == modelTransformContexts.size,
+              s"Model $modelName returned ${response.outputs.size} outputs, but expected ${modelTransformContexts.size} outputs for joins: $joins"
+            )
+            ctx.increment(Metrics.Name.ResponseCount)
+            response.outputs.zip(modelTransformContexts)
           }
           .recover {
             case e: Throwable =>
               ctx.incrementException(e)
-              identifiers.map { identifier =>
-                ModelTransformResponse(identifier, Map.empty, Map(identifier.stringRep + "_exception" -> e))
+              val exceptionMap = Map(model.metaData.name + "_exception" -> e)
+              modelTransformContexts.map { modelTransformContext =>
+                // For each model transform context, we return an exception in the result map
+                (exceptionMap, modelTransformContext)
               }
           }
-        modelResponses
+          .map { zippedOutputs =>
+            zippedOutputs.iterator.foreach {
+              case (outputs, modelTransformContexts) =>
+                outputs.foreach {
+                  case (key, value) =>
+                    // For each output, update all result maps
+                    modelTransformContexts.foreach(_.resultMap.put(key, value))
+                }
+            }
+
+            // Instrument model transform latency
+            ctx.distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTs)
+          }
     }
-    Future.sequence(futures).map(_.flatten.toSeq)
+
+    Future.sequence(futures)
   }
 
   /*
-   * Entry point to the ModelTransform stage, which takes in previous stage's output (derivations), run through
-   * model transforms via ModelBackend, and return the results
+   * Given the original list of join requests and the mutable result maps (already populated at this stage),
+   * this method processes everything and produces the final output: handle output mappings and passthrough fields.
+   */
+  private def finalizeOutputs(
+      joinToModelTransformInputs: Seq[(ResponseWithContext, Seq[ModelTransformInput])]
+  ): Seq[ResponseWithContext] = {
+    joinToModelTransformInputs.map {
+      case (joinRequest, modelTransformInputs) =>
+        val mappedOutputs = modelTransformInputs
+          .map { input =>
+            val modelTransform = input.modelTransform
+            val resultMap = input.context.resultMap.toMap
+            // Apply output mappings
+            val mappedOutputs = modelTransform.mapOutputs(resultMap)
+            mappedOutputs
+          }
+          .reduceOption(_ ++ _) // Combine all outputs from different model transforms
+          .getOrElse(Map.empty[String, AnyRef])
+
+        // Add passthrough values
+        val passthroughValues = joinRequest.joinCodec.toSeq
+          .flatMap(_.conf.modelTransformsPassthroughFieldsScala)
+          .map { fieldName =>
+            fieldName -> joinRequest.derivedValues.getOrElse(fieldName, null)
+          }
+          .toMap
+
+        joinRequest.copy(modelTransformsValues = Some(mappedOutputs ++ passthroughValues))
+    }
+  }
+
+  /*
+   * Main entry point: Given a list of join requests, fetch model transforms for each request.
    */
   def fetchModelTransforms(joinRequestsFuture: Future[scala.collection.Seq[ResponseWithContext]],
                            modelBackend: ModelBackend)(implicit
       executionContext: ExecutionContext): Future[scala.collection.Seq[ResponseWithContext]] = {
-
-    val modelTransformsStartTs = System.currentTimeMillis()
+    val startTs = System.currentTimeMillis()
     joinRequestsFuture.flatMap { joinRequests =>
       val hasModelTransforms = joinRequests.flatMap(_.joinCodec).exists(_.conf.hasModelTransforms)
       if (!hasModelTransforms) {
         Future.successful(joinRequests)
       } else {
-        // Step1: For each join request, build a list of ModelTransformRequest, with ModelRequestIdentifier as join key
-        val modelTransformRequestsByJoinRequest = joinRequests.map { req =>
-          val modelTransformRequests = (req, buildModelTransformRequests(req))
-          val modelNames =
-            modelTransformRequests._2.map(_.modelRequestIdentifier.modelName).distinct.sorted.mkString(",")
+
+        // Build the metric tag for model by simply concatenating all model names
+        val modelNames = joinRequests
+          .flatMap(_.joinCodec)
+          .flatMap(_.conf.modelTransformsListScala)
+          .map(_.model.metaData.name)
+          .distinct
+          .sorted
+          .mkString(",")
+        joinRequests.iterator.foreach { req =>
           req.ctx
             .withSuffix(Metrics.Environment.ModelTransform)
             .copy(model = modelNames)
             .increment(Metrics.Name.RequestCount)
-          modelTransformRequests
-
-        }
-        val modelTransformRequests = modelTransformRequestsByJoinRequest.flatMap(_._2)
-
-        // Step2. For all ModelTransformRequest, run inference in parallel using ModelBackend, and group by identifier
-        val modelTransformResponsesFuture =
-          runModelTransforms(modelTransformRequests, modelBackend)
-        val modelTransformResponsesByIdentifierFuture = modelTransformResponsesFuture.map { responses =>
-          responses.map { resp => (resp.modelRequestIdentifier, resp) }.toMap
         }
 
-        // Step 3: For each join request, join ModelTransformResponse back to request using identifier as join key
-        val postModelTransformsFuture = modelTransformResponsesByIdentifierFuture.map { respByIdentifier =>
-          modelTransformRequestsByJoinRequest.map {
-            case (req, modelTransformRequests) =>
-              val identifiers = modelTransformRequests.map(_.modelRequestIdentifier)
-              val modelNames = identifiers.map(_.modelName).distinct.mkString(",")
-              val modelTransformResponses = identifiers
-                .flatMap { id =>
-                  // Look up response by identifier
-                  val respOpt = respByIdentifier.get(id)
-                  respOpt.toSeq.flatMap(_.exceptions.values).foreach { ex =>
-                    req.ctx
-                      .withSuffix(Metrics.Environment.ModelTransform)
-                      .copy(model = id.modelName)
-                      .incrementException(ex)
-                  }
-                  respOpt.map { resp =>
-                    // Return exceptions as part of the response to caller
-                    resp.outputs ++ resp.exceptions.mapValues(_.traceString)
-                  }
-                }
-                .reduce(_ ++ _) // union all modelTransforms result together
+        // Step1: For each join request, for each ModelTransform, apply input mappings and build a mutable result map
+        // per each Join request + model transform level, which will be used to collect inference results
+        val joinToModelTransformInputs: Seq[(ResponseWithContext, Seq[ModelTransformInput])] =
+          joinRequests.map(req => (req, buildModelTransformInputs(req)))
 
-              // Handle passthrough values
-              val passthroughValues = req.joinCodec.toSeq
-                .flatMap(_.conf.modelTransformsPassthroughFieldsScala)
-                .map { fieldName =>
-                  fieldName -> req.derivedValues.getOrElse(fieldName, null)
-                }
-                .toMap
+        // Step2: Convert each ModelTransformInput to RunModelInferenceRequest, dedupe based on model/keys,
+        // and backtrack the list of mutable result maps that need to be updated
+        val runModelInferenceRequestsWithResultMap: Seq[(RunModelInferenceRequest, Seq[ModelTransformContext])] =
+          buildUniqueRunModelInferenceRequestsWithContexts(joinToModelTransformInputs)
 
-              val updatedJoinRequest =
-                req.copy(modelTransformsValues = Some(modelTransformResponses ++ passthroughValues))
-              val requestEndTs = System.currentTimeMillis()
-              req.ctx
-                .withSuffix(Metrics.Environment.ModelTransform)
-                .copy(model = modelNames)
-                .distribution(Metrics.Name.LatencyMillis, requestEndTs - modelTransformsStartTs)
-              updatedJoinRequest
+        // Step3: Run ModelInferenceRequests using ModelBackend. This step also collects result from model inference
+        // write results back to mutable result map at Join + model transform level
+        val runModelInferenceRequestsFuture = runModelInferenceRequestsAndCollectResults(
+          runModelInferenceRequestsWithResultMap,
+          modelBackend
+        )
+
+        // Step4: For each join request, for each ModelTransform, apply output mappings and passthroughs on
+        // collected result map
+        val joinResponsesFuture = runModelInferenceRequestsFuture.map {
+          // Note: the future's return value is ignored, but the processing needs to wait till the future finishes
+          // which ensures that the result maps are all updated
+          _ => finalizeOutputs(joinToModelTransformInputs)
+        }
+
+        // Instrumentation for latency and exceptions
+        joinResponsesFuture.foreach { joinResponses =>
+          joinResponses.iterator.foreach { resp =>
+            val ctx = resp.ctx
+              .withSuffix(Metrics.Environment.ModelTransform)
+              .copy(model = modelNames)
+            ctx.distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTs)
+
+            resp.modelTransformsValues.iterator.foreach(_.iterator.foreach {
+              case (key, value) =>
+                if (key.endsWith("_exception")) {
+                  ctx.incrementException(value.asInstanceOf[Throwable])
+                }
+            })
           }
         }
-        postModelTransformsFuture
+
+        joinResponsesFuture
       }
     }
   }

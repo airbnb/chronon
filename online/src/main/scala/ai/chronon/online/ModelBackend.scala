@@ -21,7 +21,12 @@ import ai.chronon.api.{Join, Model}
 import scala.collection.Seq
 import scala.concurrent.Future
 
-case class RunModelInferenceRequest(model: Model, inputs: Seq[Map[String, AnyRef]])
+case class RunModelInferenceRequest(model: Model, inputs: Seq[Map[String, AnyRef]]) {
+  def merge(other: RunModelInferenceRequest): RunModelInferenceRequest = {
+    assert(model == other.model, "Cannot merge requests for different models")
+    RunModelInferenceRequest(model, inputs ++ other.inputs)
+  }
+}
 case class RunModelInferenceResponse(request: RunModelInferenceRequest, outputs: Seq[Map[String, AnyRef]])
 
 trait ModelBackend {

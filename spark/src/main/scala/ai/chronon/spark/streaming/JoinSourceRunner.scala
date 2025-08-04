@@ -403,7 +403,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           }
 
           if (requests.length > 0) {
-            context.distribution("chain.request_batch_size", requests.length)
+            context.distribution(Metrics.Name.ChainRequestBatchSize, requests.length)
           }
 
           // Apply micro batch query delay if necessary

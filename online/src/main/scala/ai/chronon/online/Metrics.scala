@@ -66,10 +66,13 @@ object Metrics {
     val BatchLagMillis: String = "micro_batch_lag.millis"
     val QueryDelaySleepMillis: String = "chain.query_delay_sleep.millis"
     val LatencyMinutes = "latency.minutes"
+    val ChainRequestBatchSize = "chain.request_batch_size"
+    val RequestBatchSize = "request_batch_size"
 
     val PartitionCount = "partition.count"
     val RowCount = "row.count"
     val RequestCount = "request.count"
+    val ResponseCount = "response.count"
     val ColumnBeforeCount = "column.before.count"
     val ColumnAfterCount = "column.after.count"
     val FailureCount = "failure.ratio"

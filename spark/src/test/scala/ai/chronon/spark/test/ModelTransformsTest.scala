@@ -204,7 +204,7 @@ class ModelTransformsTest {
         "item_b" -> sampleKey(1).asInstanceOf[AnyRef]
       )
     )
-    val fetchFuture = fetcher.fetchJoin(Seq(joinRequest))
+    val fetchFuture = fetcher.fetchJoin(Seq(joinRequest, joinRequest, joinRequest))
     val fetchResult = Await.result(fetchFuture, Duration.Inf)
     assertTrue(fetchResult.head.values.isSuccess)
     val expectedOutputMap = Map(
