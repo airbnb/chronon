@@ -14,8 +14,8 @@
 #     limitations under the License.
 
 from ai.chronon.join import Join, JoinPart
-from ai.chronon.api.ttypes import Source, EventSource
 from ai.chronon.query import Query, select
+from ai.chronon.source import EventSource
 
 from group_bys.quickstart.purchases import v1 as purchases_v1
 from group_bys.quickstart.returns import v1 as returns_v1
@@ -25,14 +25,13 @@ from group_bys.quickstart.users import v1 as users
 This is the "left side" of the join that will comprise our training set. It is responsible for providing the primary keys
 and timestamps for which features will be computed.
 """
-source = Source(
-    events=EventSource(
-        table="data.checkouts", 
-        query=Query(
-            selects=select("user_id"), # The primary key used to join various GroupBys together
-            time_column="ts",
-            ) # The event time used to compute feature values as-of
-    ))
+source = EventSource(
+    table="data.checkouts",
+    query=Query(
+        selects=select("user_id"), # The primary key used to join various GroupBys together
+        time_column="ts",
+        ) # The event time used to compute feature values as-of
+)
 
 v1 = Join(  
     left=source,

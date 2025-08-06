@@ -16,6 +16,7 @@ import os
 import unittest
 
 from ai.chronon import group_by
+from ai.chronon import source
 from ai.chronon.api import ttypes
 from ai.chronon.group_by import Accuracy, Derivation
 from ai.chronon.lineage.lineage_metadata import ConfigType, TableType
@@ -25,7 +26,7 @@ from helper import compare_lineages
 
 class TestParseGroupBy(unittest.TestCase):
     def setUp(self):
-        gb_event_source = ttypes.EventSource(
+        gb_event_source = source.EventSource(
             table="source.gb_table",
             topic=None,
             query=ttypes.Query(
@@ -35,7 +36,7 @@ class TestParseGroupBy(unittest.TestCase):
             ),
         )
 
-        gb_event_source1 = ttypes.EventSource(
+        gb_event_source1 = source.EventSource(
             table="source.gb_table1",
             topic=None,
             query=ttypes.Query(

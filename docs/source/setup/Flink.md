@@ -55,16 +55,14 @@ A GroupBy might look like this:
 
 ```python
 ice_cream_group_by = GroupBy(
-    sources=Source(
-        events=ttypes.EventSource(
-            query=Query(
-                selects=select(
-                    customer_id="customer_id",
-                    flavor="ice_cream_flavor",
-                ),
-                time_column="created",
-            )
-        )
+    sources=EventSource(
+         query=Query(
+             selects=select(
+                 customer_id="customer_id",
+                 flavor="ice_cream_flavor",
+             ),
+             time_column="created",
+         )
     ),
     keys=["customer_id"],
     aggregations=[
