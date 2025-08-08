@@ -144,39 +144,32 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 
   /**
    * Writes virtual partition metadata for a staging query view.
-   * Simple metadata indicating this table is a view that supports dynamic partition filtering.
+   * Simple metadata indicating this table is a view with its creation time.
    */
   private def writeVirtualPartitionMetadata(tableName: String): Unit = {
     try {
       val currentTimestamp = System.currentTimeMillis()
-      val partitionDate = tableUtils.partitionSpec.at(currentTimestamp)
       
-      // Create DataFrame with simple virtual partition metadata
+      // Create DataFrame with minimal virtual partition metadata
       val virtualPartitionData = tableUtils.sparkSession.createDataFrame(
         Seq((
           tableName,
-          "VIEW",
-          new java.sql.Timestamp(currentTimestamp),
-          partitionDate
+          new java.sql.Timestamp(currentTimestamp)
         )),
         org.apache.spark.sql.types.StructType(Seq(
           org.apache.spark.sql.types.StructField("table_name", org.apache.spark.sql.types.StringType, false),
-          org.apache.spark.sql.types.StructField("table_type", org.apache.spark.sql.types.StringType, false),
-          org.apache.spark.sql.types.StructField("created_timestamp", org.apache.spark.sql.types.TimestampType, false),
-          org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, org.apache.spark.sql.types.StringType, false)
+          org.apache.spark.sql.types.StructField("created_timestamp", org.apache.spark.sql.types.TimestampType, false)
         ))
       )
       
-      // Use TableUtils insertPartitions to write the data
-      tableUtils.insertPartitions(
+      // Use TableUtils insertUnPartitioned to write the data (no partitioning needed)
+      tableUtils.insertUnPartitioned(
         df = virtualPartitionData,
         tableName = "chronon_virtual_partitions",
         tableProperties = Map(
           "chronon.table_type" -> "metadata",
           "chronon.version" -> "1.0"
-        ),
-        partitionColumns = Seq(tableUtils.partitionColumn),
-        autoExpand = true
+        )
       )
       
       logger.info(s"Wrote virtual partition metadata for view $tableName")
