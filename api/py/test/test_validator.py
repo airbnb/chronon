@@ -17,6 +17,7 @@ Forcing validator to fail some tests
 #     limitations under the License.
 
 import pytest
+from ai.chronon.api.ttypes import StagingQuery, MetaData
 from ai.chronon.repo import validator
 
 
@@ -165,3 +166,50 @@ def test_validate_derivation_on_keys(zvalidator):
 
     errors = zvalidator._validate_join(v2)
     assert len(errors) == 0, f"Failed on: {errors}"
+
+
+def test_validate_staging_query_with_createview_false(zvalidator):
+    """Test that staging query with createView=False allows date templates"""
+    staging_query = StagingQuery(
+        query="SELECT * FROM table WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+        createView=False,
+        metaData=MetaData(name="test_staging_query")
+    )
+    
+    errors = zvalidator._validate_staging_query(staging_query)
+    assert len(errors) == 0, f"Should not have errors when createView=False: {errors}"
+
+
+def test_validate_staging_query_with_createview_true(zvalidator):
+    """Test staging query validation when createView=True"""
+    
+    # Test cases that should be rejected (contain date templates)
+    invalid_queries = [
+        "SELECT * FROM table WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+        "SELECT * FROM table WHERE ds = '{{start_date}}'",  # no spaces
+        "SELECT * FROM table WHERE ds = '{{ start_date}}'",  # space before
+        "SELECT * FROM table WHERE ds = '{{start_date }}'",  # space after
+        "SELECT * FROM table WHERE ds = '{{  start_date  }}'",  # multiple spaces
+        "SELECT * FROM table WHERE ds = '{{ END_DATE }}'",  # uppercase
+    ]
+    
+    for query in invalid_queries:
+        staging_query = StagingQuery(
+            query=query,
+            createView=True,
+            metaData=MetaData(name="test_staging_query")
+        )
+        errors = zvalidator._validate_staging_query(staging_query)
+        assert len(errors) == 1, f"Should reject date template in query: {query}"
+        assert "createView=True cannot contain" in errors[0]
+    
+    # Test case that should be allowed (other templates)
+    valid_query = "SELECT * FROM table WHERE ds <= '{{ latest_date }}' AND id = '{{ max_date(table=other_table) }}'"
+    staging_query = StagingQuery(
+        query=valid_query,
+        createView=True,
+        metaData=MetaData(name="test_staging_query")
+    )
+    errors = zvalidator._validate_staging_query(staging_query)
+    assert len(errors) == 0, f"Should allow other templates when createView=True: {errors}"
+

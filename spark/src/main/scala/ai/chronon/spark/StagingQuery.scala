@@ -16,11 +16,11 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
-import ai.chronon.api.ParametricMacro
 import ai.chronon.api.Extensions._
+import ai.chronon.api.ParametricMacro
 import ai.chronon.spark.Extensions._
+import org.slf4j.LoggerFactory
 
 import scala.collection.mutable
 import scala.util.ScalaJavaConversions._
@@ -46,7 +46,12 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
     if (stagingQueryConf.startPartition == null) {
-      tableUtils.sql(stagingQueryConf.query).save(outputTable)
+      if (Option(stagingQueryConf.createView).getOrElse(false)) {
+        val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS ${stagingQueryConf.query}"
+        tableUtils.sql(createViewSql)
+      } else {
+        tableUtils.sql(stagingQueryConf.query).save(outputTable)
+      }
       return
     }
     val overrideStart = overrideStartPartition.getOrElse(stagingQueryConf.startPartition)
@@ -77,9 +82,16 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
             val renderedQuery =
               StagingQuery.substitute(tableUtils, stagingQueryConf.query, range.start, range.end, endPartition)
             logger.info(s"Rendered Staging Query to run is:\n$renderedQuery")
-            val df = tableUtils.sql(renderedQuery)
-            tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols, autoExpand = enableAutoExpand.get)
-            logger.info(s"Wrote to table $outputTable, into partitions: $range $progress")
+
+            if (Option(stagingQueryConf.createView).getOrElse(false)) {
+              val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS $renderedQuery"
+              tableUtils.sql(createViewSql)
+              logger.info(s"Created view $outputTable $range $progress")
+            } else {
+              val df = tableUtils.sql(renderedQuery)
+              tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols, autoExpand = enableAutoExpand.get)
+              logger.info(s"Wrote to table $outputTable, into partitions: $range $progress")
+            }
         }
         logger.info(s"Finished writing Staging Query data to $outputTable")
       } catch {
@@ -95,6 +107,76 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
         }
         .mkString("\n")
       throw new Exception(fullMessage)
+    }
+  }
+
+  /**
+   * Creates a staging query view without date range processing.
+   * This method is designed for views that contain all data and rely on partition pushdown
+   * for efficient querying. The query should not contain start_date/end_date templates
+   * (validated by compile.py).
+   */
+  def createStagingQueryView(): Unit = {
+    if (!Option(stagingQueryConf.createView).getOrElse(false)) {
+      throw new IllegalArgumentException("createView must be true to use createStagingQueryView")
+    }
+
+    // Execute setup statements
+    Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
+
+    try {
+      // Process macros (max_date, latest_date) but not start_date/end_date since they're not in query
+      val processedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, null, null, endPartition)
+      
+      // Create view
+      val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS $processedQuery"
+      tableUtils.sql(createViewSql)
+      logger.info(s"Created staging query view: $outputTable")
+
+      // Write virtual partition metadata
+      writeVirtualPartitionMetadata(outputTable)
+    } catch {
+      case e: Exception =>
+        logger.error(s"Failed to create staging query view $outputTable: ${e.getMessage}", e)
+        throw e
+    }
+  }
+
+  /**
+   * Writes virtual partition metadata for a staging query view.
+   * Simple metadata indicating this table is a view with its creation time.
+   */
+  private def writeVirtualPartitionMetadata(tableName: String): Unit = {
+    try {
+      val currentTimestamp = System.currentTimeMillis()
+      
+      // Create DataFrame with minimal virtual partition metadata
+      val virtualPartitionData = tableUtils.sparkSession.createDataFrame(
+        Seq((
+          tableName,
+          new java.sql.Timestamp(currentTimestamp)
+        )),
+        org.apache.spark.sql.types.StructType(Seq(
+          org.apache.spark.sql.types.StructField("table_name", org.apache.spark.sql.types.StringType, false),
+          org.apache.spark.sql.types.StructField("created_timestamp", org.apache.spark.sql.types.TimestampType, false)
+        ))
+      )
+      
+      // Use TableUtils insertUnPartitioned to write the data (no partitioning needed)
+      tableUtils.insertUnPartitioned(
+        df = virtualPartitionData,
+        tableName = "chronon_virtual_partitions",
+        tableProperties = Map(
+          "chronon.table_type" -> "metadata",
+          "chronon.version" -> "1.0"
+        )
+      )
+      
+      logger.info(s"Wrote virtual partition metadata for view $tableName")
+    } catch {
+      case e: Exception =>
+        logger.error(s"Failed to write virtual partition metadata for $tableName: ${e.getMessage}", e)
+        // Don't fail the main operation if virtual partition metadata write fails
     }
   }
 }
