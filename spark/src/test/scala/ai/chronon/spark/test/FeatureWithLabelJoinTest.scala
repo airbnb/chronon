@@ -43,7 +43,7 @@ class FeatureWithLabelJoinTest {
     // Create feature to be joned
     createTestFeatureTable(namespace, tableName = tableName)
 
-    val labelJoinConf = createTestLabelJoin(50, 20,namespace=namespace)
+    val labelJoinConf = createTestLabelJoin(50, 20, namespace = namespace)
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       left,
@@ -110,7 +110,7 @@ class FeatureWithLabelJoinTest {
     // Create feature to be joined
     createTestFeatureTable(namespace, tableName = tableName)
 
-    val labelJoinConf = createTestLabelJoin(50, 20,namespace=namespace)
+    val labelJoinConf = createTestLabelJoin(50, 20, namespace = namespace)
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       left,
@@ -164,7 +164,7 @@ class FeatureWithLabelJoinTest {
       .groupByConf
       .sources
       .get(0)
-    val labelJoinConf = createTestAggLabelJoin(5, "listing_labels_agg", namespace=namespace)
+    val labelJoinConf = createTestAggLabelJoin(5, "listing_labels_agg", namespace = namespace)
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
       leftSource,
@@ -275,7 +275,9 @@ class FeatureWithLabelJoinTest {
     )
   }
 
-  def createTestFeatureTable(namespace: String, tableName: String = tableName, customRows: List[Row] = List.empty): String = {
+  def createTestFeatureTable(namespace: String,
+                             tableName: String = tableName,
+                             customRows: List[Row] = List.empty): String = {
     val schema = StructType(
       tableName,
       Array(

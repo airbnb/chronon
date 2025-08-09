@@ -45,17 +45,15 @@ class DerivationTest {
 
   @Test
   def testBootstrapToDerivations(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest"+ "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_derivations"
     tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
 
-    val derivation1 = Builders.Derivation(name = "user_amount_30d_avg",
-      expression = "amount_dollars_sum_30d / 30")
-    val derivation2 = Builders.Derivation(
-      name = "*"
-    )
+    val derivation1 = Builders.Derivation(name = "user_amount_30d_avg", expression = "amount_dollars_sum_30d / 30")
+    val derivation2 = Builders.Derivation.star()
 
     val groupByWithDerivation = groupBy
       .setDerivations(
@@ -87,9 +85,7 @@ class DerivationTest {
         )
       ),
       derivations = Seq(
-        Builders.Derivation(
-          name = "*"
-        ),
+        Builders.Derivation.star(),
         // contextual feature rename
         Builders.Derivation(
           name = "user_txn_count_30d",
@@ -268,7 +264,8 @@ class DerivationTest {
         outputDf("ts"),
         contextualBootstrapDf("user_txn_count_30d"),
         externalBootstrapDf("ext_payments_service_user_txn_count_15d").as("user_txn_count_15d"),
-        (concat(externalBootstrapDf("ext_payments_service_user_txn_count_15d"), lit(' '), outputDf("user"))).as("user_txn_count_15d_with_user_id"),
+        (concat(externalBootstrapDf("ext_payments_service_user_txn_count_15d"), lit(' '), outputDf("user")))
+          .as("user_txn_count_15d_with_user_id"),
         outputDf("user_amount_30d"),
         outputDf("user_amount_15d"),
         coalesce(diffBootstrapDf("user_amount_30d_minus_15d"), outputDf("user_amount_30d_minus_15d"))
@@ -295,7 +292,8 @@ class DerivationTest {
 
   @Test
   def testBootstrapToDerivationsNoStar(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_derivations_no_star"
     tableUtils.createDatabase(namespace)
@@ -380,7 +378,8 @@ class DerivationTest {
   }
 
   private def runLoggingTest(namespace: String, wildcardSelection: Boolean): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     tableUtils.createDatabase(namespace)
 
@@ -405,7 +404,7 @@ class DerivationTest {
       joinParts = Seq(joinPart),
       derivations =
         (if (wildcardSelection) {
-           Seq(Derivation("*", "*"))
+           Seq(Derivation.star())
          } else {
            Seq.empty
          }) :+ Builders.Derivation(
@@ -507,7 +506,8 @@ class DerivationTest {
 
   @Test
   def testContextual(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_contextual"
     tableUtils.createDatabase(namespace)
@@ -566,7 +566,6 @@ class DerivationTest {
     assertFalse(schema1.contains("context_2"))
     assertTrue(schema1.contains("ext_contextual_context_2"))
 
-
     /*
      * In order to keep the `key` format, use explicit rename derivation
      * Otherwise, in a * derivation, we keep only the values and discard the keys
@@ -578,10 +577,7 @@ class DerivationTest {
             name = "context_1",
             expression = "ext_contextual_context_1"
           ),
-          Builders.Derivation(
-            name = "*",
-            expression = "*"
-          )
+          Builders.Derivation.star()
         ),
         "test_2"
       ))
@@ -611,7 +607,6 @@ class DerivationTest {
     assertFalse(schema3.contains("context_2"))
     assertFalse(schema3.contains("ext_contextual_context_2"))
 
-
     /*
      * If we want to keep both format, select both format explicitly
      */
@@ -638,27 +633,25 @@ class DerivationTest {
 
   @Test
   def testGroupByDerivations(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "test_group_by_derivations"
     tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
     groupBy.setBackfillStartDate(today)
-    groupBy.setDerivations(Seq(
-      Builders.Derivation(
-        name = "*"),
-      Builders.Derivation(
-        name = "amount_dollars_avg_15d",
-        expression = "amount_dollars_sum_15d / 15"
-      )).toJava)
+    groupBy.setDerivations(
+      Seq(Builders.Derivation.star(),
+          Builders.Derivation(
+            name = "amount_dollars_avg_15d",
+            expression = "amount_dollars_sum_15d / 15"
+          )).toJava)
     ai.chronon.spark.GroupBy.computeBackfill(groupBy, today, tableUtils)
-    val actualDf = tableUtils.sql(
-      s"""
+    val actualDf = tableUtils.sql(s"""
          |select * from $namespace.${groupBy.metaData.cleanName}
          |""".stripMargin)
 
-    val expectedDf = tableUtils.sql(
-      s"""
+    val expectedDf = tableUtils.sql(s"""
          |select
          |  user,
          |  amount_dollars_sum_30d,

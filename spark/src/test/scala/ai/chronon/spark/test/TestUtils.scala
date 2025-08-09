@@ -85,11 +85,11 @@ object TestUtils {
           "m_views" -> "m_views"
         ),
         timeColumn = "UNIX_TIMESTAMP(ts) * 1000",
-        partitionColumn = partitionColOpt.orNull,
+        partitionColumn = partitionColOpt.orNull
       ),
       table = s"${namespace}.${tableName}",
       topic = null,
-      isCumulative = false,
+      isCumulative = false
     )
     val conf = Builders.GroupBy(
       sources = Seq(source),
@@ -142,7 +142,7 @@ object TestUtils {
           "listing" -> "listing_id",
           "dim_room_type" -> "dim_room_type"
         ),
-        partitionColumn=partitionColOpt.orNull
+        partitionColumn = partitionColOpt.orNull
       ),
       snapshotTable = s"${namespace}.${tableName}"
     )
@@ -486,7 +486,7 @@ object TestUtils {
   def saveOnPartitionOpt(df: DataFrame, outputTable: String, partitionColOpt: Option[String]): Unit = {
     partitionColOpt match {
       case Some(pCol) => df.save(outputTable, partitionColumns = Seq(pCol))
-      case None => df.save(outputTable)
+      case None       => df.save(outputTable)
     }
   }
 }

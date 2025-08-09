@@ -303,7 +303,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
         val tsVal = row.get(queryTsIndex)
         assert(tsVal != null, "ts column cannot be null in left source or query df")
         val ts = tsVal.asInstanceOf[Long]
-        val partition = row.getString(partitionIndex)
+        val partition = row.get(partitionIndex).toString
         ((queriesKeyGen(row), headStart(ts)), TimeTuple.make(ts, partition))
       }
       .groupByKey()
@@ -367,7 +367,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
 
-    inputDf.rdd
+    tableUtils
+      .preAggRepartition(inputDf.rdd)
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, tsIndex))
       .aggregateByKey(zeroValue = hopsAggregator.init())(

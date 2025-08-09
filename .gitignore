@@ -10,6 +10,11 @@
 *.logs
 *.iml
 .idea/
+*.jvmopts
+.bloop*
+.metals*
+.venv*
+*metals.sbt*
 .eclipse
 **/.vscode/
 **/__pycache__/
@@ -21,12 +26,18 @@ api/py/.coverage
 api/py/htmlcov/
 **/derby.log
 cs
+<<<<<<< HEAD
 .bloop/*
 .venv/*
 thrift_build/*
 project/*
 .metals/*
 .claude/*
+=======
+*.bloop
+*.metals
+*.venv
+>>>>>>> origin
 # Documentation builds
 docs/build/
 

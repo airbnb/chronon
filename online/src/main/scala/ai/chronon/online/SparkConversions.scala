@@ -136,6 +136,10 @@ object SparkConversions {
         StructField(name, fromChrononType(zType))
     })
 
+  def toSparkRowSparkType(value: Any, sparkType: StructType, extraneousRecord: Any => Array[Any] = null): Any = {
+    toSparkRow(value, api.StructType.from("record", toChrononSchema(sparkType)), extraneousRecord)
+  }
+
   def toSparkRow(value: Any, dataType: api.DataType, extraneousRecord: Any => Array[Any] = null): Any = {
     api.Row.to[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any], StructType](
       value,

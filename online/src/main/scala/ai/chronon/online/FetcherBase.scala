@@ -26,7 +26,7 @@ import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
+import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
 import com.google.gson.Gson
 
 import java.util
@@ -45,7 +45,8 @@ class FetcherBase(kvStore: KVStore,
                   debug: Boolean = false,
                   flagStore: FlagStore = null,
                   disableErrorThrows: Boolean = false,
-                  executionContextOverride: ExecutionContext = null)
+                  executionContextOverride: ExecutionContext = null,
+                  modelBackend: ModelBackend = null)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis, executionContextOverride)
     with FetcherCache {
   import FetcherBase._
@@ -354,6 +355,9 @@ class FetcherBase(kvStore: KVStore,
     val validRequests =
       requests.filter(r => r.keys == null || r.keys.values == null || !r.keys.values.exists(_ == null))
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
+      request.context
+        .getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupBy = request.name))
+        .increment("group_by_request.count")
       val groupByServingInfoTry = getGroupByServingInfo(request.name)
         .recover {
           case ex: Throwable =>
@@ -366,7 +370,6 @@ class FetcherBase(kvStore: KVStore,
         .map { groupByServingInfo =>
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
-          context.increment("group_by_request.count")
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {

@@ -92,7 +92,8 @@ class CompareJob(
   def validate(): Unit = {
     // Extract the schema of the Join, StagingQuery and the keys before calling this.
     val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = false)
-    val joinChrononSchema = analyzer.analyzeJoin(joinConf, false)._1
+    val analyzerResult = analyzer.analyzeJoin(joinConf)
+    val joinChrononSchema = analyzerResult.leftSchema ++ analyzerResult.finalOutputSchema
     val joinSchema = joinChrononSchema.map { case (k, v) => (k, SparkConversions.fromChrononType(v)) }.toMap
     val finalStagingQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, startDate, endDate, endDate)
     val stagingQuerySchema =

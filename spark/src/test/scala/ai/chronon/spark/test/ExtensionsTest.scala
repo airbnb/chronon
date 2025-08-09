@@ -43,4 +43,19 @@ class ExtensionsTest {
     }
     assertEquals(0, diff.count())
   }
+
+  @Test
+  def testDfWithStatsLongPartition(): Unit = {
+    val df = Seq(
+      (1, 20240103L),
+      (2, 20240104L),
+      (3, 20240104L)
+    ).toDF("key", "ds")
+
+    val dfWithStats: DfWithStats = DfWithStats(df)
+    val stats = dfWithStats.stats
+
+    assertEquals(3L, stats.count)
+  }
+
 }

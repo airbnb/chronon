@@ -23,6 +23,7 @@ import org.apache.spark.SPARK_VERSION
 import java.io.File
 import java.util.logging.Logger
 import scala.util.Properties
+import java.util.UUID
 
 object SparkSessionBuilder {
   @transient private lazy val logger = LoggerFactory.getLogger(getClass)
@@ -39,6 +40,8 @@ object SparkSessionBuilder {
             additionalConfig: Option[Map[String, String]] = None,
             enforceKryoSerializer: Boolean = true): SparkSession = {
 
+    val userName = Properties.userName
+    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
     // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
     // between Spark sessions created in existing chronon tests that need the hive format and some specific tests
     // that require a format override like delta lake.
@@ -50,6 +53,17 @@ object SparkSessionBuilder {
           "spark.chronon.table_write.format" -> "delta"
         )
         (configMap, "ai.chronon.spark.ChrononDeltaLakeKryoRegistrator")
+      case Some("iceberg") =>
+        val configMap = Map(
+          "spark.sql.extensions" -> "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+          "spark.sql.catalog.spark_catalog" -> "org.apache.iceberg.spark.SparkSessionCatalog",
+          "spark.chronon.table_write.format" -> "iceberg",
+          "spark.chronon.table_read.format" -> "iceberg",
+          "spark.sql.catalog.local" -> "org.apache.iceberg.spark.SparkCatalog",
+          "spark.sql.catalog.spark_catalog.type" -> "hadoop",
+          "spark.sql.catalog.spark_catalog.warehouse" -> s"$warehouseDir/data"
+        )
+        (configMap, "ai.chronon.spark.ChrononIcebergKryoRegistrator")
       case _ => (Map.empty, "ai.chronon.spark.ChrononKryoRegistrator")
     }
 
@@ -65,8 +79,7 @@ object SparkSessionBuilder {
           // Running on Bazel, allow it.
       }
     }
-    val userName = Properties.userName
-    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
+
     var baseBuilder = SparkSession
       .builder()
       .appName(name)
@@ -103,9 +116,20 @@ object SparkSessionBuilder {
       // use all threads - or the tests will be slow
         .master("local[*]")
         .config("spark.kryo.registrationRequired", s"${localWarehouseLocation.isEmpty}")
+        // ── use an in‐memory Derby metastore rather than disk + BoneCP ──
+        .config("spark.hadoop.javax.jdo.option.ConnectionURL", "jdbc:derby:memory:metastore_db;create=true")
+        .config("spark.hadoop.javax.jdo.option.ConnectionDriverName", "org.apache.derby.jdbc.EmbeddedDriver")
+        .config("spark.hadoop.javax.jdo.option.ConnectionUserName", "APP")
+        .config("spark.hadoop.javax.jdo.option.ConnectionPassword", "APP")
+        .config("spark.ui.enabled", "false")
+        .config("spark.chronon.outputParallelismOverride", "2")
+        .config("spark.chronon.group_by.parallelism", "2")
+        .config("spark.sql.shuffle.partitions", "2")
+        .config("spark.default.parallelism", "2")
+        .config("spark.testing", "true")
+        .config("spark.sql.adaptive.enabled", true)
         .config("spark.local.dir", s"/tmp/$userName/$name")
         .config("spark.sql.warehouse.dir", s"$warehouseDir/data")
-        .config("spark.hadoop.javax.jdo.option.ConnectionURL", metastoreDb)
         .config("spark.driver.bindAddress", "127.0.0.1")
         .config("spark.ui.enabled", "false")
     } else {
@@ -113,9 +137,6 @@ object SparkSessionBuilder {
       baseBuilder
     }
     val spark = builder.getOrCreate()
-    // disable log spam
-    spark.sparkContext.setLogLevel("ERROR")
-
     Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
     spark
   }
@@ -135,6 +156,7 @@ object SparkSessionBuilder {
       baseBuilder
       // use all threads - or the tests will be slow
         .master("local[*]")
+        .config("spark.ui.enabled", "false")
         .config("spark.local.dir", s"/tmp/$userName/chronon-spark-streaming")
         .config("spark.kryo.registrationRequired", "true")
         .config("spark.ui.enabled", "false")
@@ -142,8 +164,6 @@ object SparkSessionBuilder {
       baseBuilder
     }
     val spark = builder.getOrCreate()
-    // disable log spam
-    spark.sparkContext.setLogLevel("ERROR")
     Logger.getLogger("parquet.hadoop").setLevel(java.util.logging.Level.SEVERE)
     spark
   }
