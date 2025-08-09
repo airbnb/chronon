@@ -82,13 +82,8 @@ class MetadataExporterTest extends TestCase {
     sampleDf.save(sampleTable)
     val confResourcePath = ExampleDataUtils.getExampleDataDirectory()
     val tmpDir: File = Files.createTempDir()
-<<<<<<< HEAD
-    MetadataExporter.run(confResourcePath, tmpDir.getAbsolutePath)
-    printFilesInDirectory(s"${confResourcePath}/joins/team")
-=======
     MetadataExporter.run(confResource.getPath, Some(tmpDir.getAbsolutePath))
     printFilesInDirectory(s"${confResource.getPath}/joins/team")
->>>>>>> origin
     printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
     // Read the files.
     val file = Source.fromFile(s"${tmpDir.getAbsolutePath}/joins/example_join.v1")

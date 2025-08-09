@@ -66,12 +66,8 @@ class MetadataStoreTest extends TestCase {
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)
     inMemoryKvStore.create(directoryDataSetDataSet)
     inMemoryKvStore.create(directoryMetadataDataSet)
-<<<<<<< HEAD
-    val directoryDataDirWalker = new MetadataDirWalker(ExampleDataUtils.getExampleDataDirectory(), acceptedEndPoints)
-=======
     val directoryDataDirWalker =
       new MetadataDirWalker(confResource.getPath.replace(s"/$joinPath", ""), acceptedEndPoints)
->>>>>>> origin
     val directoryDataKvMap = directoryDataDirWalker.run
     val directoryPut = directoryDataKvMap.toSeq.map {
       case (endPoint, kvMap) => directoryMetadataStore.put(kvMap, endPoint)

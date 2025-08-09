@@ -26,21 +26,15 @@ api/py/.coverage
 api/py/htmlcov/
 **/derby.log
 cs
-<<<<<<< HEAD
-.bloop/*
-.venv/*
+*.bloop
+*.metals
+*.venv
+# Documentation builds
+docs/build/
 thrift_build/*
 project/*
 .metals/*
 .claude/*
-=======
-*.bloop
-*.metals
-*.venv
->>>>>>> origin
-# Documentation builds
-docs/build/
-
 # Python distribution and packaging
 api/py/dist/
 api/py/eggs/

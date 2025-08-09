@@ -33,12 +33,7 @@ import com.google.gson.Gson
 
 import scala.collection.Seq
 
-<<<<<<< HEAD
-class TwoStackLiteAggregatorTest extends TestCase{
-  @Test
-=======
 class TwoStackLiteAggregatorTest extends TestCase {
->>>>>>> origin
   def testBufferWithTopK(): Unit = {
     val topK = new TopK[Integer](IntType, 2)
     val bankersBuffer = new TwoStackLiteAggregationBuffer(topK, 5)
