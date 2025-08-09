@@ -57,7 +57,7 @@ scala_library(
            ]),
 )
 
-scala_junit_test_suite(
+scala_junit_test(
     name = "test",
     srcs = glob(["src/test/scala/ai/chronon/aggregator/test/*.scala"]),
     suffixes = ["Test"],
@@ -100,7 +100,7 @@ genrule(
 
 java_export(
     name = "aggregator-export",
-    maven_coordinates = "ai.chronon:aggregator_(scala_version):$(version)",
+    maven_coordinates = "ai.chronon:aggregator_$(scala_version):$(version)",
     pom_template = ":generate_pom",
     runtime_deps = [
         ":aggregator",

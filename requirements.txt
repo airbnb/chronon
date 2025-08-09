@@ -3,4 +3,5 @@ thrift==0.13
 pytest
 twine==6.1.0
 sqlglot==25.17.0
+pyyaml
 # To update dependency run: bazel run //:pip.update

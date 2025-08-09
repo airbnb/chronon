@@ -21,7 +21,12 @@ api/py/.coverage
 api/py/htmlcov/
 **/derby.log
 cs
-
+.bloop/*
+.venv/*
+thrift_build/*
+project/*
+.metals/*
+.claude/*
 # Documentation builds
 docs/build/
 
