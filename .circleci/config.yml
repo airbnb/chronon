@@ -214,11 +214,6 @@ jobs:
                         chmod +x /usr/local/bin/bazel
                     fi
             - run:
-                name: Configure Bazel for CI
-                command: |
-                    echo "build --action_env=RULES_PYTHON_ENABLE_PYSTAR=0" >> ~/.bazelrc
-                    echo "test --action_env=RULES_PYTHON_ENABLE_PYSTAR=0" >> ~/.bazelrc
-            - run:
                 name: Create Bazel cache directories
                 command: |
                     mkdir -p /tmp/bazel-disk-cache
@@ -227,6 +222,8 @@ jobs:
             - run:
                 name: Run Bazel Tests
                 shell: /bin/bash -leuxo pipefail
+                environment:
+                    RULES_PYTHON_ENABLE_PYSTAR: "0"
                 command: |
                     bazel version
                     # Use CircleCI-optimized configuration with local disk cache
