@@ -218,7 +218,7 @@ jobs:
                     useradd --create-home --shell /bin/bash nonroot
                     chown -R nonroot:nonroot /chronon
                     chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
-                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel test //... --flaky_test_attempts=3"  
+                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel test //... --flaky_test_attempts=3 --local_ram_resources=HOST_RAM*0.8 --local_cpu_resources=HOST_CPUS*0.8"  
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
