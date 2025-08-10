@@ -1,4 +1,4 @@
-try-import %workspace%/.buildbuddy.bazelrc
+try-import %workspace%/.circleci.bazelrc
 try-import %workspace%/.maven.bazelrc
 
 ## Disable remote cache completely when --config=local is passed
