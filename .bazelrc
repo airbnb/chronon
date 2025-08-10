@@ -1,3 +1,6 @@
+try-import %workspace%/.buildbuddy.bazelrc
+try-import %workspace%/.maven.bazelrc
+
 ## Disable remote cache completely when --config=local is passed
 build:local --remote_cache=
 
@@ -19,7 +22,7 @@ common:spark_3.1 --define spark_version=3.1
 common:spark_3.2 --define spark_version=3.2
 common:spark_3.5 --define spark_version=3.5
 # Default Spark version
-common --define spark_version=3.1
+common --define spark_version=3.2
 
 # Flink versions
 common:flink_1.16 --define flink_version=1.16
