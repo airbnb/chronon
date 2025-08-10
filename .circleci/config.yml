@@ -202,6 +202,8 @@ jobs:
             - image: mcr.microsoft.com/devcontainers/base:ubuntu-22.04
         steps:
             - checkout
+            # TODO build/publish image
+            # Airbnb would have to set up/own this
             - run:
                 name: Run DevContainer Setup
                 command: |
