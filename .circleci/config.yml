@@ -205,6 +205,15 @@ jobs:
                   - bazel-cache-v1-{{ checksum "WORKSPACE" }}-
                   - bazel-cache-v1-
             - run:
+                name: Install Bazelisk
+                command: |
+                    # Install bazelisk if not already available
+                    if ! command -v bazel &> /dev/null; then
+                        echo "Installing bazelisk..."
+                        curl -Lo /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
+                        chmod +x /usr/local/bin/bazel
+                    fi
+            - run:
                 name: Create Bazel cache directories
                 command: |
                     mkdir -p /tmp/bazel-disk-cache
