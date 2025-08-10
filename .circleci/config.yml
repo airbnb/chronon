@@ -195,6 +195,44 @@ jobs:
             destination: spark_warehouse.tar.gz
             when: on_fail
 
+    "Bazel Tests":
+        executor: docker_baseimg_executor_xxlarge
+        steps:
+            - checkout
+            - restore_cache:
+                keys:
+                  - bazel-cache-v1-{{ checksum "WORKSPACE" }}-{{ checksum ".bazelrc" }}
+                  - bazel-cache-v1-{{ checksum "WORKSPACE" }}-
+                  - bazel-cache-v1-
+            - run:
+                name: Create Bazel cache directories
+                command: |
+                    mkdir -p /tmp/bazel-disk-cache
+                    mkdir -p /tmp/bazel-repo-cache
+                    mkdir -p ~/.cache/bazel
+            - run:
+                name: Run Bazel Tests
+                shell: /bin/bash -leuxo pipefail
+                command: |
+                    conda activate chronon_py
+                    bazel version
+                    # Use CircleCI-optimized configuration with local disk cache
+                    bazel test //... \
+                      --config=circleci \
+                      --flaky_test_attempts=3
+            - save_cache:
+                key: bazel-cache-v1-{{ checksum "WORKSPACE" }}-{{ checksum ".bazelrc" }}
+                paths:
+                  - /tmp/bazel-disk-cache
+                  - /tmp/bazel-repo-cache
+                  - ~/.cache/bazel
+            - store_test_results:
+                path: bazel-testlogs
+            - store_artifacts:
+                path: bazel-testlogs
+                destination: bazel-test-logs
+                when: on_fail
+
 workflows:
     build_test_deploy:
         jobs:
@@ -221,5 +259,8 @@ workflows:
                   requires:
                       - "Pull Docker Image"
             - "Scala 13 -- Iceberg Table Utils Tests":
+                  requires:
+                      - "Pull Docker Image"
+            - "Bazel Tests":
                   requires:
                       - "Pull Docker Image"
