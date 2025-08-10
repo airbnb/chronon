@@ -196,46 +196,26 @@ jobs:
             when: on_fail
 
     "Bazel Tests":
-        executor: docker_baseimg_executor_xxlarge
+        resource_class: 2xlarge
+        working_directory: /chronon
+        docker:
+            - image: mcr.microsoft.com/devcontainers/base:ubuntu-22.04
         steps:
             - checkout
-            - restore_cache:
-                keys:
-                  - bazel-cache-v1-{{ checksum "WORKSPACE" }}-{{ checksum ".bazelrc" }}
-                  - bazel-cache-v1-{{ checksum "WORKSPACE" }}-
-                  - bazel-cache-v1-
             - run:
-                name: Install Bazelisk
+                name: Run DevContainer Setup
                 command: |
-                    # Install bazelisk if not already available
-                    if ! command -v bazel &> /dev/null; then
-                        echo "Installing bazelisk..."
-                        curl -Lo /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64
-                        chmod +x /usr/local/bin/bazel
-                    fi
+                    chmod +x .devcontainer/setup.sh
+                    ./.devcontainer/setup.sh
             - run:
-                name: Create Bazel cache directories
-                command: |
-                    mkdir -p /tmp/bazel-disk-cache
-                    mkdir -p /tmp/bazel-repo-cache
-                    mkdir -p ~/.cache/bazel
-            - run:
+            # TODO remote cache
+            # Airbnb would have to set up/own this
                 name: Run Bazel Tests
                 shell: /bin/bash -leuxo pipefail
-                environment:
-                    RULES_PYTHON_ENABLE_PYSTAR: "0"
                 command: |
                     bazel version
-                    # Use CircleCI-optimized configuration with local disk cache
                     bazel test //... \
-                      --config=circleci \
                       --flaky_test_attempts=3
-            - save_cache:
-                key: bazel-cache-v1-{{ checksum "WORKSPACE" }}-{{ checksum ".bazelrc" }}
-                paths:
-                  - /tmp/bazel-disk-cache
-                  - /tmp/bazel-repo-cache
-                  - ~/.cache/bazel
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
@@ -271,6 +251,4 @@ workflows:
             - "Scala 13 -- Iceberg Table Utils Tests":
                   requires:
                       - "Pull Docker Image"
-            - "Bazel Tests":
-                  requires:
-                      - "Pull Docker Image"
+            - "Bazel Tests"
