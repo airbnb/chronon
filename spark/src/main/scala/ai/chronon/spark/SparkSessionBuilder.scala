@@ -76,7 +76,7 @@ object SparkSessionBuilder {
         System.setSecurityManager(null)
       } catch {
         case (t: java.lang.SecurityException) if t.getMessage.contains("GoogleTestSecurityManager") =>
-          // Running on Bazel, allow it.
+        // Running on Bazel, allow it.
       }
     }
 

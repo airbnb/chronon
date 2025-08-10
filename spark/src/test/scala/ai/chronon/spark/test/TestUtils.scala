@@ -28,16 +28,16 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps}
 
 case class GroupByTestSuite(
-                             name: String,
-                             groupByConf: GroupBy,
-                             groupByData: DataFrame
-                           )
+    name: String,
+    groupByConf: GroupBy,
+    groupByData: DataFrame
+)
 
 case class JoinTestSuite(
-                          joinConf: Join,
-                          groupBys: Seq[GroupByTestSuite],
-                          fetchExpectations: (Map[String, AnyRef], Map[String, AnyRef])
-                        )
+    joinConf: Join,
+    groupBys: Seq[GroupByTestSuite],
+    fetchExpectations: (Map[String, AnyRef], Map[String, AnyRef])
+)
 
 object JoinTestSuite {
 
