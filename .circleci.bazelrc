@@ -13,7 +13,3 @@ build:circleci --genrule_strategy=standalone
 test:circleci --spawn_strategy=standalone
 test:circleci --strategy=Javac=standalone
 test:circleci --genrule_strategy=standalone
-
-# Disable hermetic Python for CI environments running as root
-build:circleci --@rules_python//python/config_settings:use_hermetic_interpreter=false
-test:circleci --@rules_python//python/config_settings:use_hermetic_interpreter=false

@@ -214,6 +214,11 @@ jobs:
                         chmod +x /usr/local/bin/bazel
                     fi
             - run:
+                name: Configure Bazel for CI
+                command: |
+                    echo "build --action_env=RULES_PYTHON_ENABLE_PYSTAR=false" >> ~/.bazelrc
+                    echo "test --action_env=RULES_PYTHON_ENABLE_PYSTAR=false" >> ~/.bazelrc
+            - run:
                 name: Create Bazel cache directories
                 command: |
                     mkdir -p /tmp/bazel-disk-cache
@@ -223,7 +228,6 @@ jobs:
                 name: Run Bazel Tests
                 shell: /bin/bash -leuxo pipefail
                 command: |
-                    conda activate chronon_py
                     bazel version
                     # Use CircleCI-optimized configuration with local disk cache
                     bazel test //... \
