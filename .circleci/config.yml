@@ -216,8 +216,8 @@ jobs:
             - run:
                 name: Configure Bazel for CI
                 command: |
-                    echo "build --action_env=RULES_PYTHON_ENABLE_PYSTAR=false" >> ~/.bazelrc
-                    echo "test --action_env=RULES_PYTHON_ENABLE_PYSTAR=false" >> ~/.bazelrc
+                    echo "build --action_env=RULES_PYTHON_ENABLE_PYSTAR=0" >> ~/.bazelrc
+                    echo "test --action_env=RULES_PYTHON_ENABLE_PYSTAR=0" >> ~/.bazelrc
             - run:
                 name: Create Bazel cache directories
                 command: |
