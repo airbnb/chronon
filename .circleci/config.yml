@@ -219,7 +219,7 @@ jobs:
                     chown -R nonroot:nonroot /chronon
                     chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //... && bazel test //... --flaky_test_attempts=3 --test_output=streamed --test_summary=detailed --local_ram_resources=HOST_RAM*0.7 --local_cpu_resources=HOST_CPUS*0.7"  
+                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //... && bazel test //... --test_output=streamed --test_summary=detailed --local_ram_resources=HOST_RAM*0.7 --local_cpu_resources=HOST_CPUS*0.7"  
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
