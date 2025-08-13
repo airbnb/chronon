@@ -311,14 +311,14 @@ class StagingQueryTest {
 
     // Test Case 1: createView = true (should create view)
     val stagingQueryConfView = Builders.StagingQuery(
-      query = s"SELECT * FROM $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+      query = s"SELECT * FROM $viewName",
       startPartition = ninetyDaysAgo,
       metaData = Builders.MetaData(name = "test.staging_create_view", namespace = namespace),
       createView = true
     )
 
     val stagingQueryView = new StagingQuery(stagingQueryConfView, today, tableUtils)
-    stagingQueryView.computeStagingQuery(stepDays = Option(30))
+    stagingQueryView.createStagingQueryView()
 
     val outputView = stagingQueryConfView.metaData.outputTable
     val isView = tableUtils.tableReadFormat(outputView) match {
@@ -327,6 +327,26 @@ class StagingQueryTest {
     }
     
     assert(isView, s"Expected $outputView to be a view when createView=true")
+
+    // Verify virtual partition metadata was written for the view
+    val virtualPartitionExists = try {
+      val metadataCount = tableUtils.sql(s"SELECT COUNT(*) as count FROM ${stagingQueryView.virtualPartitionsTable} WHERE table_name = '$outputView'").collect()(0).getAs[Long]("count")
+      metadataCount > 0
+    } catch {
+      case _: Exception => false
+    }
+    assert(virtualPartitionExists, s"Expected virtual partition metadata to exist for view $outputView")
+
+    // Verify the structure of virtual partition metadata
+    if (virtualPartitionExists) {
+      val metadataRow = tableUtils.sql(s"SELECT * FROM ${stagingQueryView.virtualPartitionsTable} WHERE table_name = '$outputView'").collect()(0)
+      val tableName = metadataRow.getAs[String]("table_name")
+      val createdTimestamp = metadataRow.getAs[java.sql.Timestamp]("created_timestamp")
+      
+      assertEquals(s"Virtual partition metadata should have correct table name", outputView, tableName)
+      assert(createdTimestamp != null, "Virtual partition metadata should have a created timestamp")
+      assert(createdTimestamp.getTime > 0, "Created timestamp should be valid")
+    }
 
     // Test Case 2: createView = false (should create table)
     val stagingQueryConfTable = Builders.StagingQuery(
@@ -346,6 +366,15 @@ class StagingQueryTest {
     }
     
     assert(isTable, s"Expected $outputTable to be a table when createView=false")
+
+    // Verify virtual partition metadata was NOT written for the table
+    val virtualPartitionExistsForTable = try {
+      val metadataCountForTable = tableUtils.sql(s"SELECT COUNT(*) as count FROM ${stagingQueryTable.virtualPartitionsTable} WHERE table_name = '$outputTable'").collect()(0).getAs[Long]("count")
+      metadataCountForTable > 0
+    } catch {
+      case _: Exception => false
+    }
+    assert(!virtualPartitionExistsForTable, s"Expected NO virtual partition metadata for table $outputTable when createView=false")
 
     // Test Case 3: createView unset (should default to false and create table)
     val stagingQueryConfUnset = Builders.StagingQuery(
