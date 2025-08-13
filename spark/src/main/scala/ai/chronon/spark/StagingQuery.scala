@@ -151,15 +151,15 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       val currentTimestamp = System.currentTimeMillis()
       
       // Create DataFrame with minimal virtual partition metadata
+      import org.apache.spark.sql.Row
+      val schema = org.apache.spark.sql.types.StructType(Seq(
+        org.apache.spark.sql.types.StructField("table_name", org.apache.spark.sql.types.StringType, false),
+        org.apache.spark.sql.types.StructField("created_timestamp", org.apache.spark.sql.types.TimestampType, false)
+      ))
+      val rows = Seq(Row(tableName, new java.sql.Timestamp(currentTimestamp)))
       val virtualPartitionData = tableUtils.sparkSession.createDataFrame(
-        Seq((
-          tableName,
-          new java.sql.Timestamp(currentTimestamp)
-        )),
-        org.apache.spark.sql.types.StructType(Seq(
-          org.apache.spark.sql.types.StructField("table_name", org.apache.spark.sql.types.StringType, false),
-          org.apache.spark.sql.types.StructField("created_timestamp", org.apache.spark.sql.types.TimestampType, false)
-        ))
+        tableUtils.sparkSession.sparkContext.parallelize(rows),
+        schema
       )
       
       // Use TableUtils insertUnPartitioned to write the data (no partitioning needed)
