@@ -83,7 +83,7 @@ object FetcherTestUtil {
     (0 until runCount).foreach { _ =>
       val (latency, qps, resultVal) = fetchOnce
       result = resultVal
-      loggedValues = mockApi.flushLoggedValues
+      loggedValues = mockApi.flushLoggedValues.toSeq
       latencySum += latency
       qpsSum += qps
     }

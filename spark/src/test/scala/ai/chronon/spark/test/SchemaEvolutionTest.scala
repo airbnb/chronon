@@ -157,7 +157,7 @@ class SchemaEvolutionTest extends TestCase {
 
     JoinTestSuite(
       joinConf,
-      Seq(viewsGroupBy),
+      scala.collection.immutable.Seq(viewsGroupBy),
       (
         Map("listing" -> 1L.asInstanceOf[AnyRef]),
         Map(
@@ -181,7 +181,7 @@ class SchemaEvolutionTest extends TestCase {
     )
     JoinTestSuite(
       joinConf,
-      Seq(viewsGroupBy, attributesGroupBy),
+      scala.collection.immutable.Seq(viewsGroupBy, attributesGroupBy),
       (
         Map("listing" -> 1L.asInstanceOf[AnyRef]),
         Map(
