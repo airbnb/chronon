@@ -50,7 +50,7 @@ struct StagingQuery {
     * If true, creates a view in the warehouse (for intermediate tables).
     * If false, creates a table in the warehouse (for final tables).
     **/
-    5: optional bool createView = false
+    5: optional bool createView
 }
 
 struct EventSource {
