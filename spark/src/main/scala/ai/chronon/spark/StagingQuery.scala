@@ -21,6 +21,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.ParametricMacro
 import ai.chronon.spark.Extensions._
 import org.slf4j.LoggerFactory
+import org.apache.spark.sql.Row
 
 import scala.collection.mutable
 import scala.util.ScalaJavaConversions._
@@ -29,6 +30,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(stagingQueryConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = stagingQueryConf.metaData.outputTable
+  val virtualPartitionsTable = s"${stagingQueryConf.metaData.outputNamespace}.${StagingQuery.VIRTUAL_PARTITIONS_TABLE_NAME}"
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
     .map(_.toScala.toMap)
     .orNull
@@ -110,80 +112,64 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     }
   }
 
-  /**
-    * Creates a staging query view without date range processing.
-    * This method is designed for views that contain all data and rely on partition pushdown
-    * for efficient querying. The query should not contain start_date/end_date templates
-    * (validated by compile.py).
-    */
   def createStagingQueryView(): Unit = {
-    if (!Option(stagingQueryConf.createView).getOrElse(false)) {
-      throw new IllegalArgumentException("createView must be true to use createStagingQueryView")
-    }
+    assert(Option(stagingQueryConf.createView).getOrElse(false), "createView must be true to use createStagingQueryView")
 
-    // Execute setup statements
+    // Validate that query doesn't contain date templates since this method is for views without partitioning
+    val query = stagingQueryConf.query
+    val startDatePattern = """\{\{\s*start_date\s*\}\}""".r
+    val endDatePattern = """\{\{\s*end_date\s*\}\}""".r
+    
+    assert(
+      startDatePattern.findFirstIn(query).isEmpty && endDatePattern.findFirstIn(query).isEmpty,
+      "createStagingQueryView cannot be used with queries containing {{ start_date }} or {{ end_date }} templates. " +
+      "Use computeStagingQuery for queries with date templates."
+    )
+
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
 
-    try {
-      // Process macros (max_date, latest_date) but not start_date/end_date since they're not in query
-      val processedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, null, null, endPartition)
+    // Process macros but not start_date/end_date since they're not in query
+    val processedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, null, null, endPartition)
 
-      // Create view
-      val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS $processedQuery"
-      tableUtils.sql(createViewSql)
-      logger.info(s"Created staging query view: $outputTable")
+    val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS $processedQuery"
+    tableUtils.sql(createViewSql)
+    logger.info(s"Created staging query view: $outputTable")
 
-      // Write virtual partition metadata
-      writeVirtualPartitionMetadata(outputTable)
-    } catch {
-      case e: Exception =>
-        logger.error(s"Failed to create staging query view $outputTable: ${e.getMessage}", e)
-        throw e
-    }
+    writeVirtualPartitionMetadata(outputTable)
   }
 
-  /**
-    * Writes virtual partition metadata for a staging query view.
-    * Simple metadata indicating this table is a view with its creation time.
-    */
   private def writeVirtualPartitionMetadata(tableName: String): Unit = {
-    try {
-      val currentTimestamp = System.currentTimeMillis()
+    val currentTimestamp = System.currentTimeMillis()
 
-      // Create DataFrame with minimal virtual partition metadata
-      import org.apache.spark.sql.Row
-      val schema = org.apache.spark.sql.types.StructType(
-        Seq(
-          org.apache.spark.sql.types.StructField("table_name", org.apache.spark.sql.types.StringType, false),
-          org.apache.spark.sql.types.StructField("created_timestamp", org.apache.spark.sql.types.TimestampType, false)
-        ))
-      val rows = Seq(Row(tableName, new java.sql.Timestamp(currentTimestamp)))
-      val virtualPartitionData = tableUtils.sparkSession.createDataFrame(
-        tableUtils.sparkSession.sparkContext.parallelize(rows),
-        schema
-      )
+    val schema = org.apache.spark.sql.types.StructType(
+      Seq(
+        org.apache.spark.sql.types
+          .StructField(StagingQuery.TABLE_NAME_COLUMN, org.apache.spark.sql.types.StringType, false),
+        org.apache.spark.sql.types
+          .StructField(StagingQuery.CREATED_TIMESTAMP_COLUMN, org.apache.spark.sql.types.TimestampType, false)
+      ))
+    val rows = Seq(Row(tableName, new java.sql.Timestamp(currentTimestamp)))
+    val virtualPartitionData = tableUtils.sparkSession.createDataFrame(
+      tableUtils.sparkSession.sparkContext.parallelize(rows),
+      schema
+    )
 
-      // Use TableUtils insertUnPartitioned to write the data (no partitioning needed)
-      tableUtils.insertUnPartitioned(
-        df = virtualPartitionData,
-        tableName = "chronon_virtual_partitions",
-        tableProperties = Map(
-          "chronon.table_type" -> "metadata",
-          "chronon.version" -> "1.0"
-        )
-      )
+    tableUtils.insertUnPartitioned(
+      df = virtualPartitionData,
+      tableName = virtualPartitionsTable
+    )
 
-      logger.info(s"Wrote virtual partition metadata for view $tableName")
-    } catch {
-      case e: Exception =>
-        logger.error(s"Failed to write virtual partition metadata for $tableName: ${e.getMessage}", e)
-      // Don't fail the main operation if virtual partition metadata write fails
-    }
+    logger.info(s"Wrote virtual partition metadata for view $tableName")
   }
 }
 
 object StagingQuery {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
+
+  // Virtual partition metadata constants
+  private val VIRTUAL_PARTITIONS_TABLE_NAME = "chronon_virtual_partitions"
+  private val TABLE_NAME_COLUMN = "table_name"
+  private val CREATED_TIMESTAMP_COLUMN = "created_timestamp"
 
   def substitute(tu: TableUtils, query: String, start: String, end: String, latest: String): String = {
     val macros: Array[ParametricMacro] = Array(
