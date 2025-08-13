@@ -111,11 +111,11 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   }
 
   /**
-   * Creates a staging query view without date range processing.
-   * This method is designed for views that contain all data and rely on partition pushdown
-   * for efficient querying. The query should not contain start_date/end_date templates
-   * (validated by compile.py).
-   */
+    * Creates a staging query view without date range processing.
+    * This method is designed for views that contain all data and rely on partition pushdown
+    * for efficient querying. The query should not contain start_date/end_date templates
+    * (validated by compile.py).
+    */
   def createStagingQueryView(): Unit = {
     if (!Option(stagingQueryConf.createView).getOrElse(false)) {
       throw new IllegalArgumentException("createView must be true to use createStagingQueryView")
@@ -127,7 +127,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     try {
       // Process macros (max_date, latest_date) but not start_date/end_date since they're not in query
       val processedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, null, null, endPartition)
-      
+
       // Create view
       val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS $processedQuery"
       tableUtils.sql(createViewSql)
@@ -143,25 +143,26 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   }
 
   /**
-   * Writes virtual partition metadata for a staging query view.
-   * Simple metadata indicating this table is a view with its creation time.
-   */
+    * Writes virtual partition metadata for a staging query view.
+    * Simple metadata indicating this table is a view with its creation time.
+    */
   private def writeVirtualPartitionMetadata(tableName: String): Unit = {
     try {
       val currentTimestamp = System.currentTimeMillis()
-      
+
       // Create DataFrame with minimal virtual partition metadata
       import org.apache.spark.sql.Row
-      val schema = org.apache.spark.sql.types.StructType(Seq(
-        org.apache.spark.sql.types.StructField("table_name", org.apache.spark.sql.types.StringType, false),
-        org.apache.spark.sql.types.StructField("created_timestamp", org.apache.spark.sql.types.TimestampType, false)
-      ))
+      val schema = org.apache.spark.sql.types.StructType(
+        Seq(
+          org.apache.spark.sql.types.StructField("table_name", org.apache.spark.sql.types.StringType, false),
+          org.apache.spark.sql.types.StructField("created_timestamp", org.apache.spark.sql.types.TimestampType, false)
+        ))
       val rows = Seq(Row(tableName, new java.sql.Timestamp(currentTimestamp)))
       val virtualPartitionData = tableUtils.sparkSession.createDataFrame(
         tableUtils.sparkSession.sparkContext.parallelize(rows),
         schema
       )
-      
+
       // Use TableUtils insertUnPartitioned to write the data (no partitioning needed)
       tableUtils.insertUnPartitioned(
         df = virtualPartitionData,
@@ -171,12 +172,12 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
           "chronon.version" -> "1.0"
         )
       )
-      
+
       logger.info(s"Wrote virtual partition metadata for view $tableName")
     } catch {
       case e: Exception =>
         logger.error(s"Failed to write virtual partition metadata for $tableName: ${e.getMessage}", e)
-        // Don't fail the main operation if virtual partition metadata write fails
+      // Don't fail the main operation if virtual partition metadata write fails
     }
   }
 }

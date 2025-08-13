@@ -447,29 +447,29 @@ class ChrononRepoValidator(object):
           list of validation errors.
         """
         errors = []
-        
+
         # If createView is True, validate that start_date and end_date templates are not used
         if staging_query.createView:
             query = staging_query.query
             if query:
                 # Check for start_date and end_date templates using regex
                 found_templates = []
-                
+
                 start_date_pattern = r"\{\{\s*start_date\s*\}\}"
                 end_date_pattern = r"\{\{\s*end_date\s*\}\}"
-                
+
                 if re.search(start_date_pattern, query, re.IGNORECASE):
                     found_templates.append("start_date")
                 if re.search(end_date_pattern, query, re.IGNORECASE):
                     found_templates.append("end_date")
-                
+
                 if found_templates:
                     errors.append(
                         f"StagingQuery '{staging_query.metaData.name}' with createView=True cannot contain "
                         f"date templates: {', '.join(found_templates)}. Views should contain all data and "
                         f"use partition pushdown for filtering."
                     )
-        
+
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
