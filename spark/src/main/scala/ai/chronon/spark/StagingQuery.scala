@@ -30,7 +30,8 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(stagingQueryConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = stagingQueryConf.metaData.outputTable
-  val virtualPartitionsTable = s"${stagingQueryConf.metaData.outputNamespace}.${StagingQuery.VIRTUAL_PARTITIONS_TABLE_NAME}"
+  val virtualPartitionsTable =
+    s"${stagingQueryConf.metaData.outputNamespace}.${StagingQuery.VIRTUAL_PARTITIONS_TABLE_NAME}"
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
     .map(_.toScala.toMap)
     .orNull
@@ -113,17 +114,18 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   }
 
   def createStagingQueryView(): Unit = {
-    assert(Option(stagingQueryConf.createView).getOrElse(false), "createView must be true to use createStagingQueryView")
+    assert(Option(stagingQueryConf.createView).getOrElse(false),
+           "createView must be true to use createStagingQueryView")
 
     // Validate that query doesn't contain date templates since this method is for views without partitioning
     val query = stagingQueryConf.query
     val startDatePattern = """\{\{\s*start_date\s*\}\}""".r
     val endDatePattern = """\{\{\s*end_date\s*\}\}""".r
-    
+
     assert(
       startDatePattern.findFirstIn(query).isEmpty && endDatePattern.findFirstIn(query).isEmpty,
       "createStagingQueryView cannot be used with queries containing {{ start_date }} or {{ end_date }} templates. " +
-      "Use computeStagingQuery for queries with date templates."
+        "Use computeStagingQuery for queries with date templates."
     )
 
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
