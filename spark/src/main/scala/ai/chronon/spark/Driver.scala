@@ -603,10 +603,16 @@ object Driver {
         args.endDate(),
         tableUtils
       )
-      stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
-                                          args.enableAutoExpand.toOption,
-                                          args.startPartitionOverride.toOption,
-                                          !args.runFirstHole())
+
+      // Check if we should use createStagingQueryView instead of computeStagingQuery
+      if (Option(args.stagingQueryConf.createView).getOrElse(false)) {
+        stagingQueryJob.createStagingQueryView()
+      } else {
+        stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
+                                            args.enableAutoExpand.toOption,
+                                            args.startPartitionOverride.toOption,
+                                            !args.runFirstHole())
+      }
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)
