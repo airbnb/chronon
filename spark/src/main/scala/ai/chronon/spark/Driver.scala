@@ -1041,6 +1041,35 @@ object Driver {
     }
   }
 
+  object ModelTransformBatchJob {
+    class Args extends Subcommand("model-transform-batch") with OfflineSubcommand with OnlineSubcommand {
+      override def subcommandName() = "model-transform-batch"
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      val modelTransformOverride: ScallopOption[String] =
+        opt[String](required = false, descr = "Name of the specific model transforms to run")
+    }
+    def run(args: Args): Unit = {
+      val apiImpl = args.impl(args.serializableProps)
+      val modelBackend = apiImpl.genModelBackend
+
+      if (args.startPartitionOverride.isEmpty) {
+        // TODO: check unfilled ranges instead of directly using input start/end partition.
+        throw new IllegalArgumentException(
+          "Model transform batch job requires a start partition override to be specified")
+      }
+
+      val modelTransformJob = new ModelTransformBatchJob(
+        args.sparkSession,
+        modelBackend,
+        args.joinConf,
+        args.startPartitionOverride(),
+        args.endDate(),
+        args.modelTransformOverride.toOption
+      )
+      modelTransformJob.run()
+    }
+  }
+
   class Args(args: Array[String]) extends ScallopConf(args) {
     object JoinBackFillArgs extends JoinBackfill.Args
     addSubcommand(JoinBackFillArgs)
@@ -1076,6 +1105,7 @@ object Driver {
     addSubcommand(JoinBackfillFinalArgs)
     object LabelJoinArgs extends LabelJoin.Args
     addSubcommand(LabelJoinArgs)
+
     requireSubcommand()
     verify()
   }

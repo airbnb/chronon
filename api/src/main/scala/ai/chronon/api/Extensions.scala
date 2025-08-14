@@ -1076,6 +1076,14 @@ object Extensions {
   }
 
   implicit class ModelTransformOps(modelTransform: ModelTransform) {
+    lazy val name: String = {
+      if (modelTransform.isSetPrefix) {
+        Seq(modelTransform.prefix, modelTransform.model.metaData.name).mkString("_")
+      } else {
+        modelTransform.model.metaData.name
+      }
+    }
+
     lazy val inputMappingsScala: Map[String, String] =
       Option(modelTransform.inputMappings).map(_.toScala).getOrElse(Map.empty)
     lazy val outputMappingsScala: Map[String, String] =
