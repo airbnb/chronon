@@ -353,7 +353,7 @@ def get_dependencies(
             )
         elif src.entities:
             table_name = src.entities.snapshotTable
-            
+
             if hasattr(src.entities, 'is_input_staging_query_view') and src.entities.is_input_staging_query_view:
                 source_namespace = getattr(src.entities, 'namespace', table_name.split('.')[0])
                 clean_table_name = table_name.split('.')[-1] if '.' in table_name else table_name
@@ -372,7 +372,7 @@ def get_dependencies(
             result = [wait_for_simple_schema(parentJoinOutputTable, lag, start, end, query=src.joinSource.query)]
         else:
             table_name = src.events.table
-            
+
             if hasattr(src.events, 'is_input_staging_query_view') and src.events.is_input_staging_query_view:
                 source_namespace = getattr(src.events, 'namespace', table_name.split('.')[0])
                 clean_table_name = table_name.split('.')[-1] if '.' in table_name else table_name
