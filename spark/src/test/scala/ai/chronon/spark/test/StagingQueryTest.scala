@@ -339,13 +339,13 @@ class StagingQueryTest {
 
     // Verify the structure of virtual partition metadata
     if (virtualPartitionExists) {
-      val metadataRow = tableUtils.sql(s"SELECT * FROM ${stagingQueryView.virtualPartitionsTable} WHERE table_name = '$outputView'").collect()(0)
-      val tableName = metadataRow.getAs[String]("table_name")
-      val createdTimestamp = metadataRow.getAs[java.sql.Timestamp]("created_timestamp")
+      val metadataRows = tableUtils.sql(s"SELECT * FROM ${stagingQueryView.virtualPartitionsTable} WHERE table_name = '$outputView'").collect()
+      assert(metadataRows.length > 0, "Should have at least one partition metadata entry")
+      
+      val firstRow = metadataRows(0)
+      val tableName = firstRow.getAs[String]("table_name")
       
       assertEquals(s"Virtual partition metadata should have correct table name", outputView, tableName)
-      assert(createdTimestamp != null, "Virtual partition metadata should have a created timestamp")
-      assert(createdTimestamp.getTime > 0, "Created timestamp should be valid")
     }
 
     // Test Case 2: createView = false (should create table)

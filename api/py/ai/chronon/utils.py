@@ -299,7 +299,6 @@ def log_table_name(obj, full_name: bool = False):
 def get_staging_query_output_table_name(
     staging_query: api.StagingQuery, full_name: bool = False
 ):
-    """generate output table name for staging query job"""
     __set_name(staging_query, api.StagingQuery, "staging_queries")
     return output_table_name(staging_query, full_name=full_name)
 
@@ -353,16 +352,36 @@ def get_dependencies(
                 )
             )
         elif src.entities:
-            result = [
-                wait_for_simple_schema(src.entities.snapshotTable, lag, start, end, query=src.entities.query)
-            ]
+            table_name = src.entities.snapshotTable
+            
+            if hasattr(src.entities, 'is_input_staging_query_view') and src.entities.is_input_staging_query_view:
+                source_namespace = getattr(src.entities, 'namespace', table_name.split('.')[0])
+                clean_table_name = table_name.split('.')[-1] if '.' in table_name else table_name
+                result = [{
+                    "name": f"wait_for_view_{clean_table_name}_ds{'_minus_' + str(lag) if lag > 0 else ''}",
+                    "spec": f"{source_namespace}.chronon_virtual_partitions/ds={{{{ ds }}}}/table_name={table_name}"
+                }]
+            else:
+                result = [
+                    wait_for_simple_schema(table_name, lag, start, end, query=src.entities.query)
+                ]
         elif src.joinSource:
             parentJoinOutputTable = get_join_output_table_name(
                 src.joinSource.join, True
             )
             result = [wait_for_simple_schema(parentJoinOutputTable, lag, start, end, query=src.joinSource.query)]
         else:
-            result = [wait_for_simple_schema(src.events.table, lag, start, end, query=src.events.query)]
+            table_name = src.events.table
+            
+            if hasattr(src.events, 'is_input_staging_query_view') and src.events.is_input_staging_query_view:
+                source_namespace = getattr(src.events, 'namespace', table_name.split('.')[0])
+                clean_table_name = table_name.split('.')[-1] if '.' in table_name else table_name
+                result = [{
+                    "name": f"wait_for_view_{clean_table_name}_ds{'_minus_' + str(lag) if lag > 0 else ''}",
+                    "spec": f"{source_namespace}.chronon_virtual_partitions/ds={{{{ ds }}}}/table_name={table_name}"
+                }]
+            else:
+                result = [wait_for_simple_schema(table_name, lag, start, end, query=src.events.query)]
     return [json.dumps(res) for res in result]
 
 
