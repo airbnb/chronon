@@ -141,27 +141,36 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   }
 
   private def writeVirtualPartitionMetadata(tableName: String): Unit = {
-    val currentTimestamp = System.currentTimeMillis()
-
     val schema = org.apache.spark.sql.types.StructType(
       Seq(
+        // Add a dummy data column since tables cannot have only partition columns
         org.apache.spark.sql.types
-          .StructField(StagingQuery.TABLE_NAME_COLUMN, org.apache.spark.sql.types.StringType, false),
+          .StructField(StagingQuery.CREATED_AT_COLUMN, org.apache.spark.sql.types.StringType, false),
         org.apache.spark.sql.types
-          .StructField(StagingQuery.CREATED_TIMESTAMP_COLUMN, org.apache.spark.sql.types.TimestampType, false)
+          .StructField(tableUtils.partitionColumn, org.apache.spark.sql.types.StringType, false),
+        org.apache.spark.sql.types
+          .StructField(StagingQuery.TABLE_NAME_COLUMN, org.apache.spark.sql.types.StringType, false)
       ))
-    val rows = Seq(Row(tableName, new java.sql.Timestamp(currentTimestamp)))
+
+    // Create single row for this view with both partition values and creation timestamp
+    val createdAt = java.time.Instant.now().toString
+    val row = Row(createdAt, endPartition, tableName)
     val virtualPartitionData = tableUtils.sparkSession.createDataFrame(
-      tableUtils.sparkSession.sparkContext.parallelize(rows),
+      tableUtils.sparkSession.sparkContext.parallelize(Seq(row)),
       schema
     )
 
-    tableUtils.insertUnPartitioned(
+    // Use insertPartitions with both ds and table_name as partition columns
+    // This allows partition sensors to directly check for specific table partition existence
+    tableUtils.insertPartitions(
       df = virtualPartitionData,
-      tableName = virtualPartitionsTable
+      tableName = virtualPartitionsTable,
+      tableProperties = tableProps,
+      partitionColumns = Seq(tableUtils.partitionColumn, StagingQuery.TABLE_NAME_COLUMN)
     )
 
-    logger.info(s"Wrote virtual partition metadata for view $tableName")
+    logger.info(
+      s"Updated virtual partition metadata for view $tableName in partition ${tableUtils.partitionColumn}=$endPartition/${StagingQuery.TABLE_NAME_COLUMN}=$tableName")
   }
 }
 
@@ -171,7 +180,7 @@ object StagingQuery {
   // Virtual partition metadata constants
   private val VIRTUAL_PARTITIONS_TABLE_NAME = "chronon_virtual_partitions"
   private val TABLE_NAME_COLUMN = "table_name"
-  private val CREATED_TIMESTAMP_COLUMN = "created_timestamp"
+  private val CREATED_AT_COLUMN = "created_at"
 
   def substitute(tu: TableUtils, query: String, start: String, end: String, latest: String): String = {
     val macros: Array[ParametricMacro] = Array(
