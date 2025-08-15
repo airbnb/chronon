@@ -41,10 +41,11 @@ scala_library(
     ],
 )
 
-scala_test_suite(
+scala_junit_test_suite(
     name = "test",
     srcs = glob(["src/test/scala/ai/chronon/flink/**/*.scala"]),
-    visibility = ["//visibility:public"],
+    strip_prefix = "src/test/scala/ai/chronon/flink",
+    visibility = ["//visibility:private"],
     deps = [
         ":flink",
         ":test-lib",

@@ -195,6 +195,38 @@ jobs:
             destination: spark_warehouse.tar.gz
             when: on_fail
 
+    "Bazel Tests":
+        resource_class: 2xlarge
+        working_directory: /chronon
+        docker:
+            - image: mcr.microsoft.com/devcontainers/base:ubuntu-22.04
+        steps:
+            - checkout
+            # TODO build/publish image
+            # Airbnb would have to set up/own this
+            - run:
+                name: Run DevContainer Setup
+                command: |
+                    chmod +x .devcontainer/setup.sh
+                    ./.devcontainer/setup.sh
+            - run:
+            # TODO remote cache
+            # Airbnb would have to set up/own this
+                name: Run Bazel Tests
+                shell: /bin/bash -leuxo pipefail
+                command: |
+                    useradd --create-home --shell /bin/bash nonroot
+                    chown -R nonroot:nonroot /chronon
+                    chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
+                    export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //... && bazel test //... --test_output=streamed --test_summary=detailed --local_ram_resources=HOST_RAM*0.7 --local_cpu_resources=HOST_CPUS*0.7"  
+            - store_test_results:
+                path: bazel-testlogs
+            - store_artifacts:
+                path: bazel-testlogs
+                destination: bazel-test-logs
+                when: on_fail
+
 workflows:
     build_test_deploy:
         jobs:
@@ -223,3 +255,4 @@ workflows:
             - "Scala 13 -- Iceberg Table Utils Tests":
                   requires:
                       - "Pull Docker Image"
+            - "Bazel Tests"

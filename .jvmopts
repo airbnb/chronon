@@ -1,0 +1,4 @@
+-Xms2G
+-Xmx4G
+-XX:+CMSClassUnloadingEnabled 
+-XX:MaxPermSize=4G
