@@ -1084,6 +1084,18 @@ object Extensions {
       }
     }
 
+    lazy val inputSchema: List[StructField] = {
+      modelTransform.model.inputSchemaScala.map { modelField =>
+        StructField(inputMappingsScala.getOrElse(modelField.name, modelField.name), modelField.fieldType)
+      }
+    }
+
+    lazy val outputSchema: List[StructField] = {
+      modelTransform.model.outputSchemaScala.map { modelField =>
+        StructField(outputMappingsScala.getOrElse(modelField.name, modelField.name), modelField.fieldType)
+      }
+    }
+
     lazy val inputMappingsScala: Map[String, String] =
       Option(modelTransform.inputMappings).map(_.toScala).getOrElse(Map.empty)
     lazy val outputMappingsScala: Map[String, String] =

@@ -17,7 +17,7 @@
 package ai.chronon.online
 
 import ai.chronon.api.{Join, Model, ModelTransform}
-import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import scala.collection.Seq
 import scala.concurrent.Future
@@ -48,6 +48,7 @@ trait ModelBackend {
       join: Join,
       startPartition: String,
       endPartition: String,
-      modelTransform: Option[ModelTransform] = None
-  ): Unit
+      modelTransform: Option[ModelTransform] = None,
+      jobContextJson: Option[String] = None
+  ): Option[DataFrame] = None
 }
