@@ -1041,32 +1041,38 @@ object Driver {
     }
   }
 
-  object ModelTransformBatchJob {
+  object ModelTransformBatch {
     class Args extends Subcommand("model-transform-batch") with OfflineSubcommand with OnlineSubcommand {
       override def subcommandName() = "model-transform-batch"
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
       val modelTransformOverride: ScallopOption[String] =
         opt[String](required = false, descr = "Name of the specific model transforms to run")
+      val jobContextJson: ScallopOption[String] =
+        opt[String](required = false, descr = "JSON string of the job context to use for model transform")
     }
     def run(args: Args): Unit = {
       val apiImpl = args.impl(args.serializableProps)
       val modelBackend = apiImpl.genModelBackend
 
-      if (args.startPartitionOverride.isEmpty) {
-        // TODO: check unfilled ranges instead of directly using input start/end partition.
-        throw new IllegalArgumentException(
-          "Model transform batch job requires a start partition override to be specified")
-      }
-
-      val modelTransformJob = new ModelTransformBatchJob(
+      val modelTransformJob = ModelTransformBatchJob(
         args.sparkSession,
         modelBackend,
         args.joinConf,
-        args.startPartitionOverride(),
         args.endDate(),
-        args.modelTransformOverride.toOption
+        args.startPartitionOverride.toOption,
+        args.stepDays(),
+        args.modelTransformOverride.toOption,
+        args.jobContextJson.toOption
       )
-      modelTransformJob.run()
+      try {
+        modelTransformJob.run()
+      } catch {
+        case e: Throwable =>
+          e.printStackTrace()
+          logger.error("Model Transform Batch Job failed", e)
+          System.exit(-1)
+      }
+      System.exit(0) // Terminate once completion to shutdown execution context
     }
   }
 
@@ -1105,6 +1111,8 @@ object Driver {
     addSubcommand(JoinBackfillFinalArgs)
     object LabelJoinArgs extends LabelJoin.Args
     addSubcommand(LabelJoinArgs)
+    object ModelTransformBatchArgs extends ModelTransformBatch.Args
+    addSubcommand(ModelTransformBatchArgs)
 
     requireSubcommand()
     verify()
@@ -1141,6 +1149,7 @@ object Driver {
           case args.LabelJoinArgs            => LabelJoin.run(args.LabelJoinArgs)
           case args.JoinBackfillLeftArgs     => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
           case args.JoinBackfillFinalArgs    => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
+          case args.ModelTransformBatchArgs  => ModelTransformBatch.run(args.ModelTransformBatchArgs)
           case _                             => logger.info(s"Unknown subcommand: $x")
         }
       case None => logger.info(s"specify a subcommand please")

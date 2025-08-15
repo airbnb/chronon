@@ -142,7 +142,11 @@ object SemanticHashUtils {
     val derivedChanges = oldSemanticHash.get(join.derivedKey) != newSemanticHash.get(join.derivedKey)
     // TODO: make this incremental, retain the main table and continue joining, dropping etc
     val mainTable = if (partsToDrop.nonEmpty || added.nonEmpty || derivedChanges) {
-      Some(join.metaData.outputTable)
+      if (join.hasModelTransforms) {
+        Some(join.metaData.preModelTransformsTable)
+      } else {
+        Some(join.metaData.outputTable)
+      }
     } else None
     partsToDrop ++ mainTable
   }
