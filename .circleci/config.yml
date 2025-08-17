@@ -196,19 +196,25 @@ jobs:
             when: on_fail
 
     "Bazel Tests":
-        resource_class: 2xlarge
+        executor: docker_baseimg_executor_xxlarge
         working_directory: /chronon
-        docker:
-            - image: mcr.microsoft.com/devcontainers/base:ubuntu-22.04
         steps:
             - checkout
-            # TODO build/publish image
+            # TODO build/publish image with bazel
             # Airbnb would have to set up/own this
             - run:
-                name: Run DevContainer Setup
+                name: Run Bazel Setup
                 command: |
-                    chmod +x .devcontainer/setup.sh
-                    ./.devcontainer/setup.sh
+                    # Add Bazel GPG key and repository
+                    curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor | sudo tee /usr/share/keyrings/bazel-archive-keyring.gpg > /dev/null
+                    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list
+
+                    # Update package list and install specific Bazel version
+                    sudo apt update
+                    sudo apt install -y bazel-6.4.0
+
+                    # Set up bazel-6.4.0 as the default bazel command
+                    sudo update-alternatives --install /usr/bin/bazel bazel /usr/bin/bazel-6.4.0 100
             - run:
             # TODO remote cache
             # Airbnb would have to set up/own this
