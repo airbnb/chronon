@@ -55,13 +55,10 @@ build --java_language_version=8 --java_runtime_version=remotejdk_8
 # Usage: bazel test //spark:test --config=ci
 build:ci --local_cpu_resources=HOST_CPUS*.7
 build:ci --local_ram_resources=HOST_RAM*.75
-build:ci --jobs=auto
 
-# CircleCI Test Performance & Parallelization
-test:ci --local_test_jobs=auto
-test:ci --test_strategy=standalone
 
 # CircleCI Test Output Configuration
+#TODO change to errors with buildbuddy enabled
 test:ci --test_output=all
 test:ci --test_summary=short
 test:ci --test_verbose_timeout_warnings
