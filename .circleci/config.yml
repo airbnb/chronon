@@ -215,6 +215,7 @@ jobs:
 
                     # Set up bazel-6.4.0 as the default bazel command
                     sudo update-alternatives --install /usr/bin/bazel bazel /usr/bin/bazel-6.4.0 100
+                    
             - run:
             # TODO remote cache
             # Airbnb would have to set up/own this
@@ -223,6 +224,7 @@ jobs:
                 command: |
                     useradd --create-home --shell /bin/bash nonroot
                     chown -R nonroot:nonroot /chronon
+                    mkdir -p /root/.cache/bazel
                     chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                     sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //... && bazel test //... --config=ci"
