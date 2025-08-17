@@ -54,32 +54,19 @@ object MetadataExporter {
     }
     val fileBuffer = new ListBuffer[String]()
 
-    def isConfigFile(file: File): Boolean = {
-      val path = file.getAbsolutePath
-      val fileName = file.getName
-      // Only process files that are in group_bys, joins, or staging_queries directories
-      // and exclude known non-config files
-      (path.contains(GROUPBY_PATH_SUFFIX) || path.contains(JOIN_PATH_SUFFIX) || path.contains(STAGING_QUERY_PATH_SUFFIX)) &&
-        !fileName.startsWith(".") &&
-        !fileName.endsWith(".csv") &&
-        !fileName.endsWith(".bazel") &&
-        fileName != "BUILD" &&
-        fileName != "BUILD.bazel"
-    }
-
     def traverseDirectory(currentDir: File): Unit = {
       if (currentDir.isDirectory) {
         val files = currentDir.listFiles()
         if (files != null) {
           for (file <- files) {
-            if (file.isFile && isConfigFile(file)) {
+            if (file.isFile) {
               fileBuffer += file.getAbsolutePath
             } else if (file.isDirectory) {
               traverseDirectory(file)
             }
           }
         }
-      } else if (isConfigFile(rootDir)) {
+      } else {
         fileBuffer += currentDir.getAbsolutePath
       }
     }
