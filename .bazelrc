@@ -50,3 +50,29 @@ build:java_21 --java_language_version=21 --java_runtime_version=remotejdk_21
 
 # Use Java 8 as default for Bazel builds
 build --java_language_version=8 --java_runtime_version=remotejdk_8
+
+# CircleCI-only optimizations
+# Usage: bazel test //spark:test --config=ci
+build:ci --local_cpu_resources=HOST_CPUS
+build:ci --local_ram_resources=HOST_RAM*.75
+build:ci --jobs=auto
+
+# CircleCI Test Performance & Parallelization
+test:ci --local_test_jobs=auto
+test:ci --test_strategy=standalone
+
+# CircleCI Test Output Configuration
+test:ci --test_output=all
+test:ci --test_summary=short
+test:ci --test_verbose_timeout_warnings
+test:ci --experimental_ui_max_stdouterr_bytes=1048576
+
+# CircleCI JVM Configuration for Tests
+test:ci --jvmopt=-Xms2G
+test:ci --jvmopt=-Xmx4g
+test:ci --jvmopt=-XX:+UseG1GC
+test:ci --jvmopt=-XX:MaxPermSize=4G
+test:ci --jvmopt=-XX:+CMSClassUnloadingEnabled
+test:ci --jvmopt=-Dspark.testing=true
+test:ci --jvmopt=-Djunit.platform.output.capture.stdout=true
+test:ci --jvmopt=-Djunit.platform.output.capture.stderr=true
