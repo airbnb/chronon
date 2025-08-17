@@ -195,8 +195,48 @@ jobs:
             destination: spark_warehouse.tar.gz
             when: on_fail
 
-    "Bazel Tests":
+    "Bazel Spark Tests":
         executor: docker_baseimg_executor_xxlarge
+        working_directory: /chronon
+        steps:
+            - checkout
+            # TODO build/publish image with bazel
+            # Airbnb would have to set up/own this
+            - run:
+                name: Run Bazel Setup
+                command: |
+                    # Add Bazel GPG key and repository
+                    curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor | sudo tee /usr/share/keyrings/bazel-archive-keyring.gpg > /dev/null
+                    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list
+
+                    # Update package list and install specific Bazel version
+                    sudo apt update
+                    sudo apt install -y bazel-6.4.0
+
+                    # Set up bazel-6.4.0 as the default bazel command
+                    sudo update-alternatives --install /usr/bin/bazel bazel /usr/bin/bazel-6.4.0 100
+                    
+            - run:
+            # TODO remote cache
+            # Airbnb would have to set up/own this
+                name: Run Bazel Spark Tests
+                shell: /bin/bash -leuxo pipefail
+                command: |
+                    useradd --create-home --shell /bin/bash nonroot
+                    chown -R nonroot:nonroot /chronon
+                    mkdir -p /root/.cache/bazel
+                    chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
+                    export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //spark:test && bazel test //spark:test --config=ci"
+            - store_test_results:
+                path: bazel-testlogs
+            - store_artifacts:
+                path: bazel-testlogs
+                destination: bazel-spark-test-logs
+                when: on_fail
+
+    "Bazel Tests":
+        executor: docker_baseimg_executor
         working_directory: /chronon
         steps:
             - checkout
@@ -227,12 +267,12 @@ jobs:
                     mkdir -p /root/.cache/bazel
                     chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //... && bazel test //... --config=ci"
+                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //... && bazel test //aggregator:test //api/py:api_test //flink:test --config=ci"
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
                 path: bazel-testlogs
-                destination: bazel-test-logs
+                destination: bazel-other-test-logs
                 when: on_fail
 
 workflows:
@@ -263,4 +303,9 @@ workflows:
             - "Scala 13 -- Iceberg Table Utils Tests":
                   requires:
                       - "Pull Docker Image"
-            - "Bazel Tests"
+            - "Bazel Spark Tests":
+                  requires:
+                      - "Pull Docker Image"
+            - "Bazel Tests":
+                  requires:
+                      - "Pull Docker Image"

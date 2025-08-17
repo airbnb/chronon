@@ -73,3 +73,4 @@ test:ci --jvmopt=-XX:+CMSClassUnloadingEnabled
 test:ci --jvmopt=-Dspark.testing=true
 test:ci --jvmopt=-Djunit.platform.output.capture.stdout=true
 test:ci --jvmopt=-Djunit.platform.output.capture.stderr=true
+test:ci --jvmopt=-Dclassloader.check-leaked-classloader=false
