@@ -53,8 +53,8 @@ build --java_language_version=8 --java_runtime_version=remotejdk_8
 
 # CircleCI-only optimizations
 # Usage: bazel test //spark:test --config=ci
-build:ci --local_cpu_resources=HOST_CPUS*.7
-build:ci --local_ram_resources=HOST_RAM*.75
+build:ci --local_cpu_resources=HOST_CPUS*0.7
+build:ci --local_ram_resources=HOST_RAM*0.7
 
 
 # CircleCI Test Output Configuration
