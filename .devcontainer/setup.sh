@@ -21,7 +21,4 @@ echo "Installing Thrift 0.13.0..."
 # Verify installations
 echo "Verifying installations..."
 bazel version
-python --version
-java -version
-
 echo "Setup complete!"
