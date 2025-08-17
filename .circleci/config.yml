@@ -196,25 +196,16 @@ jobs:
             when: on_fail
 
     "Bazel Tests":
-        resource_class: 2xlarge
-        working_directory: /chronon
-        docker:
-            - image: mcr.microsoft.com/devcontainers/base:ubuntu-22.04
+        executor: docker_baseimg_executor_xxlarge
         steps:
             - checkout
-            # TODO build/publish image
-            # Airbnb would have to set up/own this
-            - run:
-                name: Run DevContainer Setup
-                command: |
-                    chmod +x .devcontainer/setup.sh
-                    ./.devcontainer/setup.sh
             - run:
             # TODO remote cache
             # Airbnb would have to set up/own this
                 name: Run Bazel Tests
                 shell: /bin/bash -leuxo pipefail
                 command: |
+                    mkdir -p /root/.cache/bazel
                     useradd --create-home --shell /bin/bash nonroot
                     chown -R nonroot:nonroot /chronon
                     chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache

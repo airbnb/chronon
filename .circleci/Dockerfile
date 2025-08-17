@@ -34,11 +34,8 @@ RUN apt-get update && apt-get -y -q install \
     openjdk-8-jdk \
     pkg-config \
     sbt \
+    bazelisk \
     && apt-get clean
-
-# Install bazelisk directly from GitHub releases
-RUN curl -Lo /usr/local/bin/bazel https://github.com/bazelbuild/bazelisk/releases/latest/download/bazelisk-linux-amd64 \
-    && chmod +x /usr/local/bin/bazel
 
 # Install thrift
 RUN curl -sSL "http://archive.apache.org/dist/thrift/$THRIFT_VERSION/thrift-$THRIFT_VERSION.tar.gz" -o thrift.tar.gz \
