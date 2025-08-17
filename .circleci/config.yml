@@ -218,6 +218,7 @@ jobs:
                 name: Run Bazel Tests
                 shell: /bin/bash -leuxo pipefail
                 command: |
+                    sudo mkdir -p /root/.cache/bazel
                     useradd --create-home --shell /bin/bash nonroot
                     chown -R nonroot:nonroot /chronon
                     chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
