@@ -82,7 +82,7 @@ def get_pre_derived_group_by_features(group_by: GroupBy) -> List[str]:
     # For group_bys without aggregations, selected fields from query
     else:
         for source in group_by.sources:
-            output_columns.extend(get_pre_derived_source_keys(source))
+            output_columns.extend(get_pre_derived_left_columns(source))
     return output_columns
 
 
@@ -115,7 +115,7 @@ def get_pre_derived_join_internal_features(join: Join) -> List[str]:
     return internal_features
 
 
-def get_pre_derived_source_keys(source: Source) -> List[str]:
+def get_pre_derived_left_columns(source: Source) -> List[str]:
     if source.events:
         return list(source.events.query.selects.keys())
     elif source.entities:
@@ -186,8 +186,8 @@ def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
     From the join object, get the final output columns after derivations.
     """
     columns = {}
-    keys = get_pre_derived_source_keys(join.left)
-    columns[FeatureDisplayKeys.SOURCE_KEYS] = keys
+    keys = get_pre_derived_left_columns(join.left)
+    columns[FeatureDisplayKeys.LEFT_COLUMNS] = keys
     pre_derived_columns = get_pre_derived_join_features(join)
     columns.update({**pre_derived_columns})
 
@@ -381,7 +381,7 @@ class ChrononRepoValidator(object):
             for value_list in features.values():
                 pre_derived_columns_list.extend(value_list)
 
-            keys = get_pre_derived_source_keys(join.left)
+            keys = get_pre_derived_left_columns(join.left)
             columns = pre_derived_columns_list + keys
             errors.extend(self._validate_derivations(keys, columns, join.derivations))
         return errors

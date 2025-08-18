@@ -52,7 +52,7 @@ class SubStage:
 
 
 class FeatureDisplayKeys(Enum):
-    SOURCE_KEYS = "source_keys"
+    LEFT_COLUMNS = "left_columns"
     INTERNAL_COLUMNS = "internal_columns"
     EXTERNAL_COLUMNS = "external_columns"
     DERIVED_COLUMNS = "derived_columns"
