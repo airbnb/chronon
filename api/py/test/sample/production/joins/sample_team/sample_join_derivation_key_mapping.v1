@@ -1,15 +1,13 @@
 {
   "metaData": {
-    "name": "sample_team.sample_join_bootstrap.v1",
-    "online": 1,
+    "name": "sample_team.sample_join_derivation_key_mapping.v1",
+    "online": 0,
     "production": 0,
     "customJson": "{\"check_consistency\": false, \"lag\": 0, \"join_tags\": null, \"join_part_tags\": {}}",
     "dependencies": [
       "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}",
       "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
-      "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}",
-      "{\"name\": \"wait_for_chronon_db.test_bootstrap_table_ds\", \"spec\": \"chronon_db.test_bootstrap_table/ds={{ ds }}\", \"start\": \"2022-01-01\", \"end\": \"2022-02-01\"}",
-      "{\"name\": \"wait_for_{{ logged_table }}_ds\", \"spec\": \"{{ logged_table }}/ds={{ ds }}\", \"start\": null, \"end\": null}"
+      "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}"
     ],
     "tableProperties": {
       "source": "chronon"
@@ -25,7 +23,7 @@
       "query": {
         "selects": {
           "event": "event_expr",
-          "group_by_subject": "group_by_expr",
+          "subject": "group_by_subject_expr",
           "ts": "ts"
         },
         "startPartition": "2021-04-09",
@@ -159,27 +157,30 @@
       }
     }
   ],
-  "bootstrapParts": [
+  "derivations": [
     {
-      "table": "chronon_db.test_bootstrap_table",
-      "query": {
-        "selects": {
-          "field_a": "field_a",
-          "field_b": "field_b"
-        },
-        "startPartition": "2022-01-01",
-        "endPartition": "2022-02-01",
-        "setups": []
-      },
-      "keyColumns": [
-        "request_id"
-      ]
+      "name": "derived_field",
+      "expression": "sample_team_event_sample_group_by_v1_event_sum_7d / sample_team_entity_sample_group_by_from_module_v1_entity_last"
     },
     {
-      "table": "{{ logged_table }}"
+      "name": "event_sum_7d",
+      "expression": "sample_team_event_sample_group_by_v1_event_sum_7d"
+    },
+    {
+      "name": "event_sum",
+      "expression": "sample_team_event_sample_group_by_v1_event_sum"
+    },
+    {
+      "name": "event_approx_percentile",
+      "expression": "sample_team_event_sample_group_by_v1_event_approx_percentile"
+    },
+    {
+      "name": "entity_last",
+      "expression": "sample_team_entity_sample_group_by_from_module_v1_entity_last"
+    },
+    {
+      "name": "entity_last_7d",
+      "expression": "sample_team_entity_sample_group_by_from_module_v1_entity_last_7d"
     }
-  ],
-  "rowIds": [
-    "request_id"
   ]
 }

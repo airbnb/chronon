@@ -109,10 +109,6 @@
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": \"2021-04-09\"}",
             "{\"name\": \"wait_for_sample_namespace.another_sample_table_group_by_ds\", \"spec\": \"sample_namespace.another_sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}"
           ],
-          "tableProperties": {
-            "source": "chronon"
-          },
-          "outputNamespace": "chronon_db",
           "team": "sample_team",
           "offlineSchedule": "@daily"
         },
@@ -224,7 +220,7 @@
       "dependencies": [
         "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}",
         "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
-        "{\"name\": \"wait_for_sample_namespace.sample_team_sample_label_join_v1\", \"spec\": \"sample_namespace.sample_team_sample_label_join_v1/ds={{ ds }}\"}"
+        "{\"name\": \"wait_for_{{ join_backfill_table }}\", \"spec\": \"{{ join_backfill_table }}/ds={{ ds }}\"}"
       ],
       "offlineSchedule": "@weekly"
     }

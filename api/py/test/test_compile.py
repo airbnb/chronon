@@ -325,6 +325,7 @@ def test_compile_feature_display():
     expected = map(
         lambda x: x.value.replace("_", " ").title(),
         [
+            FeatureDisplayKeys.KEY_COLUMNS,
             FeatureDisplayKeys.LEFT_COLUMNS,
             FeatureDisplayKeys.INTERNAL_COLUMNS,
             FeatureDisplayKeys.EXTERNAL_COLUMNS,

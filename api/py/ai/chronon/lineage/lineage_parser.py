@@ -37,7 +37,7 @@ from ai.chronon.repo.validator import (
     get_pre_derived_group_by_features,
     get_pre_derived_join_features,
     get_pre_derived_join_internal_features,
-    get_pre_derived_left_columns,
+    get_pre_derived_source_keys,
     is_identifier,
 )
 from ai.chronon.utils import FeatureDisplayKeys, output_table_name, sanitize
@@ -223,7 +223,7 @@ class LineageParser:
         :return: The SQLGlot SELECT expression for join derivations.
         """
         pre_derived_columns = [value for values in get_pre_derived_join_features(join).values() for value in values]
-        pre_derived_columns.extend(get_pre_derived_left_columns(join.left))
+        pre_derived_columns.extend(get_pre_derived_source_keys(join.left))
         output_columns = get_join_output_columns(join)
         output_columns = (
             output_columns[FeatureDisplayKeys.LEFT_COLUMNS] + output_columns[FeatureDisplayKeys.DERIVED_COLUMNS]
@@ -347,7 +347,7 @@ class LineageParser:
         left_table_columns = [value for values in get_pre_derived_join_features(join).values() for value in values]
         left_table_keys = []
         if self.check_source_select_non_empty(join.left):
-            left_table_keys = get_pre_derived_left_columns(join.left)
+            left_table_keys = get_pre_derived_source_keys(join.left)
             left_table_columns.extend(left_table_keys)
 
         join_table = self.object_table_name(join)
