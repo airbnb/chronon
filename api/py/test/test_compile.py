@@ -221,7 +221,7 @@ def test_failed_compile_when_dependent_join_detected():
     runner = CliRunner()
     result = _invoke_cli_with_params(runner, "group_bys/sample_team/event_sample_group_by.py")
     assert result.exit_code != 0
-    error_message_expected = "Detected dependencies are as follows: ['sample_team.sample_chaining_join.parent_join', 'sample_team.sample_join_bootstrap.v1', 'sample_team.sample_join_bootstrap.v2', 'sample_team.sample_join_derivation.v1', 'sample_team.sample_join_with_derivations_on_external_parts.v1', 'sample_team.sample_label_join.v1', 'sample_team.sample_label_join_with_agg.v1', 'sample_team.sample_online_join.v1']"
+    error_message_expected = "Detected dependencies are as follows: ['sample_team.sample_chaining_join.parent_join', 'sample_team.sample_join_bootstrap.v1', 'sample_team.sample_join_bootstrap.v2', 'sample_team.sample_join_derivation.v1', 'sample_team.sample_join_derivation_key_mapping.v1', 'sample_team.sample_join_with_derivations_on_external_parts.v1', 'sample_team.sample_label_join.v1', 'sample_team.sample_label_join_with_agg.v1', 'sample_team.sample_online_join.v1']"
     actual_exception_message = str(result.exception).strip().lower()
     error_message_expected = error_message_expected.strip().lower()
     assert (
@@ -239,7 +239,7 @@ def test_detected_dependent_joins_materialized():
     runner = CliRunner()
     result = _invoke_cli_with_params(runner, "group_bys/sample_team/event_sample_group_by.py", ["--force-overwrite"])
     assert result.exit_code == 0
-    expected_message = "Successfully wrote 8 Join objects to api/py/test/sample/production".strip().lower()
+    expected_message = "Successfully wrote 9 Join objects to api/py/test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
 
