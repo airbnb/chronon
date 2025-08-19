@@ -184,26 +184,26 @@ def build_derived_columns(pre_derived_columns: List[str], derivations: List[Deri
 def get_join_key_columns(join: Join) -> List[str]:
     """
     Extract key columns from a join configuration.
-    
+
     This follows the same logic as in Analyzer.scala:
     - For each join part, get the key columns from the groupBy
     - If the join part has key mapping, map the right keys to left keys
     - Filter the result by columns available in the left source
     - Return distinct list of key columns that exist in left source
-    
+
     Args:
         join: The Join thrift object
-        
+
     Returns:
         List of distinct key column names that exist in the left source
     """
     # Get all potential key columns from join parts
     potential_key_columns = []
-    
+
     for join_part in join.joinParts:
         # Get key columns from the groupBy
         group_by_keys = join_part.groupBy.keyColumns
-        
+
         if join_part.keyMapping is None:
             # No key mapping, use the keys as-is
             potential_key_columns.extend(group_by_keys)
@@ -211,7 +211,7 @@ def get_join_key_columns(join: Join) -> List[str]:
             # Key mapping exists, map right keys to left keys
             # keyMapping is left->right, so we need to create right->left mapping
             right_to_left = {v: k for k, v in join_part.keyMapping.items()}
-            
+
             for key in group_by_keys:
                 if key in right_to_left:
                     # Map right key to left key
@@ -219,14 +219,14 @@ def get_join_key_columns(join: Join) -> List[str]:
                 else:
                     # No mapping for this key, use as-is
                     potential_key_columns.append(key)
-    
+
     # Get distinct potential keys
     distinct_potential_keys = list(set(potential_key_columns))
-    
+
     # Filter by columns available in the left source
     left_columns = get_pre_derived_source_keys(join.left)
     key_columns = [key for key in distinct_potential_keys if key in left_columns]
-    
+
     return key_columns
 
 
