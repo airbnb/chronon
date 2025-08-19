@@ -111,6 +111,10 @@
             "{\"name\": \"wait_for_sample_table.sample_entity_snapshot_ds\", \"spec\": \"sample_table.sample_entity_snapshot/ds={{ ds }}\", \"start\": \"2021-03-01\", \"end\": null}",
             "{\"name\": \"wait_for_sample_table.sample_entity_mutations_ds\", \"spec\": \"sample_table.sample_entity_mutations/ds={{ ds }}/hr=00:00\", \"start\": \"2021-03-01\", \"end\": null}"
           ],
+          "tableProperties": {
+            "source": "chronon"
+          },
+          "outputNamespace": "chronon_db",
           "team": "sample_team",
           "offlineSchedule": "@daily"
         },
