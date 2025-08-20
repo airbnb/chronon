@@ -32,7 +32,7 @@ sudo apt update
 sudo apt install -y build-essential libssl-dev pkg-config flex bison
 
 # Configure and build
-./configure --without-python --without-cpp
+./configure --without-cpp --without-java --without-python --without-py3 --without-ruby --without-haskell --without-erlang --without-perl --without-php --without-php_extension --without-c_glib --without-csharp --without-go --without-nodejs --without-lua --without-qt5 --without-dart --without-swift --without-js --without-d --without-haxe --without-cl --without-as3 --without-dotnetcore --without-netstd --without-rs
 make
 
 # Install
