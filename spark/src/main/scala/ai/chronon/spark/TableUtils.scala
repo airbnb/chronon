@@ -362,6 +362,8 @@ case class TableUtils(sparkSession: SparkSession) {
   val blockingCacheEviction: Boolean =
     sparkSession.conf.get("spark.chronon.table_write.cache.blocking", "false").toBoolean
 
+  val chrononAvroSchemaValidation: Boolean = sparkSession.conf.get("spark.chronon.avroSchemaValidation", "false").toBoolean
+
   private lazy val tableFormatProvider: FormatProvider = {
     sparkSession.conf.getOption("spark.chronon.table.format_provider") match {
       case Some(clazzName) =>

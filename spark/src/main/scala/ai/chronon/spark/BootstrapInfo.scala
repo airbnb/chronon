@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.{AvroConversions, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
@@ -131,6 +131,22 @@ object BootstrapInfo {
       tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()),
       sparkSchema
     )
+
+    if (tableUtils.chrononAvroSchemaValidation) {
+      // Validate that the baseDf schema is compatible with AvroSchema acceptable types
+      // This is required for online serving to work
+      try {
+        val schemaSpark: org.apache.spark.sql.types.StructType = baseDf.schema
+        val schemaChronon: ai.chronon.api.StructType = SparkConversions.toChrononStruct("", schemaSpark)
+        AvroConversions.fromChrononSchema(schemaChronon)
+      } catch {
+        case e: UnsupportedOperationException =>
+          throw new RuntimeException(
+            "In order to enable online serving, please make sure that the data types of your column types are compatible with AvroSchema acceptable types. \n" + e.getMessage,
+            e)
+      }
+    }
+
     val derivedSchema = if (joinConf.hasDerivations) {
       val projections = joinConf.derivationsScala.derivationProjection(baseDf.columns)
       val projectionMap = projections.toMap
