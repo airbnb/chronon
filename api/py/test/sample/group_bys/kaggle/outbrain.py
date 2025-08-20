@@ -14,7 +14,6 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from ai.chronon.api.ttypes import Source, EventSource
 from ai.chronon.query import Query, select
 from ai.chronon.group_by import (
     GroupBy,

@@ -199,14 +199,13 @@ The following examples are broken down by source type. We strongly suggest makin
 This example is based on the [returns](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/returns.py) GroupBy from the quickstart guide that performs various aggregations over the `refund_amt` column over various windows.
 
 ```python
-source = Source(
-    events=EventSource(
-        table="data.returns", # This points to the log table with historical return events
-        topic="events.returns",
-        query=Query(
-            selects=select("user_id","refund_amt"), # Select the fields we care about
-            time_column="ts") # The event time
-    ))
+source = EventSource(
+    table="data.returns", # This points to the log table with historical return events
+    topic="events.returns",
+    query=Query(
+        selects=select("user_id","refund_amt"), # Select the fields we care about
+        time_column="ts") # The event time
+)
 
 window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]] # Define some window sizes to use below
 
@@ -242,13 +241,12 @@ v1 = GroupBy(
 In this example we take the [Purchases GroupBy](https://github.com/airbnb/chronon/blob/main/api/py/test/sample/group_bys/quickstart/purchases.py) from the Quickstart tutorial and modify it to include buckets based on a hypothetical `"credit_card_type"` column.
 
 ```python
-source = Source(
-    events=EventSource(
-        table="data.purchases",
-        query=Query(
-            selects=select("user_id","purchase_price","credit_card_type"), # Now we also select the `credit card type` column
-            time_column="ts")
-    ))
+source = EventSource(
+    table="data.purchases",
+    query=Query(
+        selects=select("user_id","purchase_price","credit_card_type"), # Now we also select the `credit card type` column
+        time_column="ts")
+)
 
 window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]]
 
@@ -293,13 +291,12 @@ Important things to note about this case relative to the streaming GroupBy:
 * As such, we do not need to provide a time column, midnight boundaries are used as the time along which feature values are updated. For example, a 30 day window computed using this GroupBy will get computed as of the prior midnight boundary for a requested timestamp, rather than the precise millisecond, for the purpose of online/offline consistency.
 
 ```python
-source = Source(
-    events=EventSource(
-        table="data.purchases", # This points to the log table with historical purchase events
-        query=Query(
-                selects=select("user_id","purchase_price"), # Select the fields we care about
-            )
-    ))
+source = EventSource(
+    table="data.purchases", # This points to the log table with historical purchase events
+    query=Query(
+            selects=select("user_id","purchase_price"), # Select the fields we care about
+        )
+)
 
 window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]] # Define some window sizes to use below
 
@@ -341,13 +338,12 @@ The primary key for this GroupBy is the same as the primary key of the source ta
 it doesn't perform any aggregation, but just extracts user fields as features.
 """
 
-source = Source(
-    entities=EntitySource(
-        snapshotTable="data.users", # This points to a table that contains daily snapshots of the entire product catalog
-        query=Query(
-            selects=select("user_id","account_created_ds","email_verified"), # Select the fields we care about
-        )
-    ))
+source = EntitySource(
+    snapshotTable="data.users", # This points to a table that contains daily snapshots of the entire product catalog
+    query=Query(
+        selects=select("user_id","account_created_ds","email_verified"), # Select the fields we care about
+    )
+)
 
 v1 = GroupBy(
     sources=[source],
@@ -364,9 +360,8 @@ This is a modification of the above `Batch Entity GroupBy` example to include an
 Semantically, we're expressing "count the number of users per zip code" as a feature.
 
 ```python
-source = Source(
-    entities=EntitySource(
-        snapshotTable="data.users", # This points to a table that contains daily snapshots of the entire product catalog
+source = EntitySource(
+        snapshot_table="data.users", # This points to a table that contains daily snapshots of the entire product catalog
         query=Query(
             selects=select( # Select the fields we care about
                 user_id="CAST (user_id AS BIGINT)", # it supports Spark SQL expressions

@@ -15,16 +15,17 @@
 
 from ai.chronon import query
 from ai.chronon.group_by import GroupBy, TimeUnit, Window
-from ai.chronon.api.ttypes import EventSource, EntitySource, Aggregation, Operation, JoinPart
+from ai.chronon.source import EventSource, EntitySource
+from ai.chronon.api.ttypes import Aggregation, Operation, JoinPart
 
 from ai.chronon.join import Join
 
 ratings_features = GroupBy(
       sources=[
           EntitySource(
-              snapshotTable="item_info.ratings_snapshots_table",
-              mutationsTable="item_info.ratings_mutations_table",
-              mutationsTopic="ratings_mutations_topic",
+              snapshot_table="item_info.ratings_snapshots_table",
+              mutations_table="item_info.ratings_mutations_table",
+              mutations_topic="ratings_mutations_topic",
               query=query.Query(
                   selects={
                       "rating": "CAST(rating as DOUBLE)",

@@ -18,7 +18,8 @@ import pytest, json
 from ai.chronon import group_by, query
 from ai.chronon.group_by import GroupBy, Derivation, TimeUnit, Window, Aggregation, Accuracy
 from ai.chronon.api import ttypes
-from ai.chronon.api.ttypes import EventSource, EntitySource, Operation
+from ai.chronon.api.ttypes import Operation
+from ai.chronon.source import EventSource, EntitySource
 
 
 @pytest.fixture
@@ -45,7 +46,7 @@ def event_source(table, topic=None):
     """
     Sample left join
     """
-    return ttypes.EventSource(
+    return EventSource(
         table=table,
         topic=topic,
         query=ttypes.Query(
@@ -64,9 +65,9 @@ def entity_source(snapshotTable, mutationTable):
     """
     Sample source
     """
-    return ttypes.EntitySource(
-        snapshotTable=snapshotTable,
-        mutationTable=mutationTable,
+    return EntitySource(
+        snapshot_table=snapshotTable,
+        mutation_table=mutationTable,
         query=ttypes.Query(
             startPartition="2020-04-09",
             selects={
@@ -201,15 +202,15 @@ def test_generic_collector():
 def test_select_sanitization():
     gb = group_by.GroupBy(
         sources=[
-            ttypes.EventSource(  # No selects are spcified
+            EventSource(  # No selects are spcified
                 table="event_table1",
                 query=query.Query(
                     selects=None,
                     time_column="ts"
                 )
             ),
-            ttypes.EntitySource(  # Some selects are specified
-                snapshotTable="entity_table1",
+            EntitySource(  # Some selects are specified
+                snapshot_table="entity_table1",
                 query=query.Query(
                     selects={
                         "key1": "key1_sql",
@@ -236,8 +237,8 @@ def test_snapshot_with_hour_aggregation():
     with pytest.raises(AssertionError):
         group_by.GroupBy(
             sources=[
-                ttypes.EntitySource(  # Some selects are specified
-                    snapshotTable="entity_table1",
+                EntitySource(  # Some selects are specified
+                    snapshot_table="entity_table1",
                     query=query.Query(
                         selects={
                             "key1": "key1_sql",
@@ -260,7 +261,7 @@ def test_snapshot_with_hour_aggregation():
 def test_additional_metadata():
     gb = group_by.GroupBy(
         sources=[
-            ttypes.EventSource(
+            EventSource(
                 table="event_table1",
                 query=query.Query(
                     selects=None,
@@ -279,7 +280,7 @@ def test_additional_metadata():
 def test_group_by_with_description():
     gb = group_by.GroupBy(
         sources=[
-            ttypes.EventSource(
+            EventSource(
                 table="event_table1",
                 query=query.Query(
                     selects=None,

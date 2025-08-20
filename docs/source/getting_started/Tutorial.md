@@ -68,14 +68,13 @@ We can aggregate the purchases log data to the user level, to give us a view int
 Because this feature is built upon a source that includes both a table and a topic, its features can be computed in both batch and streaming.
 
 ```python
-source = Source(
-    events=EventSource(
-        table="data.purchases", # This points to the log table with historical purchase events
-        topic=None, # Streaming is not currently part of quickstart, but this would be where you define the topic for realtime events
-        query=Query(
-            selects=select("user_id","purchase_price"), # Select the fields we care about
-            time_column="ts") # The event time
-    ))
+source = EventSource(
+  table="data.purchases", # This points to the log table with historical purchase events
+  topic=None, # Streaming is not currently part of quickstart, but this would be where you define the topic for realtime events
+  query=Query(
+      selects=select("user_id","purchase_price"), # Select the fields we care about
+      time_column="ts") # The event time
+)
 
 window_sizes = [Window(length=day, timeUnit=TimeUnit.DAYS) for day in [3, 14, 30]] # Define some window sizes to use below
 
@@ -145,14 +144,13 @@ For our use case, it's very important that features are computed as of the corre
 Here is what our join looks like:
 
 ```python
-source = Source(
-    events=EventSource(
-        table="data.checkouts", 
-        query=Query(
-            selects=select("user_id"), # The primary key used to join various GroupBys together
-            time_column="ts",
-            ) # The event time used to compute feature values as-of
-    ))
+source = EventSource(
+  table="data.checkouts", 
+  query=Query(
+      selects=select("user_id"), # The primary key used to join various GroupBys together
+      time_column="ts",
+      ) # The event time used to compute feature values as-of
+)
 
 v1 = Join(  
     left=source,
