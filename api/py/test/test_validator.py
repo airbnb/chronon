@@ -165,3 +165,63 @@ def test_validate_derivation_on_keys(zvalidator):
 
     errors = zvalidator._validate_join(v2)
     assert len(errors) == 0, f"Failed on: {errors}"
+
+
+def test_get_join_key_columns():
+    """Test the get_join_key_columns function"""
+    from ai.chronon.repo.validator import get_join_key_columns
+    from sample.joins.sample_team.sample_join_derivation_key_mapping import v1
+    
+    # Expected keys
+    expected_keys = { "subject" }
+
+    # Test with a valid online join
+    key_columns = get_join_key_columns(v1)
+    assert set(key_columns) == expected_keys
+    return
+
+
+def test_get_join_output_columns():
+    """Test the get_join_key_columns function"""
+    from ai.chronon.repo.validator import get_join_output_columns
+    from sample.joins.sample_team.sample_join_derivation_key_mapping import v1
+    
+    # Expected columns
+    from typing import Dict, List
+    from ai.chronon.utils import FeatureDisplayKeys
+
+    # Assuming FeatureDisplayKeys enum is already imported
+    expected_output_columns: Dict[FeatureDisplayKeys, List[str]] = {
+        FeatureDisplayKeys.KEY_COLUMNS: ["subject"],
+        FeatureDisplayKeys.LEFT_COLUMNS: ["event", "subject", "ts"],
+        FeatureDisplayKeys.INTERNAL_COLUMNS: [
+            "sample_team_event_sample_group_by_v1_event_sum_7d",
+            "sample_team_event_sample_group_by_v1_event_sum",
+            "sample_team_event_sample_group_by_v1_event_approx_percentile",
+            "sample_team_entity_sample_group_by_from_module_v1_entity_last",
+            "sample_team_entity_sample_group_by_from_module_v1_entity_last_7d",
+        ],
+        FeatureDisplayKeys.EXTERNAL_COLUMNS: [],
+        FeatureDisplayKeys.DERIVED_COLUMNS: [
+            "derived_field",
+            "event_sum_7d",
+            "event_sum",
+            "event_approx_percentile",
+            "entity_last",
+            "entity_last_7d",
+        ],
+        FeatureDisplayKeys.OUTPUT_COLUMNS: [
+            "derived_field",
+            "event_sum_7d",
+            "event_sum",
+            "event_approx_percentile",
+            "entity_last",
+            "entity_last_7d",
+        ],
+    }
+
+    # Test with a valid online join
+    output_columns = get_join_output_columns(v1)
+    assert output_columns == expected_output_columns
+    return
+

@@ -226,7 +226,7 @@ class LineageParser:
         pre_derived_columns.extend(get_pre_derived_source_keys(join.left))
         output_columns = get_join_output_columns(join)
         output_columns = (
-            output_columns[FeatureDisplayKeys.SOURCE_KEYS] + output_columns[FeatureDisplayKeys.DERIVED_COLUMNS]
+            output_columns[FeatureDisplayKeys.LEFT_COLUMNS] + output_columns[FeatureDisplayKeys.DERIVED_COLUMNS]
         )
 
         derivation_columns = set(d.name for d in join.derivations)

@@ -181,13 +181,64 @@ def build_derived_columns(pre_derived_columns: List[str], derivations: List[Deri
     return output_columns
 
 
+def get_join_key_columns(join: Join) -> List[str]:
+    """
+    Extract key columns from a join configuration.
+
+    This follows the same logic as in Analyzer.scala:
+    - For each join part, get the key columns from the groupBy
+    - If the join part has key mapping, map the right keys to left keys
+    - Filter the result by columns available in the left source
+    - Return distinct list of key columns that exist in left source
+
+    Args:
+        join: The Join thrift object
+
+    Returns:
+        List of distinct key column names that exist in the left source
+    """
+    # Get all potential key columns from join parts
+    potential_key_columns = []
+
+    for join_part in join.joinParts:
+        # Get key columns from the groupBy
+        group_by_keys = join_part.groupBy.keyColumns
+
+        if join_part.keyMapping is None:
+            # No key mapping, use the keys as-is
+            potential_key_columns.extend(group_by_keys)
+        else:
+            # Key mapping exists, map right keys to left keys
+            # keyMapping is left->right, so we need to create right->left mapping
+            right_to_left = {v: k for k, v in join_part.keyMapping.items()}
+
+            for key in group_by_keys:
+                if key in right_to_left:
+                    # Map right key to left key
+                    potential_key_columns.append(right_to_left[key])
+                else:
+                    # No mapping for this key, use as-is
+                    potential_key_columns.append(key)
+
+    # Get distinct potential keys
+    distinct_potential_keys = list(set(potential_key_columns))
+
+    # Filter by columns available in the left source
+    left_columns = get_pre_derived_source_keys(join.left)
+    key_columns = [key for key in distinct_potential_keys if key in left_columns]
+
+    return key_columns
+
+
 def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
     """
     From the join object, get the final output columns after derivations.
     """
     columns = {}
-    keys = get_pre_derived_source_keys(join.left)
-    columns[FeatureDisplayKeys.SOURCE_KEYS] = keys
+    key_columns = get_join_key_columns(join)
+    columns[FeatureDisplayKeys.KEY_COLUMNS] = key_columns
+    left_columns = get_pre_derived_source_keys(join.left)
+    columns[FeatureDisplayKeys.LEFT_COLUMNS] = left_columns
     pre_derived_columns = get_pre_derived_join_features(join)
     columns.update({**pre_derived_columns})
 
@@ -381,9 +432,9 @@ class ChrononRepoValidator(object):
             for value_list in features.values():
                 pre_derived_columns_list.extend(value_list)
 
-            keys = get_pre_derived_source_keys(join.left)
-            columns = pre_derived_columns_list + keys
-            errors.extend(self._validate_derivations(keys, columns, join.derivations))
+            left_columns = get_pre_derived_source_keys(join.left)
+            columns = pre_derived_columns_list + left_columns
+            errors.extend(self._validate_derivations(left_columns, columns, join.derivations))
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:
