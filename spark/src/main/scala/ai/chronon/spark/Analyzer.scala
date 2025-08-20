@@ -20,7 +20,7 @@ import ai.chronon.api
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.{AvroConversions, SparkConversions}
 import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
@@ -247,6 +247,19 @@ class Analyzer(tableUtils: TableUtils,
       api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
     } else {
       groupBy.outputSchema
+    }
+
+    if (tableUtils.chrononAvroSchemaValidation) {
+      // Validate that the baseDf schema is compatible with AvroSchema acceptable types
+      // This is required for online serving to work
+      try {
+        AvroConversions.fromChrononSchema(schema)
+      } catch {
+        case e: UnsupportedOperationException =>
+          throw new RuntimeException(
+            "In order to enable online serving, please make sure that the data types of your groupBy column types are compatible with AvroSchema acceptable types. \n" + e.getMessage,
+            e)
+      }
     }
 
     val keySchema = groupBy.keySchema.map { field =>

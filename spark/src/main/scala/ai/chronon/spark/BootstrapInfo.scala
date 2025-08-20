@@ -135,14 +135,16 @@ object BootstrapInfo {
     if (tableUtils.chrononAvroSchemaValidation) {
       // Validate that the baseDf schema is compatible with AvroSchema acceptable types
       // This is required for online serving to work
+
+      val schemaSpark: org.apache.spark.sql.types.StructType = baseDf.schema
+      val schemaChronon: ai.chronon.api.StructType = SparkConversions.toChrononStruct("", schemaSpark)
+
       try {
-        val schemaSpark: org.apache.spark.sql.types.StructType = baseDf.schema
-        val schemaChronon: ai.chronon.api.StructType = SparkConversions.toChrononStruct("", schemaSpark)
         AvroConversions.fromChrononSchema(schemaChronon)
       } catch {
         case e: UnsupportedOperationException =>
           throw new RuntimeException(
-            "In order to enable online serving, please make sure that the data types of your column types are compatible with AvroSchema acceptable types. \n" + e.getMessage,
+            "In order to enable online serving, please make sure that the data types of your groupBy column types are compatible with AvroSchema acceptable types. \n" + e.getMessage,
             e)
       }
     }
