@@ -274,7 +274,8 @@ object Builders {
         tableProperties: Map[String, String] = Map.empty,
         historicalBackill: Boolean = true,
         deprecationDate: String = null,
-        description: String = null
+        description: String = null,
+        attributes: Map[String, String] = Map.empty
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)
@@ -296,6 +297,9 @@ object Builders {
         result.setDeprecationDate(deprecationDate)
       if (description != null) {
         result.setDescription(description)
+      }
+      if (attributes != null) {
+        result.setAttributes(attributes.toJava)
       }
       result
     }
