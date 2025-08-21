@@ -4,6 +4,7 @@ import ai.chronon.aggregator.base._
 import junit.framework.TestCase
 import org.apache.commons.math3.stat.descriptive.moment.{Kurtosis => ApacheKurtosis, Skewness => ApacheSkew}
 import org.junit.Assert._
+import org.junit.Test
 
 class MomentTest extends TestCase {
   def makeAgg(aggregator: MomentAggregator, values: Seq[Double]): (MomentAggregator, MomentsIR) = {
@@ -35,24 +36,28 @@ class MomentTest extends TestCase {
     assertEquals(expected(v1 ++ v2), agg.finalize(ir), 0.1)
   }
 
+  @Test
   def testUpdate(): Unit = {
     val values = Seq(1.1, 2.2, 3.3, 4.4, 5.5)
     assertUpdate(new Skew(), values, expectedSkew)
     assertUpdate(new Kurtosis(), values, expectedKurtosis)
   }
 
+  @Test
   def testInsufficientSizes(): Unit = {
     val values = Seq(1.1, 2.2, 3.3, 4.4)
     assertUpdate(new Skew(), values.take(2), _ => Double.NaN)
     assertUpdate(new Kurtosis(), values.take(3), _ => Double.NaN)
   }
 
+  @Test
   def testNoVariance(): Unit = {
     val values = Seq(1.0, 1.0, 1.0, 1.0)
     assertUpdate(new Skew(), values, _ => Double.NaN)
     assertUpdate(new Kurtosis(), values, _ => Double.NaN)
   }
 
+  @Test
   def testMerge(): Unit = {
     val values1 = Seq(1.1, 2.2, 3.3)
     val values2 = Seq(4.4, 5.5)
@@ -60,6 +65,7 @@ class MomentTest extends TestCase {
     assertMerge(new Skew(), values1, values2, expectedSkew)
   }
 
+  @Test
   def testNormalize(): Unit = {
     val values = Seq(1.0, 2.0, 3.0, 4.0, 5.0)
     val (agg, ir) = makeAgg(new Kurtosis, values)

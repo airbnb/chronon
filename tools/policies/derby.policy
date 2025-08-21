@@ -1,0 +1,9 @@
+// This file ensures that tests running under Bazel will have the correct permissions
+// to use Derby as a backend for the Hive metastore.
+//
+// See: https://db.apache.org/derby/docs/10.13/security/csecembeddedperms.html
+grant {
+    permission java.lang.RuntimePermission "createClassLoader";
+    permission org.apache.derby.security.SystemPermission "engine", "usederbyinternals";
+    permission java.util.PropertyPermission "derby.*", "read";
+};

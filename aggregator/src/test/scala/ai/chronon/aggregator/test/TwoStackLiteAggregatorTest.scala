@@ -27,6 +27,7 @@ import ai.chronon.aggregator.windowing.{
 import ai.chronon.api.{Aggregation, Builders, IntType, LongType, Operation, StructField, StructType, TimeUnit, Window}
 import junit.framework.TestCase
 import org.junit.Assert._
+import org.junit.Test
 import ai.chronon.api.Extensions.AggregationOps
 import com.google.gson.Gson
 
@@ -57,6 +58,7 @@ class TwoStackLiteAggregatorTest extends TestCase {
     assertBufferEquals(Seq(10), bankersBuffer.query)
   }
 
+  @Test
   def testAgainstSawtooth(): Unit = {
     val timer = new Timer
     val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 100000, 5 * 60 * 1000)

@@ -6,6 +6,7 @@ import ai.chronon.online.MetadataEndPoint.NameByTeamEndPointName
 import ai.chronon.online.{MetadataDirWalker, MetadataEndPoint, MetadataStore}
 import junit.framework.TestCase
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import org.junit.Test
 
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, Future}
@@ -13,8 +14,8 @@ import scala.io.Source
 
 class MetadataStoreTest extends TestCase {
   val joinPath = "joins/team/example_join.v1"
-  val confResource = getClass.getResource(s"/$joinPath")
-  val src = Source.fromFile(confResource.getPath)
+  val confResourcePath = ExampleDataUtils.getExampleData(joinPath)
+  val src = Source.fromFile(confResourcePath)
 
   val expected = {
     try src.mkString
@@ -23,6 +24,7 @@ class MetadataStoreTest extends TestCase {
 
   val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
 
+  @Test
   def testMetadataStoreSingleFile(): Unit = {
     val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
     val singleFileDataSet = ChrononMetadataKey
@@ -31,7 +33,7 @@ class MetadataStoreTest extends TestCase {
     inMemoryKvStore.create(singleFileDataSet)
     inMemoryKvStore.create(NameByTeamEndPointName)
     // set the working directory to /chronon instead of $MODULE_DIR in configuration if Intellij fails testing
-    val singleFileDirWalker = new MetadataDirWalker(confResource.getPath, acceptedEndPoints)
+    val singleFileDirWalker = new MetadataDirWalker(confResourcePath, acceptedEndPoints)
     val singleFileKvMap = singleFileDirWalker.run
     val singleFilePut: Seq[Future[scala.collection.Seq[Boolean]]] = singleFileKvMap.toSeq.map {
       case (endPoint, kvMap) => singleFileMetadataStore.put(kvMap, endPoint)
@@ -56,6 +58,7 @@ class MetadataStoreTest extends TestCase {
     assertFalse(emptyRes.latest.isSuccess)
   }
 
+  @Test
   def testMetadataStoreDirectory(): Unit = {
     val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
     val directoryDataSetDataSet = ChrononMetadataKey
@@ -64,7 +67,7 @@ class MetadataStoreTest extends TestCase {
     inMemoryKvStore.create(directoryDataSetDataSet)
     inMemoryKvStore.create(directoryMetadataDataSet)
     val directoryDataDirWalker =
-      new MetadataDirWalker(confResource.getPath.replace(s"/$joinPath", ""), acceptedEndPoints)
+      new MetadataDirWalker(confResourcePath.replace(s"/$joinPath", ""), acceptedEndPoints)
     val directoryDataKvMap = directoryDataDirWalker.run
     val directoryPut = directoryDataKvMap.toSeq.map {
       case (endPoint, kvMap) => directoryMetadataStore.put(kvMap, endPoint)
