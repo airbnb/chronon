@@ -248,4 +248,26 @@ class ExtensionsTest {
     assertEquals(join1.semanticHash(excludeTopic = true), join2.semanticHash(excludeTopic = true))
     assertEquals(join1.semanticHash(excludeTopic = false), join2.semanticHash(excludeTopic = false))
   }
+
+  @Test
+  def semanticHashIgnoresMetadataAttributes(): Unit = {
+    val metadata = Builders.MetaData(name = "test", attributes = Map("owner" -> "Lucie"))
+    val groupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = null, table = "db.gb_table", topic = "test.gb_topic")),
+      keyColumns = Seq("a", "c"),
+      metaData = metadata)
+    val join1 = Builders.Join(
+      left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = metadata,
+      derivations = Seq(Builders.Derivation(name = "*", expression = "*", metaData = metadata))
+    )
+    val updatedMetadata = Builders.MetaData(name = "test", attributes = Map("owner" -> "Katie"))
+    val join2 = join1.deepCopy()
+    join2.setMetaData(updatedMetadata)
+    join2.joinParts.get(0).groupBy.setMetaData(updatedMetadata)
+    join2.derivations.get(0).setMetaData(updatedMetadata)
+    assertEquals(join1.semanticHash(excludeTopic = true), join2.semanticHash(excludeTopic = true))
+    assertEquals(join1.semanticHash(excludeTopic = false), join2.semanticHash(excludeTopic = false))
+  }
 }
