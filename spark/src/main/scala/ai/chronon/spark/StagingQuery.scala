@@ -30,8 +30,8 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(stagingQueryConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   private val outputTable = stagingQueryConf.metaData.outputTable
-  val virtualPartitionsTable =
-    s"${stagingQueryConf.metaData.outputNamespace}.${StagingQuery.VIRTUAL_PARTITIONS_TABLE_NAME}"
+  val signalPartitionsTable =
+    s"${stagingQueryConf.metaData.outputNamespace}.${StagingQuery.SIGNAL_PARTITIONS_TABLE_NAME}"
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
     .map(_.toScala.toMap)
     .orNull
@@ -129,10 +129,10 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     tableUtils.sql(createViewSql)
     logger.info(s"Created staging query view: $outputTable")
 
-    writeVirtualPartitionMetadata(outputTable)
+    writeSignalPartitionMetadata(outputTable)
   }
 
-  private def writeVirtualPartitionMetadata(tableName: String): Unit = {
+  private def writeSignalPartitionMetadata(tableName: String): Unit = {
     val schema = org.apache.spark.sql.types.StructType(
       Seq(
         // Add a dummy data column since tables cannot have only partition columns
@@ -147,7 +147,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     // Create single row for this view with both partition values and creation timestamp
     val createdAt = java.time.Instant.now().toString
     val row = Row(createdAt, endPartition, tableName)
-    val virtualPartitionData = tableUtils.sparkSession.createDataFrame(
+    val signalPartitionData = tableUtils.sparkSession.createDataFrame(
       tableUtils.sparkSession.sparkContext.parallelize(Seq(row)),
       schema
     )
@@ -155,22 +155,21 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     // Use insertPartitions with both ds and table_name as partition columns
     // This allows partition sensors to directly check for specific table partition existence
     tableUtils.insertPartitions(
-      df = virtualPartitionData,
-      tableName = virtualPartitionsTable,
+      df = signalPartitionData,
+      tableName = signalPartitionsTable,
       tableProperties = tableProps,
       partitionColumns = Seq(tableUtils.partitionColumn, StagingQuery.TABLE_NAME_COLUMN)
     )
 
     logger.info(
-      s"Updated virtual partition metadata for view $tableName in partition ${tableUtils.partitionColumn}=$endPartition/${StagingQuery.TABLE_NAME_COLUMN}=$tableName")
+      s"Updated signal partition metadata for view $tableName in partition ${tableUtils.partitionColumn}=$endPartition/${StagingQuery.TABLE_NAME_COLUMN}=$tableName")
   }
 }
 
 object StagingQuery {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
-  // Virtual partition metadata constants
-  private val VIRTUAL_PARTITIONS_TABLE_NAME = "chronon_signal_partitions"
+  private val SIGNAL_PARTITIONS_TABLE_NAME = "chronon_signal_partitions"
   private val TABLE_NAME_COLUMN = "table_name"
   private val CREATED_AT_COLUMN = "created_at"
 
