@@ -14,5 +14,6 @@
   "startPartition": "2020-03-01",
   "setups": [
     "CREATE TEMPORARY FUNCTION S2_CELL AS 'com.sample.hive.udf.S2CellId'"
-  ]
+  ],
+  "createView": 0
 }
