@@ -330,7 +330,7 @@ class StagingQueryTest {
 
     // Verify virtual partition metadata was written for the view
     val virtualPartitionExists = try {
-      val metadataCount = tableUtils.sql(s"SELECT COUNT(*) as count FROM ${stagingQueryView.virtualPartitionsTable} WHERE table_name = '$outputView'").collect()(0).getAs[Long]("count")
+      val metadataCount = tableUtils.sql(s"SELECT COUNT(*) as count FROM ${stagingQueryView.signalPartitionsTable} WHERE table_name = '$outputView'").collect()(0).getAs[Long]("count")
       metadataCount > 0
     } catch {
       case _: Exception => false
@@ -339,7 +339,7 @@ class StagingQueryTest {
 
     // Verify the structure of virtual partition metadata
     if (virtualPartitionExists) {
-      val metadataRows = tableUtils.sql(s"SELECT * FROM ${stagingQueryView.virtualPartitionsTable} WHERE table_name = '$outputView'").collect()
+      val metadataRows = tableUtils.sql(s"SELECT * FROM ${stagingQueryView.signalPartitionsTable} WHERE table_name = '$outputView'").collect()
       assert(metadataRows.length > 0, "Should have at least one partition metadata entry")
       
       val firstRow = metadataRows(0)
@@ -369,7 +369,7 @@ class StagingQueryTest {
 
     // Verify virtual partition metadata was NOT written for the table
     val virtualPartitionExistsForTable = try {
-      val metadataCountForTable = tableUtils.sql(s"SELECT COUNT(*) as count FROM ${stagingQueryTable.virtualPartitionsTable} WHERE table_name = '$outputTable'").collect()(0).getAs[Long]("count")
+      val metadataCountForTable = tableUtils.sql(s"SELECT COUNT(*) as count FROM ${stagingQueryTable.signalPartitionsTable} WHERE table_name = '$outputTable'").collect()(0).getAs[Long]("count")
       metadataCountForTable > 0
     } catch {
       case _: Exception => false
