@@ -42,15 +42,12 @@ def test_get_staging_query_dependencies():
     deps = get_staging_query_dependencies(staging_query)
     assert len(deps) == 1
     
-    dep = json.loads(deps[0])
     expected_spec = "test_namespace.chronon_signal_partitions/ds={{ ds }}/table_name=test_namespace.test_deps_staging_query"
-    assert dep["spec"] == expected_spec
-    assert dep["name"] == "wait_for_view_test_deps_staging_query_ds"
+    assert deps[0] == expected_spec
     
-    # Test with lag
     deps_with_lag = get_staging_query_dependencies(staging_query, lag=2)
-    dep_with_lag = json.loads(deps_with_lag[0])
-    assert dep_with_lag["name"] == "wait_for_view_test_deps_staging_query_ds_minus_2"
+    assert len(deps_with_lag) == 1
+    assert deps_with_lag[0] == expected_spec
 
 
 def test_group_by_with_staging_query_dependencies():

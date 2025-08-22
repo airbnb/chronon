@@ -12,10 +12,31 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-import json
+import os
 
 import ai.chronon.api.ttypes as api
-from ai.chronon.utils import get_staging_query_output_table_name
+from ai.chronon.utils import get_staging_query_output_table_name, chronon_root_path
+from ai.chronon.repo import teams, TEAMS_FILE_PATH
+
+
+def _resolve_staging_query_table_and_namespace(staging_query: api.StagingQuery):
+    if staging_query.metaData.outputNamespace and staging_query.metaData.name:
+        table_name = f"{staging_query.metaData.outputNamespace}.{staging_query.metaData.name}"
+        source_namespace = staging_query.metaData.outputNamespace
+    else:
+        table_name = get_staging_query_output_table_name(staging_query, full_name=True)
+        # Resolve namespace from team config if table_name contains template
+        if "{{ db }}" in table_name and staging_query.metaData.name:
+            team_name = staging_query.metaData.name.split(".")[0]
+            teams_path = os.path.join(chronon_root_path, TEAMS_FILE_PATH)
+            try:
+                source_namespace = teams.get_team_conf(teams_path, team_name, "namespace")
+            except ValueError:
+                source_namespace = teams.get_team_conf(teams_path, "default", "namespace")
+            table_name = table_name.replace("{{ db }}", source_namespace)
+        else:
+            source_namespace = table_name.split(".")[0]
+    return table_name, source_namespace
 
 
 def StagingQueryEventSource(
@@ -23,30 +44,8 @@ def StagingQueryEventSource(
     query: api.Query,
     is_cumulative: bool = False
 ) -> api.Source:
-    """
-    Creates an EventSource that references a StagingQuery view.
+    table_name, _ = _resolve_staging_query_table_and_namespace(staging_query)
 
-    This wrapper automatically:
-    1. Uses the staging query's output table as the event source table
-    2. Generates signal partition dependencies for orchestration
-    3. Ensures batch-only processing (no realtime component)
-
-    Args:
-        staging_query: The StagingQuery object that defines the view
-        query: Query configuration for the event source
-        is_cumulative: Whether this is a cumulative event source
-
-    Returns:
-        api.Source: A properly configured Source with EventSource
-    """
-    # Get the staging query output table name (the view)
-    # For tests and direct usage, construct the table name manually
-    if staging_query.metaData.outputNamespace and staging_query.metaData.name:
-        table_name = f"{staging_query.metaData.outputNamespace}.{staging_query.metaData.name}"
-    else:
-        table_name = get_staging_query_output_table_name(staging_query, full_name=True)
-
-    # Create the EventSource
     event_source = api.EventSource(
         table=table_name,
         query=query,
@@ -55,7 +54,6 @@ def StagingQueryEventSource(
         topic=None
     )
 
-    # Create and return the Source
     source = api.Source(events=event_source)
 
     return source
@@ -65,27 +63,7 @@ def StagingQueryEntitySource(
     staging_query: api.StagingQuery,
     query: api.Query
 ) -> api.Source:
-    """
-    Creates an EntitySource that references a StagingQuery view.
-
-    This wrapper automatically:
-    1. Uses the staging query's output table as the entity snapshot table
-    2. Generates signal partition dependencies for orchestration
-    3. Ensures batch-only processing (no realtime component)
-
-    Args:
-        staging_query: The StagingQuery object that defines the view
-        query: Query configuration for the entity source
-
-    Returns:
-        api.Source: A properly configured Source with EntitySource
-    """
-    # Get the staging query output table name (the view)
-    # For tests and direct usage, construct the table name manually
-    if staging_query.metaData.outputNamespace and staging_query.metaData.name:
-        table_name = f"{staging_query.metaData.outputNamespace}.{staging_query.metaData.name}"
-    else:
-        table_name = get_staging_query_output_table_name(staging_query, full_name=True)
+    table_name, _ = _resolve_staging_query_table_and_namespace(staging_query)
 
     # Create the EntitySource
     entity_source = api.EntitySource(
@@ -96,37 +74,14 @@ def StagingQueryEntitySource(
         mutationTopic=None
     )
 
-    # Create and return the Source
     source = api.Source(entities=entity_source)
 
     return source
 
 
 def get_staging_query_dependencies(staging_query: api.StagingQuery, lag: int = 0):
-    """
-    Generate signal partition dependencies for a staging query view.
+    table_name, source_namespace = _resolve_staging_query_table_and_namespace(staging_query)
 
-    This function should be used explicitly when creating GroupBy configs
-    that depend on staging query views.
+    dependency_spec = f"{source_namespace}.chronon_signal_partitions/ds={{{{ ds }}}}/table_name={table_name}"
 
-    Args:
-        staging_query: The StagingQuery object
-        lag: The lag in days for the dependency (default: 0)
-
-    Returns:
-        List[str]: List of dependency strings for signal partitions
-    """
-    # For tests and direct usage, construct the table name manually
-    if staging_query.metaData.outputNamespace and staging_query.metaData.name:
-        table_name = f"{staging_query.metaData.outputNamespace}.{staging_query.metaData.name}"
-    else:
-        table_name = get_staging_query_output_table_name(staging_query, full_name=True)
-    source_namespace = table_name.split('.')[0] if '.' in table_name else 'default'
-    clean_table_name = table_name.split('.')[-1] if '.' in table_name else table_name
-
-    dependency = {
-        "name": f"wait_for_view_{clean_table_name}_ds{'_minus_' + str(lag) if lag > 0 else ''}",
-        "spec": f"{source_namespace}.chronon_signal_partitions/ds={{{{ ds }}}}/table_name={table_name}"
-    }
-
-    return [json.dumps(dependency)]
+    return [dependency_spec]
