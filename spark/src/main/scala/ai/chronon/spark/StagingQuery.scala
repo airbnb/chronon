@@ -46,15 +46,12 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
                           enableAutoExpand: Option[Boolean] = Some(true),
                           overrideStartPartition: Option[String] = None,
                           skipFirstHole: Boolean = true): Unit = {
+    assert(!Option(stagingQueryConf.createView).getOrElse(false),
+           "createView should not be enabled for computeStagingQuery mode")
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
     if (stagingQueryConf.startPartition == null) {
-      if (Option(stagingQueryConf.createView).getOrElse(false)) {
-        val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS ${stagingQueryConf.query}"
-        tableUtils.sql(createViewSql)
-      } else {
-        tableUtils.sql(stagingQueryConf.query).save(outputTable)
-      }
+      tableUtils.sql(stagingQueryConf.query).save(outputTable)
       return
     }
     val overrideStart = overrideStartPartition.getOrElse(stagingQueryConf.startPartition)
@@ -86,15 +83,10 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
               StagingQuery.substitute(tableUtils, stagingQueryConf.query, range.start, range.end, endPartition)
             logger.info(s"Rendered Staging Query to run is:\n$renderedQuery")
 
-            if (Option(stagingQueryConf.createView).getOrElse(false)) {
-              val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS $renderedQuery"
-              tableUtils.sql(createViewSql)
-              logger.info(s"Created view $outputTable $range $progress")
-            } else {
-              val df = tableUtils.sql(renderedQuery)
-              tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols, autoExpand = enableAutoExpand.get)
-              logger.info(s"Wrote to table $outputTable, into partitions: $range $progress")
-            }
+            val df = tableUtils.sql(renderedQuery)
+            tableUtils.insertPartitions(df, outputTable, tableProps, partitionCols, autoExpand = enableAutoExpand.get)
+            logger.info(s"Wrote to table $outputTable, into partitions: $range $progress")
+
         }
         logger.info(s"Finished writing Staging Query data to $outputTable")
       } catch {
@@ -178,7 +170,7 @@ object StagingQuery {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   // Virtual partition metadata constants
-  private val VIRTUAL_PARTITIONS_TABLE_NAME = "chronon_virtual_partitions"
+  private val VIRTUAL_PARTITIONS_TABLE_NAME = "chronon_signal_partitions"
   private val TABLE_NAME_COLUMN = "table_name"
   private val CREATED_AT_COLUMN = "created_at"
 
