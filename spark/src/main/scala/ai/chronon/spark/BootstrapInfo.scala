@@ -89,6 +89,23 @@ object BootstrapInfo {
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
 
+        if (tableUtils.chrononAvroSchemaValidation) {
+          // Validate that the baseDf schema is compatible with AvroSchema acceptable types
+          // This is required for online serving to work
+
+          val schemaSpark: org.apache.spark.sql.types.StructType = gb.keySchema
+          val schemaChronon: ai.chronon.api.StructType = SparkConversions.toChrononStruct("", schemaSpark)
+
+          try {
+            AvroConversions.fromChrononSchema(schemaChronon)
+          } catch {
+            case e: UnsupportedOperationException =>
+              throw new RuntimeException(
+                "In order to enable online serving, please make sure that the data types of your groupBy column types are compatible with AvroSchema acceptable types. \n" + e.getMessage,
+                e)
+          }
+        }
+
         val keyAndPartitionFields =
           gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
         // todo: this change is only valid for offline use case
@@ -131,23 +148,6 @@ object BootstrapInfo {
       tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()),
       sparkSchema
     )
-
-    if (tableUtils.chrononAvroSchemaValidation) {
-      // Validate that the baseDf schema is compatible with AvroSchema acceptable types
-      // This is required for online serving to work
-
-      val schemaSpark: org.apache.spark.sql.types.StructType = baseDf.schema
-      val schemaChronon: ai.chronon.api.StructType = SparkConversions.toChrononStruct("", schemaSpark)
-
-      try {
-        AvroConversions.fromChrononSchema(schemaChronon)
-      } catch {
-        case e: UnsupportedOperationException =>
-          throw new RuntimeException(
-            "In order to enable online serving, please make sure that the data types of your groupBy column types are compatible with AvroSchema acceptable types. \n" + e.getMessage,
-            e)
-      }
-    }
 
     val derivedSchema = if (joinConf.hasDerivations) {
       val projections = joinConf.derivationsScala.derivationProjection(baseDf.columns)

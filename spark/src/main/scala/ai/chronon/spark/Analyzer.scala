@@ -230,6 +230,21 @@ class Analyzer(tableUtils: TableUtils,
                 groupByConf.keyColumns.toScala.toArray,
                 groupByConf.sources.toScala.map(_.table).mkString(","))
       else ""
+
+
+    if (tableUtils.chrononAvroSchemaValidation) {
+      // Validate that the baseDf schema is compatible with AvroSchema acceptable types
+      // This is required for online serving to work
+      try {
+        AvroConversions.fromChrononSchema(groupBy.outputSchema)
+      } catch {
+        case e: UnsupportedOperationException =>
+          throw new RuntimeException(
+            "In order to enable online serving, please make sure that the data types of your groupBy column types are compatible with AvroSchema acceptable types. \n" + e.getMessage,
+            e)
+      }
+    }
+
     val schema = if (groupByConf.hasDerivations) {
       val keyAndPartitionFields =
         groupBy.keySchema.fields ++ Seq(
@@ -247,19 +262,6 @@ class Analyzer(tableUtils: TableUtils,
       api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
     } else {
       groupBy.outputSchema
-    }
-
-    if (tableUtils.chrononAvroSchemaValidation) {
-      // Validate that the baseDf schema is compatible with AvroSchema acceptable types
-      // This is required for online serving to work
-      try {
-        AvroConversions.fromChrononSchema(schema)
-      } catch {
-        case e: UnsupportedOperationException =>
-          throw new RuntimeException(
-            "In order to enable online serving, please make sure that the data types of your groupBy column types are compatible with AvroSchema acceptable types. \n" + e.getMessage,
-            e)
-      }
     }
 
     val keySchema = groupBy.keySchema.map { field =>
