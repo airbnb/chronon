@@ -22,7 +22,7 @@ import re
 from collections import defaultdict
 from typing import Dict, List
 
-from ai.chronon.api.ttypes import Derivation, ExternalPart, GroupBy, Join, Source
+from ai.chronon.api.ttypes import Derivation, ExternalPart, GroupBy, Join, Source, StagingQuery
 from ai.chronon.group_by import get_output_col_names
 from ai.chronon.logger import get_logger
 from ai.chronon.repo import GROUP_BY_FOLDER_NAME, JOIN_FOLDER_NAME
@@ -326,6 +326,8 @@ class ChrononRepoValidator(object):
             return self._validate_group_by(obj)
         elif isinstance(obj, Join):
             return self._validate_join(obj)
+        elif isinstance(obj, StagingQuery):
+            return self._validate_staging_query(obj)
         return []
 
     def _has_diff(self, obj: object, old_obj: object, skipped_fields=SKIPPED_FIELDS) -> bool:
@@ -435,6 +437,39 @@ class ChrononRepoValidator(object):
             left_columns = get_pre_derived_source_keys(join.left)
             columns = pre_derived_columns_list + left_columns
             errors.extend(self._validate_derivations(left_columns, columns, join.derivations))
+        return errors
+
+    def _validate_staging_query(self, staging_query: StagingQuery) -> List[str]:
+        """
+        Validate staging query configuration.
+
+        Returns:
+          list of validation errors.
+        """
+        errors = []
+
+        # If createView is True, validate that start_date and end_date templates are not used
+        if staging_query.createView:
+            query = staging_query.query
+            if query:
+                # Check for start_date and end_date templates using regex
+                found_templates = []
+
+                start_date_pattern = r"\{\{\s*start_date\s*\}\}"
+                end_date_pattern = r"\{\{\s*end_date\s*\}\}"
+
+                if re.search(start_date_pattern, query, re.IGNORECASE):
+                    found_templates.append("start_date")
+                if re.search(end_date_pattern, query, re.IGNORECASE):
+                    found_templates.append("end_date")
+
+                if found_templates:
+                    errors.append(
+                        f"StagingQuery '{staging_query.metaData.name}' with createView=True cannot contain "
+                        f"date templates: {', '.join(found_templates)}. Views should contain all data and "
+                        f"use partition pushdown for filtering."
+                    )
+
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:

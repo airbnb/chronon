@@ -853,4 +853,108 @@ class GroupByTest {
     println("Temporal events result with dateint partition:")
     resultDf.show()
   }
+
+  @Test
+  def testStagingQueryViewWithGroupBy(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+
+    val testDatabase = s"staging_query_view_test_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(testDatabase)
+
+    // Create source data table with partitions  
+    val sourceSchema = List(
+      Column("user", StringType, 20),
+      Column("item", StringType, 50), 
+      Column("time_spent_ms", LongType, 5000),
+      Column("price", DoubleType, 100)
+    )
+
+    val sourceTable = s"$testDatabase.source_events"
+    val sourceDf = DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 10)
+    sourceDf.save(sourceTable)
+
+    // Create staging query configuration that creates a view (no date templates)
+    val stagingQueryConf = Builders.StagingQuery(
+      metaData = Builders.MetaData(name = "test_staging_view", namespace = testDatabase, team = "chronon"),
+      query = s"SELECT user, item, time_spent_ms, price, ts, ds FROM $sourceTable",
+      createView = true
+    )
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val stagingQueryJob = new StagingQuery(stagingQueryConf, today, tableUtils)
+
+    // Create the staging query view using the new createStagingQueryView method
+    stagingQueryJob.createStagingQueryView()
+
+    val viewTable = s"$testDatabase.test_staging_view"
+    
+    // Now create a GroupBy that uses the staging query view as its source
+    val source = Builders.Source.events(
+      table = viewTable,
+      query = Builders.Query(selects = Builders.Selects("user", "item", "time_spent_ms", "price", "ts"))
+    )
+
+    val aggregations = Seq(
+      Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
+      Builders.Aggregation(operation = Operation.AVERAGE, 
+                          inputColumn = "price",
+                          windows = Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(operation = Operation.MAX,
+                          inputColumn = "time_spent_ms", 
+                          windows = Seq(new Window(30, TimeUnit.DAYS)))
+    )
+
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = aggregations,
+      metaData = Builders.MetaData(name = "test_staging_view_groupby", namespace = testDatabase, team = "chronon"),
+      backfillStartDate = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    )
+
+    // Run the GroupBy backfill
+    GroupBy.computeBackfill(groupByConf, endPartition = today, tableUtils = tableUtils)
+
+    val groupByOutputTable = s"$testDatabase.test_staging_view_groupby"
+    val groupByResultFromView = tableUtils.sql(s"SELECT * FROM $groupByOutputTable")
+
+    // Create a second GroupBy that uses the original source table (not the view) for comparison
+    val sourceFromTable = Builders.Source.events(
+      table = sourceTable,
+      query = Builders.Query(selects = Builders.Selects("user", "item", "time_spent_ms", "price", "ts"))
+    )
+
+    val groupByConfFromTable = Builders.GroupBy(
+      sources = Seq(sourceFromTable),
+      keyColumns = Seq("user"),
+      aggregations = aggregations,
+      metaData = Builders.MetaData(name = "test_source_table_groupby", namespace = testDatabase, team = "chronon"),
+      backfillStartDate = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    )
+
+    GroupBy.computeBackfill(groupByConfFromTable, endPartition = today, tableUtils = tableUtils)
+    val groupByOutputTableFromSource = s"$testDatabase.test_source_table_groupby"
+    val groupByResultFromSource = tableUtils.sql(s"SELECT * FROM $groupByOutputTableFromSource")
+
+    // Compare the GroupBy results from view vs source table to ensure they match
+    val diff = Comparison.sideBySide(groupByResultFromView, groupByResultFromSource, List("user", "ds"))
+    if (diff.count() > 0) {
+      val logger = org.slf4j.LoggerFactory.getLogger(getClass)
+      logger.info(s"View result count: ${groupByResultFromView.count()}")
+      logger.info(s"Source result count: ${groupByResultFromSource.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
+
+    // Verify we can query the results successfully with partition pushdown
+    val filteredResult = tableUtils.sql(s"""
+      SELECT user, time_spent_ms_count 
+      FROM $groupByOutputTable 
+      WHERE ds >= '${tableUtils.partitionSpec.minus(today, new Window(7, TimeUnit.DAYS))}'
+    """)
+    assertTrue("Should be able to filter GroupBy results", filteredResult.count() >= 0)
+  }
 }
