@@ -175,7 +175,7 @@ password=<API Key>
 
 ## Setup for pushing python API package to PyPi repository
 
-1. Setup your pypi public account and contact @Nikhil to get added to the PyPi package as a [collaborator](https://pypi.org/manage/project/chronon-ai/collaboration/)
+1. Setup your pypi public account and contact [project management committee](https://github.com/airbnb/chronon/blob/main/PROJECT_MANAGEMENT_COMMITTEE) to get added to the PyPi package as a [collaborator](https://pypi.org/manage/project/chronon-ai/collaboration/)
 2. Install `tox, build, twine`. There are three python requirements for the python build process.
 * tox: Module for testing. To run the tests run tox in the main project directory.
 * build: Module for building. To build run `python -m build` in the main project directory
