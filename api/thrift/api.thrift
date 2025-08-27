@@ -105,10 +105,17 @@ struct EntitySource {
     4: optional Query query
 }
 
+struct ExternalSourceFactoryConfig {
+    1: optional string factoryName
+    2: optional map<string, string> factoryParams
+}
+
 struct ExternalSource {
     1: optional MetaData metadata
     2: optional TDataType keySchema
     3: optional TDataType valueSchema
+    4: optional string factoryName
+    5: optional ExternalSourceFactoryConfig factoryConfig
 }
 
 /**

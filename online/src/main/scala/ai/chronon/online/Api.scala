@@ -17,7 +17,7 @@
 package ai.chronon.online
 
 import org.slf4j.LoggerFactory
-import ai.chronon.api.{Constants, StructType}
+import ai.chronon.api.{Constants, StructType, Join}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
 import java.util.Base64
@@ -28,6 +28,7 @@ import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
+import scala.collection.JavaConverters._
 
 object KVStore {
   // a scan request essentially for the keyBytes
@@ -265,4 +266,81 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
     }
+
+  // Create a MetadataStore instance for accessing join configurations
+  private lazy val metadataStore: MetadataStore = 
+    new MetadataStore(genKvStore, Constants.ChrononMetadataKey, 10000)
+
+  /**
+   * Register external sources from join configurations.
+   * This function reads JSON configurations for each join, extracts FactoryConfig information
+   * from external sources, and stores this information in the ExternalSourceRegistry.
+   *
+   * @param joins Sequence of join names to process
+   */
+  def registerExternalSources(joins: Seq[String]): Unit = {
+    joins.foreach { joinName =>
+      try {
+        // Get join configuration using getJoinConf
+        val joinConfTry = metadataStore.getJoinConf(joinName)
+
+        joinConfTry match {
+          case Success(joinOps) =>
+            val join = joinOps.join
+            
+            // Check if the join has external parts
+            Option(join.getOnlineExternalParts).foreach { externalParts =>
+              externalParts.asScala.foreach { externalPart =>
+                val externalSource = externalPart.getSource
+                
+                // Check if the external source has factory configuration
+                Option(externalSource.getFactoryName).foreach { factoryName =>
+                  val factoryConfig = Option(externalSource.getFactoryConfig)
+                  val factoryParams = factoryConfig.map(_.getFactoryParams.asScala.toMap).getOrElse(Map.empty)
+                  
+                  // Create and register external source handler based on factory configuration
+                  val sourceName = externalSource.getMetadata.getName
+                  logger.info(s"Registering external source '$sourceName' with factory '$factoryName' and params: $factoryParams")
+                  
+                  // Note: The actual handler creation would depend on the factory implementation
+                  // This is a placeholder that would need to be implemented based on specific factory types
+                  createAndRegisterExternalSourceHandler(sourceName, factoryName, factoryParams)
+                }
+              }
+            }
+            
+          case Failure(exception) =>
+            logger.error(s"Failed to load join configuration for '$joinName': ${exception.getMessage}", exception)
+        }
+      } catch {
+        case ex: Exception =>
+          logger.error(s"Error processing join '$joinName' for external source registration: ${ex.getMessage}", ex)
+      }
+    }
+  }
+
+  /**
+   * Create and register an external source handler based on factory configuration.
+   * This method should be implemented based on specific factory types.
+   *
+   * @param sourceName Name of the external source
+   * @param factoryName Factory name (e.g., "viaduct")
+   * @param factoryParams Factory-specific parameters
+   */
+  private def createAndRegisterExternalSourceHandler(sourceName: String, 
+                                                    factoryName: String, 
+                                                    factoryParams: Map[String, String]): Unit = {
+    // This is a placeholder implementation that would need to be customized
+    // based on the specific factory types supported
+    factoryName match {
+      case "viaduct" =>
+        // Create a viaduct-specific handler
+        // val handler = new ViaductExternalSourceHandler(factoryParams)
+        // externalRegistry.add(sourceName, handler)
+        logger.info(s"Would create Viaduct handler for source '$sourceName' with params: $factoryParams")
+        
+      case _ =>
+        logger.warn(s"Unknown factory type '$factoryName' for external source '$sourceName'")
+    }
+  }
 }
