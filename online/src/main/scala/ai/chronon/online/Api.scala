@@ -16,6 +16,7 @@
 
 package ai.chronon.online
 
+import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
@@ -273,6 +274,23 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     new MetadataStore(genKvStore, Constants.ChrononMetadataKey, 10000)
 
   /**
+   * Helper function to get join configuration with error handling. Can be overridden for testing.
+   *
+   * @param joinName Name of the join to load configuration for
+   * @return JoinOps for the specified join
+   * @throws RuntimeException if join configuration fails to load
+   */
+  protected def getJoinConfiguration(joinName: String): JoinOps = {
+    val joinConfTry = metadataStore.getJoinConf(joinName)
+    joinConfTry match {
+      case Success(joinOps) => joinOps
+      case Failure(exception) =>
+        logger.error(s"Failed to load join configuration for '$joinName': ${exception.getMessage}", exception)
+        throw new RuntimeException(s"Failed to load join configuration for '$joinName'", exception)
+    }
+  }
+
+  /**
    * Register external sources from join configurations.
    * This function reads JSON configurations for each join, extracts FactoryConfig information
    * from external sources, and stores this information in the ExternalSourceRegistry.
@@ -282,46 +300,38 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   def registerExternalSources(joins: Seq[String]): Unit = {
     joins.foreach { joinName =>
       try {
-        // Get join configuration using getJoinConf
-        val joinConfTry = metadataStore.getJoinConf(joinName)
+        // Get join configuration using helper function
+        val joinOps = getJoinConfiguration(joinName)
+        val join = joinOps.join
+        
+        // Check if the join has external parts
+        Option(join.getOnlineExternalParts).foreach { externalParts =>
+          externalParts.asScala.foreach { externalPart =>
+            val externalSource = externalPart.getSource
+            val sourceName = externalSource.getMetadata.getName
 
-        joinConfTry match {
-          case Success(joinOps) =>
-            val join = joinOps.join
-            
-            // Check if the join has external parts
-            Option(join.getOnlineExternalParts).foreach { externalParts =>
-              externalParts.asScala.foreach { externalPart =>
-                val externalSource = externalPart.getSource
-                val sourceName = externalSource.getMetadata.getName
-
-                // Check if the external source has factory configuration
-                Option(externalSource.getFactoryName) match {
-                  case Some(factoryName) =>
-                    // External source has factory configuration
-                    externalRegistry.handlerFactoryMap.get(factoryName) match {
-                      case Some(factory) =>
-                        // Factory is registered, create and add handler
-                        val handler = factory.createExternalSourceHandler(externalSource)
-                        externalRegistry.add(sourceName, handler)
-                        logger.info(s"Successfully created and registered external source handler for '$sourceName' using factory '$factoryName'")
-                      case None =>
-                        // Factory is not registered, throw error
-                        throw new IllegalArgumentException(
-                          s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
-                          s"Available factories: [${externalRegistry.handlerFactoryMap.keys.mkString(", ")}]"
-                        )
-                    }
+            // Check if the external source has factory configuration
+            Option(externalSource.getFactoryName) match {
+              case Some(factoryName) =>
+                // External source has factory configuration
+                externalRegistry.handlerFactoryMap.get(factoryName) match {
+                  case Some(factory) =>
+                    // Factory is registered, create and add handler
+                    val handler = factory.createExternalSourceHandler(externalSource)
+                    externalRegistry.add(sourceName, handler)
+                    logger.info(s"Successfully created and registered external source handler for '$sourceName' using factory '$factoryName'")
                   case None =>
-                    // External source does not have factory configuration, log info and return
-                    logger.info(s"External source '$sourceName' does not have factory configuration, skipping registration")
+                    // Factory is not registered, throw error
+                    throw new IllegalArgumentException(
+                      s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
+                      s"Available factories: [${externalRegistry.handlerFactoryMap.keys.mkString(", ")}]"
+                    )
                 }
-              }
+              case None =>
+                // External source does not have factory configuration, log info and return
+                logger.info(s"External source '$sourceName' does not have factory configuration, skipping registration")
             }
-            
-          case Failure(exception) =>
-            logger.error(s"Failed to load join configuration for '$joinName': ${exception.getMessage}", exception)
-            throw new RuntimeException(s"Failed to load join configuration for '$joinName'", exception)
+          }
         }
       } catch {
         case ex: Exception =>
