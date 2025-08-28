@@ -159,8 +159,8 @@ class SawtoothMutationAggregator(aggregations: Seq[Aggregation],
           val hopStart = hopIr.last.asInstanceOf[Long]
           if ((batchEndTs - window.millis) + tailBufferMillis > hopStart && hopStart >= queryTail) {
             val hopVal = hopIr(baseIrIndices(i))
-            // When first relevant hop is null, there the collapsed is null,
-            // clone the hop to avoid mutation of first element of the list in merge
+            // When the first relevant hop is null (the collapsed is null),
+            // clone the hop to avoid mutation, because merge bulk later expect to mutate the first element in the list
             if (relevantHops(0) == null) {
               relevantHops += windowedAggregator(i).clone(hopVal)
             } else {

@@ -131,7 +131,7 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     }
   }
 
-  def testLambdaAggregateFinalizedTiledDoesNotMutateHistogramTailHops(): Unit = {
+  def testLambdaAggregateDoNotMutateBatchIrAndOverCount(): Unit = {
     val aggregations = Seq(
       Builders.Aggregation(
         operation = Operation.HISTOGRAM,
