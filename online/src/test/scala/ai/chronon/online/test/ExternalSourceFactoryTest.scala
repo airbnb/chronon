@@ -91,7 +91,20 @@ class ExternalSourceFactoryTest {
     
     when(metadata.getName).thenReturn(externalSourceName)
     when(externalSource.getMetadata).thenReturn(metadata)
-    when(externalSource.getFactoryName).thenReturn(factoryName)
+    
+    // Handle factory configuration mocking based on factoryName
+    if (factoryName == null) {
+      // No factory configuration
+      when(externalSource.getFactoryConfig).thenReturn(null)
+    } else {
+      // Create mock factory config with factory name and params
+      val factoryConfig = mock(classOf[ExternalSourceFactoryConfig])
+      val factoryParams = mock(classOf[java.util.Map[String, String]])
+      when(factoryConfig.getFactoryName).thenReturn(factoryName)
+      when(factoryConfig.getFactoryParams).thenReturn(factoryParams)
+      when(externalSource.getFactoryConfig).thenReturn(factoryConfig)
+    }
+    
     when(externalPart.getSource).thenReturn(externalSource)
     when(join.getOnlineExternalParts).thenReturn(Seq(externalPart).asJava)
     
@@ -244,5 +257,66 @@ class ExternalSourceFactoryTest {
     }
     
     assertEquals("Exception message should match", "Processing error", exception.getMessage)
+  }
+
+  @Test
+  def testRegisterExternalSourcesWithNullFactoryName(): Unit = {
+    val api = new TestApi(Map.empty)
+    
+    // Create mock join with factory config but null factory name
+    val join = mock(classOf[Join])
+    val externalPart = mock(classOf[ExternalPart])
+    val externalSource = mock(classOf[ExternalSource])
+    val metadata = mock(classOf[MetaData])
+    val factoryConfig = mock(classOf[ExternalSourceFactoryConfig])
+    
+    when(metadata.getName).thenReturn("test-source")
+    when(externalSource.getMetadata).thenReturn(metadata)
+    when(externalSource.getFactoryConfig).thenReturn(factoryConfig)
+    when(factoryConfig.getFactoryName).thenReturn(null) // null factory name
+    when(externalPart.getSource).thenReturn(externalSource)
+    when(join.getOnlineExternalParts).thenReturn(Seq(externalPart).asJava)
+    
+    val joinOps = createMockJoinOps(join)
+    api.setMockJoinConfig("test-join", joinOps)
+    
+    // Execute and expect exception
+    val exception = intercept[IllegalArgumentException] {
+      api.registerExternalSources(Seq("test-join"))
+    }
+    
+    assertTrue("Exception should mention null factoryName", 
+      exception.getMessage.contains("factoryName is null"))
+  }
+
+  @Test
+  def testRegisterExternalSourcesWithNullFactoryParams(): Unit = {
+    val api = new TestApi(Map.empty)
+    
+    // Create mock join with factory config but null factory params
+    val join = mock(classOf[Join])
+    val externalPart = mock(classOf[ExternalPart])
+    val externalSource = mock(classOf[ExternalSource])
+    val metadata = mock(classOf[MetaData])
+    val factoryConfig = mock(classOf[ExternalSourceFactoryConfig])
+    
+    when(metadata.getName).thenReturn("test-source")
+    when(externalSource.getMetadata).thenReturn(metadata)
+    when(externalSource.getFactoryConfig).thenReturn(factoryConfig)
+    when(factoryConfig.getFactoryName).thenReturn("test-factory")
+    when(factoryConfig.getFactoryParams).thenReturn(null) // null factory params
+    when(externalPart.getSource).thenReturn(externalSource)
+    when(join.getOnlineExternalParts).thenReturn(Seq(externalPart).asJava)
+    
+    val joinOps = createMockJoinOps(join)
+    api.setMockJoinConfig("test-join", joinOps)
+    
+    // Execute and expect exception
+    val exception = intercept[IllegalArgumentException] {
+      api.registerExternalSources(Seq("test-join"))
+    }
+    
+    assertTrue("Exception should mention null factoryParams", 
+      exception.getMessage.contains("factoryParams is null"))
   }
 }

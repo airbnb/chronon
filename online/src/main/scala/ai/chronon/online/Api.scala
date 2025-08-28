@@ -274,7 +274,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     new MetadataStore(genKvStore, Constants.ChrononMetadataKey, 10000)
 
   /**
-   * Helper function to get join configuration with error handling. Can be overridden for testing.
+   * Helper function to get join configuration with error handling.
    *
    * @param joinName Name of the join to load configuration for
    * @return JoinOps for the specified join
@@ -292,7 +292,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
 
   /**
    * Register external sources from join configurations.
-   * This function reads JSON configurations for each join, extracts FactoryConfig information
+   * This function reads configurations for each join, extracts FactoryConfig information
    * from external sources, and stores this information in the ExternalSourceRegistry.
    *
    * @param joins Sequence of join names to process
@@ -310,26 +310,41 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
             val externalSource = externalPart.getSource
             val sourceName = externalSource.getMetadata.getName
 
-            // Check if the external source has factory configuration
-            Option(externalSource.getFactoryName) match {
-              case Some(factoryName) =>
-                // External source has factory configuration
-                externalRegistry.handlerFactoryMap.get(factoryName) match {
-                  case Some(factory) =>
-                    // Factory is registered, create and add handler
-                    val handler = factory.createExternalSourceHandler(externalSource)
-                    externalRegistry.add(sourceName, handler)
-                    logger.info(s"Successfully created and registered external source handler for '$sourceName' using factory '$factoryName'")
-                  case None =>
-                    // Factory is not registered, throw error
-                    throw new IllegalArgumentException(
-                      s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
-                      s"Available factories: [${externalRegistry.handlerFactoryMap.keys.mkString(", ")}]"
-                    )
-                }
+            if (externalSource.getFactoryConfig == null) {
+              logger.info(s"External source '$sourceName' in join '$joinName' does not have factory configuration, skipping registration")
+              return
+            }
+
+            // Factory configuration exists, verify it has required fields
+            val factoryConfig = externalSource.getFactoryConfig
+            
+            if (factoryConfig.getFactoryName == null) {
+              throw new IllegalArgumentException(
+                s"External source '$sourceName' in join '$joinName' has factory configuration but factoryName is null"
+              )
+            }
+            
+            if (factoryConfig.getFactoryParams == null) {
+              throw new IllegalArgumentException(
+                s"External source '$sourceName' in join '$joinName' has factory configuration but factoryParams is null"
+              )
+            }
+
+            val factoryName = factoryConfig.getFactoryName
+            
+            // External source has valid factory configuration, check if factory is registered
+            externalRegistry.handlerFactoryMap.get(factoryName) match {
+              case Some(factory) =>
+                // Factory is registered, create and add handler
+                val handler = factory.createExternalSourceHandler(externalSource)
+                externalRegistry.add(sourceName, handler)
+                logger.info(s"Successfully created and registered external source handler for '$sourceName' using factory '$factoryName'")
               case None =>
-                // External source does not have factory configuration, log info and return
-                logger.info(s"External source '$sourceName' does not have factory configuration, skipping registration")
+                // Factory is not registered, throw error
+                throw new IllegalArgumentException(
+                  s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
+                  s"Available factories: [${externalRegistry.handlerFactoryMap.keys.mkString(", ")}]"
+                )
             }
           }
         }
