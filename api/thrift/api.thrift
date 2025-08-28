@@ -114,8 +114,7 @@ struct ExternalSource {
     1: optional MetaData metadata
     2: optional TDataType keySchema
     3: optional TDataType valueSchema
-    4: optional string factoryName
-    5: optional ExternalSourceFactoryConfig factoryConfig
+    4: optional ExternalSourceFactoryConfig factoryConfig
 }
 
 /**
