@@ -21,7 +21,6 @@ import ai.chronon.online.Fetcher.{Request, Response}
 
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.ScalaJavaConversions.IterableOps
 import scala.util.{Failure, Success}
 
 // users can simply register external endpoints with a lambda that can return the future of a response given keys
@@ -41,10 +40,21 @@ class ExternalSourceRegistry extends Serializable {
     result
   }
 
+  val handlerFactoryMap: mutable.Map[String, ExternalSourceFactory] = {
+    val result = new mutable.HashMap[String, ExternalSourceFactory]()
+    result
+  }
+
   def add(name: String, handler: ExternalSourceHandler): Unit = {
     assert(!handlerMap.contains(name),
            s"A handler by the name $name already exists. Existing: ${handlerMap.keys.mkString("[", ", ", "]")}")
     handlerMap.put(name, handler)
+  }
+
+  def addFactory(factoryName: String, factory: ExternalSourceFactory): Unit = {
+    assert(!handlerFactoryMap.contains(factoryName),
+      s"A factory by the name $factoryName already exists. Existing: ${handlerFactoryMap.keys.mkString("[", ", ", "]")}")
+    handlerFactoryMap.put(factoryName, factory)
   }
 
   // TODO: validation of externally fetched data

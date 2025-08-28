@@ -16,19 +16,19 @@
 
 package ai.chronon.online
 
-import org.slf4j.LoggerFactory
-import ai.chronon.api.{Constants, StructType, Join}
+import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
-import java.util.Base64
-import java.nio.charset.StandardCharsets
+import org.slf4j.LoggerFactory
 
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.function.Consumer
+import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
-import scala.collection.JavaConverters._
 
 object KVStore {
   // a scan request essentially for the keyBytes
@@ -189,6 +189,7 @@ abstract class ExternalSourceHandler extends Serializable {
 // the implementer of this class should take a single argument, a scala map of string to string
 // chronon framework will construct this object with user conf supplied via CLI
 abstract class Api(userConf: Map[String, String]) extends Serializable {
+  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val fetcher: Fetcher = {
     if (fetcherObj == null)
       fetcherObj = buildFetcher()
@@ -292,55 +293,41 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
             Option(join.getOnlineExternalParts).foreach { externalParts =>
               externalParts.asScala.foreach { externalPart =>
                 val externalSource = externalPart.getSource
-                
+                val sourceName = externalSource.getMetadata.getName
+
                 // Check if the external source has factory configuration
-                Option(externalSource.getFactoryName).foreach { factoryName =>
-                  val factoryConfig = Option(externalSource.getFactoryConfig)
-                  val factoryParams = factoryConfig.map(_.getFactoryParams.asScala.toMap).getOrElse(Map.empty)
-                  
-                  // Create and register external source handler based on factory configuration
-                  val sourceName = externalSource.getMetadata.getName
-                  logger.info(s"Registering external source '$sourceName' with factory '$factoryName' and params: $factoryParams")
-                  
-                  // Note: The actual handler creation would depend on the factory implementation
-                  // This is a placeholder that would need to be implemented based on specific factory types
-                  createAndRegisterExternalSourceHandler(sourceName, factoryName, factoryParams)
+                Option(externalSource.getFactoryName) match {
+                  case Some(factoryName) =>
+                    // External source has factory configuration
+                    externalRegistry.handlerFactoryMap.get(factoryName) match {
+                      case Some(factory) =>
+                        // Factory is registered, create and add handler
+                        val handler = factory.createExternalSourceHandler(externalSource)
+                        externalRegistry.add(sourceName, handler)
+                        logger.info(s"Successfully created and registered external source handler for '$sourceName' using factory '$factoryName'")
+                      case None =>
+                        // Factory is not registered, throw error
+                        throw new IllegalArgumentException(
+                          s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
+                          s"Available factories: [${externalRegistry.handlerFactoryMap.keys.mkString(", ")}]"
+                        )
+                    }
+                  case None =>
+                    // External source does not have factory configuration, log info and return
+                    logger.info(s"External source '$sourceName' does not have factory configuration, skipping registration")
                 }
               }
             }
             
           case Failure(exception) =>
             logger.error(s"Failed to load join configuration for '$joinName': ${exception.getMessage}", exception)
+            throw new RuntimeException(s"Failed to load join configuration for '$joinName'", exception)
         }
       } catch {
         case ex: Exception =>
           logger.error(s"Error processing join '$joinName' for external source registration: ${ex.getMessage}", ex)
+          throw ex
       }
-    }
-  }
-
-  /**
-   * Create and register an external source handler based on factory configuration.
-   * This method should be implemented based on specific factory types.
-   *
-   * @param sourceName Name of the external source
-   * @param factoryName Factory name (e.g., "viaduct")
-   * @param factoryParams Factory-specific parameters
-   */
-  private def createAndRegisterExternalSourceHandler(sourceName: String, 
-                                                    factoryName: String, 
-                                                    factoryParams: Map[String, String]): Unit = {
-    // This is a placeholder implementation that would need to be customized
-    // based on the specific factory types supported
-    factoryName match {
-      case "viaduct" =>
-        // Create a viaduct-specific handler
-        // val handler = new ViaductExternalSourceHandler(factoryParams)
-        // externalRegistry.add(sourceName, handler)
-        logger.info(s"Would create Viaduct handler for source '$sourceName' with params: $factoryParams")
-        
-      case _ =>
-        logger.warn(s"Unknown factory type '$factoryName' for external source '$sourceName'")
     }
   }
 }
