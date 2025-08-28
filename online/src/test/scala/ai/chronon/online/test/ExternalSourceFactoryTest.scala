@@ -17,11 +17,11 @@
 package ai.chronon.online.test
 
 import ai.chronon.api.Extensions.JoinOps
-import ai.chronon.api._
-import ai.chronon.online._
-import org.junit.Assert._
+import ai.chronon.api.{ExternalPart, ExternalSource, ExternalSourceFactoryConfig, Join, MetaData}
+import ai.chronon.online.{Api, ExternalSourceFactory, ExternalSourceHandler, ExternalSourceRegistry, Fetcher, GroupByServingInfoParsed, KVStore, LoggableResponse, StreamDecoder}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
-import org.mockito.Mockito._
+import org.mockito.Mockito.{mock, when}
 import org.scalatest.Assertions.intercept
 
 import scala.collection.JavaConverters._

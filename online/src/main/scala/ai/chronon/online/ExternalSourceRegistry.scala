@@ -52,8 +52,10 @@ class ExternalSourceRegistry extends Serializable {
   }
 
   def addFactory(factoryName: String, factory: ExternalSourceFactory): Unit = {
-    assert(!handlerFactoryMap.contains(factoryName),
-      s"A factory by the name $factoryName already exists. Existing: ${handlerFactoryMap.keys.mkString("[", ", ", "]")}")
+    assert(
+      !handlerFactoryMap.contains(factoryName),
+      s"A factory by the name $factoryName already exists. Existing: ${handlerFactoryMap.keys.mkString("[", ", ", "]")}"
+    )
     handlerFactoryMap.put(factoryName, factory)
   }
 
