@@ -67,55 +67,39 @@ class ExternalSourceRegistry extends Serializable {
     * @param externalParts Optional sequence of ExternalPart objects to process
     */
   def addHandlersByFactory(externalParts: Option[Seq[ExternalPart]]): Unit = {
-    try {
-      // Check if external parts are provided
-      externalParts.foreach { externalParts =>
-        externalParts.foreach { externalPart =>
-          val externalSource = externalPart.getSource
-          val sourceName = externalSource.getMetadata.getName
+    // Check if external parts are provided
+    externalParts.foreach { externalParts =>
+      externalParts.foreach { externalPart =>
+        val externalSource = externalPart.getSource
+        val sourceName = externalSource.getMetadata.getName
 
-          // Skip if handler already exists (avoid duplicate registration)
-          if (!handlerMap.contains(sourceName)) {
-            if (externalSource.getFactoryConfig == null) {
-              // External source does not have factory configuration, skip registration
-            } else {
-              // Factory configuration exists, verify it has required fields
-              val factoryConfig = externalSource.getFactoryConfig
+        // Skip if handler already exists (avoid duplicate registration)
+        if (!handlerMap.contains(sourceName) && externalSource.getFactoryConfig != null) {
+          // Factory configuration exists, verify it has required fields
+          val factoryConfig = externalSource.getFactoryConfig
+          val factoryName = factoryConfig.getFactoryName
 
-              if (factoryConfig.getFactoryName == null) {
-                throw new IllegalArgumentException(
-                  s"External source '$sourceName' has factory configuration but factoryName is null"
-                )
-              }
+          if (factoryName == null) {
+            throw new IllegalArgumentException(
+              s"External source '$sourceName' has factory configuration but factoryName is null"
+            )
+          }
 
-              if (factoryConfig.getFactoryParams == null) {
-                throw new IllegalArgumentException(
-                  s"External source '$sourceName' has factory configuration but factoryParams is null"
-                )
-              }
-
-              val factoryName = factoryConfig.getFactoryName
-
-              // External source has valid factory configuration, check if factory is registered
-              handlerFactoryMap.get(factoryName) match {
-                case Some(factory) =>
-                  // Factory is registered, create and add handler
-                  val handler = factory.createExternalSourceHandler(externalSource)
-                  add(sourceName, handler)
-                case None =>
-                  // Factory is not registered, throw error
-                  throw new IllegalArgumentException(
-                    s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
-                      s"Available factories: [${handlerFactoryMap.keys.mkString(", ")}]"
-                  )
-              }
-            }
+          // External source has valid factory configuration, check if factory is registered
+          handlerFactoryMap.get(factoryName) match {
+            case Some(factory) =>
+              // Factory is registered, create and add handler
+              val handler = factory.createExternalSourceHandler(externalSource)
+              add(sourceName, handler)
+            case None =>
+              // Factory is not registered, throw error
+              throw new IllegalArgumentException(
+                s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
+                  s"Available factories: [${handlerFactoryMap.keys.mkString(", ")}]"
+              )
           }
         }
       }
-    } catch {
-      case ex: Exception =>
-        throw ex
     }
   }
 
