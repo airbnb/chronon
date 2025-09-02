@@ -28,7 +28,7 @@ import java.util.function.Consumer
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.jdk.CollectionConverters.asScalaBufferConverter
+import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success, Try}
 
 object KVStore {
@@ -269,10 +269,6 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
     }
 
-  // Create a MetadataStore instance for accessing join configurations
-  private lazy val metadataStore: MetadataStore =
-    new MetadataStore(genKvStore, Constants.ChrononMetadataKey, 10000)
-
   /**
     * Helper function to get join configuration with error handling.
     *
@@ -281,7 +277,7 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     * @throws RuntimeException if join configuration fails to load
     */
   protected def getJoinConfiguration(joinName: String): JoinOps = {
-    val joinConfTry = metadataStore.getJoinConf(joinName)
+    val joinConfTry = fetcher.getJoinConf(joinName)
     joinConfTry match {
       case Success(joinOps) => joinOps
       case Failure(exception) =>
@@ -298,63 +294,9 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     * @param joins Sequence of join names to process
     */
   def registerExternalSources(joins: Seq[String]): Unit = {
-    joins.foreach { joinName =>
-      try {
-        // Get join configuration using helper function
-        val joinOps = getJoinConfiguration(joinName)
-        val join = joinOps.join
-
-        // Check if the join has external parts
-        Option(join.getOnlineExternalParts).foreach { externalParts =>
-          externalParts.asScala.foreach { externalPart =>
-            val externalSource = externalPart.getSource
-            val sourceName = externalSource.getMetadata.getName
-
-            if (externalSource.getFactoryConfig == null) {
-              logger.info(
-                s"External source '$sourceName' in join '$joinName' does not have factory configuration, skipping registration")
-              return
-            }
-
-            // Factory configuration exists, verify it has required fields
-            val factoryConfig = externalSource.getFactoryConfig
-
-            if (factoryConfig.getFactoryName == null) {
-              throw new IllegalArgumentException(
-                s"External source '$sourceName' in join '$joinName' has factory configuration but factoryName is null"
-              )
-            }
-
-            if (factoryConfig.getFactoryParams == null) {
-              throw new IllegalArgumentException(
-                s"External source '$sourceName' in join '$joinName' has factory configuration but factoryParams is null"
-              )
-            }
-
-            val factoryName = factoryConfig.getFactoryName
-
-            // External source has valid factory configuration, check if factory is registered
-            externalRegistry.handlerFactoryMap.get(factoryName) match {
-              case Some(factory) =>
-                // Factory is registered, create and add handler
-                val handler = factory.createExternalSourceHandler(externalSource)
-                externalRegistry.add(sourceName, handler)
-                logger.info(
-                  s"Successfully created and registered external source handler for '$sourceName' using factory '$factoryName'")
-              case None =>
-                // Factory is not registered, throw error
-                throw new IllegalArgumentException(
-                  s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
-                    s"Available factories: [${externalRegistry.handlerFactoryMap.keys.mkString(", ")}]"
-                )
-            }
-          }
-        }
-      } catch {
-        case ex: Exception =>
-          logger.error(s"Error processing join '$joinName' for external source registration: ${ex.getMessage}", ex)
-          throw ex
-      }
-    }
+    val joinOps = joins.map(joinName => getJoinConfiguration(joinName))
+    joinOps
+      .map(_.join)
+      .foreach(join => externalRegistry.addHandlersByFactory(Option(join.getOnlineExternalParts).map(_.asScala.toSeq)))
   }
 }

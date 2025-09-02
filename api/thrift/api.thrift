@@ -105,8 +105,14 @@ struct EntitySource {
     4: optional Query query
 }
 
+/**
+ * Configuration for external source factory-based handler creation.
+ * Used to dynamically create external source handlers at runtime using registered factories.
+ */
 struct ExternalSourceFactoryConfig {
+    // Name of the registered factory to use for creating the external source handler
     1: optional string factoryName
+    // Parameters to pass to the factory when creating the handler
     2: optional map<string, string> factoryParams
 }
 

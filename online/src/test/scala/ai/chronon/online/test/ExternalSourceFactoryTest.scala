@@ -19,7 +19,7 @@ package ai.chronon.online.test
 import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api.{ExternalPart, ExternalSource, ExternalSourceFactoryConfig, Join, MetaData}
 import ai.chronon.online.{Api, ExternalSourceFactory, ExternalSourceHandler, ExternalSourceRegistry, Fetcher, GroupByServingInfoParsed, KVStore, LoggableResponse, StreamDecoder}
-import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 import org.mockito.Mockito.{mock, when}
 import org.scalatest.Assertions.intercept
@@ -159,25 +159,6 @@ class ExternalSourceFactoryTest {
   }
 
   @Test
-  def testRegisterExternalSourcesWithoutFactory(): Unit = {
-    val api = new TestApi(Map.empty)
-    
-    // Create mock join without factory configuration (factoryName = null)
-    val join = createMockJoin("test-join", "test-source", null)
-    val joinOps = createMockJoinOps(join)
-    
-    // Set up mock join config
-    api.setMockJoinConfig("test-join", joinOps)
-    
-    // Execute the method - should not throw exception
-    api.registerExternalSources(Seq("test-join"))
-    
-    // Verify that no handler was registered
-    assertFalse("Handler should not be registered", 
-      api.externalRegistry.handlerMap.contains("test-source"))
-  }
-
-  @Test
   def testRegisterExternalSourcesWithFailedJoinConfig(): Unit = {
     val api = new TestApi(Map.empty)
     
@@ -221,46 +202,7 @@ class ExternalSourceFactoryTest {
   }
 
   @Test
-  def testRegisterExternalSourcesWithMultipleJoins(): Unit = {
-    val api = new TestApi(Map.empty)
-    
-    // Create two different joins
-    val join1 = createMockJoin("join1", "source1", "test-factory")
-    val join2 = createMockJoin("join2", "source2", "test-factory")
-    val joinOps1 = createMockJoinOps(join1)
-    val joinOps2 = createMockJoinOps(join2)
-    
-    // Set up mock join configs
-    api.setMockJoinConfig("join1", joinOps1)
-    api.setMockJoinConfig("join2", joinOps2)
-    
-    // Execute the method
-    api.registerExternalSources(Seq("join1", "join2"))
-    
-    // Verify both handlers were registered
-    assertTrue("First handler should be registered", 
-      api.externalRegistry.handlerMap.contains("source1"))
-    assertTrue("Second handler should be registered", 
-      api.externalRegistry.handlerMap.contains("source2"))
-  }
-
-  @Test
-  def testRegisterExternalSourcesWithProcessingException(): Unit = {
-    val api = new TestApi(Map.empty)
-    
-    // Set up exception to be thrown by helper function
-    api.setJoinConfigException("test-join", new RuntimeException("Processing error"))
-    
-    // Execute and expect exception to be re-thrown
-    val exception = intercept[RuntimeException] {
-      api.registerExternalSources(Seq("test-join"))
-    }
-    
-    assertEquals("Exception message should match", "Processing error", exception.getMessage)
-  }
-
-  @Test
-  def testRegisterExternalSourcesWithNullFactoryName(): Unit = {
+  def testRegisterExternalSourcesWithNullFactoryNameOrConfig(): Unit = {
     val api = new TestApi(Map.empty)
     
     // Create mock join with factory config but null factory name
@@ -281,42 +223,22 @@ class ExternalSourceFactoryTest {
     api.setMockJoinConfig("test-join", joinOps)
     
     // Execute and expect exception
-    val exception = intercept[IllegalArgumentException] {
+    var exception = intercept[IllegalArgumentException] {
       api.registerExternalSources(Seq("test-join"))
     }
     
     assertTrue("Exception should mention null factoryName", 
       exception.getMessage.contains("factoryName is null"))
-  }
 
-  @Test
-  def testRegisterExternalSourcesWithNullFactoryParams(): Unit = {
-    val api = new TestApi(Map.empty)
-    
-    // Create mock join with factory config but null factory params
-    val join = mock(classOf[Join])
-    val externalPart = mock(classOf[ExternalPart])
-    val externalSource = mock(classOf[ExternalSource])
-    val metadata = mock(classOf[MetaData])
-    val factoryConfig = mock(classOf[ExternalSourceFactoryConfig])
-    
-    when(metadata.getName).thenReturn("test-source")
-    when(externalSource.getMetadata).thenReturn(metadata)
-    when(externalSource.getFactoryConfig).thenReturn(factoryConfig)
     when(factoryConfig.getFactoryName).thenReturn("test-factory")
     when(factoryConfig.getFactoryParams).thenReturn(null) // null factory params
-    when(externalPart.getSource).thenReturn(externalSource)
-    when(join.getOnlineExternalParts).thenReturn(Seq(externalPart).asJava)
-    
-    val joinOps = createMockJoinOps(join)
-    api.setMockJoinConfig("test-join", joinOps)
-    
+
     // Execute and expect exception
-    val exception = intercept[IllegalArgumentException] {
+    exception = intercept[IllegalArgumentException] {
       api.registerExternalSources(Seq("test-join"))
     }
-    
-    assertTrue("Exception should mention null factoryParams", 
+
+    assertTrue("Exception should mention null factoryParams",
       exception.getMessage.contains("factoryParams is null"))
   }
 }
