@@ -237,7 +237,7 @@ class ExternalSourcesTest {
     
     override def createExternalSourceHandler(externalSource: ai.chronon.api.ExternalSource): ai.chronon.online.ExternalSourceHandler = {
       new ai.chronon.online.ExternalSourceHandler {
-        override def fetch(requests: Seq[Request]): Future[Seq[Response]] = {
+        override def fetch(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
           val increment = externalSource.getFactoryConfig.getFactoryParams.get("increment").toInt
           val responses = requests.map { request =>
             val number = request.keys("number").asInstanceOf[Int]
