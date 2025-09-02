@@ -32,7 +32,7 @@ class ExternalSourceFactoryTest {
   class MockExternalSourceFactory extends ExternalSourceFactory {
     override def createExternalSourceHandler(externalSource: ExternalSource): ExternalSourceHandler = {
       new ExternalSourceHandler {
-        override def fetch(requests: Seq[Fetcher.Request]): concurrent.Future[Seq[Fetcher.Response]] = {
+        override def fetch(requests: scala.collection.Seq[Fetcher.Request]): concurrent.Future[scala.collection.Seq[Fetcher.Response]] = {
           concurrent.Future.successful(Seq.empty)
         }
       }
