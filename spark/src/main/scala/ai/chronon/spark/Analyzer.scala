@@ -16,23 +16,23 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
+import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
+import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
-import org.apache.spark.sql.{Column, DataFrame, Row, types}
-import org.apache.spark.sql.functions.{col, from_unixtime, lit, sum, when}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{StringType, StructType}
-import ai.chronon.api.DataModel.{DataModel, Entities, Events}
+import org.apache.spark.sql.{Column, DataFrame, Row, types}
+import org.slf4j.LoggerFactory
 
-import scala.collection.{Seq, immutable, mutable}
 import scala.collection.mutable.ListBuffer
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.collection.{Seq, immutable, mutable}
+import scala.util.ScalaJavaConversions.ListOps
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -61,6 +61,8 @@ class ItemSketchSerializable extends Serializable {
   }
 }
 
+case class Field(name: String, data_type: String)
+
 class Analyzer(tableUtils: TableUtils,
                conf: Any,
                startDate: String,
@@ -69,7 +71,8 @@ class Analyzer(tableUtils: TableUtils,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
                silenceMode: Boolean = false,
-               skipTimestampCheck: Boolean = false) {
+               skipTimestampCheck: Boolean = false,
+               validateTablePermission: Boolean = true) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
@@ -187,20 +190,38 @@ class Analyzer(tableUtils: TableUtils,
     AggregationMetadata(columnName, columnType, operation, "Unbounded", columnName)
   }
 
-  def analyzeGroupBy(
-      groupByConf: api.GroupBy,
-      prefix: String = "",
-      includeOutputTableName: Boolean = false,
-      enableHitter: Boolean = false,
-      skipTimestampCheck: Boolean = skipTimestampCheck): (Array[AggregationMetadata], Map[String, DataType]) = {
+  private def stringifySchema(schema: Seq[(String, DataType)]): String = {
+    schema
+      .map {
+        case (name, dataType) => s" $name => $dataType"
+      }
+      .mkString("\n")
+  }
+
+  def analyzeGroupBy(groupByConf: api.GroupBy,
+                     prefix: String = "",
+                     includeOutputTableName: Boolean = false,
+                     enableHitter: Boolean = false,
+                     skipTimestampCheck: Boolean = skipTimestampCheck,
+                     validateTablePermission: Boolean = validateTablePermission): AnalyzeGroupByResult = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
     logger.info(s"""|Running GroupBy analysis for $name ...""".stripMargin)
 
+    val noAccessTables = if (validateTablePermission) {
+      groupByConf.sources.toScala.flatMap { s =>
+        runTablePermissionValidation(Set(s.table), s.partitionColumnOpt)
+      }.toSet
+    } else Set.empty[String]
+
     if (!skipTimestampCheck) {
-      val timestampChecks = runTimestampChecks(groupBy.inputDf)
-      validateTimestampChecks(timestampChecks, "GroupBy", name)
+      if (noAccessTables.isEmpty) {
+        val timestampChecks = runTimestampChecks(groupBy.inputDf)
+        validateTimestampChecks(timestampChecks, "GroupBy", name)
+      } else {
+        logger.warn(s"skipping the timestamp checks due to permission errors in ${noAccessTables.size} tables")
+      }
     }
 
     val analysis =
@@ -209,11 +230,11 @@ class Analyzer(tableUtils: TableUtils,
                 groupByConf.keyColumns.toScala.toArray,
                 groupByConf.sources.toScala.map(_.table).mkString(","))
       else ""
-    val schema = if (groupByConf.isSetBackfillStartDate && groupByConf.hasDerivations) {
-      // handle group by backfill mode for derivations
-      // todo: add the similar logic to join derivations
+    val schema = if (groupByConf.hasDerivations) {
       val keyAndPartitionFields =
-        groupBy.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
+        groupBy.keySchema.fields ++ Seq(
+          org.apache.spark.sql.types
+            .StructField(tableUtils.getPartitionColumn(groupByConf.getPartitionColumn), StringType))
       val sparkSchema = {
         StructType(SparkConversions.fromChrononSchema(groupBy.outputSchema).fields ++ keyAndPartitionFields)
       }
@@ -227,6 +248,12 @@ class Analyzer(tableUtils: TableUtils,
     } else {
       groupBy.outputSchema
     }
+
+    val keySchema = groupBy.keySchema.map { field =>
+      field.name -> SparkConversions.toChrononType(field.name, field.dataType)
+    }
+    val valueSchema = schema.fields.map { field => field.name -> field.fieldType }
+
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
     } else {
@@ -239,13 +266,11 @@ class Analyzer(tableUtils: TableUtils,
              |----- OUTPUT TABLE NAME -----
              |${groupByConf.metaData.outputTable}
                """.stripMargin)
-      val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
-      schema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
       logger.info(s"""
            |----- KEY SCHEMA -----
-           |${keySchema.mkString("\n")}
+           |${stringifySchema(keySchema)}
            |----- OUTPUT SCHEMA -----
-           |${schema.mkString("\n")}
+           |${stringifySchema(valueSchema)}
            |------ END --------------
            |""".stripMargin)
     }
@@ -256,19 +281,25 @@ class Analyzer(tableUtils: TableUtils,
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
     }
 
-    val keySchemaMap = groupBy.keySchema.map { field =>
-      field.name -> SparkConversions.toChrononType(field.name, field.dataType)
-    }.toMap
-    (aggMetadata, keySchemaMap)
-
+    AnalyzeGroupByResult(keySchema, valueSchema, aggMetadata, noAccessTables)
   }
 
-  def analyzeJoin(
-      joinConf: api.Join,
-      enableHitter: Boolean = false,
-      validateTablePermission: Boolean = true,
-      validationAssert: Boolean = false,
-      skipTimestampCheck: Boolean = skipTimestampCheck): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+  case class AnalyzeGroupByResult(keySchema: Seq[(String, DataType)],
+                                  valueSchema: Seq[(String, DataType)],
+                                  outputMetadata: Array[AggregationMetadata],
+                                  noAccessTables: Set[String])
+
+  case class AnalyzeJoinResult(leftSchema: Seq[(String, DataType)],
+                               rightSchema: Seq[(String, DataType)],
+                               keySchema: Seq[(String, DataType)],
+                               finalOutputSchema: Seq[(String, DataType)],
+                               finalOutputMetadata: ListBuffer[AggregationMetadata])
+
+  def analyzeJoin(joinConf: api.Join,
+                  enableHitter: Boolean = false,
+                  validateTablePermission: Boolean = validateTablePermission,
+                  validationAssert: Boolean = false,
+                  skipTimestampCheck: Boolean = skipTimestampCheck): AnalyzeJoinResult = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
@@ -280,55 +311,63 @@ class Analyzer(tableUtils: TableUtils,
       (analysis, leftDf)
     } else {
       val analysis = ""
-      val scanQuery = range.genScanQuery(joinConf.left.query,
-                                         joinConf.left.table,
-                                         fillIfAbsent = Map(tableUtils.partitionColumn -> null))
-      val leftDf: DataFrame = tableUtils.sql(scanQuery)
+      val leftQuery = joinConf.left.query
+      val partitionColumn = tableUtils.getPartitionColumn(leftQuery)
+      val leftDf: DataFrame = range.scanQueryDf(leftQuery,
+                                                joinConf.left.table,
+                                                fillIfAbsent = Map(partitionColumn -> null),
+                                                partitionColOpt = Some(partitionColumn),
+                                                renamePartitionCol = true)
       (analysis, leftDf)
     }
 
-    val gbTables = ListBuffer[String]()
-    joinConf.joinParts.toScala.foreach { part =>
-      gbTables ++= part.groupBy.sources.toScala.map(_.table)
-    }
-
-    val noAccessTables = if (validateTablePermission) {
-      runTablePermissionValidation((gbTables.toList ++ List(joinConf.left.table)).toSet)
-    } else Set()
+    val leftNoAccessTables = if (validateTablePermission) {
+      runTablePermissionValidation(Set(joinConf.left.table), joinConf.left.partitionColumnOpt)
+    } else Set.empty
 
     if (!skipTimestampCheck) {
-      if (noAccessTables.isEmpty) {
+      if (leftNoAccessTables.isEmpty) {
         val timestampChecks = runTimestampChecks(leftDf)
         validateTimestampChecks(timestampChecks, "Join", name)
       } else {
-        logger.warn(s"skipping the timestamp checks due to permission errors in ${noAccessTables.size} tables")
+        logger.warn(s"skipping the timestamp checks due to permission errors in ${leftNoAccessTables.size} tables")
       }
     }
 
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
-      .toMap
     val joinIntermediateValuesMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbStartPartitions = mutable.Map[String, List[String]]()
+    val noAccessTables = mutable.Set[String]() ++= leftNoAccessTables
     // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
 
     val rangeToFill =
       JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate, historicalBackfill = joinConf.historicalBackfill)
     logger.info(s"Join range to fill $rangeToFill")
+
     val unfilledRanges = tableUtils
-      .unfilledRanges(joinConf.metaData.outputTable, rangeToFill, Some(Seq(joinConf.left.table)))
+      .unfilledRanges(
+        joinConf.metaData.outputTable,
+        rangeToFill,
+        Some(Seq(joinConf.left.table)),
+        inputTableToSubPartitionFiltersMap = Map(joinConf.left.table -> joinConf.left.subPartitionFilters),
+        inputTableToPartitionColumnsMap = joinConf.left.tableToPartitionColumn
+      )
       .getOrElse(Seq.empty)
 
     joinConf.joinParts.toScala.foreach { part =>
-      val (aggMetadata, gbKeySchema) =
-        analyzeGroupBy(part.groupBy,
-                       part.fullPrefix,
-                       includeOutputTableName = true,
-                       enableHitter = enableHitter,
-                       skipTimestampCheck = skipTimestampCheck || noAccessTables.nonEmpty)
-      joinIntermediateValuesMetadata ++= aggMetadata.map { aggMeta =>
+      val analyzeGroupByResult =
+        analyzeGroupBy(
+          part.groupBy,
+          part.fullPrefix,
+          includeOutputTableName = true,
+          enableHitter = enableHitter,
+          skipTimestampCheck = skipTimestampCheck || leftNoAccessTables.nonEmpty,
+          validateTablePermission = validateTablePermission
+        )
+      joinIntermediateValuesMetadata ++= analyzeGroupByResult.outputMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
                             aggMeta.operation,
@@ -337,8 +376,14 @@ class Analyzer(tableUtils: TableUtils,
                             part.getGroupBy.getMetaData.getName)
       }
       // Run validation checks.
-      keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
-      dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel, part.groupBy, unfilledRanges)
+      keysWithError ++= runSchemaValidation(leftSchema.toMap, analyzeGroupByResult.keySchema.toMap, part.rightToLeft)
+      val subPartitionFilters =
+        part.groupBy.sources.toScala.map(source => source.table -> source.subPartitionFilters).toMap
+      dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel,
+                                                          part.groupBy,
+                                                          unfilledRanges,
+                                                          subPartitionFilters)
+      noAccessTables ++= analyzeGroupByResult.noAccessTables
       // list any startPartition dates for conflict checks
       val gbStartPartition = part.groupBy.sources.toScala
         .map(_.query.startPartition)
@@ -359,8 +404,49 @@ class Analyzer(tableUtils: TableUtils,
       }
     }
 
-    val rightSchema: Map[String, DataType] =
-      joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
+    val rightSchema = joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType))
+
+    val keyColumns: List[String] = joinConf.joinParts.toScala
+      .flatMap(joinPart => {
+        val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
+        if (joinPart.keyMapping == null) keyCols
+        else {
+          keyCols.map(key => {
+            if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
+            else key
+          })
+        }
+      })
+      .distinct
+    val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
+
+    // Derive the join online fetching output schema with metadata
+    val finalOutputMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
+      val tsDsSchema: Map[String, DataType] = {
+        Map("ts" -> api.StringType, "ds" -> api.StringType)
+      }
+      val sparkSchema = {
+        // Allow leftSchema to be used as input to derivations. This is only valid for offline joins, and we
+        // assume that this requirement has been validated
+        val schema: Seq[(String, DataType)] = leftSchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
+        StructType(SparkConversions.fromChrononSchema(schema))
+      }
+      val dummyOutputDf = tableUtils.sparkSession
+        .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
+      val finalOutputColumns: Array[Column] =
+        joinConf.derivationsScala.finalOutputColumn(rightSchema.toArray.map(_._1)).toArray
+      val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+      val columns = SparkConversions.toChrononSchema(
+        StructType(derivedDummyOutputDf.schema.filterNot(tup => tsDsSchema.contains(tup.name))))
+      ListBuffer(columns.map { tup => toAggregationMetadata(tup._1, tup._2, joinConf.hasDerivations) }: _*)
+    } else {
+      joinIntermediateValuesMetadata
+    }
+    val finalOutputSchema = finalOutputMetadata.map {
+      case AggregationMetadata(name, columnType, _, _, _, _) =>
+        (name, columnType)
+    }
+
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
     } else {
@@ -370,9 +456,13 @@ class Analyzer(tableUtils: TableUtils,
            |----- OUTPUT TABLE NAME -----
            |${joinConf.metaData.outputTable}
            |------ LEFT SIDE SCHEMA -------
-           |${leftSchema.mkString("\n")}
+           |${stringifySchema(leftSchema)}
            |------ RIGHT SIDE SCHEMA ----
-           |${rightSchema.mkString("\n")}
+           |${stringifySchema(rightSchema)}
+           |------ KEY SCHEMA ----
+           |${stringifySchema(keySchema)}
+           |------ FINAL OUTPUT SCHEMA ----
+           |${stringifySchema(finalOutputSchema)}
            |------ END ------------------
            |""".stripMargin)
     }
@@ -415,41 +505,15 @@ class Analyzer(tableUtils: TableUtils,
         )
       }
     }
-    // Derive the join online fetching output schema with metadata
-    val joinOutputValuesMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
-      val keyColumns: List[String] = joinConf.joinParts.toScala
-        .flatMap(joinPart => {
-          val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
-          if (joinPart.keyMapping == null) keyCols
-          else {
-            keyCols.map(key => {
-              if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
-              else key
-            })
-          }
-        })
-        .distinct
-      val tsDsSchema: Map[String, DataType] = {
-        Map("ts" -> api.StringType, "ds" -> api.StringType)
-      }
-      val sparkSchema = {
-        val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
-        val schema: Seq[(String, DataType)] = keySchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
-        StructType(SparkConversions.fromChrononSchema(schema))
-      }
-      val dummyOutputDf = tableUtils.sparkSession
-        .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
-      val finalOutputColumns: Array[Column] =
-        joinConf.derivationsScala.finalOutputColumn(rightSchema.toArray.map(_._1)).toArray
-      val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
-      val columns = SparkConversions.toChrononSchema(
-        StructType(derivedDummyOutputDf.schema.filterNot(tup => tsDsSchema.contains(tup.name))))
-      ListBuffer(columns.map { tup => toAggregationMetadata(tup._1, tup._2, joinConf.hasDerivations) }: _*)
-    } else {
-      joinIntermediateValuesMetadata
-    }
-    // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
-    (leftSchema ++ rightSchema, joinOutputValuesMetadata)
+
+    // Return analyzer result including schema at each step, as well as final output's metadata for export
+    AnalyzeJoinResult(
+      leftSchema,
+      rightSchema,
+      keySchema,
+      finalOutputSchema,
+      finalOutputMetadata
+    )
   }
 
   // validate the schema of the left and right side of the join and make sure the types match
@@ -477,13 +541,13 @@ class Analyzer(tableUtils: TableUtils,
 
   // validate the table permissions for given list of tables
   // return a list of tables that the user doesn't have access to
-  def runTablePermissionValidation(sources: Set[String]): Set[String] = {
+  def runTablePermissionValidation(sources: Set[String], partitionColOpt: Option[String] = None): Set[String] = {
     logger.info(s"Validating ${sources.size} tables permissions ...")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     //todo: handle offset-by-1 depending on temporal vs snapshot accuracy
     val partitionFilter = tableUtils.partitionSpec.minus(today, new Window(2, TimeUnit.DAYS))
     sources.filter { sourceTable =>
-      !tableUtils.checkTablePermission(sourceTable, partitionFilter)
+      !tableUtils.checkTablePermission(sourceTable, partitionFilter, partitionColOpt)
     }
   }
 
@@ -493,7 +557,8 @@ class Analyzer(tableUtils: TableUtils,
   // return a list of (table, gb_name, expected_start) that don't have data available
   private def runDataAvailabilityCheck(leftDataModel: DataModel,
                                        groupBy: api.GroupBy,
-                                       unfilledRanges: Seq[PartitionRange]): List[(String, String, String)] = {
+                                       unfilledRanges: Seq[PartitionRange],
+                                       subPartitionsFilter: Map[String, Map[String, String]] = Map.empty) = {
     if (unfilledRanges.isEmpty) {
       logger.info("No unfilled ranges found.")
       List.empty
@@ -525,7 +590,10 @@ class Analyzer(tableUtils: TableUtils,
             val tableToPartitions = groupBy.sources.toScala.map { source =>
               val table = source.table
               logger.info(s"Checking table $table for data availability ...")
-              val partitions = tableUtils.partitions(table)
+              val partitions = tableUtils.partitions(table,
+                                                     subPartitionsFilter =
+                                                       subPartitionsFilter.getOrElse(table, Map.empty),
+                                                     partitionColOpt = source.partitionColumnOpt)
               val startOpt = if (partitions.isEmpty) None else Some(partitions.min)
               val endOpt = if (partitions.isEmpty) None else Some(partitions.max)
               (table, partitions, startOpt, endOpt)
@@ -537,7 +605,8 @@ class Analyzer(tableUtils: TableUtils,
               logger.info(s"""
                          |Join needs data older than what is available for GroupBy: ${groupBy.metaData.name}
                          |left-$leftDataModel, right-${groupBy.dataModel}, accuracy-${groupBy.inferredAccuracy}
-                         |expected earliest available data partition: $expectedStart""".stripMargin)
+                         |expected earliest available data partition: $expectedStart
+                         |actual earliest available data partition: $minPartition""".stripMargin)
               tableToPartitions.foreach {
                 case (table, _, startOpt, endOpt) =>
                   logger.info(
@@ -641,19 +710,72 @@ class Analyzer(tableUtils: TableUtils,
       .toMap
   }
 
-  def run(): Unit =
+  private def exportGroupBySchema(analyzeGroupByResult: AnalyzeGroupByResult,
+                                  groupByConf: api.GroupBy,
+                                  partition: String): Unit = {
+    exportSchema(analyzeGroupByResult.keySchema,
+                 analyzeGroupByResult.valueSchema,
+                 groupByConf.metaData.schemaTable,
+                 partition,
+                 groupByConf.metaData.tableProps)
+  }
+
+  private def exportJoinSchema(analyzeJoinResult: AnalyzeJoinResult, joinConf: api.Join, partition: String): Unit = {
+    exportSchema(analyzeJoinResult.keySchema,
+                 analyzeJoinResult.finalOutputSchema,
+                 joinConf.metaData.schemaTable,
+                 partition,
+                 joinConf.metaData.tableProps)
+  }
+
+  private def exportSchema(keySchema: Seq[(String, DataType)],
+                           valueSchema: Seq[(String, DataType)],
+                           table: String,
+                           partition: String,
+                           tableProperties: Map[String, String]): Unit = {
+    import tableUtils.sparkSession.implicits._
+    def toFields(schema: Seq[(String, DataType)]): Seq[Field] = {
+      schema.toSeq.map {
+        case (name, dataType: DataType) => Field(name, SparkConversions.fromChrononType(dataType).catalogString)
+      }
+    }
+    val keys = toFields(keySchema)
+    val values = toFields(valueSchema)
+    val df = Seq((keys, values, partition)).toSeq.toDF("key_schema", "value_schema", tableUtils.partitionColumn)
+    tableUtils.insertPartitions(df, table, tableProperties)
+  }
+
+  def runAnalyzeJoin(joinConf: api.Join, exportSchema: Boolean = false): AnalyzeJoinResult = {
+    val analyzeJoinResult = analyzeJoin(joinConf,
+                                        enableHitter = enableHitter,
+                                        skipTimestampCheck = skipTimestampCheck,
+                                        validateTablePermission = validateTablePermission)
+    if (exportSchema) {
+      exportJoinSchema(analyzeJoinResult, joinConf, endDate)
+    }
+    analyzeJoinResult
+  }
+
+  private def runAnalyzeGroupBy(groupByConf: api.GroupBy, exportSchema: Boolean = false): AnalyzeGroupByResult = {
+    val analyzeGroupByResult = analyzeGroupBy(groupByConf,
+                                              enableHitter = enableHitter,
+                                              skipTimestampCheck = skipTimestampCheck,
+                                              validateTablePermission = validateTablePermission)
+    if (exportSchema) {
+      exportGroupBySchema(analyzeGroupByResult, groupByConf, endDate)
+    }
+    analyzeGroupByResult
+  }
+
+  def run(exportSchema: Boolean = false): Unit =
     conf match {
       case confPath: String =>
         if (confPath.contains("/joins/")) {
-          val joinConf = parseConf[api.Join](confPath)
-          analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+          runAnalyzeJoin(parseConf[api.Join](confPath), exportSchema)
         } else if (confPath.contains("/group_bys/")) {
-          val groupByConf = parseConf[api.GroupBy](confPath)
-          analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+          runAnalyzeGroupBy(parseConf[api.GroupBy](confPath), exportSchema)
         }
-      case groupByConf: api.GroupBy =>
-        analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
-      case joinConf: api.Join =>
-        analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+      case groupByConf: api.GroupBy => runAnalyzeGroupBy(groupByConf, exportSchema)
+      case joinConf: api.Join       => runAnalyzeJoin(joinConf, exportSchema)
     }
 }

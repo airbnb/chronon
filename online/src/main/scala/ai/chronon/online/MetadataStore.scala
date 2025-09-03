@@ -56,7 +56,7 @@ class MetadataStore(kvStore: KVStore,
   }
 
   implicit val executionContext: ExecutionContext =
-    Option(executionContextOverride).getOrElse(FlexibleExecutionContext.buildExecutionContext)
+    Option(executionContextOverride).getOrElse(FlexibleExecutionContext.buildExecutionContext())
 
   def getConf[T <: TBase[_, _]: Manifest](confPathOrName: String): Try[T] = {
     val clazz = implicitly[ClassTag[T]].runtimeClass.asInstanceOf[Class[T]]
@@ -134,8 +134,9 @@ class MetadataStore(kvStore: KVStore,
         if (result.isSuccess) Metrics.Context(Metrics.Environment.MetaDataFetching, result.get.join)
         else Metrics.Context(Metrics.Environment.MetaDataFetching, join = name)
       // Throw exception after metrics. No join metadata is bound to be a critical failure.
+      // This will ensure that a Failure is never cached in the getJoinConf TTLCache
       if (result.isFailure) {
-        context.withSuffix("join").increment(Metrics.Name.Exception)
+        context.withSuffix("join").incrementException(result.failed.get)
         throw result.failed.get
       }
       context.withSuffix("join").distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTimeMs)
@@ -147,6 +148,7 @@ class MetadataStore(kvStore: KVStore,
   def validateJoinExist(team: String, name: String): Boolean = {
     val activeJoinList: Try[Seq[String]] = getJoinListByTeam(team)
     if (activeJoinList.isFailure) {
+      getJoinListByTeam.refresh(team)
       logger.error(s"Failed to fetch active join list for team $team")
       false
     } else {
@@ -164,6 +166,7 @@ class MetadataStore(kvStore: KVStore,
   def validateGroupByExist(team: String, name: String): Boolean = {
     val activeGroupByList: Try[Seq[String]] = getGroupByListByTeam(team)
     if (activeGroupByList.isFailure) {
+      getGroupByListByTeam.refresh(team)
       logger.error(s"Failed to fetch active group_by list for team $team")
       false
     } else {
@@ -225,6 +228,10 @@ class MetadataStore(kvStore: KVStore,
           }
         logger.info(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset")
         if (metaData.isFailure) {
+          Metrics
+            .Context(Metrics.Environment.MetaDataFetching, groupBy = name)
+            .withSuffix("group_by")
+            .incrementException(metaData.failed.get)
           Failure(
             new RuntimeException(s"Couldn't fetch group by serving info for $batchDataset, " +
                                    s"please make sure a batch upload was successful",

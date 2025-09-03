@@ -65,6 +65,7 @@ class Operation:
     # https://github.com/apache/incubator-datasketches-java/blob/master/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180
     APPROX_UNIQUE_COUNT_LGK = collector(ttypes.Operation.APPROX_UNIQUE_COUNT)
     UNIQUE_COUNT = ttypes.Operation.UNIQUE_COUNT
+    BOUNDED_UNIQUE_COUNT_K = collector(ttypes.Operation.BOUNDED_UNIQUE_COUNT)
     COUNT = ttypes.Operation.COUNT
     SUM = ttypes.Operation.SUM
     AVERAGE = ttypes.Operation.AVERAGE
@@ -125,9 +126,9 @@ def op_to_str(operation: OperationType):
 def Aggregation(
     input_column: str = None,
     operation: Union[ttypes.Operation, Tuple[ttypes.Operation, Dict[str, str]]] = None,
-    windows: List[ttypes.Window] = None,
-    buckets: List[str] = None,
-    tags: Dict[str, str] = None,
+    windows: Optional[List[ttypes.Window]] = None,
+    buckets: Optional[List[str]] = None,
+    tags: Optional[Dict[str, str]] = None,
 ) -> ttypes.Aggregation:
     """
     :param input_column:
@@ -154,6 +155,16 @@ def Aggregation(
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
+
+    if operation == ttypes.Operation.UNIQUE_COUNT:
+        LOGGER.warning("When using UNIQUE_COUNT operation, please consider using "
+                       "BOUNDED_UNIQUE_COUNT_K or APPROX_UNIQUE_COUNT "
+                       "for better performance and scalability.")
+    elif operation == ttypes.Operation.HISTOGRAM:
+        LOGGER.warning("When using HISTOGRAM operation, please consider using "
+                       "APPROX_HISTOGRAM_K for better performance and "
+                       "bounded memory usage.")
+
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
     agg.tags = tags
     return agg
@@ -163,18 +174,20 @@ def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
     return ttypes.Window(length, timeUnit)
 
 
-def Derivation(name: str, expression: str) -> ttypes.Derivation:
+def Derivation(name: str, expression: str, description: Optional[str] = None) -> ttypes.Derivation:
     """
     Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
     output schema. It is supported for offline computations for now.
-
     If both name and expression are set to "*", then every raw column will be included along with the derived columns.
-
     :param name: output column name of the SQL expression
     :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
+    :param description: optional description of this derivation
     :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
     """
-    return ttypes.Derivation(name=name, expression=expression)
+    metadata = None
+    if description:
+        metadata = ttypes.MetaData(description=description)
+    return ttypes.Derivation(name=name, expression=expression, metaData=metadata)
 
 
 def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
@@ -335,21 +348,21 @@ def GroupBy(
     sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
     keys: List[str],
     aggregations: Optional[List[ttypes.Aggregation]],
-    online: bool = DEFAULT_ONLINE,
-    production: bool = DEFAULT_PRODUCTION,
-    backfill_start_date: str = None,
-    dependencies: List[str] = None,
-    env: Dict[str, Dict[str, str]] = None,
-    table_properties: Dict[str, str] = None,
-    output_namespace: str = None,
-    accuracy: ttypes.Accuracy = None,
+    online: Optional[bool] = DEFAULT_ONLINE,
+    production: Optional[bool] = DEFAULT_PRODUCTION,
+    backfill_start_date: Optional[str] = None,
+    dependencies: Optional[List[str]] = None,
+    env: Optional[Dict[str, Dict[str, str]]] = None,
+    table_properties: Optional[Dict[str, str]] = None,
+    output_namespace: Optional[str] = None,
+    accuracy: Optional[ttypes.Accuracy] = None,
     lag: int = 0,
     offline_schedule: str = "@daily",
-    name: str = None,
-    tags: Dict[str, str] = None,
-    derivations: List[ttypes.Derivation] = None,
-    deprecation_date: str = None,
-    is_incremental: bool = False,
+    name: Optional[str] = None,
+    tags: Optional[Dict[str, str]] = None,
+    derivations: Optional[List[ttypes.Derivation]] = None,
+    deprecation_date: Optional[str] = None,
+    is_incremental: Optional[bool] = False,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
@@ -467,6 +480,7 @@ def GroupBy(
     :param kwargs:
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
+    :param description: optional description of this GroupBy
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
@@ -508,13 +522,11 @@ def GroupBy(
         elif isinstance(source, ttypes.EntitySource):
             return ttypes.Source(entities=source)
         elif isinstance(source, ttypes.JoinSource):
-            if not source.join.metadata.isSetOutputNamespace():
-                source.join.metadata.setOutputNamespace(output_namespace)
             return ttypes.Source(joinSource=source)
         elif isinstance(source, ttypes.Source):
             return source
         else:
-            print("unrecognized " + str(source))
+            LOGGER.warning("unrecognized " + str(source))
 
     if not isinstance(sources, list):
         sources = [sources]
@@ -547,6 +559,7 @@ def GroupBy(
         team=team,
         offlineSchedule=offline_schedule,
         deprecationDate=deprecation_date,
+        description=description,
     )
 
     group_by = ttypes.GroupBy(

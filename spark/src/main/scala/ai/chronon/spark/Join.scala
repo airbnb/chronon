@@ -20,11 +20,11 @@ import ai.chronon.api
 import ai.chronon.api.DataModel.Entities
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.{DerivationUtils, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql
-import org.apache.spark.sql.DataFrame
+import org.apache.spark.sql.{Column, DataFrame}
 import org.apache.spark.sql.functions._
 import org.apache.spark.util.sketch.BloomFilter
 
@@ -48,17 +48,17 @@ import scala.util.{Failure, Success, Try}
 case class CoveringSet(hashes: Seq[String], rowCount: Long, isCovering: Boolean)
 
 object CoveringSet {
-  def toFilterExpression(coveringSets: Seq[CoveringSet]): String = {
-    val coveringSetHashExpression = "(" +
-      coveringSets
-        .map { coveringSet =>
-          val hashes = coveringSet.hashes.map("'" + _.trim + "'").mkString(", ")
-          s"array($hashes)"
-        }
-        .mkString(", ") +
-      ")"
 
-    s"( ${Constants.MatchedHashes} IS NULL ) OR ( ${Constants.MatchedHashes} NOT IN $coveringSetHashExpression )"
+  private def arraysEqualFunc(colName: String, expected: Seq[String]): Column = {
+    // Avoid direct comparison of arrays because Iceberg cannot support Array literals in filter pushdown.
+    size(array_except(col(colName), typedLit(expected))) === 0 && size(col(colName)) === expected.size
+  }
+
+  def toFilterCondition(coveringSets: Seq[CoveringSet]): Column = {
+    val excludedConditions = coveringSets.map { cs => arraysEqualFunc(Constants.MatchedHashes, cs.hashes) }
+
+    val disjunction = excludedConditions.reduceOption(_ || _).getOrElse(lit(false))
+    col(Constants.MatchedHashes).isNull || !disjunction
   }
 }
 
@@ -155,6 +155,22 @@ class Join(joinConf: api.Join,
         }.toSeq
       }
 
+    val distinctBootstrapSetsWithSchema: Seq[(Seq[String], Long, Set[StructField])] =
+      distinctBootstrapSets.map {
+        case (hashes, rowCount) =>
+          if (hashes.exists(hash => !bootstrapInfo.hashToSchema.contains(hash))) {
+            logger.error(s"""Bootstrap table contains out-of-date metadata and should be cleaned up.
+                 |This is most likely caused by bootstrap table not properly archived during schema evolution. The semantic_hash may have been manually cleared to skip this.
+                 |Please manually archive the old bootstrap table and re-run.
+                 |
+                 |ALTER TABLE ${bootstrapTable} RENAME TO ${bootstrapTable}_<timestamp_suffix>;
+                 |""".stripMargin)
+            throw new IllegalStateException("Bootstrap table contains out-of-date metadata and should be cleaned up.")
+          }
+          val schema = hashes.toSet.flatMap(bootstrapInfo.hashToSchema.apply)
+          (hashes, rowCount, schema)
+      }
+
     val partsToCompute: Seq[JoinPartMetadata] = {
       if (selectedJoinParts.isEmpty) {
         bootstrapInfo.joinParts
@@ -171,9 +187,8 @@ class Join(joinConf: api.Join,
     val coveringSetsPerJoinPart: Seq[(JoinPartMetadata, Seq[CoveringSet])] = bootstrapInfo.joinParts
       .filter(part => selectedJoinParts.isEmpty || partsToCompute.contains(part))
       .map { joinPartMetadata =>
-        val coveringSets = distinctBootstrapSets.map {
-          case (hashes, rowCount) =>
-            val schema = hashes.toSet.flatMap(bootstrapInfo.hashToSchema.apply)
+        val coveringSets = distinctBootstrapSetsWithSchema.map {
+          case (hashes, rowCount, schema) =>
             val isCovering = joinPartMetadata.derivationDependencies
               .map {
                 case (derivedField, baseFields) =>
@@ -224,8 +239,7 @@ class Join(joinConf: api.Join,
   }
 
   override def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit = {
-    val bootstrapDf =
-      tableUtils.sql(leftRange.genScanQuery(query = null, table = bootstrapTable)).addTimebasedColIfExists()
+    val bootstrapDf = leftRange.scanQueryDf(query = null, table = bootstrapTable).addTimebasedColIfExists()
     val rightPartsData = getRightPartsData(leftRange)
     val joinedDfTry =
       try {
@@ -406,63 +420,8 @@ class Join(joinConf: api.Join,
     finalDf
   }
 
-  def applyDerivation(baseDf: DataFrame, bootstrapInfo: BootstrapInfo, leftColumns: Seq[String]): DataFrame = {
-    if (!joinConf.isSetDerivations || joinConf.derivations.isEmpty) {
-      return baseDf
-    }
-
-    val projections = joinConf.derivations.toScala.derivationProjection(bootstrapInfo.baseValueNames)
-    val projectionsMap = projections.toMap
-    val baseOutputColumns = baseDf.columns.toSet
-
-    val finalOutputColumns =
-      /*
-       * Loop through all columns in the base join output:
-       * 1. If it is one of the value columns, then skip it here and it will be handled later as we loop through
-       *    derived columns again - derivation is a projection from all value columns to desired derived columns
-       * 2.  (see case 2 below) If it is matching one of the projected output columns, then there are 2 sub-cases
-       *     a. matching with a left column, then we handle the coalesce here to make sure left columns show on top
-       *     b. a bootstrapped derivation case, the skip it here and it will be handled later as
-       *        loop through derivations to perform coalescing
-       * 3. Else, we keep it in the final output - cases falling here are either (1) key columns, or (2)
-       *    arbitrary columns selected from left.
-       */
-      baseDf.columns.flatMap { c =>
-        if (bootstrapInfo.baseValueNames.contains(c)) {
-          None
-        } else if (projectionsMap.contains(c)) {
-          if (leftColumns.contains(c)) {
-            Some(coalesce(col(c), expr(projectionsMap(c))).as(c))
-          } else {
-            None
-          }
-        } else {
-          Some(col(c))
-        }
-      } ++
-        /*
-         * Loop through all clauses in derivation projections:
-         * 1. (see case 2 above) If it is matching one of the projected output columns, then there are 2 sub-cases
-         *     a. matching with a left column, then we skip since it is handled above
-         *     b. a bootstrapped derivation case (see case 2 below), then we do the coalescing to achieve the bootstrap
-         *        behavior.
-         * 2. Else, we do the standard projection.
-         */
-        projections
-          .flatMap {
-            case (name, expression) =>
-              if (baseOutputColumns.contains(name)) {
-                if (leftColumns.contains(name)) {
-                  None
-                } else {
-                  Some(coalesce(col(name), expr(expression)).as(name))
-                }
-              } else {
-                Some(expr(expression).as(name))
-              }
-          }
-
-    val result = baseDf.select(finalOutputColumns: _*)
+  private def applyDerivation(baseDf: DataFrame, bootstrapInfo: BootstrapInfo, leftColumns: Seq[String]): DataFrame = {
+    val result = DerivationUtils.applyDerivation(joinConf, baseDf, bootstrapInfo.baseValueNames, leftColumns)
     if (showDf) {
       logger.info(s"printing results for join: ${joinConf.metaData.name}")
       result.prettyPrint()
@@ -544,10 +503,12 @@ class Join(joinConf: api.Join,
               logger.info(s"partition range of bootstrap table ${part.table} is beyond unfilled range")
               partialDf
             } else {
-              var bootstrapDf = tableUtils.sql(
-                bootstrapRange.genScanQuery(part.query, part.table, Map(tableUtils.partitionColumn -> null))
-              )
-
+              val partitionColumn = tableUtils.getPartitionColumn(part.query)
+              var bootstrapDf = bootstrapRange.scanQueryDf(part.query,
+                                                           part.table,
+                                                           fillIfAbsent = Map(partitionColumn -> null),
+                                                           partitionColOpt = Some(partitionColumn),
+                                                           renamePartitionCol = true)
               // attach semantic_hash for either log or regular table bootstrap
               validateReservedColumns(bootstrapDf, part.table, Seq(Constants.BootstrapHash, Constants.MatchedHashes))
               if (bootstrapDf.columns.contains(Constants.SchemaHash)) {
@@ -589,7 +550,7 @@ class Join(joinConf: api.Join,
     val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
     logger.info(s"Finished computing bootstrap table ${joinConf.metaData.bootstrapTable} in ${elapsedMins} minutes")
 
-    tableUtils.sql(range.genScanQuery(query = null, table = bootstrapTable))
+    range.scanQueryDf(query = null, table = bootstrapTable)
   }
 
   /*
@@ -605,7 +566,7 @@ class Join(joinConf: api.Join,
       // this happens whether bootstrapParts is NULL for the JOIN and thus no metadata columns were created
       return Some(bootstrapDfWithStats)
     }
-    val filterExpr = CoveringSet.toFilterExpression(coveringSets)
+    val filterExpr = CoveringSet.toFilterCondition(coveringSets)
     logger.info(s"Using covering set filter: $filterExpr")
     val filteredDf = bootstrapDf.where(filterExpr)
     val filteredCount = filteredDf.count()

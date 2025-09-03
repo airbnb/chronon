@@ -99,10 +99,12 @@ object Extensions {
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
     def incrementalOutputTable = s"${metaData.outputNamespace}.${metaData.cleanName}_inc"
+    def preModelTransformsTable = s"${metaData.outputNamespace}.${metaData.cleanName}_pre_mt"
     def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
     def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
     def loggedTable = s"${outputTable}_logged"
+    def schemaTable = s"${outputTable}_schema"
 
     def bootstrapTable = s"${outputTable}_bootstrap"
 
@@ -332,6 +334,17 @@ object Extensions {
         source.getEvents.query
       } else {
         source.getJoinSource.query
+      }
+    }
+
+    def partitionColumnOpt: Option[String] = {
+      Option(source.query.partitionColumn)
+    }
+
+    def tableToPartitionColumn: Map[String, String] = {
+      partitionColumnOpt match {
+        case Some(col) => Map(table -> col)
+        case None      => Map.empty
       }
     }
 
@@ -637,6 +650,20 @@ object Extensions {
       }
     }
 
+    def getPartitionColumn: Option[String] = {
+      val partitionColumns = groupBy.sources.toScala.flatMap(_.partitionColumnOpt).distinct
+      require(
+        partitionColumns.length < 2,
+        s"Expect all queries from a given group-by to have the same partition column. All sources should have identical schemas and same partition column name. Found distinct partition columns $partitionColumns for group-by ${groupBy.metaData.name}"
+      )
+      partitionColumns.headOption
+    }
+
+    lazy val isModelChaining: Boolean = {
+      groupBy.sources.toScala.exists { source =>
+        source.isSetJoinSource && source.getJoinSource.getJoin.hasModelTransforms
+      }
+    }
   }
 
   implicit class StringOps(string: String) {
@@ -656,7 +683,7 @@ object Extensions {
 
     private def schemaFields(schema: TDataType): Array[StructField] =
       schema.params.toScala
-        .map(field => StructField(field.name, DataType.fromTDataType(field.dataType)))
+        .map(field => DataFieldOps(field).toStructField)
         .toArray
 
     lazy val keyNames: Array[String] = schemaNames(externalSource.keySchema)
@@ -1019,6 +1046,70 @@ object Extensions {
     lazy val areDerivationsRenameOnly: Boolean = join.hasDerivations && derivationsScala.areDerivationsRenameOnly
     lazy val derivationExpressionSet: Set[String] =
       if (join.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
+
+    def hasModelTransforms: Boolean = join.isSetModelTransforms && join.modelTransformsListScala.nonEmpty
+    lazy val models: List[Model] = modelTransformsListScala.map(_.model).distinct
+    lazy val modelTransformsListScala: List[ModelTransform] =
+      if (join.isSetModelTransforms) {
+        Option(join.modelTransforms).toList.flatMap(_.transforms.toScala)
+      } else {
+        List.empty
+      }
+
+    lazy val modelSchema: StructType = {
+      val fields = modelTransformsListScala.map(mt => {
+        mt.model.outputSchemaScala.map { field =>
+          field.copy(name = mt.mapOutputFieldName(field.name))
+        }
+      })
+      val distinctFields = fields.flatten.distinct.toArray
+      StructType(s"join_model_schema_${join.metaData.cleanName}", distinctFields)
+    }
+
+    lazy val modelTransformsPassthroughFieldsScala: Seq[String] = {
+      if (join.modelTransforms == null) {
+        Seq.empty
+      } else {
+        Option(join.modelTransforms.passthroughFields).map(_.toScala.toSeq).getOrElse(Seq.empty)
+      }
+    }
+  }
+
+  implicit class ModelOps(model: Model) {
+    lazy val inputSchemaScala: List[StructField] = model.inputSchema.params.toScala.map(DataFieldOps(_).toStructField)
+    lazy val outputSchemaScala: List[StructField] = model.outputSchema.params.toScala.map(DataFieldOps(_).toStructField)
+  }
+
+  implicit class ModelTransformOps(modelTransform: ModelTransform) {
+    lazy val inputMappingsScala: Map[String, String] =
+      Option(modelTransform.inputMappings).map(_.toScala).getOrElse(Map.empty)
+    lazy val outputMappingsScala: Map[String, String] =
+      Option(modelTransform.outputMappings).map(_.toScala).getOrElse(Map.empty)
+
+    def mapInputs(inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
+      modelTransform.model.inputSchemaScala.map { dataField =>
+        val mappedFieldName = inputMappingsScala.getOrElse(dataField.name, dataField.name)
+        dataField.name -> inputs.getOrElse(mappedFieldName, null)
+      }.toMap
+    }
+
+    def mapOutputFieldName(modelOutputFieldName: String): String = {
+      val mappedFieldName = outputMappingsScala.getOrElse(modelOutputFieldName, modelOutputFieldName)
+      (Option(modelTransform.prefix).toSeq :+ mappedFieldName).mkString("_")
+    }
+
+    def mapOutputs(outputs: Map[String, AnyRef]): Map[String, AnyRef] = {
+      val mappedOutputs = modelTransform.model.outputSchemaScala.map { dataField =>
+        mapOutputFieldName(dataField.name) -> outputs.getOrElse(dataField.name, null)
+      }.toMap
+      mappedOutputs
+    }
+  }
+
+  implicit class DataFieldOps(dataField: DataField) {
+    def toStructField: StructField = {
+      StructField(dataField.name, DataType.fromTDataType(dataField.dataType))
+    }
   }
 
   implicit class StringsOps(strs: Iterable[String]) {
@@ -1091,17 +1182,18 @@ object Extensions {
     }
 
     // Used only during online fetching to reduce latency
-    def applyRenameOnlyDerivation(baseColumns: Map[String, Any]): Map[String, Any] = {
+    def applyRenameOnlyDerivation(keys: Map[String, Any], values: Map[String, Any]): Map[String, Any] = {
       assert(
         areDerivationsRenameOnly,
         s"Derivations contain more complex expressions than simple renames: ${derivations.map(d => (d.name, d.expression))}")
       val wildcardDerivations = if (derivationsContainStar) {
-        baseColumns.filterNot(derivationExpressionSet contains _._1)
+        values.filterNot(derivationExpressionSet contains _._1)
       } else {
         Map.empty[String, Any]
       }
-
-      wildcardDerivations ++ derivationsWithoutStar.map(d => d.name -> baseColumns.getOrElse(d.expression, null)).toMap
+      wildcardDerivations ++ derivationsWithoutStar
+        .map(d => d.name -> (keys ++ values).getOrElse(d.expression, null))
+        .toMap
     }
   }
 }

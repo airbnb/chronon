@@ -314,7 +314,19 @@ object ColumnAggregator {
           case BinaryType => simple(new ApproxDistinctCount[Array[Byte]](aggregationPart.getInt("k", Some(8))))
           case _          => mismatchException
         }
+      case Operation.BOUNDED_UNIQUE_COUNT =>
+        val k = aggregationPart.getInt("k", Some(8))
 
+        inputType match {
+          case IntType    => simple(new BoundedUniqueCount[Int](inputType, k))
+          case LongType   => simple(new BoundedUniqueCount[Long](inputType, k))
+          case ShortType  => simple(new BoundedUniqueCount[Short](inputType, k))
+          case DoubleType => simple(new BoundedUniqueCount[Double](inputType, k))
+          case FloatType  => simple(new BoundedUniqueCount[Float](inputType, k))
+          case StringType => simple(new BoundedUniqueCount[String](inputType, k))
+          case BinaryType => simple(new BoundedUniqueCount[Array[Byte]](inputType, k))
+          case _          => mismatchException
+        }
       case Operation.APPROX_PERCENTILE =>
         val k = aggregationPart.getInt("k", Some(128))
         val mapper = new ObjectMapper()

@@ -45,7 +45,8 @@ object Builders {
               timeColumn: String = null,
               setups: Seq[String] = null,
               mutationTimeColumn: String = null,
-              reversalColumn: String = null): Query = {
+              reversalColumn: String = null,
+              partitionColumn: String = null): Query = {
       val result = new Query()
       if (selects != null)
         result.setSelects(selects.toJava)
@@ -58,6 +59,7 @@ object Builders {
         result.setSetups(setups.toJava)
       result.setMutationTimeColumn(mutationTimeColumn)
       result.setReversalColumn(reversalColumn)
+      result.setPartitionColumn(partitionColumn)
       result
     }
   }
@@ -173,6 +175,7 @@ object Builders {
               bootstrapParts: Seq[BootstrapPart] = null,
               rowIds: Seq[String] = null,
               derivations: Seq[Derivation] = null,
+              modelTransforms: ModelTransforms = null,
               skewKeys: Map[String, Seq[String]] = null): Join = {
       val result = new Join()
       result.setMetaData(metaData)
@@ -189,6 +192,8 @@ object Builders {
         result.setRowIds(rowIds.toJava)
       if (derivations != null)
         result.setDerivations(derivations.toJava)
+      if (modelTransforms != null)
+        result.setModelTransforms(modelTransforms)
       if (skewKeys != null)
         result.setSkewKeys(skewKeys.mapValues(_.toJava).toMap.toJava)
       result
@@ -268,7 +273,8 @@ object Builders {
         consistencySamplePercent: Double = 5,
         tableProperties: Map[String, String] = Map.empty,
         historicalBackill: Boolean = true,
-        deprecationDate: String = null
+        deprecationDate: String = null,
+        description: String = null
     ): MetaData = {
       val result = new MetaData()
       result.setName(name)
@@ -288,6 +294,9 @@ object Builders {
         result.setTableProperties(tableProperties.toJava)
       if (deprecationDate != null)
         result.setDeprecationDate(deprecationDate)
+      if (description != null) {
+        result.setDescription(description)
+      }
       result
     }
   }
@@ -297,13 +306,15 @@ object Builders {
         query: String = null,
         metaData: MetaData = null,
         startPartition: String = null,
-        setups: Seq[String] = null
+        setups: Seq[String] = null,
+        createView: Boolean = false
     ): StagingQuery = {
       val stagingQuery = new StagingQuery()
       stagingQuery.setQuery(query)
       stagingQuery.setMetaData(metaData)
       stagingQuery.setStartPartition(startPartition)
       if (setups != null) stagingQuery.setSetups(setups.toJava)
+      stagingQuery.setCreateView(createView)
       stagingQuery
     }
   }
@@ -329,7 +340,8 @@ object Builders {
   object Derivation {
     def apply(
         name: String = null,
-        expression: String = null
+        expression: String = null,
+        metaData: MetaData = null
     ): Derivation = {
       val derivation = new Derivation()
       if (name != null) {
@@ -338,8 +350,85 @@ object Builders {
       if (derivation != null) {
         derivation.setExpression(expression)
       }
+      if (metaData != null) {
+        derivation.setMetaData(metaData)
+      }
+      derivation
+    }
+
+    def star(): Derivation = {
+      val derivation = new Derivation()
+      derivation.setName("*")
+      derivation.setExpression("*")
       derivation
     }
   }
 
+  object ModelTransforms {
+    def apply(
+        transforms: Seq[ModelTransform] = null,
+        passthroughField: Seq[String] = null
+    ): ModelTransforms = {
+      val modelTransforms = new ModelTransforms()
+      if (transforms != null)
+        modelTransforms.setTransforms(transforms.toJava)
+      if (passthroughField != null)
+        modelTransforms.setPassthroughFields(passthroughField.toJava)
+      modelTransforms
+    }
+  }
+
+  object ModelTransform {
+    def apply(
+        model: Model = null,
+        inputMappings: Map[String, String] = null,
+        outputMappings: Map[String, String] = null,
+        prefix: String = null
+    ): ModelTransform = {
+      val modelTransform = new ModelTransform()
+      if (model != null)
+        modelTransform.setModel(model)
+      if (inputMappings != null)
+        modelTransform.setInputMappings(inputMappings.toJava)
+      if (outputMappings != null)
+        modelTransform.setOutputMappings(outputMappings.toJava)
+      if (prefix != null)
+        modelTransform.setPrefix(prefix)
+      modelTransform
+    }
+  }
+
+  object Model {
+    def apply(
+        metaData: MetaData = null,
+        inferenceSpec: InferenceSpec = null,
+        inputSchema: DataType = null,
+        outputSchema: DataType = null
+    ): Model = {
+      val model = new Model()
+      if (metaData != null)
+        model.setMetaData(metaData)
+      if (inferenceSpec != null)
+        model.setInferenceSpec(inferenceSpec)
+      if (inputSchema != null)
+        model.setInputSchema(toTDataType(inputSchema))
+      if (outputSchema != null)
+        model.setOutputSchema(toTDataType(outputSchema))
+      model
+    }
+  }
+
+  object InferenceSpec {
+    def apply(
+        modelBackend: String = null,
+        modelBackendParams: Map[String, String] = null
+    ): InferenceSpec = {
+      val inferenceSpec = new InferenceSpec()
+      if (modelBackend != null)
+        inferenceSpec.setModelBackend(modelBackend)
+      if (modelBackendParams != null)
+        inferenceSpec.setModelBackendParams(modelBackendParams.toJava)
+      inferenceSpec
+    }
+  }
 }

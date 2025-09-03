@@ -20,6 +20,7 @@ import ai.chronon.online.Fetcher.Request;
 import ai.chronon.online.Fetcher.Response;
 import ai.chronon.online.FutureConverters;
 
+import scala.Some;
 import scala.collection.Iterator;
 import scala.collection.Seq;
 import scala.Option;
@@ -29,6 +30,7 @@ import scala.concurrent.Future;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -37,15 +39,15 @@ public class JavaFetcher {
     Fetcher fetcher;
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, null, disableErrorThrows, null, Option.apply(32), null);
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, null, null, false, null, Option.apply(32), null);
     }
 
     public JavaFetcher(KVStore kvStore, String metaDataSet, Long timeoutMillis, Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry, String callerName, FlagStore flagStore, Boolean disableErrorThrows) {
-        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null);
+        this.fetcher = new Fetcher(kvStore, metaDataSet, timeoutMillis, logFunc, false, registry, callerName, flagStore, disableErrorThrows, null, Option.apply(32), null);
     }
 
     /* user builder pattern to create JavaFetcher
@@ -66,7 +68,9 @@ public class JavaFetcher {
                 builder.callerName,
                 builder.flagStore,
                 builder.disableErrorThrows,
-                builder.executionContextOverride);
+                builder.executionContextOverride,
+                builder.joinFetchParallelChunkSize.isPresent() ? Option.apply(builder.joinFetchParallelChunkSize.get()) : Option.empty(),
+                builder.modelBackend);
     }
 
     public static class Builder {
@@ -80,6 +84,9 @@ public class JavaFetcher {
         private FlagStore flagStore;
         private Boolean disableErrorThrows;
         private ExecutionContext executionContextOverride;
+        private ModelBackend modelBackend;
+
+        private Optional<Integer> joinFetchParallelChunkSize = Optional.empty();
 
         public Builder(KVStore kvStore, String metaDataSet, Long timeoutMillis,
                        Consumer<LoggableResponse> logFunc, ExternalSourceRegistry registry) {
@@ -112,6 +119,15 @@ public class JavaFetcher {
 
         public Builder executionContextOverride(ExecutionContext executionContextOverride) {
             this.executionContextOverride = executionContextOverride;
+            return this;
+        }
+
+        public Builder joinFetchParallelChunkSize(Integer joinFetchParallelChunkSize) {
+            this.joinFetchParallelChunkSize = Optional.ofNullable(joinFetchParallelChunkSize);
+            return this;
+        }
+        public Builder modelBackend(ModelBackend modelBackend) {
+            this.modelBackend = modelBackend;
             return this;
         }
 
@@ -195,6 +211,23 @@ public class JavaFetcher {
         return convertResponsesWithTs(scalaResponses, false, startTs);
     }
 
+    public List<CompletableFuture<List<JavaResponse>>> fetchJoinChunked(List<JavaRequest> requests, int chunkSizeOverride) {
+        long startTs = System.currentTimeMillis();
+        // Convert java requests to scala requests
+        Seq<Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
+        // Get responses from the fetcher
+        Seq<Future<Seq<Response>>> scalaChunkedResponses = this.fetcher.fetchJoinChunked(scalaRequests, chunkSizeOverride, Option.empty());
+        // Convert responses to CompletableFuture
+        List<CompletableFuture<List<JavaResponse>>> futures = new ArrayList<>(scalaChunkedResponses.size());
+        Iterator<Future<Seq<Response>>> it = scalaChunkedResponses.iterator();
+        while (it.hasNext()) {
+            Future<FetcherResponseWithTs> scalaResponse = this.fetcher.withTs(it.next());
+            CompletableFuture<List<JavaResponse>> javaResponse = convertResponsesWithTs(scalaResponse, false, startTs);
+            futures.add(javaResponse);
+        }
+        return futures;
+    }
+
     private void instrument(List<String> requestNames, boolean isGroupBy, String metricName, Long startTs) {
         long endTs = System.currentTimeMillis();
         for (String s : requestNames) {
@@ -209,11 +242,11 @@ public class JavaFetcher {
     }
 
     private Metrics.Context getJoinContext(String joinName) {
-        return new Metrics.Context("join.fetch", joinName, null, null, false, null, null, null, null);
+        return new Metrics.Context("join.fetch", joinName, null, null, false, null, null, null, null, null);
     }
 
     private Metrics.Context getGroupByContext(String groupByName) {
-        return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null);
+        return new Metrics.Context("group_by.fetch", null, groupByName, null, false, null, null, null, null, null);
     }
 
     public CompletableFuture<JavaSeriesStatsResponse> fetchStatsTimeseries(JavaStatsRequest request) {

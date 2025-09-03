@@ -314,7 +314,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
         val tsVal = row.get(queryTsIndex)
         assert(tsVal != null, "ts column cannot be null in left source or query df")
         val ts = tsVal.asInstanceOf[Long]
-        val partition = row.getString(partitionIndex)
+        val partition = row.get(partitionIndex).toString
         ((queriesKeyGen(row), headStart(ts)), TimeTuple.make(ts, partition))
       }
       .groupByKey()
@@ -396,7 +396,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
 
-    inputDf.rdd
+    tableUtils
+      .preAggRepartition(inputDf.rdd)
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, tsIndex))
       .aggregateByKey(zeroValue = hopsAggregator.init())(
@@ -506,17 +507,20 @@ object GroupBy {
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val inputDf = groupByConf.sources.toScala
       .map { source =>
-        renderDataSourceQuery(groupByConf,
-                              source,
-                              groupByConf.getKeyColumns.toScala,
-                              queryRange,
-                              tableUtils,
-                              groupByConf.maxWindow,
-                              groupByConf.inferredAccuracy)
-
-      }
-      .map {
-        tableUtils.sql
+        val partitionColumn = tableUtils.getPartitionColumn(source.query)
+        tableUtils.sqlWithDefaultPartitionColumn(
+          renderDataSourceQuery(
+            groupByConf,
+            source,
+            groupByConf.getKeyColumns.toScala,
+            queryRange,
+            tableUtils,
+            groupByConf.maxWindow,
+            groupByConf.inferredAccuracy,
+            partitionColumn = partitionColumn
+          ),
+          existingPartitionColumn = partitionColumn
+        )
       }
       .reduce { (df1, df2) =>
         // align the columns by name - when one source has select * the ordering might not be aligned
@@ -561,16 +565,21 @@ object GroupBy {
     def mutationDfFn(): DataFrame = {
       val df: DataFrame = if (groupByConf.inferredAccuracy == api.Accuracy.TEMPORAL && mutationSources.nonEmpty) {
         val mutationDf = mutationSources
-          .map(ms =>
-            renderDataSourceQuery(groupByConf,
-                                  ms,
-                                  groupByConf.getKeyColumns.toScala,
-                                  queryRange.shift(1),
-                                  tableUtils,
-                                  groupByConf.maxWindow,
-                                  groupByConf.inferredAccuracy,
-                                  mutations = true))
-          .map { tableUtils.sql }
+          .map { ms =>
+            val partitionColumn = tableUtils.getPartitionColumn(ms.query)
+            val query = renderDataSourceQuery(
+              groupByConf,
+              ms,
+              groupByConf.getKeyColumns.toScala,
+              queryRange.shift(1),
+              tableUtils,
+              groupByConf.maxWindow,
+              groupByConf.inferredAccuracy,
+              partitionColumn = partitionColumn,
+              mutations = true
+            )
+            tableUtils.sqlWithDefaultPartitionColumn(query, partitionColumn)
+          }
           .reduce { (df1, df2) =>
             val columns1 = df1.schema.fields.map(_.name)
             df1.union(df2.selectExpr(columns1: _*))
@@ -653,15 +662,16 @@ object GroupBy {
                             tableUtils: TableUtils,
                             window: Option[api.Window],
                             accuracy: api.Accuracy,
+                            partitionColumn: String,
                             mutations: Boolean = false): String = {
 
-    val sourceTableIsPartitioned = tableUtils.isPartitioned(source.table)
+    val sourceTableIsPartitioned = tableUtils.isPartitioned(source.table, source.partitionColumnOpt)
 
     val intersectedRange: Option[PartitionRange] = if (sourceTableIsPartitioned) {
       Some(getIntersectedRange(source, queryRange, tableUtils, window))
     } else None
 
-    var metaColumns: Map[String, String] = Map(tableUtils.partitionColumn -> null)
+    var metaColumns: Map[String, String] = Map(partitionColumn -> null)
     if (mutations) {
       metaColumns ++= Map(
         Constants.ReversalColumn -> source.query.reversalColumn,
@@ -675,7 +685,7 @@ object GroupBy {
         Some(Constants.TimeColumn -> source.query.timeColumn)
       } else {
         val dsBasedTimestamp = // 1 millisecond before ds + 1
-          s"(((UNIX_TIMESTAMP(${tableUtils.partitionColumn}, '${tableUtils.partitionSpec.format}') + 86400) * 1000) - 1)"
+          s"(((UNIX_TIMESTAMP($partitionColumn, '${tableUtils.partitionSpec.format}') + 86400) * 1000) - 1)"
 
         Some(Constants.TimeColumn -> Option(source.query.timeColumn).getOrElse(dsBasedTimestamp))
       }
@@ -685,7 +695,7 @@ object GroupBy {
          |""".stripMargin)
     metaColumns ++= timeMapping
 
-    val partitionConditions = intersectedRange.map(_.whereClauses()).getOrElse(Seq.empty)
+    val partitionConditions = intersectedRange.map(_.whereClauses(partitionColumn)).getOrElse(Seq.empty)
 
     logger.info(s"""
          |Rendering source query:
@@ -807,13 +817,23 @@ object GroupBy {
       .map(_.toScala)
       .orNull
     val inputTables = groupByConf.getSources.toScala.map(_.table)
+    val inputPartitionColumns = groupByConf.getSources.toScala
+      .map(s => s.table -> Option(s.query.partitionColumn))
+      .collect {
+        case (tbName, Some(partitionCol)) => tbName -> partitionCol
+      }
+      .toMap
+
     val isAnySourceCumulative =
       groupByConf.getSources.toScala.exists(s => s.isSetEvents() && s.getEvents().isCumulative)
     val groupByUnfilledRangesOpt =
-      tableUtils.unfilledRanges(outputTable,
-                                PartitionRange(overrideStart, endPartition)(tableUtils),
-                                if (isAnySourceCumulative) None else Some(inputTables),
-                                skipFirstHole = skipFirstHole)
+      tableUtils.unfilledRanges(
+        outputTable,
+        PartitionRange(overrideStart, endPartition)(tableUtils),
+        if (isAnySourceCumulative) None else Some(inputTables),
+        inputTableToPartitionColumnsMap = inputPartitionColumns,
+        skipFirstHole = skipFirstHole
+      )
 
     if (groupByUnfilledRangesOpt.isEmpty) {
       logger.info(s"""Nothing to backfill for $outputTable - given

@@ -1,0 +1,211 @@
+package(default_visibility = ["//visibility:public"])
+
+load("//jvm:defs.bzl", "get_jars_for_repo")
+
+SPARK_LIBS_PROVIDED = [
+    scala_jar(
+        name = "spark-core",
+        org = "org.apache.spark",
+    ),
+    scala_jar(
+        name = "spark-catalyst",
+        org = "org.apache.spark",
+    ),
+    scala_jar(
+        name = "spark-sql",
+        org = "org.apache.spark",
+    ),
+    scala_jar(
+        name = "spark-hive",
+        org = "org.apache.spark",
+    ),
+    scala_jar(
+        name = "spark-sketch",
+        org = "org.apache.spark",
+    ),
+    scala_jar(
+        name = "spark-streaming",
+        org = "org.apache.spark",
+    ),
+    scala_jar(
+        name = "spark-tags",
+        org = "org.apache.spark",
+    ),
+    jar(
+        name = "scala-library",
+        org = "org.scala-lang",
+    ),
+    scala_jar(
+        name = "spark-unsafe",
+        org = "org.apache.spark",
+    ),
+    jar(
+        name = "avro",
+        org = "org.apache.avro",
+    ),
+    jar(
+        name = "hive-metastore",
+        org = "org.apache.hive",
+    ),
+    jar(
+        name = "hive-exec",
+        org = "org.apache.hive",
+    ),
+    jar(
+        name = "hadoop-common",
+        org = "org.apache.hadoop",
+    ),
+    scala_jar(
+        name = "jackson-module-scala",
+        org = "com.fasterxml.jackson.module",
+    ),
+    jar(
+        name = "jackson-core",
+        org = "com.fasterxml.jackson.core",
+    ),
+    jar(
+        name = "jackson-annotations",
+        org = "com.fasterxml.jackson.core",
+    ),
+    jar(
+        name = "jackson-databind",
+        org = "com.fasterxml.jackson.core",
+    ),
+    jar(
+        name = "kryo_shaded",
+        org = "com.esotericsoftware",
+    ),
+    scala_jar(
+        name = "json4s-jackson",
+        org = "org.json4s",
+    ),
+    scala_jar(
+        name = "json4s-core",
+        org = "org.json4s",
+    ),
+    scala_jar(
+        name = "json4s-ast",
+        org = "org.json4s",
+    ),
+    scala_jar(
+        name = "json4s-scalap",
+        org = "org.json4s",
+    ),
+    jar(
+        name = "commons-lang3",
+        org = "org.apache.commons",
+    ),
+    scala_jar(
+        name = "delta-core",
+        org = "io.delta",
+    ),
+    jar(
+        name = "janino",
+        org = "org.codehaus.janino",
+    ),
+    jar(
+        name = "commons-compiler",
+        org = "org.codehaus.janino",
+    ),
+]
+
+MAVEN_LIBS_PROVIDED = [
+    scala_jar(
+        name = "jackson-module-scala",
+        org = "com.fasterxml.jackson.module",
+    ),
+    jar(
+        name = "jackson-core",
+        org = "com.fasterxml.jackson.core",
+    ),
+    jar(
+        name = "jackson-annotations",
+        org = "com.fasterxml.jackson.core",
+    ),
+    jar(
+        name = "jackson-databind",
+        org = "com.fasterxml.jackson.core",
+    ),
+    scala_jar(
+        name = "json4s-jackson",
+        org = "org.json4s",
+    ),
+    scala_jar(
+        name = "json4s-core",
+        org = "org.json4s",
+    ),
+    scala_jar(
+        name = "json4s-ast",
+        org = "org.json4s",
+    ),
+    scala_jar(
+        name = "json4s-scalap",
+        org = "org.json4s",
+    ),
+    jar(
+        name = "guava",
+        org = "com.google.guava",
+    ),
+    jar(
+        name = "commons-io",
+        org = "commons-io",
+    ),
+    jar(
+        name = "commons-lang",
+        org = "commons-lang",
+    ),
+    jar(
+        name = "slf4j-api",
+        org = "org.slf4j",
+    ),
+    jar(
+        name = "slf4j-log4j12",
+        org = "org.slf4j",
+    ),
+    jar(
+        name = "janino",
+        org = "org.codehaus.janino",
+    ),
+    jar(
+        name = "commons-compiler",
+        org = "org.codehaus.janino",
+    ),
+    jar(
+        name = "kafka-clients",
+        org = "org.apache.kafka",
+    ),
+]
+
+SPARK_3_5_LIBS_PROVIDED = SPARK_LIBS_PROVIDED + [
+    scala_jar(
+        name = "spark-common-utils",
+        org = "org.apache.spark",
+    ),
+    scala_jar(
+        name = "spark-sql-api",
+        org = "org.apache.spark",
+    ),
+]
+
+# Spark environment provides jars from installed Spark versions.
+maven_repo_jars = get_jars_for_repo("maven", MAVEN_LIBS_PROVIDED)
+
+java_library(
+    name = "spark-libs",
+    visibility = ["//visibility:public"],
+    exports = select({
+        "//conditions:default": maven_repo_jars + get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_2_4": maven_repo_jars + get_jars_for_repo("spark_2_4", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_1": maven_repo_jars + get_jars_for_repo("spark_3_1", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_2": maven_repo_jars + get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_5": maven_repo_jars + get_jars_for_repo("spark_3_5", SPARK_3_5_LIBS_PROVIDED),
+    }),
+)
+
+java_binary(
+    name = "spark-provided-env",
+    main_class = "None",  #hack
+    runtime_deps = [
+        "//third_party/java/spark:spark-libs",
+    ],
+)

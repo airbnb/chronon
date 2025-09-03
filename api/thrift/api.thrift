@@ -13,6 +13,7 @@ struct Query {
     6: optional list<string> setups = []
     7: optional string mutationTimeColumn
     8: optional string reversalColumn
+    9: optional string partitionColumn
 }
 
 /**
@@ -45,6 +46,11 @@ struct StagingQuery {
     * Spark SQL setup statements. Used typically to register UDFs.
     **/
     4: optional list<string> setups
+    /**
+    * If true, creates a view in the warehouse (for intermediate tables).
+    * If false, creates a table in the warehouse (for final tables).
+    **/
+    5: optional bool createView
 }
 
 struct EventSource {
@@ -160,7 +166,8 @@ enum Operation {
     BOTTOM_K = 16
 
     HISTOGRAM = 17, // use this only if you know the set of inputs is bounded
-    APPROX_HISTOGRAM_K = 18
+    APPROX_HISTOGRAM_K = 18,
+    BOUNDED_UNIQUE_COUNT = 19
 }
 
 // integers map to milliseconds in the timeunit
@@ -259,6 +266,8 @@ struct MetaData {
     14: optional bool historicalBackfill
     // Optional expected deprecation date
     15: optional string deprecationDate
+    // Description for the object holding this metadata
+    16: optional string description
 }
 
 // Equivalent to a FeatureSet in chronon terms
@@ -298,6 +307,7 @@ struct ExternalPart {
 struct Derivation {
     1: optional string name
     2: optional string expression
+    3: optional MetaData metaData
 }
 
 // A Temporal join - with a root source, with multiple groupby's.
@@ -333,6 +343,11 @@ struct Join {
     * columns.
     **/
     9: optional list<Derivation> derivations
+    /**
+     * (CHIP-9) A list of model_trnsforms that will convert derivations (raw data) into model outputs for each
+     * of the models in the list. The union of the model outputs will become the final output of the join.
+     **/
+    10: optional ModelTransforms modelTransforms
 }
 
 struct BootstrapPart {
@@ -416,4 +431,35 @@ struct TDataType {
     1: DataKind kind
     2: optional list<DataField> params
     3: optional string name // required only for struct types
+}
+
+/* Model API */
+
+// Inference spec used to describe how a Model is inferenced.
+// modelBackendParams can be passed to modelBackend to identify and serve the model.
+struct InferenceSpec {
+    1: optional string modelBackend
+    2: optional map<string, string> modelBackendParams
+}
+
+// A Model definition that can be used for inference, with its input/output schema documented.
+// In the future, we can extend it to include model training spec
+struct Model {
+    1: optional MetaData metaData
+    2: optional InferenceSpec inferenceSpec
+    3: optional TDataType inputSchema
+    4: optional TDataType outputSchema
+}
+
+// A ModelTransform is used in the context of a Join to transform raw data into model outputs.
+struct ModelTransform {
+    1: optional Model model
+    2: optional map<string, string> inputMappings
+    3: optional map<string, string> outputMappings
+    4: optional string prefix
+}
+
+struct ModelTransforms {
+    1: optional list<ModelTransform> transforms
+    2: optional list<string> passthroughFields
 }

@@ -147,6 +147,7 @@ Limitations:
 | approx_unique_count      | primitive types | list, map        | long              | no         | k=8                | yes            |
 | approx_percentile        | primitive types | list, map        | list<input,>      | no         | k=128, percentiles | yes            |
 | unique_count             | primitive types | list, map        | long              | no         |                    | no             |
+| bounded_unique_count     | primitive types | list, map        | long              | no         | k=inf              | yes            |
 
 
 ## Accuracy

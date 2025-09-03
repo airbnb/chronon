@@ -43,15 +43,24 @@ class GroupByUpload(endPartition: String, groupBy: GroupBy) extends Serializable
   }
   def snapshotEntities: KvRdd = {
     if (groupBy.aggregations == null || groupBy.aggregations.isEmpty) {
-      // pre-agg to PairRdd
-      val keysAndPartition = (groupBy.keyColumns :+ tableUtils.partitionColumn).toArray
-      val keyBuilder = FastHashing.generateKeyBuilder(keysAndPartition, groupBy.inputDf.schema)
-      val values = groupBy.inputDf.schema.map(_.name).filterNot(keysAndPartition.contains)
-      val valuesIndices = values.map(groupBy.inputDf.schema.fieldIndex).toArray
+      val keySchema = groupBy.keySchema
+      val keyBuilder = FastHashing.generateKeyBuilder(keySchema.fieldNames, groupBy.inputDf.schema)
+
+      val valueSchema = groupBy.preAggSchema
+      val valuesIndices = valueSchema.fieldNames.map(groupBy.inputDf.schema.fieldIndex)
+
       val rdd = groupBy.inputDf.rdd
         .map { row =>
-          keyBuilder(row).data.init -> valuesIndices.map(row.get)
+          keyBuilder(row).data -> valuesIndices.map(row.get)
         }
+
+      logger.info(s"""
+           |pre-agg upload:
+           |  input schema: ${groupBy.inputDf.schema.catalogString}
+           |    key schema: ${groupBy.keySchema.catalogString}
+           |  value schema: ${groupBy.preAggSchema.catalogString}
+           |""".stripMargin)
+
       KvRdd(rdd, groupBy.keySchema, groupBy.preAggSchema)
     } else {
       fromBase(groupBy.snapshotEntitiesBase)
@@ -183,9 +192,14 @@ object GroupByUpload {
     groupByConf.setups.foreach(tableUtils.sql)
     // add 1 day to the batch end time to reflect data [ds 00:00:00.000, ds + 1 00:00:00.000)
     val batchEndDate = tableUtils.partitionSpec.after(endDs)
+    val computeDependency = !groupByConf.isModelChaining
     // for snapshot accuracy - we don't need to scan mutations
     lazy val groupBy =
-      GroupBy.from(groupByConf, PartitionRange(endDs, endDs), tableUtils, computeDependency = true, showDf = showDf)
+      GroupBy.from(groupByConf,
+                   PartitionRange(endDs, endDs),
+                   tableUtils,
+                   computeDependency = computeDependency,
+                   showDf = showDf)
     lazy val groupByUpload = new GroupByUpload(endDs, groupBy)
     // for temporal accuracy - we don't need to scan mutations for upload
     // when endDs = xxxx-01-02 the timestamp from airflow is more than (xxxx-01-03 00:00:00)
@@ -194,7 +208,7 @@ object GroupByUpload {
       GroupBy.from(groupByConf,
                    PartitionRange(endDs, endDs).shift(1),
                    tableUtils,
-                   computeDependency = true,
+                   computeDependency = computeDependency,
                    showDf = showDf)
     lazy val shiftedGroupByUpload = new GroupByUpload(batchEndDate, shiftedGroupBy)
     // for mutations I need the snapshot from the previous day, but a batch end date of ds +1
