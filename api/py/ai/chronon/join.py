@@ -396,6 +396,7 @@ def Join(
     tags: Optional[Dict[str, str]] = None,
     description: Optional[str] = None,
     model_transforms: Optional[api.ModelTransforms] = None,
+    attributes: Optional[Dict[str, str]] = None,
     **kwargs,
 ) -> api.Join:
     """
@@ -498,6 +499,7 @@ def Join(
     :param description: optional description of this Join
     :param model_transforms:
         A list of model transforms to convert derivation outputs to model outputs using model-based transformations
+    :param attributes:  any extra attributes of this Join
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
@@ -607,6 +609,7 @@ def Join(
         historicalBackfill=historical_backfill,
         deprecationDate=deprecation_date,
         description=description,
+        attributes=attributes,
     )
 
     return api.Join(

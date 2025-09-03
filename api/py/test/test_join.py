@@ -62,6 +62,14 @@ def test_join_with_description():
     )
     assert join.metaData.description == "Join description"
 
+def test_join_with_attributes():
+  join = Join(
+      left=event_source("sample_namespace.sample_table"),
+      right_parts=[right_part(event_source("sample_namespace.another_table"))],
+      attributes=["attr1", "attr1Val"]
+  )
+  assert join.metaData.attributes == ["attr1", "attr1Val"]
+
 def test_deduped_dependencies():
     """
     Check left and right dependencies are deduped in metadata.

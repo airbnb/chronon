@@ -295,6 +295,26 @@ def test_group_by_with_description():
     assert gb.metaData.description == "GroupBy description"
 
 
+def test_group_by_with_attributes():
+  gb = group_by.GroupBy(
+      sources=[
+        ttypes.EventSource(
+            table="event_table1",
+            query=query.Query(
+                selects=None,
+                time_column="ts"
+            )
+        )
+      ],
+      keys=["key1", "key2"],
+      aggregations=[group_by.Aggregation(input_column="event_id", operation=ttypes.Operation.SUM)],
+      name="test.additional_metadata_gb",
+      attributes=["attr1", "attr1Val"]
+  )
+  assert gb.metaData.attributes == ["attr1", "attr1Val"]
+
+
+
 def test_derivation():
     derivation = Derivation(name="derivation_name", expression="derivation_expression")
     expected_derivation = ttypes.Derivation(
