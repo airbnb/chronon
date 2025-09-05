@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory
 import java.util
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
+import _root_.com.google.common.collect.Table
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
@@ -426,7 +427,6 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
                              tableProps: Map[String, String]) = {
 
       val hops = hopsAggregate(range.toTimePoints.min, DailyResolution)
-      println(s"Saving incremental hops to ${hops.map(x  => x._1.data.mkString(",")).take(20)}.")
       val hopsDf: DataFrame = convertHopsToDf(hops, incrementalSchema)
       hopsDf.save(incrementalOutputTable, tableProps)
     }
@@ -748,12 +748,47 @@ object GroupBy {
       .map(_.toScala)
       .orNull
 
+    logger.info(s"Writing incremental df to $incrementalOutputTable")
     val incrementalGroupByBackfill =
       from(groupByConf, range, tableUtils, computeDependency = true, incrementalMode = true)
 
-    incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, range, tableProps)
+    val incTableRange = PartitionRange(
+      tableUtils.firstAvailablePartition(incrementalOutputTable).get,
+      tableUtils.lastAvailablePartition(incrementalOutputTable).get
+    )(tableUtils)
+
+    val allPartitionRangeHoles: Option[Seq[PartitionRange]] = computePartitionRangeHoles(incTableRange, range, tableUtils)
+
+    allPartitionRangeHoles.foreach { holes =>
+      holes.foreach { hole =>
+        logger.info(s"Filling hole in incremental table: $hole")
+        incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, range, tableProps)
+      }
+    }
 
     incrementalGroupByBackfill
+  }
+
+/**
+  * Compute the holes in the incremental output table
+  * 
+  * holes are partitions that are not in the incremetnal output table but are in the source queryable range
+  *
+  * @param incTableRange the range of the incremental output table
+  * @param sourceQueryableRange the range of the source queryable range
+  * @return the holes in the incremental output table
+  */
+  private def computePartitionRangeHoles(
+                                 incTableRange: PartitionRange,
+                                 queryRange: PartitionRange,
+                                 tableUtils: TableUtils): Option[Seq[PartitionRange]] = {
+
+
+     if (queryRange.end <= incTableRange.end) {
+      None
+     } else {
+       Some(Seq(PartitionRange(tableUtils.partitionSpec.shift(incTableRange.end, 1), queryRange.end)))
+     }
   }
 
   def fromIncrementalDf(
@@ -779,9 +814,7 @@ object GroupBy {
       incTableLastPartition.get
     )(tableUtils)
 
-    val incrementalDf: DataFrame = tableUtils.sql(
-      incTableRange.intersect(sourceQueryableRange).genScanQuery(null, incrementalOutputTable)
-    )
+    val (_, incrementalDf: DataFrame) =  incTableRange.intersect(sourceQueryableRange).scanQueryStringAndDf(null, incrementalOutputTable)
 
     val incrementalAggregations = incrementalGroupByBackfill.flattenedAgg.aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
       val newAgg = agg.deepCopy()
