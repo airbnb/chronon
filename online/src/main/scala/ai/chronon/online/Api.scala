@@ -16,17 +16,18 @@
 
 package ai.chronon.online
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
-import java.util.Base64
-import java.nio.charset.StandardCharsets
+import org.slf4j.LoggerFactory
 
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.function.Consumer
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success, Try}
 
 object KVStore {
@@ -265,4 +266,25 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
     }
+
+  /**
+    * Register external sources from join configurations.
+    * This function reads configurations for each join, extracts FactoryConfig information
+    * from external sources, and stores this information in the ExternalSourceRegistry.
+    *
+    * @param joins Sequence of join names to process
+    */
+  def registerJoinExternalSources(joins: Seq[String]): Unit = {
+    val joinOps = joins.map { joinName =>
+      val joinConfTry = fetcher.getJoinConf(joinName)
+      joinConfTry match {
+        case Success(joinOps) => joinOps
+        case Failure(exception) =>
+          throw new RuntimeException(s"Failed to load join configuration for '$joinName'", exception)
+      }
+    }
+    joinOps
+      .map(_.join)
+      .foreach(join => externalRegistry.addHandlersByFactory(Option(join.getOnlineExternalParts).map(_.asScala.toSeq)))
+  }
 }

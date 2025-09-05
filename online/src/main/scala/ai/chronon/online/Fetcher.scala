@@ -618,7 +618,12 @@ class Fetcher(val kvStore: KVStore,
                       join = validRequests.iterator.map(_.name.sanitize).toSeq.distinct.mkString(","))
     context.distribution("response.external_pre_processing.latency", System.currentTimeMillis() - startTime)
     context.count("response.external_invalid_joins.count", invalidCount)
-    val responseFutures = externalSourceRegistry.fetchRequests(validExternalRequestToJoinRequestMap.keys.toSeq, context)
+    val externalParts = validExternalRequestToJoinRequestMap.values.flatten.map(_.part).toSeq.distinct
+    val responseFutures = externalSourceRegistry.fetchRequests(
+      validExternalRequestToJoinRequestMap.keys.toSeq,
+      context,
+      Some(externalParts)
+    )
 
     // step-3 walk the response, find all the joins to update and the result map
     responseFutures.map { responses =>
