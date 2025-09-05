@@ -16,7 +16,6 @@
 
 package ai.chronon.online
 
-import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
@@ -190,7 +189,6 @@ abstract class ExternalSourceHandler extends Serializable {
 // the implementer of this class should take a single argument, a scala map of string to string
 // chronon framework will construct this object with user conf supplied via CLI
 abstract class Api(userConf: Map[String, String]) extends Serializable {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val fetcher: Fetcher = {
     if (fetcherObj == null)
       fetcherObj = buildFetcher()
@@ -270,31 +268,21 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     }
 
   /**
-    * Helper function to get join configuration with error handling.
-    *
-    * @param joinName Name of the join to load configuration for
-    * @return JoinOps for the specified join
-    * @throws RuntimeException if join configuration fails to load
-    */
-  protected def getJoinConfiguration(joinName: String): JoinOps = {
-    val joinConfTry = fetcher.getJoinConf(joinName)
-    joinConfTry match {
-      case Success(joinOps) => joinOps
-      case Failure(exception) =>
-        logger.error(s"Failed to load join configuration for '$joinName': ${exception.getMessage}", exception)
-        throw new RuntimeException(s"Failed to load join configuration for '$joinName'", exception)
-    }
-  }
-
-  /**
     * Register external sources from join configurations.
     * This function reads configurations for each join, extracts FactoryConfig information
     * from external sources, and stores this information in the ExternalSourceRegistry.
     *
     * @param joins Sequence of join names to process
     */
-  def registerExternalSources(joins: Seq[String]): Unit = {
-    val joinOps = joins.map(joinName => getJoinConfiguration(joinName))
+  def registerJoinExternalSources(joins: Seq[String]): Unit = {
+    val joinOps = joins.map { joinName =>
+      val joinConfTry = fetcher.getJoinConf(joinName)
+      joinConfTry match {
+        case Success(joinOps) => joinOps
+        case Failure(exception) =>
+          throw new RuntimeException(s"Failed to load join configuration for '$joinName'", exception)
+      }
+    }
     joinOps
       .map(_.join)
       .foreach(join => externalRegistry.addHandlersByFactory(Option(join.getOnlineExternalParts).map(_.asScala.toSeq)))

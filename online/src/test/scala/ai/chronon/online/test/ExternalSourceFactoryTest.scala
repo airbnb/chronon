@@ -18,13 +18,14 @@ package ai.chronon.online.test
 
 import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api.{ExternalPart, ExternalSource, ExternalSourceFactoryConfig, Join, MetaData}
-import ai.chronon.online.{Api, ExternalSourceFactory, ExternalSourceHandler, ExternalSourceRegistry, Fetcher, GroupByServingInfoParsed, KVStore, LoggableResponse, StreamDecoder}
+import ai.chronon.online.{Api, ExternalSourceFactory, ExternalSourceHandler, ExternalSourceRegistry, Fetcher, GroupByServingInfoParsed, KVStore, LoggableResponse, StreamDecoder, TTLCache}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 import org.mockito.Mockito.{mock, when}
 import org.scalatest.Assertions.intercept
 
 import scala.collection.JavaConverters._
+import scala.util.{Failure, Success, Try}
 
 class ExternalSourceFactoryTest {
   
@@ -60,26 +61,38 @@ class ExternalSourceFactoryTest {
     
     override def logResponse(resp: LoggableResponse): Unit = {}
     
-    // Override the helper function to return mock configurations or throw exceptions
-    override protected def getJoinConfiguration(joinName: String): JoinOps = {
-      joinConfigExceptions.get(joinName) match {
-        case Some(exception) => throw exception
-        case None =>
-          mockJoinConfigs.get(joinName) match {
-            case Some(joinOps) => joinOps
-            case None => throw new RuntimeException(s"Join configuration not found for '$joinName'")
-          }
+    // Override fetcher to return a mock that's initialized on-demand
+    override lazy val fetcher: Fetcher = {
+      val mockFetcher = mock(classOf[Fetcher])
+      
+      // Create a mock TTLCache for getJoinConf
+      val mockTTLCache = mock(classOf[TTLCache[String, Try[JoinOps]]])
+      
+      // Set up mock behaviors for successful configs
+      mockJoinConfigs.foreach { case (joinName, joinOps) =>
+        when(mockTTLCache.apply(joinName)).thenReturn(Success(joinOps))
       }
+      
+      // Set up mock behaviors for failed configs
+      joinConfigExceptions.foreach { case (joinName, exception) =>
+        when(mockTTLCache.apply(joinName)).thenReturn(Failure(exception))
+      }
+      
+      // Wire the TTLCache to the fetcher
+      when(mockFetcher.getJoinConf).thenReturn(mockTTLCache)
+      mockFetcher
     }
     
     // Helper method to set up mock join configurations for testing
     def setMockJoinConfig(joinName: String, joinOps: JoinOps): Unit = {
       mockJoinConfigs = mockJoinConfigs + (joinName -> joinOps)
+      // The mock behavior will be set up when the fetcher lazy val is accessed
     }
     
     // Helper method to simulate join config loading failure
     def setJoinConfigException(joinName: String, exception: Exception): Unit = {
       joinConfigExceptions = joinConfigExceptions + (joinName -> exception)
+      // The mock behavior will be set up when the fetcher lazy val is accessed
     }
   }
   
@@ -129,7 +142,7 @@ class ExternalSourceFactoryTest {
     api.setMockJoinConfig("test-join", joinOps)
     
     // Execute the method
-    api.registerExternalSources(Seq("test-join"))
+    api.registerJoinExternalSources(Seq("test-join"))
     
     // Verify that the handler was registered
     assertTrue("Handler should be registered", 
@@ -149,7 +162,7 @@ class ExternalSourceFactoryTest {
     
     // Execute and expect exception
     val exception = intercept[IllegalArgumentException] {
-      api.registerExternalSources(Seq("test-join"))
+      api.registerJoinExternalSources(Seq("test-join"))
     }
     
     assertTrue("Exception should mention missing factory", 
@@ -164,12 +177,12 @@ class ExternalSourceFactoryTest {
     
     val originalException = new RuntimeException("Join config not found")
     
-    // Set up exception to be thrown by helper function
-    api.setJoinConfigException("test-join", new RuntimeException("Failed to load join configuration for 'test-join'", originalException))
+    // Set up exception to be thrown by fetcher.getJoinConf
+    api.setJoinConfigException("test-join", originalException)
     
     // Execute and expect exception
     val thrownException = intercept[RuntimeException] {
-      api.registerExternalSources(Seq("test-join"))
+      api.registerJoinExternalSources(Seq("test-join"))
     }
     
     assertEquals("Exception should wrap original exception", 
@@ -194,7 +207,7 @@ class ExternalSourceFactoryTest {
     api.setMockJoinConfig("test-join", joinOps)
     
     // Execute the method - should not throw exception
-    api.registerExternalSources(Seq("test-join"))
+    api.registerJoinExternalSources(Seq("test-join"))
     
     // Should complete successfully without registering any new handlers
     assertEquals("No new handlers should be registered", 
@@ -224,7 +237,7 @@ class ExternalSourceFactoryTest {
 
     // Execute and expect exception
     val exception = intercept[IllegalArgumentException] {
-      api.registerExternalSources(Seq("test-join"))
+      api.registerJoinExternalSources(Seq("test-join"))
     }
 
     assertTrue("Exception should mention null factoryName",

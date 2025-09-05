@@ -19,8 +19,10 @@ package ai.chronon.online
 import ai.chronon.api.{Constants, ExternalPart}
 import ai.chronon.online.Fetcher.{Request, Response}
 
+import java.util.concurrent.ConcurrentHashMap
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
+import scala.jdk.CollectionConverters._
 import scala.util.{Failure, Success}
 
 // users can simply register external endpoints with a lambda that can return the future of a response given keys
@@ -35,13 +37,13 @@ class ExternalSourceRegistry extends Serializable {
   }
 
   val handlerMap: mutable.Map[String, ExternalSourceHandler] = {
-    val result = new mutable.HashMap[String, ExternalSourceHandler]()
+    val result = new ConcurrentHashMap[String, ExternalSourceHandler]().asScala
     result.put(Constants.ContextualSourceName, new ContextualHandler())
     result
   }
 
   val handlerFactoryMap: mutable.Map[String, ExternalSourceFactory] = {
-    val result = new mutable.HashMap[String, ExternalSourceFactory]()
+    val result = new ConcurrentHashMap[String, ExternalSourceFactory]().asScala
     result
   }
 
@@ -68,36 +70,36 @@ class ExternalSourceRegistry extends Serializable {
     */
   def addHandlersByFactory(externalParts: Option[Seq[ExternalPart]]): Unit = {
     // Check if external parts are provided
-    externalParts.foreach { externalParts =>
-      externalParts.foreach { externalPart =>
-        val externalSource = externalPart.getSource
-        val sourceName = externalSource.getMetadata.getName
+    if (externalParts.isEmpty) return // Nothing to process
 
-        // Skip if handler already exists (avoid duplicate registration)
-        if (!handlerMap.contains(sourceName) && externalSource.getFactoryConfig != null) {
-          // Factory configuration exists, verify it has required fields
-          val factoryConfig = externalSource.getFactoryConfig
-          val factoryName = factoryConfig.getFactoryName
+    externalParts.get.foreach { externalPart =>
+      val externalSource = externalPart.getSource
+      val sourceName = externalSource.getMetadata.getName
 
-          if (factoryName == null) {
+      // Skip if handler already exists (avoid duplicate registration)
+      if (!handlerMap.contains(sourceName) && externalSource.getFactoryConfig != null) {
+        // Factory configuration exists, verify it has required fields
+        val factoryConfig = externalSource.getFactoryConfig
+        val factoryName = factoryConfig.getFactoryName
+
+        if (factoryName == null) {
+          throw new IllegalArgumentException(
+            s"External source '$sourceName' has factory configuration but factoryName is null"
+          )
+        }
+
+        // External source has valid factory configuration, check if factory is registered
+        handlerFactoryMap.get(factoryName) match {
+          case Some(factory) =>
+            // Factory is registered, create and add handler
+            val handler = factory.createExternalSourceHandler(externalSource)
+            add(sourceName, handler)
+          case None =>
+            // Factory is not registered, throw error
             throw new IllegalArgumentException(
-              s"External source '$sourceName' has factory configuration but factoryName is null"
+              s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
+                s"Available factories: [${handlerFactoryMap.keys.mkString(", ")}]"
             )
-          }
-
-          // External source has valid factory configuration, check if factory is registered
-          handlerFactoryMap.get(factoryName) match {
-            case Some(factory) =>
-              // Factory is registered, create and add handler
-              val handler = factory.createExternalSourceHandler(externalSource)
-              add(sourceName, handler)
-            case None =>
-              // Factory is not registered, throw error
-              throw new IllegalArgumentException(
-                s"Factory '$factoryName' is not registered in ExternalSourceRegistry. " +
-                  s"Available factories: [${handlerFactoryMap.keys.mkString(", ")}]"
-              )
-          }
         }
       }
     }
@@ -156,20 +158,15 @@ class ExternalSourceRegistry extends Serializable {
     * @return Option containing the handler if found or successfully created
     */
   private def resolveHandler(name: String, externalParts: Option[Seq[ExternalPart]]): Option[ExternalSourceHandler] = {
-    handlerMap.get(name) match {
-      case Some(handler) => Some(handler)
-      case None          =>
-        // Try dynamic registration if external parts are provided
-        externalParts match {
-          case Some(_) =>
-            try {
-              addHandlersByFactory(externalParts)
-              handlerMap.get(name) // Check again after registration attempt
-            } catch {
-              case _: Exception => None
-            }
-          case None => None
+    handlerMap.get(name).orElse {
+      externalParts.flatMap { _ =>
+        try {
+          addHandlersByFactory(externalParts)
+          handlerMap.get(name) // Check again after registration attempt
+        } catch {
+          case _: Exception => None
         }
+      }
     }
   }
 }
