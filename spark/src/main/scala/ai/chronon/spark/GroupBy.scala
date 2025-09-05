@@ -787,7 +787,7 @@ object GroupBy {
      if (queryRange.end <= incTableRange.end) {
       None
      } else {
-       Some(Seq(PartitionRange(tableUtils.partitionSpec.shift(incTableRange.end, 1), queryRange.end)))
+       Some(Seq(PartitionRange(tableUtils.partitionSpec.shift(incTableRange.end, 1), queryRange.end)(tableUtils)))
      }
   }
 
