@@ -27,6 +27,7 @@ import org.apache.spark.sql.SparkSession
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.junit.Assert.assertEquals
+import org.junit.Test
 
 import scala.io.Source
 import java.io.File
@@ -62,6 +63,7 @@ class MetadataExporterTest extends TestCase {
     }
   }
 
+  @Test
   def testMetadataExport(): Unit = {
     // Create the tables.
     val namespace = "example_namespace"
@@ -78,10 +80,10 @@ class MetadataExporterTest extends TestCase {
     val sampleDf = DataFrameGen
       .events(spark, sampleData, 10000, partitions = 30)
     sampleDf.save(sampleTable)
-    val confResource = getClass.getResource("/")
+    val confResourcePath = ExampleDataUtils.getExampleDataDirectory()
     val tmpDir: File = Files.createTempDir()
-    MetadataExporter.run(confResource.getPath, Some(tmpDir.getAbsolutePath))
-    printFilesInDirectory(s"${confResource.getPath}/joins/team")
+    MetadataExporter.run(confResourcePath, Some(tmpDir.getAbsolutePath))
+    printFilesInDirectory(s"${confResourcePath}/joins/team")
     printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
     // Read the files.
     val file = Source.fromFile(s"${tmpDir.getAbsolutePath}/joins/example_join.v1")

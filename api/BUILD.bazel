@@ -34,13 +34,14 @@ scala_library(
     ),
 )
 
-scala_test_suite(
+scala_junit_test_suite(
     name = "test",
     srcs = glob(["src/test/scala/ai/chronon/api/test/*.scala"]),
-    visibility = ["//visibility:public"],
+    strip_prefix = "src/test/scala/ai/chronon/api/test",
+    visibility = ["//visibility:private"],
     deps = [
-        ":api-models",
         ":api-lib",
+        ":api-models",
         "//third_party/java/spark:spark-libs",
         maven_artifact("com.fasterxml.jackson.core:jackson-core"),
         maven_artifact("com.fasterxml.jackson.core:jackson-databind"),

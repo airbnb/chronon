@@ -32,6 +32,7 @@ import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import com.google.gson.GsonBuilder
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
+import org.junit.Test
 
 import java.util.TimeZone
 import java.util.concurrent.Executors
@@ -56,6 +57,7 @@ class FetchStatsTest extends TestCase {
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val yesterday = tableUtils.partitionSpec.before(today)
 
+  @Test
   def testFetchStats(): Unit = {
     // Part 1: Build the assets. Join definition, compute and serve stats.
     tableUtils.createDatabase(namespace)

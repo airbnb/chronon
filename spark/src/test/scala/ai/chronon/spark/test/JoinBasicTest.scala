@@ -40,7 +40,7 @@ import scala.util.Try
 
 //These are join tests that are easy to parallelize
 //And don't require a lot of orchestration
-class JoinBasicTests {
+class JoinBasicTest {
   val dummySpark: SparkSession = SparkSessionBuilder.build("JoinBasicTest", local = true)
   private val dummyTableUtils = TableUtils(dummySpark)
   private val today = dummyTableUtils.partitionSpec.at(System.currentTimeMillis())
