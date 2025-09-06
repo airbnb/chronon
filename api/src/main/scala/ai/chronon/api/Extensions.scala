@@ -98,7 +98,7 @@ object Extensions {
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
-
+    def incrementalOutputTable = s"${metaData.outputNamespace}.${metaData.cleanName}_inc"
     def preModelTransformsTable = s"${metaData.outputNamespace}.${metaData.cleanName}_pre_mt"
     def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
@@ -179,7 +179,12 @@ object Extensions {
 
     def outputColumnName =
       s"${aggregationPart.inputColumn}_$opSuffix${aggregationPart.window.suffix}${bucketSuffix}"
+
+    def incrementalOutputColumnName =
+      s"${aggregationPart.inputColumn}_$opSuffix${bucketSuffix}"
+
   }
+
 
   implicit class AggregationOps(aggregation: Aggregation) {
 
