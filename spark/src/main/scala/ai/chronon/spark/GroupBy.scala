@@ -762,7 +762,7 @@ object GroupBy {
     allPartitionRangeHoles.foreach { holes =>
       holes.foreach { hole =>
         logger.info(s"Filling hole in incremental table: $hole")
-        incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, range, tableProps)
+        incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, hole, tableProps)
       }
     }
 
