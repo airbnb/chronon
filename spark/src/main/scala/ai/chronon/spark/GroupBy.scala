@@ -752,14 +752,20 @@ object GroupBy {
     val incrementalGroupByBackfill =
       from(groupByConf, range, tableUtils, computeDependency = true, incrementalMode = true)
 
-    val incTableRange = PartitionRange(
-      tableUtils.firstAvailablePartition(incrementalOutputTable).get,
-      tableUtils.lastAvailablePartition(incrementalOutputTable).get
-    )(tableUtils)
+    val incTableRange: Option[PartitionRange] = for {
+        first <- tableUtils.firstAvailablePartition(incrementalOutputTable)
+        last  <- tableUtils.lastAvailablePartition(incrementalOutputTable)
+    } yield
+      PartitionRange(first, last)(tableUtils)
 
-    val allPartitionRangeHoles: Option[Seq[PartitionRange]] = computePartitionRangeHoles(incTableRange, range, tableUtils)
 
-    allPartitionRangeHoles.foreach { holes =>
+    val partitionRangeHoles: Option[Seq[PartitionRange]] = incTableRange match {
+      case None => Some(Seq(range))
+      case Some(incrementalTableRange) =>
+        computePartitionRangeHoles(incrementalTableRange, range, tableUtils)
+    }
+
+    partitionRangeHoles.foreach { holes =>
       holes.foreach { hole =>
         logger.info(s"Filling hole in incremental table: $hole")
         incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, hole, tableProps)
@@ -771,8 +777,7 @@ object GroupBy {
 
 /**
   * Compute the holes in the incremental output table
-  * 
-  * holes are partitions that are not in the incremetnal output table but are in the source queryable range
+  *
   *
   * @param incTableRange the range of the incremental output table
   * @param sourceQueryableRange the range of the source queryable range
