@@ -98,7 +98,14 @@ object BootstrapInfo {
           } catch {
             case e: UnsupportedOperationException =>
               throw new RuntimeException(
-                "In order to enable online serving, please make sure that the data types of your groupBy column types are compatible with AvroSchema acceptable types: You should cast the current data types to Avro compatible data types. If your use case is offline only, you can set chrononAvroSchemaValidation to false to disable Avro schema validation. \n" + e.getMessage,
+                "In order to enable online serving, " +
+                  "please make sure that the data types of your groupBy column types " +
+                  "are compatible with AvroSchema acceptable types: " +
+                  "You should cast the current data types to Avro compatible data types " +
+                  "- e.g. tinyint is not supported in Avro, if you have a tinyint col1, " +
+                  "you can CAST(col1 AS INT). If your use case is offline only, " +
+                  "you can set chrononAvroSchemaValidation to false to disable Avro schema validation. \n"
+                  + e.getMessage,
                 e)
           }
         }
