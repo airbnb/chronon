@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
-import ai.chronon.online.{AvroConversions, SparkConversions}
+import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Extensions._
 import org.apache.spark.sql.Row
 import org.apache.spark.sql.functions.expr
@@ -92,12 +92,9 @@ object BootstrapInfo {
         if (tableUtils.chrononAvroSchemaValidation) {
           // Validate that the baseDf schema is compatible with AvroSchema acceptable types
           // This is required for online serving to work
-
-          val schemaSpark: org.apache.spark.sql.types.StructType = gb.keySchema
-          val schemaChronon: ai.chronon.api.StructType = SparkConversions.toChrononStruct("", schemaSpark)
-
           try {
-            AvroConversions.fromChrononSchema(schemaChronon)
+            gb.keySchema.toAvroSchema("Key")
+            gb.preAggSchema.toAvroSchema("Value")
           } catch {
             case e: UnsupportedOperationException =>
               throw new RuntimeException(

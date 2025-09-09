@@ -18,8 +18,9 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
+import ai.chronon.api.Builders.Query
 import ai.chronon.api.Extensions.MetadataOps
-import ai.chronon.api._
+import ai.chronon.api.{Source, _}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
 import org.apache.spark.sql.SparkSession
@@ -789,4 +790,180 @@ class AnalyzerTest {
     assertEquals(valueSchemaExpected, valueSchema)
   }
 
+  @Test
+  def testAvroSchemaValidationWithSupportedTypes(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+
+    val tableUtilsWithValidation = new TableUtils(spark) {
+      override val chrononAvroSchemaValidation: Boolean = true
+    }
+
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtilsWithValidation.createDatabase(namespace)
+
+    // Create test data with only Avro-supported types
+    import spark.implicits._
+    val currentTime = System.currentTimeMillis()
+    val dateString = "2025-09-01"
+    val testData = Seq(
+      ("key1", 100, 1000L, "value1", true, currentTime, dateString),
+      ("key2", 200, 2000L, "value2", false, currentTime, dateString),
+      ("key1", 150, 1500L, "value3", true, currentTime, dateString)
+    ).toDF("key", "int_col", "long_col", "string_col", "boolean_col", "ts", "ds")
+
+    val tableName = "supported_types_table"
+    val supportedTypesTable = s"$namespace.$tableName"
+
+    // Create partitioned table by ds column
+    testData.write
+      .mode("overwrite")
+      .partitionBy("ds")
+      .saveAsTable(supportedTypesTable)
+
+    // Create Source using Builders.Source.events
+    val testSource = Builders.Source.events(
+      query = Builders.Query(
+        selects = Builders.Selects("key", "int_col", "long_col", "string_col", "boolean_col"),
+        startPartition = dateString
+      ),
+      table = supportedTypesTable
+    )
+
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(testSource),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "int_col"),
+        Builders.Aggregation(operation = Operation.MAX, inputColumn = "long_col")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test_supported", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    // Should succeed without throwing - all types are Avro compatible
+    val analyzer = new Analyzer(tableUtilsWithValidation, tableGroupBy, oneMonthAgo, today)
+    new Analyzer(
+      tableUtilsWithValidation,
+      tableGroupBy,
+      "2025-09-01",
+      today,
+      enableHitter = false,
+      skipTimestampCheck = true,
+      validateTablePermission = false)
+    analyzer.analyzeGroupBy(tableGroupBy)
+  }
+
+  @Test(expected = classOf[RuntimeException])
+  def testAvroSchemaValidationWithUnsupportedTypes(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+
+    val tableUtilsWithValidation = new TableUtils(spark) {
+      override val chrononAvroSchemaValidation: Boolean = true
+    }
+
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtilsWithValidation.createDatabase(namespace)
+
+    // Create test data with BinaryType data
+    import spark.implicits._
+    val currentTime = System.currentTimeMillis()
+    val dateString = "2025-09-01"
+    val testData = Seq(
+      ("key1", "binary_data_1".getBytes("UTF-8"), currentTime, dateString),
+      ("key2", "binary_data_2".getBytes("UTF-8"), currentTime, dateString),
+      ("key1", "binary_data_3".getBytes("UTF-8"), currentTime, dateString)
+    ).toDF("key", "binary_col", "ts", "ds")
+
+    val tableName = "binary_types_table"
+    val binaryTypesTable = s"$namespace.$tableName"
+
+    // Create partitioned table by ds column
+    testData.write
+      .mode("overwrite")
+      .partitionBy("ds")
+      .saveAsTable(binaryTypesTable)
+
+    // Create Source using Builders.Source.events
+    val testSource = Builders.Source.events(
+      query = Builders.Query(
+        selects = Builders.Selects("key", "binary_col"),
+        startPartition = dateString
+      ),
+      table = binaryTypesTable
+    )
+
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(testSource),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "binary_col")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test_binary", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    // Should throw RuntimeException due to BinaryType in schema
+    val analyzer = new Analyzer(
+      tableUtilsWithValidation,
+      tableGroupBy,
+      "2025-09-01",
+      today,
+      enableHitter = false,
+      skipTimestampCheck = true,
+      validateTablePermission = false)
+    analyzer.analyzeGroupBy(tableGroupBy)
+  }
+
+  @Test
+  def testAvroSchemaValidationDisabled(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create test data with BinaryType data
+    import spark.implicits._
+    val currentTime = System.currentTimeMillis()
+    val dateString = "2025-09-01"
+    val testData = Seq(
+      ("key1", "binary_data_1".getBytes("UTF-8"), currentTime, dateString),
+      ("key2", "binary_data_2".getBytes("UTF-8"), currentTime, dateString)
+    ).toDF("key", "binary_col", "ts", "ds")
+
+    val tableName = "binary_disabled_table"
+    val binaryDisabledTable = s"$namespace.$tableName"
+
+    // Create partitioned table by ds column
+    testData.write
+      .mode("overwrite")
+      .partitionBy("ds")
+      .saveAsTable(binaryDisabledTable)
+
+    // Create Source using Builders.Source.events
+    val testSource = Builders.Source.events(
+      query = Builders.Query(
+        selects = Builders.Selects("key", "binary_col"),
+        startPartition = dateString
+      ),
+      table = binaryDisabledTable
+    )
+
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(testSource),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "binary_col")
+      ),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test_disabled", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    // Should succeed because validation is disabled
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, "2025-09-01", today)
+    analyzer.analyzeGroupBy(tableGroupBy)
+  }
 }

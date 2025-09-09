@@ -20,8 +20,9 @@ import ai.chronon.api
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
-import ai.chronon.online.{AvroConversions, SparkConversions}
+import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
+import ai.chronon.spark.Extensions.StructTypeOps
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
@@ -236,7 +237,8 @@ class Analyzer(tableUtils: TableUtils,
       // Validate that the baseDf schema is compatible with AvroSchema acceptable types
       // This is required for online serving to work
       try {
-        AvroConversions.fromChrononSchema(groupBy.outputSchema)
+        groupBy.keySchema.toAvroSchema("Key")
+        groupBy.preAggSchema.toAvroSchema("Value")
       } catch {
         case e: UnsupportedOperationException =>
           throw new RuntimeException(
