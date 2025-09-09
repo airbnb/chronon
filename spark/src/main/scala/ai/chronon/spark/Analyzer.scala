@@ -232,7 +232,6 @@ class Analyzer(tableUtils: TableUtils,
                 groupByConf.sources.toScala.map(_.table).mkString(","))
       else ""
 
-
     if (tableUtils.chrononAvroSchemaValidation) {
       // Validate that the baseDf schema is compatible with AvroSchema acceptable types
       // This is required for online serving to work
