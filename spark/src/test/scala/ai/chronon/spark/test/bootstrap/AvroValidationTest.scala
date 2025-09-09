@@ -16,195 +16,258 @@
 
 package ai.chronon.spark.test.bootstrap
 
-import ai.chronon.api.Extensions.JoinOps
-import ai.chronon.api._
-import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{Comparison, SparkSessionBuilder, TableUtils}
-import org.apache.spark.sql.functions._
-import org.apache.spark.sql.{DataFrame, SparkSession}
-import org.junit.Assert.{assertEquals, assertFalse}
+import ai.chronon.api.{Accuracy, Builders, Operation, TimeUnit, Window}
+import ai.chronon.spark.{BootstrapInfo, PartitionRange, SparkSessionBuilder, TableUtils}
+import org.apache.spark.sql.SparkSession
 import org.junit.Test
-import org.slf4j.LoggerFactory
 
-import scala.util.ScalaJavaConversions.JListOps
+import scala.util.Random
 
 class AvroValidationTest {
-  @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
-  val spark: SparkSession = SparkSessionBuilder.build("BootstrapTest", local = true)
-  private val tableUtils = TableUtils(spark)
-  private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+  @Test(expected = classOf[RuntimeException])
+  def testBootstrapInfoAvroValidationWithUnsupportedTypes(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("BootstrapInfoTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
 
-  // Create bootstrap dataset with randomly overwritten data
-  def buildBootstrapPart(queryTable: String,
-                         namespace: String,
-                         tableName: String,
-                         columnName: String = "unit_test_user_transactions_amount_dollars_sum_30d",
-                         samplePercent: Double = 0.8): (BootstrapPart, DataFrame) = {
-    val bootstrapTable = s"$namespace.$tableName"
-    val preSampleBootstrapDf = spark
-      .table(queryTable)
-      .select(
-        col("request_id"),
-        (rand() * 30000)
-          .cast(org.apache.spark.sql.types.LongType)
-          .as(columnName),
-        col("ds")
-      )
-
-    val bootstrapDf = if (samplePercent < 1.0) {
-      preSampleBootstrapDf.sample(samplePercent)
-    } else {
-      preSampleBootstrapDf
+    val tableUtilsWithValidation = new TableUtils(spark) {
+      override val chrononAvroSchemaValidation: Boolean = true
     }
 
-    bootstrapDf.save(bootstrapTable)
-    val partitionRange = bootstrapDf.partitionRange
+    val namespace = "bootstrap_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtilsWithValidation.createDatabase(namespace)
 
-    val bootstrapPart = Builders.BootstrapPart(
+    // Create test data with ShortType data
+    import spark.implicits._
+    val currentTime = System.currentTimeMillis()
+    val dateString = "2025-09-01"
+    val testData = Seq(
+      ("key1", 100.toShort, currentTime, dateString),
+      ("key2", 200.toShort, currentTime, dateString),
+      ("key1", 300.toShort, currentTime, dateString)
+    ).toDF("key", "short_col", "ts", "ds")
+
+    val tableName = "short_bootstrap_table"
+    val shortTable = s"$namespace.$tableName"
+
+    // Create partitioned table by ds column
+    testData.write
+      .mode("overwrite")
+      .partitionBy("ds")
+      .saveAsTable(shortTable)
+
+    // Create GroupBy with ShortType that will fail Avro validation
+    val groupBySource = Builders.Source.events(
       query = Builders.Query(
-        selects = Builders.Selects("request_id", columnName),
-        startPartition = partitionRange.start,
-        endPartition = partitionRange.end
+        selects = Builders.Selects("key", "short_col"),
+        startPartition = dateString
       ),
-      table = bootstrapTable
+      table = shortTable
     )
 
-    (bootstrapPart, bootstrapDf)
+    val groupBy = Builders.GroupBy(
+      sources = Seq(groupBySource),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "short_col")
+      ),
+      metaData = Builders.MetaData(name = "bootstrap_test_groupby_short", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    // Create JoinPart that uses the GroupBy with unsupported types
+    val joinPart = Builders.JoinPart(
+      groupBy = groupBy,
+      keyMapping = Map("key" -> "join_key")
+    )
+
+    // Create Join configuration
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("join_key"),
+          startPartition = dateString
+        ),
+        table = shortTable
+      ),
+      joinParts = Seq(joinPart),
+      metaData = Builders.MetaData(name = "bootstrap_test_join", namespace = namespace)
+    )
+
+    val range = PartitionRange(dateString, dateString)(tableUtilsWithValidation)
+
+    // This should throw RuntimeException due to ShortType in GroupBy schema
+    BootstrapInfo.from(
+      joinConf = joinConf,
+      range = range,
+      tableUtils = tableUtilsWithValidation,
+      leftSchema = None,
+      computeDependency = false
+    )
   }
 
   @Test
-  def testBootstrap(): Unit = {
+  def testBootstrapInfoAvroValidationWithSupportedTypes(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("BootstrapInfoTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
 
-    val namespace = "test_table_bootstrap"
-    tableUtils.createDatabase(namespace)
-
-    // group by
-    val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
-
-    // query
-    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
-
-    // Define base join which uses standard backfill
-    val baseJoin = Builders.Join(
-      left = Builders.Source.events(
-        table = queryTable,
-        query = Builders.Query()
-      ),
-      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
-      rowIds = Seq("request_id"),
-      metaData = Builders.MetaData(name = "test.user_transaction_features", namespace = namespace, team = "chronon")
-    )
-
-    // Runs through standard backfill
-    val runner1 = new ai.chronon.spark.Join(baseJoin, today, tableUtils)
-    val baseOutput = runner1.computeJoin()
-
-    // Create two bootstrap parts to verify that bootstrap coalesce respects the ordering of the input bootstrap parts
-    val (bootstrapTable1, bootstrapTable2) = ("user_transactions_bootstrap1", "user_transactions_bootstrap2")
-    val (bootstrapPart1, bootstrapDf1) = buildBootstrapPart(queryTable, namespace, bootstrapTable1)
-    val (bootstrapPart2, bootstrapDf2) = buildBootstrapPart(queryTable, namespace, bootstrapTable2)
-
-    // Create bootstrap join using base join as template
-    val bootstrapJoin = baseJoin.deepCopy()
-    bootstrapJoin.getMetaData.setName("test.user_transaction_features.bootstrap")
-    bootstrapJoin.setBootstrapParts(Seq(bootstrapPart1, bootstrapPart2).toJava)
-
-    // Runs through boostrap backfill which combines backfill and bootstrap
-    val runner2 = new ai.chronon.spark.Join(bootstrapJoin, today, tableUtils)
-    val computed = runner2.computeJoin()
-
-    // Comparison
-    val expected = baseOutput
-      .join(bootstrapDf1,
-            baseOutput("request_id") <=> bootstrapDf1("request_id") and baseOutput("ds") <=> bootstrapDf1("ds"),
-            "left")
-      .join(bootstrapDf2,
-            baseOutput("request_id") <=> bootstrapDf2("request_id") and baseOutput("ds") <=> bootstrapDf2("ds"),
-            "left")
-      .select(
-        baseOutput("user"),
-        baseOutput("request_id"),
-        baseOutput("ts"),
-        coalesce(
-          coalesce(bootstrapDf1("unit_test_user_transactions_amount_dollars_sum_30d"),
-                   bootstrapDf2("unit_test_user_transactions_amount_dollars_sum_30d")),
-          baseOutput("unit_test_user_transactions_amount_dollars_sum_30d")
-        ).as("unit_test_user_transactions_amount_dollars_sum_30d"),
-        baseOutput("unit_test_user_transactions_amount_dollars_sum_15d"), // not covered by bootstrap
-        baseOutput("ds")
-      )
-
-    val overlapBaseBootstrap1 = baseOutput.join(bootstrapDf1, Seq("request_id", "ds")).count()
-    val overlapBaseBootstrap2 = baseOutput.join(bootstrapDf2, Seq("request_id", "ds")).count()
-    val overlapBootstrap12 = bootstrapDf1.join(bootstrapDf2, Seq("request_id", "ds")).count()
-    logger.info(s"""Debug information:
-         |base count: ${baseOutput.count()}
-         |overlap keys between base and bootstrap1 count: ${overlapBaseBootstrap1}
-         |overlap keys between base and bootstrap2 count: ${overlapBaseBootstrap2}
-         |overlap keys between bootstrap1 and bootstrap2 count: ${overlapBootstrap12}
-         |""".stripMargin)
-
-    val diff = Comparison.sideBySide(computed, expected, List("request_id", "user", "ts", "ds"))
-    if (diff.count() > 0) {
-      logger.info(s"Actual count: ${computed.count()}")
-      logger.info(s"Expected count: ${expected.count()}")
-      logger.info(s"Diff count: ${diff.count()}")
-      logger.info(s"diff result rows")
-      diff.show()
+    val tableUtilsWithValidation = new TableUtils(spark) {
+      override val chrononAvroSchemaValidation: Boolean = true
     }
 
-    assertEquals(0, diff.count())
+    val namespace = "bootstrap_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtilsWithValidation.createDatabase(namespace)
+
+    // Create test data with only Avro-supported types
+    import spark.implicits._
+    val currentTime = System.currentTimeMillis()
+    val dateString = "2025-09-01"
+    val testData = Seq(
+      ("key1", 100, 1000L, "value1", true, currentTime, dateString),
+      ("key2", 200, 2000L, "value2", false, currentTime, dateString),
+      ("key1", 150, 1500L, "value3", true, currentTime, dateString)
+    ).toDF("key", "int_col", "long_col", "string_col", "boolean_col", "ts", "ds")
+
+    val tableName = "supported_bootstrap_table"
+    val supportedTable = s"$namespace.$tableName"
+
+    // Create partitioned table by ds column
+    testData.write
+      .mode("overwrite")
+      .partitionBy("ds")
+      .saveAsTable(supportedTable)
+
+    // Create GroupBy with only supported types
+    val groupBySource = Builders.Source.events(
+      query = Builders.Query(
+        selects = Builders.Selects("key", "int_col", "long_col", "string_col", "boolean_col"),
+        startPartition = dateString
+      ),
+      table = supportedTable
+    )
+
+    val groupBy = Builders.GroupBy(
+      sources = Seq(groupBySource),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "int_col"),
+        Builders.Aggregation(operation = Operation.MAX, inputColumn = "long_col")
+      ),
+      metaData = Builders.MetaData(name = "bootstrap_test_groupby_supported", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
+
+    // Create JoinPart that uses the GroupBy with supported types
+    val joinPart = Builders.JoinPart(
+      groupBy = groupBy,
+      keyMapping = Map("key" -> "join_key")
+    )
+
+    // Create Join configuration
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("join_key"),
+          startPartition = dateString
+        ),
+        table = supportedTable
+      ),
+      joinParts = Seq(joinPart),
+      metaData = Builders.MetaData(name = "bootstrap_test_join_supported", namespace = namespace)
+    )
+
+    val range = PartitionRange(dateString, dateString)(tableUtilsWithValidation)
+
+    // This should succeed without throwing - all types are Avro compatible
+    val bootstrapInfo = BootstrapInfo.from(
+      joinConf = joinConf,
+      range = range,
+      tableUtils = tableUtilsWithValidation,
+      leftSchema = None,
+      computeDependency = false
+    )
+
+    assert(bootstrapInfo != null)
+    assert(bootstrapInfo.joinParts.nonEmpty)
+    assert(bootstrapInfo.joinParts.head.joinPart.groupBy.metaData.name == "bootstrap_test_groupby_supported")
   }
 
   @Test
-  def testBootstrapSameJoinPartMultipleSources(): Unit = {
+  def testBootstrapInfoAvroValidationDisabled(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("BootstrapInfoTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
 
-    val namespace = "test_bootstrap_multi_source"
+    // Use default TableUtils (validation disabled)
+    val tableUtils = TableUtils(spark)
+    val namespace = "bootstrap_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
 
-    val queryTable = BootstrapUtils.buildQuery(namespace, spark)
-    val endDs = spark.table(queryTable).select(max(tableUtils.partitionColumn)).head().getString(0)
+    // Create test data with ShortType data (would fail if validation was enabled)
+    import spark.implicits._
+    val currentTime = System.currentTimeMillis()
+    val dateString = "2025-09-01"
+    val testData = Seq(
+      ("key1", 100.toShort, currentTime, dateString),
+      ("key2", 200.toShort, currentTime, dateString)
+    ).toDF("key", "short_col", "ts", "ds")
 
-    val joinPart = Builders.JoinPart(groupBy = BootstrapUtils.buildGroupBy(namespace, spark))
-    val derivations = Seq(
-      Builders.Derivation(
-        name = "amount_dollars_sum_15d",
-        expression = "unit_test_user_transactions_amount_dollars_sum_15d"
+    val tableName = "short_disabled_table"
+    val shortDisabledTable = s"$namespace.$tableName"
+
+    // Create partitioned table by ds column
+    testData.write
+      .mode("overwrite")
+      .partitionBy("ds")
+      .saveAsTable(shortDisabledTable)
+
+    // Create GroupBy with ShortType
+    val groupBySource = Builders.Source.events(
+      query = Builders.Query(
+        selects = Builders.Selects("key", "short_col"),
+        startPartition = dateString
       ),
-      Builders.Derivation(
-        name = "amount_dollars_sum_30d",
-        expression = "unit_test_user_transactions_amount_dollars_sum_30d"
-      )
+      table = shortDisabledTable
     )
 
-    val bootstrapPart1 = buildBootstrapPart(queryTable,
-                                            namespace,
-                                            tableName = "bootstrap_1",
-                                            columnName = "unit_test_user_transactions_amount_dollars_sum_30d",
-                                            samplePercent = 1.0)
+    val groupBy = Builders.GroupBy(
+      sources = Seq(groupBySource),
+      keyColumns = Seq("key"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "short_col")
+      ),
+      metaData = Builders.MetaData(name = "bootstrap_test_groupby_disabled", namespace = namespace),
+      accuracy = Accuracy.TEMPORAL
+    )
 
-    val bootstrapPart2 = buildBootstrapPart(queryTable,
-                                            namespace,
-                                            tableName = "bootstrap_2",
-                                            columnName = "unit_test_user_transactions_amount_dollars_sum_15d",
-                                            samplePercent = 1.0)
-    val join = Builders.Join(
-      left = Builders.Source.events(table = queryTable, query = Builders.Query()),
+    val joinPart = Builders.JoinPart(
+      groupBy = groupBy,
+      keyMapping = Map("key" -> "join_key")
+    )
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(
+        query = Builders.Query(
+          selects = Builders.Selects("join_key"),
+          startPartition = dateString
+        ),
+        table = shortDisabledTable
+      ),
       joinParts = Seq(joinPart),
-      rowIds = Seq("request_id"),
-      bootstrapParts = Seq(
-        bootstrapPart1._1,
-        bootstrapPart2._1
-      ),
-      derivations = derivations,
-      metaData = Builders.MetaData(name = "test.bootstrap_multi_source", namespace = namespace, team = "chronon")
+      metaData = Builders.MetaData(name = "bootstrap_test_join_disabled", namespace = namespace)
     )
 
-    val joinJob = new ai.chronon.spark.Join(join, endDs, tableUtils)
-    joinJob.computeJoin()
+    val range = PartitionRange(dateString, dateString)(tableUtils)
 
-    // assert that no computation happened for join part since all derivations have been bootstrapped
-    assertFalse(tableUtils.tableExists(join.partOutputTable(joinPart)))
+    // Should succeed because validation is disabled
+    val bootstrapInfo = BootstrapInfo.from(
+      joinConf = joinConf,
+      range = range,
+      tableUtils = tableUtils,
+      leftSchema = None,
+      computeDependency = false
+    )
+
+    assert(bootstrapInfo != null)
+    assert(bootstrapInfo.joinParts.nonEmpty)
   }
 }

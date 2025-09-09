@@ -866,45 +866,45 @@ class AnalyzerTest {
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtilsWithValidation.createDatabase(namespace)
 
-    // Create test data with BinaryType data
+    // Create test data with ShortType data
     import spark.implicits._
     val currentTime = System.currentTimeMillis()
     val dateString = "2025-09-01"
     val testData = Seq(
-      ("key1", "binary_data_1".getBytes("UTF-8"), currentTime, dateString),
-      ("key2", "binary_data_2".getBytes("UTF-8"), currentTime, dateString),
-      ("key1", "binary_data_3".getBytes("UTF-8"), currentTime, dateString)
-    ).toDF("key", "binary_col", "ts", "ds")
+      ("key1", 100.toShort, currentTime, dateString),
+      ("key2", 200.toShort, currentTime, dateString),
+      ("key1", 300.toShort, currentTime, dateString)
+    ).toDF("key", "short_col", "ts", "ds")
 
-    val tableName = "binary_types_table"
-    val binaryTypesTable = s"$namespace.$tableName"
+    val tableName = "short_types_table"
+    val shortTypesTable = s"$namespace.$tableName"
 
     // Create partitioned table by ds column
     testData.write
       .mode("overwrite")
       .partitionBy("ds")
-      .saveAsTable(binaryTypesTable)
+      .saveAsTable(shortTypesTable)
 
     // Create Source using Builders.Source.events
     val testSource = Builders.Source.events(
       query = Builders.Query(
-        selects = Builders.Selects("key", "binary_col"),
+        selects = Builders.Selects("key", "short_col"),
         startPartition = dateString
       ),
-      table = binaryTypesTable
+      table = shortTypesTable
     )
 
     val tableGroupBy = Builders.GroupBy(
       sources = Seq(testSource),
       keyColumns = Seq("key"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "binary_col")
+        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "short_col")
       ),
-      metaData = Builders.MetaData(name = "group_by_analyzer_test_binary", namespace = namespace),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test_short", namespace = namespace),
       accuracy = Accuracy.TEMPORAL
     )
 
-    // Should throw RuntimeException due to BinaryType in schema
+    // Should throw RuntimeException due to ShortType in schema
     val analyzer = new Analyzer(
       tableUtilsWithValidation,
       tableGroupBy,
@@ -925,38 +925,38 @@ class AnalyzerTest {
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
 
-    // Create test data with BinaryType data
+    // Create test data with ShortType data
     import spark.implicits._
     val currentTime = System.currentTimeMillis()
     val dateString = "2025-09-01"
     val testData = Seq(
-      ("key1", "binary_data_1".getBytes("UTF-8"), currentTime, dateString),
-      ("key2", "binary_data_2".getBytes("UTF-8"), currentTime, dateString)
-    ).toDF("key", "binary_col", "ts", "ds")
+      ("key1", 100.toShort, currentTime, dateString),
+      ("key2", 200.toShort, currentTime, dateString)
+    ).toDF("key", "short_col", "ts", "ds")
 
-    val tableName = "binary_disabled_table"
-    val binaryDisabledTable = s"$namespace.$tableName"
+    val tableName = "short_disabled_table"
+    val shortDisabledTable = s"$namespace.$tableName"
 
     // Create partitioned table by ds column
     testData.write
       .mode("overwrite")
       .partitionBy("ds")
-      .saveAsTable(binaryDisabledTable)
+      .saveAsTable(shortDisabledTable)
 
     // Create Source using Builders.Source.events
     val testSource = Builders.Source.events(
       query = Builders.Query(
-        selects = Builders.Selects("key", "binary_col"),
+        selects = Builders.Selects("key", "short_col"),
         startPartition = dateString
       ),
-      table = binaryDisabledTable
+      table = shortDisabledTable
     )
 
     val tableGroupBy = Builders.GroupBy(
       sources = Seq(testSource),
       keyColumns = Seq("key"),
       aggregations = Seq(
-        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "binary_col")
+        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "short_col")
       ),
       metaData = Builders.MetaData(name = "group_by_analyzer_test_disabled", namespace = namespace),
       accuracy = Accuracy.TEMPORAL
