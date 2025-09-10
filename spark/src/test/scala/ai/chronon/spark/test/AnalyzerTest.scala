@@ -795,7 +795,7 @@ class AnalyzerTest {
     val spark: SparkSession =
       SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
 
-    val tableUtilsWithValidation = new TableUtils(spark) {}
+    val tableUtilsWithValidation = TableUtils(spark)
 
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtilsWithValidation.createDatabase(namespace)

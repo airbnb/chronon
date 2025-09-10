@@ -30,7 +30,7 @@ class AvroValidationTest {
     val spark: SparkSession =
       SparkSessionBuilder.build("BootstrapInfoTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
 
-    val tableUtilsWithValidation = new TableUtils(spark) {}
+    val tableUtilsWithValidation = TableUtils(spark)
 
     val namespace = "bootstrap_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtilsWithValidation.createDatabase(namespace)

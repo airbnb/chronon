@@ -47,7 +47,9 @@ class DerivationTest {
   def testBootstrapToDerivations(): Unit = {
     val spark: SparkSession =
       SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
-    val tableUtils = TableUtils(spark)
+    val tableUtils = new TableUtils(spark) {
+      override val chrononAvroSchemaValidation: Boolean = false
+    }
     val namespace = "test_derivations"
     tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
