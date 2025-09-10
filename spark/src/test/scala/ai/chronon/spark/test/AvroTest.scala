@@ -27,7 +27,7 @@ import org.junit.Test
 
 class AvroTest {
   val spark: SparkSession = SparkSessionBuilder.build("AvroTest", local = true)
-  private val tableUtils = new TableUtils(spark)
+  private val tableUtils = TableUtils(spark)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
   private val twoMonthsAgo = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))

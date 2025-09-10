@@ -104,7 +104,7 @@ object BootstrapInfo {
                   "You should cast the current data types to Avro compatible data types " +
                   "- e.g. tinyint is not supported in Avro, if you have a tinyint col1, " +
                   "you can CAST(col1 AS INT). If your use case is offline only, " +
-                  "you can set chrononAvroSchemaValidation to false to disable Avro schema validation. \n"
+                  "you can set chrononAvroSchemaValidation to false to disable Avro schema validation if you don't need online serving. \n"
                   + e.getMessage,
                 e)
           }
