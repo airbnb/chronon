@@ -40,7 +40,9 @@ class DerivationTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val dummySpark: SparkSession = SparkSessionBuilder.build("DerivationTest", local = true)
-  private val dummyTableUtils = TableUtils(dummySpark)
+  private val dummyTableUtils = new TableUtils(dummySpark) {
+    override val chrononAvroSchemaValidation: Boolean = false
+  }
   private val today = dummyTableUtils.partitionSpec.at(System.currentTimeMillis())
 
   @Test
