@@ -27,9 +27,7 @@ import org.junit.Test
 
 class AvroTest {
   val spark: SparkSession = SparkSessionBuilder.build("AvroTest", local = true)
-  private val tableUtils = new TableUtils(spark) {
-    override val chrononAvroSchemaValidation: Boolean = false
-  }
+  private val tableUtils = new TableUtils(spark)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
   private val twoMonthsAgo = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
@@ -67,7 +65,7 @@ class AvroTest {
       query = Builders.Query(
         selects = Map(
           "user" -> "user",
-          "amount_dollars" -> "amount_dollars"
+          "amount_dollars" -> "CAST(amount_dollars AS DOUBLE)" // cast to double as decimal not supported in Avro
         ),
         startPartition = monthAgo,
         timeColumn = "UNIX_TIMESTAMP(CONCAT(ds, ' 23:59:59.999')) * 1000"
