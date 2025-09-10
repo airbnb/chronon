@@ -38,9 +38,7 @@ class AvroTest {
   def testDecimal(): Unit = {
 
     val namespace = "test_decimal"
-    new TableUtils(spark) {
-      override val chrononAvroSchemaValidation: Boolean = false
-    }.createDatabase(namespace)
+    tableUtils.createDatabase(namespace)
 
     /* create group by that uses a decimal field */
     val txnTable = s"$namespace.transactions"

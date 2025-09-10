@@ -40,18 +40,14 @@ class DerivationTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   val dummySpark: SparkSession = SparkSessionBuilder.build("DerivationTest", local = true)
-  private val dummyTableUtils = new TableUtils(dummySpark) {
-    override val chrononAvroSchemaValidation: Boolean = false
-  }
+  private val dummyTableUtils = TableUtils(dummySpark)
   private val today = dummyTableUtils.partitionSpec.at(System.currentTimeMillis())
 
   @Test
   def testBootstrapToDerivations(): Unit = {
     val spark: SparkSession =
       SparkSessionBuilder.build("DerivationTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
-    val tableUtils = new TableUtils(spark) {
-      override val chrononAvroSchemaValidation: Boolean = false
-    }
+    val tableUtils = TableUtils(spark)
     val namespace = "test_derivations"
     tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
