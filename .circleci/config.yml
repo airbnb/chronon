@@ -195,12 +195,11 @@ jobs:
             destination: spark_warehouse.tar.gz
             when: on_fail
 
-    "Bazel Tests":
+    # Job for Main branch builds (Read/Write cache)
+    "Bazel Tests - Main Branch":
         executor: docker_baseimg_executor_xxlarge
         steps:
             - checkout
-            # TODO build/publish image
-            # Airbnb would have to set up/own this
             - run:
                 name: Run Bazel Setup
                 command: |
@@ -213,17 +212,54 @@ jobs:
                     # Set up bazel-6.4.0 as the default bazel command
                     sudo update-alternatives --install /usr/bin/bazel bazel /usr/bin/bazel-6.4.0 100
             - run:
-            # TODO remote cache
-            # Airbnb would have to set up/own this
-                name: Run Bazel Tests
-                shell: /bin/bash -leuxo pipefail
+                name: Setup permissions
                 command: |
                     sudo mkdir -p /root/.cache/bazel
                     useradd --create-home --shell /bin/bash nonroot
                     chown -R nonroot:nonroot /chronon
                     chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
+            - run:
+                name: 🚀 Run Bazel Tests (Read/Write Cache)
+                shell: /bin/bash -leuxo pipefail
+                command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //... && bazel test //... --test_output=streamed --test_summary=detailed --local_ram_resources=HOST_RAM*0.7 --local_cpu_resources=HOST_CPUS*0.7"  
+                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //... --config=main && bazel test //... --config=main --config=ci"
+            - store_test_results:
+                path: bazel-testlogs
+            - store_artifacts:
+                path: bazel-testlogs
+                destination: bazel-test-logs
+                when: on_fail
+
+    # Job for PR builds (Read-Only cache)
+    "Bazel Tests - PR":
+        executor: docker_baseimg_executor_xxlarge
+        steps:
+            - checkout
+            - run:
+                name: Run Bazel Setup
+                command: |
+                    # Add Bazel GPG key and repository
+                    curl -fsSL https://bazel.build/bazel-release.pub.gpg | gpg --dearmor | sudo tee /usr/share/keyrings/bazel-archive-keyring.gpg > /dev/null
+                    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/bazel-archive-keyring.gpg] https://storage.googleapis.com/bazel-apt stable jdk1.8" | sudo tee /etc/apt/sources.list.d/bazel.list
+                    # Update package list and install specific Bazel version
+                    sudo apt update
+                    sudo apt install -y bazel-6.4.0
+                    # Set up bazel-6.4.0 as the default bazel command
+                    sudo update-alternatives --install /usr/bin/bazel bazel /usr/bin/bazel-6.4.0 100
+            - run:
+                name: Setup permissions
+                command: |
+                    sudo mkdir -p /root/.cache/bazel
+                    useradd --create-home --shell /bin/bash nonroot
+                    chown -R nonroot:nonroot /chronon
+                    chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
+            - run:
+                name: 🚀 Run Bazel Tests (Read-Only Cache)
+                shell: /bin/bash -leuxo pipefail
+                command: |
+                    export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                    sudo -u nonroot -H -s /bin/bash -c "bazel version && bazel build //... --config=pr && bazel test //... --config=pr --config=ci"
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
@@ -259,4 +295,15 @@ workflows:
             - "Scala 13 -- Iceberg Table Utils Tests":
                   requires:
                       - "Pull Docker Image"
-            - "Bazel Tests"
+            - "Bazel Tests - Main Branch":
+                  context: buildbuddy-secrets
+                  filters:
+                      branches:
+                          only:
+                              - main
+            - "Bazel Tests - PR":
+                  context: buildbuddy-secrets
+                  filters:
+                      branches:
+                          ignore:
+                              - main

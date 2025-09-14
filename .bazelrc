@@ -1,4 +1,3 @@
-try-import %workspace%/.circleci.bazelrc
 try-import %workspace%/.maven.bazelrc
 
 ## Disable remote cache completely when --config=local is passed
@@ -50,3 +49,24 @@ build:java_21 --java_language_version=21 --java_runtime_version=remotejdk_21
 
 # Use Java 8 as default for Bazel builds
 build --java_language_version=8 --java_runtime_version=remotejdk_8
+
+# CircleCI-specific configurations for test execution
+test:ci --test_output=streamed
+test:ci --test_summary=detailed
+test:ci --local_ram_resources=HOST_RAM*0.7
+test:ci --local_cpu_resources=HOST_CPUS*0.7
+
+# BuildBuddy configuration for main branch (Read/Write cache)
+build:main --bes_results_url=https://chronon-ai.buildbuddy.io/invocation/
+build:main --bes_backend=grpcs://chronon-ai.buildbuddy.io
+build:main --remote_cache=grpcs://chronon-ai.buildbuddy.io
+build:main --remote_timeout=10m
+build:main --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}
+
+# BuildBuddy configuration for PR builds (Read-Only cache)
+build:pr --bes_results_url=https://chronon-ai.buildbuddy.io/invocation/
+build:pr --bes_backend=grpcs://chronon-ai.buildbuddy.io
+build:pr --remote_cache=grpcs://chronon-ai.buildbuddy.io
+build:pr --noremote_upload_local_results
+build:pr --remote_timeout=10m
+build:pr --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}
