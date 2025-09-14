@@ -296,13 +296,11 @@ workflows:
                   requires:
                       - "Pull Docker Image"
             - "Bazel Tests - Main Branch":
-                  context: buildbuddy-secrets
                   filters:
                       branches:
                           only:
                               - main
             - "Bazel Tests - PR":
-                  context: buildbuddy-secrets
                   filters:
                       branches:
                           ignore:
