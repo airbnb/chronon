@@ -56,17 +56,15 @@ test:ci --test_summary=detailed
 test:ci --local_ram_resources=HOST_RAM*0.7
 test:ci --local_cpu_resources=HOST_CPUS*0.7
 
+# BuildBuddy shared configuration
+common:buildbuddy --bes_results_url=https://chronon-ai.buildbuddy.io/invocation/
+common:buildbuddy --bes_backend=grpcs://chronon-ai.buildbuddy.io
+common:buildbuddy --remote_cache=grpcs://chronon-ai.buildbuddy.io
+common:buildbuddy --remote_timeout=10m
+
 # BuildBuddy configuration for main branch (Read/Write cache)
-build:main --bes_results_url=https://chronon-ai.buildbuddy.io/invocation/
-build:main --bes_backend=grpcs://chronon-ai.buildbuddy.io
-build:main --remote_cache=grpcs://chronon-ai.buildbuddy.io
-build:main --remote_timeout=10m
-build:main --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}
+build:main --config=buildbuddy
 
 # BuildBuddy configuration for PR builds (Read-Only cache)
-build:pr --bes_results_url=https://chronon-ai.buildbuddy.io/invocation/
-build:pr --bes_backend=grpcs://chronon-ai.buildbuddy.io
-build:pr --remote_cache=grpcs://chronon-ai.buildbuddy.io
+build:pr --config=buildbuddy
 build:pr --noremote_upload_local_results
-build:pr --remote_timeout=10m
-build:pr --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}
