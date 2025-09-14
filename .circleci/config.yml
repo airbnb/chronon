@@ -255,7 +255,7 @@ jobs:
                     chown -R nonroot:nonroot /chronon
                     chown -R nonroot:nonroot /root/.cache/bazel # Give access to the bazel cache
             - run:
-                name: 🚀 Run Bazel Tests (Read-Only Cache)
+                name: Run Bazel Tests
                 shell: /bin/bash -leuxo pipefail
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
