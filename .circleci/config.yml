@@ -223,10 +223,13 @@ jobs:
                 shell: /bin/bash -leuxo pipefail
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                    echo "BuildBuddyAPIKey is set: ${BuildBuddyAPIKey:+yes}"
+                    BUILDBUDDY_KEY="${BuildBuddyAPIKey}"
                     sudo -E -u nonroot -H bash -c "
+                        export BuildBuddyAPIKey='$BUILDBUDDY_KEY'
                         bazel version && 
-                        bazel build //... --config=main --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey} && 
-                        bazel test //... --config=main --config=ci --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}"
+                        bazel build //... --config=main --remote_header=x-buildbuddy-api-key=\$BuildBuddyAPIKey && 
+                        bazel test //... --config=main --config=ci --remote_header=x-buildbuddy-api-key=\$BuildBuddyAPIKey"
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
@@ -262,10 +265,13 @@ jobs:
                 shell: /bin/bash -leuxo pipefail
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                    echo "BuildBuddyAPIKey is set: ${BuildBuddyAPIKey:+yes}"
+                    BUILDBUDDY_KEY="${BuildBuddyAPIKey}"
                     sudo -E -u nonroot -H bash -c "
+                        export BuildBuddyAPIKey='$BUILDBUDDY_KEY'
                         bazel version && 
-                        bazel build //... --config=pr --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey} && 
-                        bazel test //... --config=pr --config=ci --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}"
+                        bazel build //... --config=pr --remote_header=x-buildbuddy-api-key=\$BuildBuddyAPIKey && 
+                        bazel test //... --config=pr --config=ci --remote_header=x-buildbuddy-api-key=\$BuildBuddyAPIKey"
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
