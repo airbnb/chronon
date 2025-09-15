@@ -362,6 +362,10 @@ case class TableUtils(sparkSession: SparkSession) {
   val blockingCacheEviction: Boolean =
     sparkSession.conf.get("spark.chronon.table_write.cache.blocking", "false").toBoolean
 
+  // whether or not to enable avro schema validation check in BootstrapInfo and Analyzer, default is true. Avro schema is needed for online serving, if you only have offline use case, feel free to set it to false
+  val chrononAvroSchemaValidation: Boolean =
+    sparkSession.conf.get("spark.chronon.avroSchemaValidation", "true").toBoolean
+
   private lazy val tableFormatProvider: FormatProvider = {
     sparkSession.conf.getOption("spark.chronon.table.format_provider") match {
       case Some(clazzName) =>

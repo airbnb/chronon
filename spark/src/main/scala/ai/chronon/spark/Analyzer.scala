@@ -22,6 +22,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
+import ai.chronon.spark.Extensions.StructTypeOps
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
@@ -230,6 +231,28 @@ class Analyzer(tableUtils: TableUtils,
                 groupByConf.keyColumns.toScala.toArray,
                 groupByConf.sources.toScala.map(_.table).mkString(","))
       else ""
+
+    if (tableUtils.chrononAvroSchemaValidation) {
+      // Validate that the baseDf schema is compatible with AvroSchema acceptable types
+      // This is required for online serving to work
+      try {
+        groupBy.keySchema.toAvroSchema("Key")
+        groupBy.preAggSchema.toAvroSchema("Value")
+      } catch {
+        case e: UnsupportedOperationException =>
+          throw new RuntimeException(
+            "In order to enable online serving, " +
+              "please make sure that the data types of your groupBy column types " +
+              "are compatible with AvroSchema acceptable types: " +
+              "You should cast the current data types to Avro compatible data types " +
+              "- e.g. tinyint is not supported in Avro, if you have a tinyint col1, " +
+              "you can CAST(col1 AS INT). If your use case is offline only, " +
+              "you can set chrononAvroSchemaValidation to false to disable Avro schema validation if you don't need online serving. \n"
+              + e.getMessage,
+            e)
+      }
+    }
+
     val schema = if (groupByConf.hasDerivations) {
       val keyAndPartitionFields =
         groupBy.keySchema.fields ++ Seq(

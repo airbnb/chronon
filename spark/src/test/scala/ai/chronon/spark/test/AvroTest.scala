@@ -65,7 +65,7 @@ class AvroTest {
       query = Builders.Query(
         selects = Map(
           "user" -> "user",
-          "amount_dollars" -> "amount_dollars"
+          "amount_dollars" -> "CAST(amount_dollars AS DOUBLE)" // cast to double as decimal not supported in Avro
         ),
         startPartition = monthAgo,
         timeColumn = "UNIX_TIMESTAMP(CONCAT(ds, ' 23:59:59.999')) * 1000"
