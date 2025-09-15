@@ -25,6 +25,7 @@ import ai.chronon.api._
 import com.google.gson.Gson
 import junit.framework.TestCase
 import org.junit.Assert._
+import org.junit.Test
 
 import java.util
 import scala.collection.mutable
@@ -47,6 +48,7 @@ class Timer {
 
 class SawtoothAggregatorTest extends TestCase {
 
+  @Test
   def testTailAccuracy(): Unit = {
     val timer = new Timer
     val queries = CStream.genTimestamps(new Window(30, TimeUnit.DAYS), 10000, 5 * 60 * 1000)
@@ -118,6 +120,7 @@ class SawtoothAggregatorTest extends TestCase {
     }
   }
 
+  @Test
   def testRealTimeAccuracy(): Unit = {
     val timer = new Timer
     val queries = CStream.genTimestamps(new Window(1, TimeUnit.DAYS), 1000)
