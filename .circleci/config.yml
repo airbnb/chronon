@@ -223,8 +223,7 @@ jobs:
                 shell: /bin/bash -leuxo pipefail
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                    sudo -u nonroot -H -s /bin/bash -c "
-                        export BuildBuddyAPIKey='${BuildBuddyAPIKey}'
+                    sudo -E -u nonroot -H bash -c "
                         bazel version && 
                         bazel build //... --config=main --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey} && 
                         bazel test //... --config=main --config=ci --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}"
@@ -263,8 +262,7 @@ jobs:
                 shell: /bin/bash -leuxo pipefail
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                    sudo -u nonroot -H -s /bin/bash -c "
-                        export BuildBuddyAPIKey='${BuildBuddyAPIKey}'
+                    sudo -E -u nonroot -H bash -c "
                         bazel version && 
                         bazel build //... --config=pr --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey} && 
                         bazel test //... --config=pr --config=ci --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}"
