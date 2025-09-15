@@ -224,6 +224,7 @@ jobs:
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                     sudo -u nonroot -H -s /bin/bash -c "
+                        export BuildBuddyAPIKey='${BuildBuddyAPIKey}'
                         bazel version && 
                         bazel build //... --config=main --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey} && 
                         bazel test //... --config=main --config=ci --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}"
@@ -263,6 +264,7 @@ jobs:
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
                     sudo -u nonroot -H -s /bin/bash -c "
+                        export BuildBuddyAPIKey='${BuildBuddyAPIKey}'
                         bazel version && 
                         bazel build //... --config=pr --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey} && 
                         bazel test //... --config=pr --config=ci --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}"
