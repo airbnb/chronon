@@ -198,6 +198,8 @@ jobs:
     # Job for Main branch builds (Read/Write cache)
     "Bazel Tests - Main Branch":
         executor: docker_baseimg_executor_xxlarge
+        environment:
+            BuildBuddyAPIKey: ${BuildBuddyAPIKey}
         steps:
             - checkout
             - run:
@@ -223,13 +225,10 @@ jobs:
                 shell: /bin/bash -leuxo pipefail
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                    echo "BuildBuddyAPIKey is set: ${BuildBuddyAPIKey:+yes}"
-                    BUILDBUDDY_KEY="${BuildBuddyAPIKey}"
-                    sudo -E -u nonroot -H bash -c "
-                        export BuildBuddyAPIKey='$BUILDBUDDY_KEY'
+                    sudo -u nonroot -H -s /bin/bash -c "
                         bazel version && 
-                        bazel build //... --config=main --remote_header=x-buildbuddy-api-key=\$BuildBuddyAPIKey && 
-                        bazel test //... --config=main --config=ci --remote_header=x-buildbuddy-api-key=\$BuildBuddyAPIKey"
+                        bazel build //... --config=main --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey} && 
+                        bazel test //... --config=main --config=ci --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}"
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
@@ -240,6 +239,8 @@ jobs:
     # Job for PR builds (Read-Only cache)
     "Bazel Tests - PR":
         executor: docker_baseimg_executor_xxlarge
+        environment:
+            BuildBuddyAPIKey: ${BuildBuddyAPIKey}
         steps:
             - checkout
             - run:
@@ -265,13 +266,10 @@ jobs:
                 shell: /bin/bash -leuxo pipefail
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                    echo "BuildBuddyAPIKey is set: ${BuildBuddyAPIKey:+yes}"
-                    BUILDBUDDY_KEY="${BuildBuddyAPIKey}"
-                    sudo -E -u nonroot -H bash -c "
-                        export BuildBuddyAPIKey='$BUILDBUDDY_KEY'
+                    sudo -u nonroot -H -s /bin/bash -c "
                         bazel version && 
-                        bazel build //... --config=pr --remote_header=x-buildbuddy-api-key=\$BuildBuddyAPIKey && 
-                        bazel test //... --config=pr --config=ci --remote_header=x-buildbuddy-api-key=\$BuildBuddyAPIKey"
+                        bazel build //... --config=pr --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey} && 
+                        bazel test //... --config=pr --config=ci --remote_header=x-buildbuddy-api-key=${BuildBuddyAPIKey}"
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
