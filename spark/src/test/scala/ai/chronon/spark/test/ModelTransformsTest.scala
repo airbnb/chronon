@@ -19,22 +19,26 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.MetadataOps
+import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.{ModelBackend, RunModelInferenceRequest, RunModelInferenceResponse}
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
-import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{col, max}
+import ai.chronon.spark.{ModelTransformBatchJob, SparkSessionBuilder, TableUtils}
+import org.apache.spark.sql.{DataFrame, SparkSession}
+import org.apache.spark.sql.functions.{col, lit, max}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.concurrent.{Await, Future}
 import scala.util.Random
+import scala.util.ScalaJavaConversions.ListOps
 
-private case class MockModelBackend(defaultValueMap: Map[String, AnyRef]) extends ModelBackend {
+private case class MockModelBackend(
+    defaultValueMap: Map[String, AnyRef],
+    defaultEmbeddingValue: Array[Double]
+) extends ModelBackend {
 
   override def runModelInference(
       runModelInferenceRequest: RunModelInferenceRequest): Future[RunModelInferenceResponse] = {
@@ -48,6 +52,26 @@ private case class MockModelBackend(defaultValueMap: Map[String, AnyRef]) extend
         runModelInferenceRequest.inputs.map { _ => defaultValueMap }
       )
     )
+  }
+
+  override def runModelInferenceBatchJob(
+      sparkSession: SparkSession,
+      join: ai.chronon.api.Join,
+      startPartition: String,
+      endPartition: String,
+      modelTransform: Option[ModelTransform] = None,
+      jobContextJson: Option[String] = None
+  ): Option[DataFrame] = {
+
+    val embeddingColumns = join.modelSchema.fields.map(_.name).map { n =>
+      lit(defaultEmbeddingValue).as(n)
+    }
+    val columns = join.rowIds.toScala.map(col) ++ embeddingColumns :+ col("ds")
+    Some(
+      sparkSession
+        .table(join.metaData.preModelTransformsTable)
+        .where(col("ds").between(startPartition, endPartition))
+        .select(columns: _*))
   }
 }
 
@@ -64,7 +88,7 @@ class ModelTransformsTest {
     val inMemoryKvStore = kvStoreFunc()
     val defaultEmbedding = Array(0.1, 0.2, 0.3, 0.4)
     val defaultMap = Map("embedding" -> defaultEmbedding.asInstanceOf[AnyRef])
-    val mockModelBackend = MockModelBackend(defaultMap)
+    val mockModelBackend = MockModelBackend(defaultMap, defaultEmbedding)
     val mockApi = new MockApi(kvStoreFunc, namespace, mockModelBackend)
     lazy val fetcher = mockApi.buildFetcher()
     inMemoryKvStore.create(ChrononMetadataKey)
@@ -78,10 +102,11 @@ class ModelTransformsTest {
     /* prepare groupBy */
     val itemsTableName = namespace + ".item"
     val itemsDf = DataFrameGen
-      .entities(spark, itemSchema, 100, partitions = 1)
+      .entities(spark, itemSchema, 100, partitions = 5)
       .where(col("item").isNotNull and col("description").isNotNull)
       .dropDuplicates("item")
     itemsDf.save(itemsTableName)
+    val maxDs = itemsDf.select(max("ds")).head.getString(0)
 
     val itemsGroupBy = Builders.GroupBy(
       sources = Seq(
@@ -111,12 +136,12 @@ class ModelTransformsTest {
       outputSchema = StructType("output_schema", Array(StructField("embedding", ListType(DoubleType))))
     )
 
-    (itemsGroupBy, itemsDf, model, fetcher, defaultEmbedding)
+    (itemsGroupBy, itemsDf, model, fetcher, defaultEmbedding, maxDs)
   }
   @Test
   def testModelTransformSimple(): Unit = {
-    val namespace = "test_model_transforms_simple"
-    val (itemsGroupBy, itemsDf, model, fetcher, defaultEmbedding) = prepareRawData(namespace)
+    val namespace = "test_model_transform_simple"
+    val (itemsGroupBy, itemsDf, model, fetcher, defaultEmbedding, maxDs) = prepareRawData(namespace)
 
     /* prepare ModelTransform */
     val modelTransforms = Builders.ModelTransforms(
@@ -138,12 +163,12 @@ class ModelTransformsTest {
       ),
       modelTransforms = modelTransforms,
       metaData =
-        Builders.MetaData(name = "unit_test/test_model_transforms_simple", namespace = namespace, team = "chronon")
+        Builders.MetaData(name = "unit_test/test_model_transform_simple", namespace = namespace, team = "chronon")
     )
     fetcher.putJoinConf(joinConf)
 
     /* test fetch */
-    val sampleKey = itemsDf.select(col("item")).head.getLong(0)
+    val sampleKey = itemsDf.select(col("item")).where(col("ds") === maxDs).head.getLong(0)
     val joinRequest = Request(joinConf.metaData.nameToFilePath, Map("item" -> sampleKey.asInstanceOf[AnyRef]))
     val fetchFuture = fetcher.fetchJoin(Seq(joinRequest))
     val fetchResult = Await.result(fetchFuture, Duration(10, SECONDS))
@@ -155,8 +180,8 @@ class ModelTransformsTest {
 
   @Test
   def testModelTransformMultiple(): Unit = {
-    val namespace = "test_model_transforms_multiple"
-    val (itemsGroupBy, itemsDf, model, fetcher, defaultEmbedding) = prepareRawData(namespace)
+    val namespace = "test_model_transform_multiple"
+    val (itemsGroupBy, itemsDf, model, fetcher, defaultEmbedding, maxDs) = prepareRawData(namespace)
 
     /* prepare ModelTransform */
     val modelTransforms = Builders.ModelTransforms(
@@ -192,11 +217,11 @@ class ModelTransformsTest {
       ),
       modelTransforms = modelTransforms,
       metaData =
-        Builders.MetaData(name = "unit_test/test_model_transforms_multiple", namespace = namespace, team = "chronon")
+        Builders.MetaData(name = "unit_test/test_model_transform_multiple", namespace = namespace, team = "chronon")
     )
     fetcher.putJoinConf(joinConf)
     /* test fetch */
-    val sampleKey = itemsDf.select(col("item")).take(2).map(_.getLong(0))
+    val sampleKey = itemsDf.select(col("item")).where(col("ds") === maxDs).take(2).map(_.getLong(0))
     val joinRequest = Request(
       joinConf.metaData.name,
       Map(
@@ -212,6 +237,65 @@ class ModelTransformsTest {
       "b_description_embedding" -> defaultEmbedding.asInstanceOf[AnyRef]
     )
     assertEquals(fetchResult.head.values.get, expectedOutputMap)
+  }
+
+  @Test
+  def testModelTransformBatchSimple(): Unit = {
+    val namespace = "test_model_transform_batch_simple"
+    val (itemsGroupBy, itemsDf, model, fetcher, defaultEmbedding, _) = prepareRawData(namespace)
+    val spark = itemsDf.sparkSession
+    val tableUtils = TableUtils(spark)
+    val defaultMap = Map("embedding" -> defaultEmbedding.asInstanceOf[AnyRef])
+    val mockModelBackend = MockModelBackend(defaultMap, defaultEmbedding)
+
+    /* prepare ModelTransform */
+    val modelTransforms = Builders.ModelTransforms(
+      transforms = Seq(
+        Builders.ModelTransform(
+          model = model,
+          inputMappings = Map("text" -> "unit_test_test_model_transforms_simple_items_description"),
+          outputMappings = Map("embedding" -> "description_embedding")
+        )
+      )
+    )
+
+    // left side
+    val itemQueries = List(Column("item", api.LongType, 100))
+    val itemQueriesTable = s"$namespace.item_queries"
+    DataFrameGen
+      .entities(spark, itemQueries, 100, partitions = 5)
+      .save(itemQueriesTable)
+    val endDs = tableUtils.partitions(itemQueriesTable).max
+
+    /* prepare Join */
+    val joinConf = Builders.Join(
+      left = Builders.Source.entities(
+        query = Builders.Query(
+          selects = Builders.Selects("item")
+        ),
+        snapshotTable = itemQueriesTable
+      ),
+      joinParts = Seq(
+        Builders.JoinPart(
+          groupBy = itemsGroupBy
+        )
+      ),
+      rowIds = Seq("item"),
+      modelTransforms = modelTransforms,
+      metaData =
+        Builders.MetaData(name = "unit_test/test_model_transform_batch_simple", namespace = namespace, team = "chronon")
+    )
+
+    /* run join job to produce pre-mt table */
+    val joinJob = new ai.chronon.spark.Join(joinConf, endDs, tableUtils)
+    joinJob.computeJoin()
+
+    // run model transform batch job
+    val modelTransformJob = new ModelTransformBatchJob(spark, mockModelBackend, joinConf, endDs)
+    modelTransformJob.run()
+
+    assertTrue(tableUtils.tableExists(joinConf.metaData.outputTable))
+    assertEquals(5, tableUtils.partitions(joinConf.metaData.outputTable).size)
   }
 
 }

@@ -51,6 +51,8 @@ case class BootstrapInfo(
     externalParts: Seq[ExternalPartMetadata],
     // derivations schema
     derivations: Array[StructField],
+    // modelTransforms schema
+    modelTransforms: Array[StructField],
     hashToSchema: Map[String, Array[StructField]]
 ) {
 
@@ -58,7 +60,7 @@ case class BootstrapInfo(
 
   private lazy val fields: Seq[StructField] = {
     joinParts.flatMap(_.keySchema) ++ joinParts.flatMap(_.valueSchema) ++
-      externalParts.flatMap(_.keySchema) ++ externalParts.flatMap(_.valueSchema) ++ derivations
+      externalParts.flatMap(_.keySchema) ++ externalParts.flatMap(_.valueSchema) ++ derivations ++ modelTransforms
   }
   private lazy val fieldsMap: Map[String, StructField] = fields.map(f => f.name -> f).toMap
 
@@ -167,6 +169,7 @@ object BootstrapInfo {
     } else {
       Array.empty[(StructField, String)]
     }
+    val modelTransformsSchema = joinConf.modelSchema.fields
 
     /*
      * Partition bootstrap into log-based versus regular table-based.
@@ -283,7 +286,8 @@ object BootstrapInfo {
     joinParts = joinParts.map { part =>
       part.copy(derivationDependencies = findDerivationDependencies(part))
     }
-    val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema.map(_._1), hashToSchema)
+    val bootstrapInfo =
+      BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema.map(_._1), modelTransformsSchema, hashToSchema)
 
     // validate that all selected fields except keys from (non-log) bootstrap tables match with
     // one of defined fields in join parts or external parts
@@ -345,6 +349,11 @@ object BootstrapInfo {
       logger.info(s"""Bootstrap Info for Derivations
                  |${stringify(derivedSchema.map(_._1))}
                  |""".stripMargin)
+    }
+    if (modelTransformsSchema.nonEmpty) {
+      logger.info(s"""Bootstrap Info for Model Transforms
+                     |${stringify(modelTransformsSchema)}
+                     |""".stripMargin)
     }
     logger.info(s"""Bootstrap Info for Log Bootstraps
          |Log Hashes: ${logHashes.keys.prettyInline}
