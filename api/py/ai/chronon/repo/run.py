@@ -292,6 +292,7 @@ def set_runtime_env(args):
                         "backfill-left",
                         "backfill-final",
                         "upload",
+                        "model-transform-batch",
                     }:
                         environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = " ".join(
                             custom_json(conf_json).get("additional_args", [])
