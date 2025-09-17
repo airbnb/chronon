@@ -280,6 +280,7 @@ struct MetaData {
     15: optional string deprecationDate
     // Description for the object holding this metadata
     16: optional string description
+    17: optional map<string, string> attributes
 }
 
 // Equivalent to a FeatureSet in chronon terms

@@ -363,6 +363,7 @@ def GroupBy(
     derivations: Optional[List[ttypes.Derivation]] = None,
     deprecation_date: Optional[str] = None,
     description: Optional[str] = None,
+    attributes: Optional[Dict[str, str]] = None,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
@@ -481,6 +482,7 @@ def GroupBy(
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
     :param description: optional description of this GroupBy
+    :param attributes:  any extra attributes of this GroupBy
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
@@ -560,6 +562,7 @@ def GroupBy(
         offlineSchedule=offline_schedule,
         deprecationDate=deprecation_date,
         description=description,
+        attributes=attributes,
     )
 
     group_by = ttypes.GroupBy(
