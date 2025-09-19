@@ -855,6 +855,8 @@ case class TableUtils(sparkSession: SparkSession) {
                      inputToOutputShift: Int = 0,
                      skipFirstHole: Boolean = true): Option[Seq[PartitionRange]] = {
 
+    logger.info(s"-----------UnfilledRanges---------------------")
+    logger.info(s"unfilled range called for output table: $outputTable")
     val validPartitionRange = if (outputPartitionRange.start == null) { // determine partition range automatically
       val inputStart = inputTables.flatMap(
         _.map(table =>
@@ -872,6 +874,8 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       outputPartitionRange
     }
+
+    logger.info(s"Determined valid partition range: $validPartitionRange")
     val outputExisting = partitions(outputTable)
     // To avoid recomputing partitions removed by retention mechanisms we will not fill holes in the very beginning of the range
     // If a user fills a new partition in the newer end of the range, then we will never fill any partitions before that range.
@@ -881,13 +885,19 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       validPartitionRange.start
     }
+
+    logger.info(s"Cutoff partition for skipping holes is set to $cutoffPartition")
     val fillablePartitions =
       if (skipFirstHole) {
         validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
       } else {
         validPartitionRange.partitions.toSet
       }
+
+    logger.info(s"Fillable partitions : ${fillablePartitions}")
     val outputMissing = fillablePartitions -- outputExisting
+
+    logger.info(s"outputMissing : ${outputMissing}")
     val allInputExisting = inputTables
       .map { tables =>
         tables
@@ -899,6 +909,8 @@ case class TableUtils(sparkSession: SparkSession) {
           .map(partitionSpec.shift(_, inputToOutputShift))
       }
       .getOrElse(fillablePartitions)
+
+    logger.info(s"allInputExisting : ${allInputExisting}")
 
     val inputMissing = fillablePartitions -- allInputExisting
     val missingPartitions = outputMissing -- inputMissing
