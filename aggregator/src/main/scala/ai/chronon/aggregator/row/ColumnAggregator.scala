@@ -344,6 +344,15 @@ object ColumnAggregator {
           case _          => mismatchException
         }
 
+      case Operation.VECTOR_AVERAGE =>
+        baseInputType match {
+          case ListType(DoubleType) => simple(new VectorAverage)
+          case ListType(FloatType)  => simple(new VectorAverage, (input: Any) => input.asInstanceOf[Seq[Any]].toArray.map(toDouble[Float]))
+          case ListType(IntType)    => simple(new VectorAverage, (input: Any) => input.asInstanceOf[Seq[Any]].toArray.map(toDouble[Int]))
+          case ListType(LongType)   => simple(new VectorAverage, (input: Any) => input.asInstanceOf[Seq[Any]].toArray.map(toDouble[Long]))
+          case _                    => mismatchException
+        }
+
       case Operation.VARIANCE =>
         inputType match {
           case IntType    => simple(new Variance, toDouble[Int])

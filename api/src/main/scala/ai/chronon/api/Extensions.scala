@@ -50,7 +50,7 @@ object Extensions {
   implicit class OperationOps(operation: Operation) {
     def isSimple: Boolean =
       operation match {
-        case Operation.FIRST | Operation.LAST | Operation.LAST_K | Operation.FIRST_K => false
+        case Operation.FIRST | Operation.LAST | Operation.LAST_K | Operation.FIRST_K | Operation.VECTOR_AVERAGE => false
         case _                                                                       => true
       }
 
