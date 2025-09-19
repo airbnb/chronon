@@ -741,29 +741,27 @@ object GroupBy {
                             groupByConf: api.GroupBy,
                             range: PartitionRange,
                             tableUtils: TableUtils,
-                          ): GroupBy = {
+                            incrementalOutputTable: String,
+                            incrementalGroupByBackfill: GroupBy,
+                          ): PartitionRange = {
 
-    val incrementalOutputTable: String = groupByConf.metaData.incrementalOutputTable
     val tableProps: Map[String, String] = Option(groupByConf.metaData.tableProperties)
       .map(_.toScala)
       .orNull
 
+    val incrementalQueryableRange = PartitionRange(
+      tableUtils.partitionSpec.minus(range.start, groupByConf.maxWindow.get),
+      range.end
+    )(tableUtils)
+
+
     logger.info(s"Writing incremental df to $incrementalOutputTable")
-    val incrementalGroupByBackfill =
-      from(groupByConf, range, tableUtils, computeDependency = true, incrementalMode = true)
-
-    val incTableRange: Option[PartitionRange] = for {
-        first <- tableUtils.firstAvailablePartition(incrementalOutputTable)
-        last  <- tableUtils.lastAvailablePartition(incrementalOutputTable)
-    } yield
-      PartitionRange(first, last)(tableUtils)
 
 
-    val partitionRangeHoles: Option[Seq[PartitionRange]] = incTableRange match {
-      case None => Some(Seq(range))
-      case Some(incrementalTableRange) =>
-        computePartitionRangeHoles(incrementalTableRange, range, tableUtils)
-    }
+    val partitionRangeHoles: Option[Seq[PartitionRange]] = tableUtils.unfilledRanges(
+      incrementalOutputTable,
+      incrementalQueryableRange,
+    )
 
     partitionRangeHoles.foreach { holes =>
       holes.foreach { hole =>
@@ -772,29 +770,9 @@ object GroupBy {
       }
     }
 
-    incrementalGroupByBackfill
+    incrementalQueryableRange
   }
 
-/**
-  * Compute the holes in the incremental output table
-  *
-  *
-  * @param incTableRange the range of the incremental output table
-  * @param sourceQueryableRange the range of the source queryable range
-  * @return the holes in the incremental output table
-  */
-  private def computePartitionRangeHoles(
-                                 incTableRange: PartitionRange,
-                                 queryRange: PartitionRange,
-                                 tableUtils: TableUtils): Option[Seq[PartitionRange]] = {
-
-
-     if (queryRange.end <= incTableRange.end) {
-      None
-     } else {
-       Some(Seq(PartitionRange(tableUtils.partitionSpec.shift(incTableRange.end, 1), queryRange.end)(tableUtils)))
-     }
-  }
 
   def fromIncrementalDf(
                        groupByConf: api.GroupBy,
@@ -802,24 +780,16 @@ object GroupBy {
                        tableUtils: TableUtils,
                      ): GroupBy = {
 
-
-    val incrementalGroupByBackfill: GroupBy = computeIncrementalDf(groupByConf, range, tableUtils)
-
     val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
-    val sourceQueryableRange = PartitionRange(
-      tableUtils.partitionSpec.minus(range.start, groupByConf.maxWindow.get),
-      range.end
-    )(tableUtils)
 
-    val incTableFirstPartition: Option[String] = tableUtils.firstAvailablePartition(incrementalOutputTable)
-    val incTableLastPartition: Option[String] = tableUtils.lastAvailablePartition(incrementalOutputTable)
+    val incrementalGroupByBackfill =
+      from(groupByConf, range, tableUtils, computeDependency = true, incrementalMode = true)
 
-    val incTableRange = PartitionRange(
-      incTableFirstPartition.get,
-      incTableLastPartition.get
-    )(tableUtils)
 
-    val (_, incrementalDf: DataFrame) =  incTableRange.intersect(sourceQueryableRange).scanQueryStringAndDf(null, incrementalOutputTable)
+    val incrementalQueryableRange = computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable, incrementalGroupByBackfill)
+
+    val (_, incrementalDf: DataFrame) =  incrementalQueryableRange.scanQueryStringAndDf(null, incrementalOutputTable)
+
 
     val incrementalAggregations = incrementalGroupByBackfill.flattenedAgg.aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
       val newAgg = agg.deepCopy()
