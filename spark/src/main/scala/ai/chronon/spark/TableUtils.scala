@@ -877,6 +877,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
     logger.info(s"Determined valid partition range: $validPartitionRange")
     val outputExisting = partitions(outputTable)
+    logger.info(s"outputExisting : ${outputExisting}")
     // To avoid recomputing partitions removed by retention mechanisms we will not fill holes in the very beginning of the range
     // If a user fills a new partition in the newer end of the range, then we will never fill any partitions before that range.
     // We instead log a message saying why we won't fill the earliest hole.
