@@ -266,10 +266,11 @@ jobs:
                 shell: /bin/bash -leuxo pipefail
                 command: |
                     export JAVA_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-                    sudo -u nonroot -H -s /bin/bash -c "
+                    export BAZEL_HEADER="x-buildbuddy-api-key=${BuildBuddyAPIKey}"
+                    sudo -E -u nonroot -H -s /bin/bash -c '
                         bazel version && 
-                        bazel build //... --config=main --remote_header='x-buildbuddy-api-key= ${BuildBuddyAPIKey}' && 
-                        bazel test //... --config=main --config=ci --remote_header='x-buildbuddy-api-key= ${BuildBuddyAPIKey}'"
+                        bazel build //... --config=main --remote_header=$BAZEL_HEADER && 
+                        bazel test //... --config=main --config=ci --remote_header=$BAZEL_HEADER'
             - store_test_results:
                 path: bazel-testlogs
             - store_artifacts:
