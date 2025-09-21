@@ -61,6 +61,7 @@ common:buildbuddy --bes_results_url=https://chronon-ai.buildbuddy.io/invocation/
 common:buildbuddy --bes_backend=grpcs://chronon-ai.buildbuddy.io
 common:buildbuddy --remote_cache=grpcs://chronon-ai.buildbuddy.io
 common:buildbuddy --remote_timeout=10m
+common:buildbuddy --action_env=BuildBuddyAPIKey
 
 # BuildBuddy configuration for main branch (Read/Write cache)
 build:main --config=buildbuddy
