@@ -23,7 +23,7 @@ import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro, Source}
+import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro, Source, TimeUnit, Window}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
@@ -505,6 +505,8 @@ object GroupBy {
            incrementalMode: Boolean = false): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
+    val sourceQueryWindow: Option[Window]  = if (incrementalMode) Some(new Window(queryRange.daysBetween, TimeUnit.DAYS)) else groupByConf.maxWindow
+    val backfillQueryRange: PartitionRange = if (incrementalMode) PartitionRange(queryRange.end, queryRange.end)(tableUtils) else queryRange
     val inputDf = groupByConf.sources.toScala
       .map { source =>
         val partitionColumn = tableUtils.getPartitionColumn(source.query)
@@ -513,9 +515,9 @@ object GroupBy {
             groupByConf,
             source,
             groupByConf.getKeyColumns.toScala,
-            queryRange,
+            backfillQueryRange,
             tableUtils,
-            groupByConf.maxWindow,
+            sourceQueryWindow,
             groupByConf.inferredAccuracy,
             partitionColumn = partitionColumn
           ),
@@ -742,8 +744,7 @@ object GroupBy {
                             range: PartitionRange,
                             tableUtils: TableUtils,
                             incrementalOutputTable: String,
-                            incrementalGroupByBackfill: GroupBy,
-                          ): PartitionRange = {
+                          ): (PartitionRange, Seq[api.AggregationPart]) = {
 
     val tableProps: Map[String, String] = Option(groupByConf.metaData.tableProperties)
       .map(_.toScala)
@@ -754,23 +755,28 @@ object GroupBy {
       range.end
     )(tableUtils)
 
-
     logger.info(s"Writing incremental df to $incrementalOutputTable")
-
 
     val partitionRangeHoles: Option[Seq[PartitionRange]] = tableUtils.unfilledRanges(
       incrementalOutputTable,
       incrementalQueryableRange,
     )
 
-    partitionRangeHoles.foreach { holes =>
+    val incrementalGroupByAggParts  = partitionRangeHoles.map { holes =>
       holes.foreach { hole =>
         logger.info(s"Filling hole in incremental table: $hole")
+        val incrementalGroupByBackfill =
+          from(groupByConf, hole, tableUtils, computeDependency = true, incrementalMode = true)
         incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, hole, tableProps)
       }
-    }
 
-    incrementalQueryableRange
+      holes.headOption.map { firstHole =>
+        from(groupByConf, firstHole, tableUtils, computeDependency = true, incrementalMode = true)
+          .flattenedAgg.aggregationParts
+        }.getOrElse(Seq.empty)
+      }.getOrElse(Seq.empty)
+
+    (incrementalQueryableRange, incrementalGroupByAggParts)
   }
 
 
@@ -782,16 +788,11 @@ object GroupBy {
 
     val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
 
-    val incrementalGroupByBackfill =
-      from(groupByConf, range, tableUtils, computeDependency = true, incrementalMode = true)
-
-
-    val incrementalQueryableRange = computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable, incrementalGroupByBackfill)
+    val (incrementalQueryableRange, aggregationParts) = computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable)
 
     val (_, incrementalDf: DataFrame) =  incrementalQueryableRange.scanQueryStringAndDf(null, incrementalOutputTable)
 
-
-    val incrementalAggregations = incrementalGroupByBackfill.flattenedAgg.aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
+    val incrementalAggregations = aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
       val newAgg = agg.deepCopy()
       newAgg.setInputColumn(part.incrementalOutputColumnName)
       newAgg

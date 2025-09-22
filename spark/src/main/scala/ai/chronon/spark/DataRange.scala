@@ -53,6 +53,11 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
     }
   }
 
+  def daysBetween: Int = {
+    if (start == null || end == null) 0
+    else Stream.iterate(start)(tableUtils.partitionSpec.after).takeWhile(_ <= end).size
+  }
+
   def isSingleDay: Boolean = {
     start == end
   }
