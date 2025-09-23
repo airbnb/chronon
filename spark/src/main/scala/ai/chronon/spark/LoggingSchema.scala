@@ -26,8 +26,8 @@ import scala.util.ScalaJavaConversions.MapOps
  * Schema of a published log event. valueCodec includes both base and derived columns.
  */
 case class LoggingSchema(keyCodec: AvroCodec, valueCodec: AvroCodec) {
-  lazy val keyFields: StructType = keyCodec.chrononSchema.asInstanceOf[StructType]
-  lazy val valueFields: StructType = valueCodec.chrononSchema.asInstanceOf[StructType]
+  lazy val keyFields: StructType = keyCodec.chrononSchemaClean.asInstanceOf[StructType]
+  lazy val valueFields: StructType = valueCodec.chrononSchemaClean.asInstanceOf[StructType]
   lazy val keyIndices: Map[StructField, Int] = keyFields.zipWithIndex.toMap
   lazy val valueIndices: Map[StructField, Int] = valueFields.zipWithIndex.toMap
 
