@@ -29,7 +29,12 @@ import scala.util.ScalaJavaConversions.JListOps
 class DataStreamBuilderTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = {
-    System.setSecurityManager(null)
+    try {
+      System.setSecurityManager(null)
+    } catch {
+      case (t: java.lang.SecurityException) if t.getMessage.contains("GoogleTestSecurityManager") =>
+      // Running on Bazel, allow it.
+    }
     val spark = SparkSession
       .builder()
       .appName("DataStreamBuilderTest")

@@ -22,7 +22,7 @@ import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
-import ai.chronon.online.Fetcher.{Request}
+import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.{MetadataStore, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join => _, _}
@@ -31,6 +31,7 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Test
 
 import java.lang
 import java.util.TimeZone
@@ -311,6 +312,7 @@ class ChainingFetcherTest extends TestCase {
     assertEquals(0, diff.count())
   }
 
+  @Test
   def testFetchParentJoin(): Unit = {
     val namespace = "parent_join_fetch"
     val joinConf = generateMutationData(namespace, Accuracy.TEMPORAL)
@@ -318,6 +320,7 @@ class ChainingFetcherTest extends TestCase {
     compareTemporalFetch(joinConf, "2021-04-15", expected, fetcherResponse, "user")
   }
 
+  @Test
   def testFetchChainingDeterministic(): Unit = {
     val namespace = "chaining_fetch"
     val chainingJoinConf = generateChainingJoinData(namespace, Accuracy.TEMPORAL)

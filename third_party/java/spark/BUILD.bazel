@@ -187,18 +187,45 @@ SPARK_3_5_LIBS_PROVIDED = SPARK_LIBS_PROVIDED + [
     ),
 ]
 
-# Spark environment provides jars from installed Spark versions.
-maven_repo_jars = get_jars_for_repo("maven", MAVEN_LIBS_PROVIDED)
+SPARK_LIBS_TEST = [
+    jar(
+        name = "derby",
+        org = "org.apache.derby",
+    ),
+]
 
 java_library(
     name = "spark-libs",
     visibility = ["//visibility:public"],
     exports = select({
-        "//conditions:default": maven_repo_jars + get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
-        "//tools/flags/spark:spark_2_4": maven_repo_jars + get_jars_for_repo("spark_2_4", SPARK_LIBS_PROVIDED),
-        "//tools/flags/spark:spark_3_1": maven_repo_jars + get_jars_for_repo("spark_3_1", SPARK_LIBS_PROVIDED),
-        "//tools/flags/spark:spark_3_2": maven_repo_jars + get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
-        "//tools/flags/spark:spark_3_5": maven_repo_jars + get_jars_for_repo("spark_3_5", SPARK_3_5_LIBS_PROVIDED),
+        "//conditions:default": get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_1": get_jars_for_repo("spark_3_1", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_2": get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_5": get_jars_for_repo("spark_3_5", SPARK_3_5_LIBS_PROVIDED),
+    }),
+)
+
+java_library(
+    name = "spark-test-libs",
+    visibility = ["//visibility:public"],
+    exports = select({
+        "//conditions:default": get_jars_for_repo("spark_3_2", SPARK_LIBS_TEST),
+        "//tools/flags/spark:spark_3_1": get_jars_for_repo("spark_3_1", SPARK_LIBS_TEST),
+        "//tools/flags/spark:spark_3_2": get_jars_for_repo("spark_3_2", SPARK_LIBS_TEST),
+        "//tools/flags/spark:spark_3_5": get_jars_for_repo("spark_3_5", SPARK_LIBS_TEST),
+    }),
+)
+
+# Usually spark provided jars are subset of all jars
+java_library(
+    name = "spark-provided-libs",
+    visibility = ["//visibility:public"],
+    exports = select({
+        "//conditions:default": get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_2_4": get_jars_for_repo("spark_2_4", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_1": get_jars_for_repo("spark_3_1", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_2": get_jars_for_repo("spark_3_2", SPARK_LIBS_PROVIDED),
+        "//tools/flags/spark:spark_3_5": get_jars_for_repo("spark_3_5", SPARK_3_5_LIBS_PROVIDED),
     }),
 )
 

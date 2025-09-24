@@ -27,6 +27,7 @@ import junit.framework.TestCase
 import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
+import org.junit.Test
 
 import java.nio.charset.StandardCharsets
 import java.util.{Base64, TimeZone}
@@ -34,31 +35,6 @@ import scala.collection.Seq
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps}
-
-case class GroupByTestSuite(
-    name: String,
-    groupByConf: GroupBy,
-    groupByData: DataFrame
-)
-
-case class JoinTestSuite(
-    joinConf: Join,
-    groupBys: Seq[GroupByTestSuite],
-    fetchExpectations: (Map[String, AnyRef], Map[String, AnyRef])
-)
-
-object JoinTestSuite {
-
-  def apply(joinConf: Join, groupBys: Seq[GroupByTestSuite]): JoinTestSuite = {
-    val suite = JoinTestSuite(joinConf, groupBys)
-    assert(
-      groupBys.map(_.groupByConf.metaData.name) ==
-        joinConf.joinParts.toScala
-          .map(_.groupBy.metaData.name)
-    )
-    suite
-  }
-}
 
 class SchemaEvolutionTest extends TestCase {
 
@@ -181,7 +157,7 @@ class SchemaEvolutionTest extends TestCase {
 
     JoinTestSuite(
       joinConf,
-      Seq(viewsGroupBy),
+      scala.collection.immutable.Seq(viewsGroupBy),
       (
         Map("listing" -> 1L.asInstanceOf[AnyRef]),
         Map(
@@ -205,7 +181,7 @@ class SchemaEvolutionTest extends TestCase {
     )
     JoinTestSuite(
       joinConf,
-      Seq(viewsGroupBy, attributesGroupBy),
+      scala.collection.immutable.Seq(viewsGroupBy, attributesGroupBy),
       (
         Map("listing" -> 1L.asInstanceOf[AnyRef]),
         Map(
@@ -301,6 +277,7 @@ class SchemaEvolutionTest extends TestCase {
     flattenedDf
   }
 
+  @Test
   private def testSchemaEvolution(namespace: String, joinSuiteV1: JoinTestSuite, joinSuiteV2: JoinTestSuite): Unit = {
     assert(joinSuiteV1.joinConf.metaData.name == joinSuiteV2.joinConf.metaData.name,
            message = "Schema evolution can only be tested on changes of the SAME join")
@@ -428,11 +405,13 @@ class SchemaEvolutionTest extends TestCase {
     assertTrue(removedFeatures.forall(flattenedDf34.schema.fieldNames.contains(_)))
   }
 
+  @Test
   def testAddFeatures(): Unit = {
     val namespace = "add_features"
     testSchemaEvolution(namespace, createV1Join(namespace), createV2Join(namespace))
   }
 
+  @Test
   def testRemoveFeatures(): Unit = {
     val namespace = "remove_features"
     testSchemaEvolution(namespace, createV2Join(namespace), createV1Join(namespace))

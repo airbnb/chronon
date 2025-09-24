@@ -31,7 +31,10 @@ cs
 *.venv
 # Documentation builds
 docs/build/
-
+thrift_build/*
+project/*
+.metals/*
+.claude/*
 # Python distribution and packaging
 api/py/dist/
 api/py/eggs/

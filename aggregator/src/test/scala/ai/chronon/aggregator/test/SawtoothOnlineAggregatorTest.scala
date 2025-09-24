@@ -23,6 +23,7 @@ import ai.chronon.api._
 import com.google.gson.Gson
 import junit.framework.TestCase
 import org.junit.Assert.assertEquals
+import org.junit.Test
 
 import java.time.{Instant, ZoneOffset}
 import java.time.format.DateTimeFormatter
@@ -30,6 +31,7 @@ import java.util.Locale
 
 class SawtoothOnlineAggregatorTest extends TestCase {
 
+  @Test
   def testConsistency(): Unit = {
     val queryEndTs = TsUtils.round(System.currentTimeMillis(), WindowUtils.Day.millis)
     val batchEndTs = queryEndTs - WindowUtils.Day.millis

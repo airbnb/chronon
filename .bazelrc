@@ -1,3 +1,5 @@
+try-import %workspace%/.maven.bazelrc
+
 ## Disable remote cache completely when --config=local is passed
 build:local --remote_cache=
 
@@ -19,7 +21,7 @@ common:spark_3.1 --define spark_version=3.1
 common:spark_3.2 --define spark_version=3.2
 common:spark_3.5 --define spark_version=3.5
 # Default Spark version
-common --define spark_version=3.1
+common --define spark_version=3.2
 
 # Flink versions
 common:flink_1.16 --define flink_version=1.16
@@ -47,3 +49,23 @@ build:java_21 --java_language_version=21 --java_runtime_version=remotejdk_21
 
 # Use Java 8 as default for Bazel builds
 build --java_language_version=8 --java_runtime_version=remotejdk_8
+
+# CircleCI-specific configurations for test execution
+test:ci --test_output=streamed
+test:ci --test_summary=detailed
+test:ci --local_ram_resources=HOST_RAM*0.7
+test:ci --local_cpu_resources=HOST_CPUS*0.7
+
+# BuildBuddy shared configuration
+common:buildbuddy --bes_results_url=https://chronon-ai.buildbuddy.io/invocation/
+common:buildbuddy --bes_backend=grpcs://chronon-ai.buildbuddy.io
+common:buildbuddy --remote_cache=grpcs://chronon-ai.buildbuddy.io
+common:buildbuddy --remote_timeout=10m
+common:buildbuddy --action_env=BuildBuddyAPIKey
+
+# BuildBuddy configuration for main branch (Read/Write cache)
+build:main --config=buildbuddy
+
+# BuildBuddy configuration for PR builds (Read-Only cache)
+build:pr --config=buildbuddy
+build:pr --noremote_upload_local_results
