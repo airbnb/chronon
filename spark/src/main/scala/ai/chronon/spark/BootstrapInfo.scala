@@ -91,26 +91,7 @@ object BootstrapInfo {
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
 
-        if (tableUtils.chrononAvroSchemaValidation) {
-          // Validate that the baseDf schema is compatible with AvroSchema acceptable types
-          // This is required for online serving to work
-          try {
-            gb.keySchema.toAvroSchema("Key")
-            gb.preAggSchema.toAvroSchema("Value")
-          } catch {
-            case e: UnsupportedOperationException =>
-              throw new RuntimeException(
-                "In order to enable online serving, " +
-                  "please make sure that the data types of your groupBy column types " +
-                  "are compatible with AvroSchema acceptable types: " +
-                  "You should cast the current data types to Avro compatible data types " +
-                  "- e.g. tinyint is not supported in Avro, if you have a tinyint col1, " +
-                  "you can CAST(col1 AS INT). If your use case is offline only, " +
-                  "you can set chrononAvroSchemaValidation to false to disable Avro schema validation if you don't need online serving. \n"
-                  + e.getMessage,
-                e)
-          }
-        }
+        Analyzer.validateAvroCompatibility(tableUtils, gb, part.groupBy)
 
         val keyAndPartitionFields =
           gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
