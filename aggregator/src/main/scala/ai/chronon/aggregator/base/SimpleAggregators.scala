@@ -28,8 +28,9 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, 
 import java.security.MessageDigest
 import java.util
 import scala.collection.mutable
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.IteratorOps
 import scala.reflect.ClassTag
+import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
   private val numericImpl = implicitly[Numeric[I]]
@@ -450,7 +451,7 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
     val sketch = new ItemsSketch[T](sketchSize)
     val sketchType = implicitly[FrequentItemsFriendly[T]].sketchType
 
-    values.asScala.foreach({ case (k, v) => sketch.update(k, v) })
+    values.toScala.foreach({ case (k, v) => sketch.update(k, v) })
 
     ItemsSketchIR(sketch, sketchType)
   }
@@ -568,8 +569,8 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
   private def combine(hist1: util.Map[T, Long], hist2: util.Map[T, Long]): ApproxHistogramIr[T] = {
     val hist = new util.HashMap[T, Long]()
 
-    hist1.asScala.foreach({ case (k, v) => increment(k, v, hist) })
-    hist2.asScala.foreach({ case (k, v) => increment(k, v, hist) })
+    hist1.toScala.foreach({ case (k, v) => increment(k, v, hist) })
+    hist2.toScala.foreach({ case (k, v) => increment(k, v, hist) })
 
     toIr(hist)
   }
@@ -578,7 +579,7 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
     ApproxHistogramIr(isApprox = true, sketch = Some(sketch), histogram = None)
   }
   private def combine(hist: util.Map[T, Long], sketch: ItemsSketchIR[T]): ApproxHistogramIr[T] = {
-    hist.asScala.foreach({ case (k, v) => sketch.sketch.update(k, v) })
+    hist.toScala.foreach({ case (k, v) => sketch.sketch.update(k, v) })
     ApproxHistogramIr(isApprox = true, sketch = Some(sketch), histogram = None)
   }
 
@@ -595,7 +596,7 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
 
   private def toOutputMap(map: util.Map[T, Long]): util.Map[String, Long] = {
     val result = new util.HashMap[String, Long](map.size())
-    map.asScala.foreach({ case (k, v) => result.put(String.valueOf(k), v) })
+    map.toScala.foreach({ case (k, v) => result.put(String.valueOf(k), v) })
     result
   }
 }
@@ -658,7 +659,7 @@ class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggre
 
     ir2
       .iterator()
-      .asScala
+      .toScala
       .foreach(v =>
         if (ir1.size() < k) {
           ir1.add(v)
@@ -961,11 +962,11 @@ trait MomentAggregator extends SimpleAggregator[Double, MomentsIR, Double] {
 
   override def normalize(ir: MomentsIR): util.ArrayList[Double] = {
     val values = List(ir.n, ir.m1, ir.m2, ir.m3, ir.m4)
-    new util.ArrayList[Double](values.asJava)
+    new util.ArrayList[Double](values.toJava)
   }
 
   override def denormalize(normalized: Any): MomentsIR = {
-    val values = normalized.asInstanceOf[util.ArrayList[Double]].asScala
+    val values = normalized.asInstanceOf[util.ArrayList[Double]].toScala
     MomentsIR(values(0), values(1), values(2), values(3), values(4))
   }
 

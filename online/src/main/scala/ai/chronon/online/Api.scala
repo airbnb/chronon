@@ -27,7 +27,7 @@ import java.util.function.Consumer
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.ListOps
 import scala.util.{Failure, Success, Try}
 
 object KVStore {
@@ -285,6 +285,6 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     }
     joinOps
       .map(_.join)
-      .foreach(join => externalRegistry.addHandlersByFactory(Option(join.getOnlineExternalParts).map(_.asScala.toSeq)))
+      .foreach(join => externalRegistry.addHandlersByFactory(Option(join.getOnlineExternalParts).map(_.toScala.toSeq)))
   }
 }

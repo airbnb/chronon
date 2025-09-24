@@ -5,7 +5,7 @@ import junit.framework.TestCase
 import org.junit.Assert._
 
 import java.util
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.{JMapOps, MapOps}
 
 class ApproxHistogramTest extends TestCase {
   def testHistogram(): Unit = {
@@ -143,10 +143,10 @@ class ApproxHistogramTest extends TestCase {
     assertTrue(ir.sketch.isDefined)
 
     val normalized = approxHistogram.denormalize(approxHistogram.normalize(ir))
-    assertEquals(expected, approxHistogram.finalize(normalized).asScala)
+    assertEquals(expected, approxHistogram.finalize(normalized).toScala)
   }
 
-  def toHashMap[T](map: Map[T, Long]): util.HashMap[T, Long] = new util.HashMap[T, Long](map.asJava)
+  def toHashMap[T](map: Map[T, Long]): util.HashMap[T, Long] = new util.HashMap[T, Long](map.toJava)
 
   def makeIr[T](agg: ApproxHistogram[T], counts: Map[T, Long]): ApproxHistogramIr[T] = {
     val values = counts.toSeq.sortBy(_._2)

@@ -11,7 +11,7 @@ import org.apache.flink.configuration.Configuration
 import org.apache.flink.metrics.Counter
 import org.apache.flink.util.Collector
 
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.ListOps
 
 /**
   * Base class for the Avro conversion Flink operator.
@@ -63,7 +63,7 @@ sealed abstract class BaseAvroCodecFn[IN, OUT] extends RichFlatMapFunction[IN, O
   }
 
   private lazy val getKVColumns: (Array[String], Array[String]) = {
-    val keyColumns = groupByServingInfoParsed.groupBy.keyColumns.asScala.toArray
+    val keyColumns = groupByServingInfoParsed.groupBy.keyColumns.toScala.toArray
     val (additionalColumns, _) = groupByServingInfoParsed.groupBy.dataModel match {
       case DataModel.Events =>
         Seq.empty[String] -> timeColumn

@@ -1,7 +1,5 @@
 package scala.util
 
-import java.util
-import scala.collection.immutable.ListMap
 import scala.collection.mutable
 import scala.collection.parallel.ParSeq
 import scala.jdk.CollectionConverters._
@@ -74,6 +72,14 @@ object ScalaJavaConversions {
         null
       } else {
         map.asScala.toMap
+      }
+    }
+
+    def toScalaMutable: mutable.Map[K, V] = {
+      if (map == null) {
+        null
+      } else {
+        map.asScala
       }
     }
   }

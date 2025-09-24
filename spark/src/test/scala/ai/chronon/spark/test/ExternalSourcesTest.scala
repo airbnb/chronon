@@ -26,7 +26,7 @@ import java.util.Base64
 import scala.collection.mutable
 import scala.concurrent.Await
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.JMapOps
 
 class ExternalSourcesTest {
   @Test
@@ -172,8 +172,8 @@ class ExternalSourcesTest {
     // Create factory configuration
     val factoryConfig = new ExternalSourceFactoryConfig()
     factoryConfig.setFactoryName("test-factory")
-    factoryConfig.setFactoryParams(Map("increment" -> "2").asJava)
-    
+    factoryConfig.setFactoryParams(Map("increment" -> "2").toJava)
+
     // Create external source with factory configuration
     val factoryBasedSource = Builders.ExternalSource(
       metadata = Builders.MetaData(
@@ -186,8 +186,7 @@ class ExternalSourcesTest {
 
     val namespace = "factory_test"
     val join = Builders.Join(
-      left = Builders.Source.events(Builders.Query(selects = Map("number" -> "number")),
-                                    table = "non_existent_table"),
+      left = Builders.Source.events(Builders.Query(selects = Map("number" -> "number")), table = "non_existent_table"),
       externalParts = Seq(
         Builders.ExternalPart(
           factoryBasedSource,
@@ -200,31 +199,30 @@ class ExternalSourcesTest {
     // Setup MockApi with factory registration
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("factory_test")
     val mockApi = new MockApi(kvStoreFunc, "factory_test")
-    
+
     // Register a test factory that creates handlers dynamically
     mockApi.externalRegistry.addFactory("test-factory", new TestExternalSourceFactory())
-    
+
     val fetcher = mockApi.buildFetcher(true)
     fetcher.kvStore.create(ChrononMetadataKey)
     fetcher.putJoinConf(join)
 
     // Create test requests
-    val requests = (5 until 8).map(x =>
-      Request(join.metaData.name, Map("number" -> new Integer(x))))
-    
+    val requests = (5 until 8).map(x => Request(join.metaData.name, Map("number" -> new Integer(x))))
+
     val responsesF = fetcher.fetchJoin(requests)
     val responses = Await.result(responsesF, Duration(10, SECONDS))
 
     // Verify responses
     val numbers = mutable.HashSet.empty[Int]
     val expectedKeys = Set("ext_factory_factory_plus_two_number")
-    
+
     responses.map(_.values).foreach { m =>
       assertTrue(m.isSuccess)
       assertEquals(expectedKeys, m.get.keysIterator.toSet)
       numbers.add(m.get("ext_factory_factory_plus_two_number").asInstanceOf[Int])
     }
-    
+
     // Verify that factory-created handler correctly incremented numbers (5->7, 6->8, 7->9)
     assertEquals(numbers, (7 until 10).toSet)
   }
@@ -234,8 +232,9 @@ class ExternalSourcesTest {
     import ai.chronon.online.Fetcher.{Request, Response}
     import scala.concurrent.Future
     import scala.util.{Success, Try}
-    
-    override def createExternalSourceHandler(externalSource: ai.chronon.api.ExternalSource): ai.chronon.online.ExternalSourceHandler = {
+
+    override def createExternalSourceHandler(
+        externalSource: ai.chronon.api.ExternalSource): ai.chronon.online.ExternalSourceHandler = {
       new ai.chronon.online.ExternalSourceHandler {
         override def fetch(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
           val increment = externalSource.getFactoryConfig.getFactoryParams.get("increment").toInt
