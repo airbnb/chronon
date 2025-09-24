@@ -21,7 +21,7 @@ import junit.framework.TestCase
 import org.junit.Assert._
 
 import java.util
-import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.ListOps
 
 class MinHeapTest extends TestCase {
   def testInserts(): Unit = {
@@ -35,7 +35,7 @@ class MinHeapTest extends TestCase {
     mh.insert(arr1, 9)
     mh.insert(arr1, 10)
     mh.insert(arr1, -1)
-    assertArrayEquals(arr1.asScala.toArray, Array(9, 4, 5, -1))
+    assertArrayEquals(arr1.toScala.toArray, Array(9, 4, 5, -1))
 
     val arr2 = make_container
     mh.insert(arr2, 5)
@@ -44,9 +44,9 @@ class MinHeapTest extends TestCase {
     mh.insert(arr2, 10)
     mh.insert(arr2, 1)
     mh.insert(arr2, 2)
-    assertArrayEquals(arr2.asScala.toArray, Array(5, 4, 2, 1))
+    assertArrayEquals(arr2.toScala.toArray, Array(5, 4, 2, 1))
 
     mh.merge(arr1, arr2)
-    assertArrayEquals(arr1.asScala.toArray, Array(4, 2, 1, -1))
+    assertArrayEquals(arr1.toScala.toArray, Array(4, 2, 1, -1))
   }
 }

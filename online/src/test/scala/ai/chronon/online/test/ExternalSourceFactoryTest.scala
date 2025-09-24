@@ -35,7 +35,7 @@ import org.junit.Test
 import org.mockito.Mockito.{mock, when}
 import org.scalatest.Assertions.intercept
 
-import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.JListOps
 import scala.util.{Failure, Success, Try}
 
 class ExternalSourceFactoryTest {
@@ -133,7 +133,7 @@ class ExternalSourceFactoryTest {
     }
 
     when(externalPart.getSource).thenReturn(externalSource)
-    when(join.getOnlineExternalParts).thenReturn(Seq(externalPart).asJava)
+    when(join.getOnlineExternalParts).thenReturn(Seq(externalPart).toJava)
 
     join
   }
@@ -241,7 +241,7 @@ class ExternalSourceFactoryTest {
     when(externalSource.getFactoryConfig).thenReturn(factoryConfig)
     when(factoryConfig.getFactoryName).thenReturn(null) // null factory name
     when(externalPart.getSource).thenReturn(externalSource)
-    when(join.getOnlineExternalParts).thenReturn(Seq(externalPart).asJava)
+    when(join.getOnlineExternalParts).thenReturn(Seq(externalPart).toJava)
 
     val joinOps = createMockJoinOps(join)
     api.setMockJoinConfig("test-join", joinOps)

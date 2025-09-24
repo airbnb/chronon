@@ -28,9 +28,8 @@ import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, 
 import java.security.MessageDigest
 import java.util
 import scala.collection.mutable
-import scala.util.ScalaJavaConversions.IteratorOps
 import scala.reflect.ClassTag
-import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
+import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, ListOps, MapOps}
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
   private val numericImpl = implicitly[Numeric[I]]

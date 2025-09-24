@@ -22,7 +22,6 @@ import ai.chronon.api._
 import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.util
-import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.util.ScalaJavaConversions.IteratorOps
 
 abstract class ColumnAggregator extends Serializable {
@@ -88,7 +87,7 @@ class VectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
     if (inputVal == null) return null
     val anyIterator = inputVal match {
       case inputSeq: collection.Seq[Any]  => inputSeq.iterator
-      case inputList: util.ArrayList[Any] => inputList.iterator().asScala
+      case inputList: util.ArrayList[Any] => inputList.iterator().toScala
     }
     anyIterator.filter { _ != null }.map { toTypedInput }
   }

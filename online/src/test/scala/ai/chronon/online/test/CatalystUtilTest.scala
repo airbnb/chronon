@@ -23,7 +23,7 @@ import org.junit.Assert.{assertArrayEquals, assertEquals, assertTrue}
 import org.junit.Test
 
 import java.util
-import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.ListOps
 
 trait CatalystUtilTestSparkSQLStructs {
 
@@ -661,6 +661,6 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertEquals(3, result.get.size)
     assertEquals(1000L, result.get("ts"))
     assertEquals("test_key_1", result.get("key"))
-    assertArrayEquals(Array(1L, 2L), result.get("ids").asInstanceOf[java.util.List[Long]].asScala.toArray)
+    assertArrayEquals(Array(1L, 2L), result.get("ids").asInstanceOf[java.util.List[Long]].toScala.toArray)
   }
 }

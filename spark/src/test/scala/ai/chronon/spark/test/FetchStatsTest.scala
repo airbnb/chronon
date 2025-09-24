@@ -36,8 +36,8 @@ import org.apache.spark.sql.SparkSession
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.collection.JavaConverters._
 import scala.concurrent.{Await, ExecutionContext}
+import scala.util.ScalaJavaConversions.ListOps
 
 /**
   * For testing of the consumption side of Stats end to end.
@@ -137,7 +137,7 @@ class FetchStatsTest extends TestCase {
     val metrics = consistencyJob.buildConsistencyMetrics()
     OnlineUtils.serveConsistency(tableUtils, inMemoryKvStore, today, joinConf)
     OnlineUtils.serveLogStats(tableUtils, inMemoryKvStore, yesterday, joinConf)
-    joinConf.joinParts.asScala.foreach(jp =>
+    joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, yesterday, jp.groupBy))
 
     // Part 2: Fetch. Build requests, and fetch.
