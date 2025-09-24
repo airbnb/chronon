@@ -33,7 +33,6 @@ import org.scalatest.Assertions.intercept
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.Row
 
-import scala.collection.JavaConverters._
 import scala.util.Random
 import scala.util.ScalaJavaConversions.ListOps
 import scala.util.Try

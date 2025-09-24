@@ -40,10 +40,10 @@ import org.apache.avro.generic.GenericRecord
 import org.json4s.BuildInfo
 
 import java.util.function.Consumer
-import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
 import scala.util.{Failure, Random, Success, Try}
 
 object Fetcher {
@@ -179,7 +179,7 @@ class Fetcher(val kvStore: KVStore,
     Option(joinConf.join.onlineExternalParts).foreach { externals =>
       externals
         .iterator()
-        .asScala
+        .toScala
         .foreach { part =>
           val source = part.source
 
@@ -598,7 +598,7 @@ class Fetcher(val kvStore: KVStore,
           getJoinConf.refresh(joinRequest.name)
         }
         val parts = joinConf.get.join.onlineExternalParts // cheap since it is cached, valid since step-1
-        parts.iterator().asScala.map { part =>
+        parts.iterator().toScala.map { part =>
           val externalRequest = Try(part.applyMapping(joinRequest.keys)) match {
             case Success(mappedKeys)                     => Left(Request(part.source.metadata.name, mappedKeys))
             case Failure(exception: KeyMissingException) => Right(exception)
@@ -727,11 +727,11 @@ class Fetcher(val kvStore: KVStore,
                   Map(
                     "millis" -> response.millis.asInstanceOf[AnyRef],
                     "value" -> StatsGenerator.SeriesFinalizer(key, v)
-                  ).asJava
+                  ).toJava
             }
         }
         .groupBy(_._1)
-        .mapValues(_.map(_._2).toList.asJava)
+        .mapValues(_.map(_._2).toList.toJava)
         .toMap
       SeriesStatsResponse(joinRequest, Try(convertedValue))
     }
@@ -761,7 +761,7 @@ class Fetcher(val kvStore: KVStore,
                 key -> Map(
                   "millis" -> curr.millis.asInstanceOf[AnyRef],
                   "value" -> StatsGenerator.PSIKllSketch(previousValue, currentValue)
-                ).asJava
+                ).toJava
               }
               .filter(_._2.get("value") != None)
               .toMap
@@ -769,7 +769,7 @@ class Fetcher(val kvStore: KVStore,
         .toSeq
         .flatMap(_.toSeq)
         .groupBy(_._1)
-        .mapValues(_.map(_._2).toList.asJava)
+        .mapValues(_.map(_._2).toList.toJava)
         .toMap
       SeriesStatsResponse(joinRequest, Try(driftMap))
     }

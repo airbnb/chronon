@@ -30,7 +30,6 @@ import java.util.regex.Pattern
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
-import scala.collection.JavaConverters._
 
 object Extensions {
 

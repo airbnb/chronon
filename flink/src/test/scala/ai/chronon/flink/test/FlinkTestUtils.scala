@@ -20,7 +20,7 @@ import java.time.Duration
 import java.util
 import java.util.Collections
 import scala.concurrent.{ExecutionContext, ExecutionContextExecutor, Future}
-import scala.jdk.CollectionConverters.asScalaBufferConverter
+import scala.util.ScalaJavaConversions.ListOps
 
 case class E2ETestEvent(id: String, int_val: Int, double_val: Double, created: Long)
 
@@ -82,7 +82,7 @@ object FlinkTestUtils {
     // Set key avro schema for groupByServingInfo
     groupByServingInfo.setKeyAvroSchema(
       StructType(
-        groupBy.keyColumns.asScala.map { keyCol =>
+        groupBy.keyColumns.toScala.map { keyCol =>
           val keyColStructType = outputSchema.fields.find(field => field.name == keyCol)
           keyColStructType match {
             case Some(col) => col
@@ -95,7 +95,7 @@ object FlinkTestUtils {
     )
 
     // Set value avro schema for groupByServingInfo
-    val aggInputColNames = groupBy.aggregations.asScala.map(_.inputColumn).toList
+    val aggInputColNames = groupBy.aggregations.toScala.map(_.inputColumn).toList
     groupByServingInfo.setSelectedAvroSchema(
       StructType(outputSchema.fields.filter(field => aggInputColNames.contains(field.name)))
         .toAvroSchema("Value")

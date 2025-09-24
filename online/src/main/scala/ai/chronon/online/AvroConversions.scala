@@ -24,8 +24,8 @@ import org.apache.avro.util.Utf8
 
 import java.nio.ByteBuffer
 import java.util
-import scala.collection.JavaConverters._
 import scala.collection.{AbstractIterator, mutable}
+import scala.util.ScalaJavaConversions.{JListOps, ListOps}
 
 object AvroConversions {
 
@@ -43,7 +43,7 @@ object AvroConversions {
     schema.getType match {
       case Schema.Type.RECORD =>
         StructType(schema.getName,
-                   schema.getFields.asScala.toArray.map { field =>
+                   schema.getFields.toScala.toArray.map { field =>
                      StructField(field.name(), toChrononSchema(field.schema()))
                    })
       case Schema.Type.ARRAY   => ListType(toChrononSchema(schema.getElementType))
@@ -92,7 +92,7 @@ object AvroConversions {
                 defaultValue)
             }
             .toList
-            .asJava
+            .toJava
         )
       case ListType(elementType) => Schema.createArray(fromChrononSchema(elementType, nameSet))
       case MapType(keyType, valueType) => {

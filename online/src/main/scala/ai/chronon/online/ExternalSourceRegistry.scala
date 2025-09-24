@@ -22,7 +22,7 @@ import ai.chronon.online.Fetcher.{Request, Response}
 import java.util.concurrent.ConcurrentHashMap
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.MapOps
 import scala.util.{Failure, Success}
 
 // users can simply register external endpoints with a lambda that can return the future of a response given keys
@@ -37,13 +37,13 @@ class ExternalSourceRegistry extends Serializable {
   }
 
   val handlerMap: mutable.Map[String, ExternalSourceHandler] = {
-    val result = new ConcurrentHashMap[String, ExternalSourceHandler]().asScala
+    val result = new ConcurrentHashMap[String, ExternalSourceHandler]().toScalaMutable
     result.put(Constants.ContextualSourceName, new ContextualHandler())
     result
   }
 
   val handlerFactoryMap: mutable.Map[String, ExternalSourceFactory] = {
-    val result = new ConcurrentHashMap[String, ExternalSourceFactory]().asScala
+    val result = new ConcurrentHashMap[String, ExternalSourceFactory]().toScalaMutable
     result
   }
 

@@ -839,14 +839,13 @@ class AnalyzerTest {
     )
 
     // Should throw RuntimeException due to ShortType in schema
-    val analyzer = new Analyzer(
-      tableUtilsWithValidation,
-      tableGroupBy,
-      "2025-09-01",
-      today,
-      enableHitter = false,
-      skipTimestampCheck = true,
-      validateTablePermission = false)
+    val analyzer = new Analyzer(tableUtilsWithValidation,
+                                tableGroupBy,
+                                "2025-09-01",
+                                today,
+                                enableHitter = false,
+                                skipTimestampCheck = true,
+                                validateTablePermission = false)
     analyzer.analyzeGroupBy(tableGroupBy)
   }
 
@@ -899,14 +898,13 @@ class AnalyzerTest {
     )
 
     // Because online is false, this should pass without exception
-    val analyzer = new Analyzer(
-      tableUtilsWithValidation,
-      tableGroupBy,
-      "2025-09-01",
-      today,
-      enableHitter = false,
-      skipTimestampCheck = true,
-      validateTablePermission = false)
+    val analyzer = new Analyzer(tableUtilsWithValidation,
+                                tableGroupBy,
+                                "2025-09-01",
+                                today,
+                                enableHitter = false,
+                                skipTimestampCheck = true,
+                                validateTablePermission = false)
     analyzer.analyzeGroupBy(tableGroupBy)
   }
 

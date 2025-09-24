@@ -863,10 +863,10 @@ class GroupByTest {
     val testDatabase = s"staging_query_view_test_${Random.alphanumeric.take(6).mkString}"
     tableUtils.createDatabase(testDatabase)
 
-    // Create source data table with partitions  
+    // Create source data table with partitions
     val sourceSchema = List(
       Column("user", StringType, 20),
-      Column("item", StringType, 50), 
+      Column("item", StringType, 50),
       Column("time_spent_ms", LongType, 5000),
       Column("price", DoubleType, 100)
     )
@@ -889,7 +889,7 @@ class GroupByTest {
     stagingQueryJob.createStagingQueryView()
 
     val viewTable = s"$testDatabase.test_staging_view"
-    
+
     // Now create a GroupBy that uses the staging query view as its source
     val source = Builders.Source.events(
       table = viewTable,
@@ -898,12 +898,12 @@ class GroupByTest {
 
     val aggregations = Seq(
       Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
-      Builders.Aggregation(operation = Operation.AVERAGE, 
-                          inputColumn = "price",
-                          windows = Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(operation = Operation.AVERAGE,
+                           inputColumn = "price",
+                           windows = Seq(new Window(7, TimeUnit.DAYS))),
       Builders.Aggregation(operation = Operation.MAX,
-                          inputColumn = "time_spent_ms", 
-                          windows = Seq(new Window(30, TimeUnit.DAYS)))
+                           inputColumn = "time_spent_ms",
+                           windows = Seq(new Window(30, TimeUnit.DAYS)))
     )
 
     val groupByConf = Builders.GroupBy(

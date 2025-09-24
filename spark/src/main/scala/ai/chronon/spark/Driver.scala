@@ -42,13 +42,13 @@ import org.slf4j.LoggerFactory
 import java.io.{File, IOException}
 import java.net.URI
 import java.nio.file.{Files, Paths}
-import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, Future}
 import scala.io.Source
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
 
 // useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
@@ -799,13 +799,13 @@ object Driver {
       require(!args.confPath.isEmpty || !args.name.isEmpty, "--conf-path or --name should be specified!")
       val objectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
       def readMap: String => Map[String, AnyRef] = { json =>
-        objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
+        objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).toScala.toMap
       }
       def readMapList: String => Seq[Map[String, AnyRef]] = { jsonList =>
         objectMapper
           .readValue(jsonList, classOf[java.util.List[java.util.Map[String, AnyRef]]])
-          .asScala
-          .map(_.asScala.toMap)
+          .toScala
+          .map(_.toScala.toMap)
           .toSeq
       }
       val keyMapList =
