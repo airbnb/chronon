@@ -217,7 +217,8 @@ case class AvroSchemaTraverser(currentNode: Schema) extends SchemaTraverser[Sche
 
   override def getField(field: StructField): SchemaTraverser[Schema] = {
     copy(
-      unboxUnion(Try(currentNode.getField(field.name).schema()).getOrElse(cleanSchema(field.name)))
+      unboxUnion(
+        Try(currentNode.getField(field.name).schema()).getOrElse(cleanSchema(AvroConversions.cleanSuffix(field.name))))
     )
   }
 

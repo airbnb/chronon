@@ -176,15 +176,24 @@ class SchemaEvolutionTest extends TestCase {
       "struct_schema",
       Array(
         StructField("id", LongType),
-        StructField(name, ListType(StructType(name = "s", fields = Array(StructField("i", LongType))))),
+        StructField(
+          name,
+          StructType(
+            name = "struct_schema_2",
+            fields =
+              Array(StructField("id", LongType),
+                    StructField("context",
+                                StructType(name = "struct_schema_3", fields = Array(StructField("id", LongType)))))
+          )
+        ),
         StructField("ds", StringType)
       )
     )
     val rows = List(
-      Row(1L, Array(Row(100L)), "2022-10-01"),
-      Row(1L, Array(Row(200L)), "2022-10-02"),
-      Row(2L, Array(Row(300L)), "2022-10-01"),
-      Row(2L, Array(Row(400L)), "2022-10-02")
+      Row(1L, Row(100L, Row(1000L)), "2022-10-01"),
+      Row(1L, Row(200L, Row(2000L)), "2022-10-02"),
+      Row(2L, Row(300L, Row(3000L)), "2022-10-01"),
+      Row(2L, Row(400L, Row(4000L)), "2022-10-02")
     )
     val source = Builders.Source.entities(
       query = Builders.Query(
@@ -278,8 +287,8 @@ class SchemaEvolutionTest extends TestCase {
         Map("id" -> 1L.asInstanceOf[AnyRef]),
         Map(
           // Unused
-          "unit_test_list_struct_a_list_struct_a" -> Seq(Array(200L)),
-          "unit_test_list_struct_b_list_struct_b" -> Seq(Array(200L))
+          "unit_test_list_struct_a_list_struct_a" -> Array(200L, Array(2000L)),
+          "unit_test_list_struct_b_list_struct_b" -> Array(200L, Array(2000L))
         )
       )
     )
