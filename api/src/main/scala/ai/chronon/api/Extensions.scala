@@ -686,6 +686,83 @@ object Extensions {
     lazy val valueFields: Array[StructField] = schemaFields(externalSource.valueSchema)
 
     def isContextualSource: Boolean = externalSource.metadata.name == Constants.ContextualSourceName
+
+    /**
+     * Validates schema compatibility between ExternalSource and its offlineGroupBy.
+     * This ensures that online and offline serving will produce consistent results.
+     *
+     * @return Sequence of error messages, empty if no errors
+     */
+    def validateOfflineGroupBy(): Seq[String] = Option(externalSource.offlineGroupBy)
+      .map(_ => validateKeySchemaCompatibility() ++ validateValueSchemaCompatibility())
+      .getOrElse(Seq.empty)
+
+    private def validateKeySchemaCompatibility(): Seq[String] = {
+      val errors = scala.collection.mutable.ListBuffer[String]()
+
+      if (externalSource.keySchema == null) {
+        errors += s"ExternalSource ${externalSource.metadata.name} keySchema cannot be null when offlineGroupBy is specified"
+        return errors
+      }
+
+      if (externalSource.offlineGroupBy.keyColumns == null || externalSource.offlineGroupBy.keyColumns.isEmpty) {
+        errors += s"ExternalSource ${externalSource.metadata.name} offlineGroupBy keyColumns cannot be null or empty"
+        return errors
+      }
+
+      val externalKeyFields = keyFields
+      val groupByKeyColumns = externalSource.offlineGroupBy.keyColumns.toScala.toSet
+
+      // Extract field names from external source key schema
+      val externalKeyNames = externalKeyFields.map(_.name).toSet
+
+      // Validate that GroupBy has key columns that match ExternalSource key schema
+      val missingKeys = externalKeyNames -- groupByKeyColumns
+      val extraKeys = groupByKeyColumns -- externalKeyNames
+
+      if (missingKeys.nonEmpty) {
+        errors += s"ExternalSource ${externalSource.metadata.name} key schema contains columns [${missingKeys.mkString(", ")}] " +
+          s"that are not present in offlineGroupBy keyColumns [${groupByKeyColumns.mkString(", ")}]. " +
+          s"All ExternalSource key columns must be present in the GroupBy key columns."
+      }
+
+      if (extraKeys.nonEmpty) {
+        errors += s"ExternalSource ${externalSource.metadata.name} offlineGroupBy keyColumns contain [${extraKeys.mkString(", ")}] " +
+          s"that are not present in ExternalSource keySchema [${externalKeyNames.mkString(", ")}]. " +
+          s"GroupBy key columns cannot contain keys not defined in ExternalSource keySchema."
+      }
+
+      errors
+    }
+
+    private def validateValueSchemaCompatibility(): Seq[String] = {
+      val errors = scala.collection.mutable.ListBuffer[String]()
+
+      if (externalSource.valueSchema == null) {
+        errors += s"ExternalSource ${externalSource.metadata.name} valueSchema cannot be null when offlineGroupBy is specified"
+        return errors
+      }
+
+      val externalValueFields = valueFields
+      val externalValueNames = externalValueFields.map(_.name).toSet
+
+      // For GroupBy value schema, we need to derive the output schema from aggregations
+      val groupByValueColumns = externalSource.offlineGroupBy.valueColumns.toSet
+
+      // Check that ExternalSource value schema fields are compatible with GroupBy output
+      val missingValueColumns = externalValueNames -- groupByValueColumns
+
+      if (missingValueColumns.nonEmpty) {
+        // This is an error because ExternalSource valueSchema must be compatible with GroupBy output
+        // to ensure consistency between online and offline serving
+        errors += s"ExternalSource ${externalSource.metadata.name} valueSchema contains columns [${missingValueColumns.mkString(", ")}] " +
+          s"that are not present in offlineGroupBy output columns [${groupByValueColumns.mkString(", ")}]. " +
+          s"This indicates schema incompatibility between online and offline serving. " +
+          s"Please ensure ExternalSource valueSchema matches the expected output of the GroupBy aggregations."
+      }
+
+      errors
+    }
   }
 
   object KeyMappingHelper {
@@ -950,6 +1027,16 @@ object Extensions {
           .flatMap(_.toSet))
         .getOrElse(Seq.empty)
     }
+
+    /**
+     * Validates all ExternalSources in this Join's onlineExternalParts.
+     * This ensures schema compatibility between ExternalSources and their offlineGroupBy configurations.
+     *
+     * @return Sequence of error messages, empty if no errors
+     */
+    def validateExternalSources(): Seq[String] = Option(join.onlineExternalParts)
+      .map(_.toScala.flatMap(_.source.validateOfflineGroupBy()))
+      .getOrElse(Seq.empty)
 
     def isProduction: Boolean = join.getMetaData.isProduction
 
