@@ -373,6 +373,8 @@ class Analyzer(tableUtils: TableUtils,
     val noAccessTables = mutable.Set[String]() ++= leftNoAccessTables
     // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
+    // ExternalSource schema validation errors
+    val externalSourceErrors: ListBuffer[String] = ListBuffer.empty[String]
 
     val rangeToFill =
       JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate, historicalBackfill = joinConf.historicalBackfill)
@@ -423,6 +425,9 @@ class Analyzer(tableUtils: TableUtils,
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
     if (joinConf.onlineExternalParts != null) {
+      // Validate ExternalSource schemas if they have offlineGroupBy configured
+      externalSourceErrors ++= joinConf.validateExternalSources()
+
       joinConf.onlineExternalParts.toScala.foreach { part =>
         joinIntermediateValuesMetadata ++= part.source.valueFields.map { field =>
           AggregationMetadata(part.fullName + "_" + field.name,
@@ -507,7 +512,7 @@ class Analyzer(tableUtils: TableUtils,
           logger.info(s"$gbName : ${startPartitions.mkString(",")}")
       }
     }
-    if (keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty) {
+    if (keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty && externalSourceErrors.isEmpty) {
       logger.info("----- Backfill validation completed. No errors found. -----")
     } else {
       logger.info(s"----- Schema validation completed. Found ${keysWithError.size} errors")
@@ -519,6 +524,8 @@ class Analyzer(tableUtils: TableUtils,
       logger.info(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
       dataAvailabilityErrors.foreach(error =>
         logger.info(s"Group_By ${error._2} : Source Tables ${error._1} : Expected start ${error._3}"))
+      logger.info(s"---- ExternalSource schema validation completed. Found ${externalSourceErrors.size} errors ----")
+      externalSourceErrors.foreach(error => logger.info(error))
     }
 
     if (validationAssert) {
@@ -526,12 +533,12 @@ class Analyzer(tableUtils: TableUtils,
         // For joins with bootstrap_parts, do not assert on data availability errors, as bootstrap can cover them
         // Only print out the errors as a warning
         assert(
-          keysWithError.isEmpty && noAccessTables.isEmpty,
+          keysWithError.isEmpty && noAccessTables.isEmpty && externalSourceErrors.isEmpty,
           "ERROR: Join validation failed. Please check error message for details."
         )
       } else {
         assert(
-          keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty,
+          keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty && externalSourceErrors.isEmpty,
           "ERROR: Join validation failed. Please check error message for details."
         )
       }
