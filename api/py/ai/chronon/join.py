@@ -186,10 +186,7 @@ def ExternalSource(
 
     factory_config = None
     if factory_name is not None or factory_params is not None:
-        factory_config = api.ExternalSourceFactoryConfig(
-            factoryName=factory_name,
-            factoryParams=factory_params
-        )
+        factory_config = api.ExternalSourceFactoryConfig(factoryName=factory_name, factoryParams=factory_params)
 
     return api.ExternalSource(
         metadata=api.MetaData(name=name, team=team, customJson=custom_json),
@@ -383,6 +380,25 @@ def BootstrapPart(
     return api.BootstrapPart(table=table, query=query, keyColumns=key_columns)
 
 
+def validate_left_source(source: api.Source) -> None:
+    """
+    Validate the left source of a Join, preventing user to create configs for a few unsupported scenarios.
+    """
+    # Validate left source is NOT an EventSource with isCumulative = True
+    if source.events:
+        if source.events.isCumulative:
+            raise ValueError(
+                "Using EventSource with isCumulative=True as Left source in Joins is NOT supported by Chronon now. "
+                "You can use either EntitySource or EventSource with isCumulative=False."
+            )
+    # Validate left source is NOT a JoinSource
+    if source.joinSource:
+        raise ValueError(
+            "Using JoinSource as Left source in Joins is NOT supported by Chronon now. "
+            "For offline-only use case, you can directly depend on the Join's output table."
+        )
+
+
 def Join(
     left: api.Source,
     right_parts: List[api.JoinPart],
@@ -516,6 +532,8 @@ def Join(
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
+    validate_left_source(left)
+
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
