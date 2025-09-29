@@ -512,7 +512,9 @@ class Analyzer(tableUtils: TableUtils,
           logger.info(s"$gbName : ${startPartitions.mkString(",")}")
       }
     }
-    if (keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty && externalSourceErrors.isEmpty) {
+    if (
+      keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty && externalSourceErrors.isEmpty
+    ) {
       logger.info("----- Backfill validation completed. No errors found. -----")
     } else {
       logger.info(s"----- Schema validation completed. Found ${keysWithError.size} errors")
