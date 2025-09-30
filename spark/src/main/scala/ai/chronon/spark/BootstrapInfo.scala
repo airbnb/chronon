@@ -83,9 +83,13 @@ object BootstrapInfo {
 
     // Enrich each join part with the expected output schema
     logger.info(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
-    var joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
-      .getOrElse(Seq.empty)
-      .map(part => {
+
+    // Combine regular JoinParts with converted ExternalParts before processing
+    val regularJoinParts = Option(joinConf.joinParts.toScala).getOrElse(Seq.empty)
+    val convertedJoinParts = convertExternalPartsToJoinParts(joinConf)
+    val allJoinParts = regularJoinParts ++ convertedJoinParts
+
+    var joinParts: Seq[JoinPartMetadata] = allJoinParts.map(part => {
         // set computeDependency to False as we compute dependency upstream
         val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency)
         val keySchema = SparkConversions
@@ -117,10 +121,11 @@ object BootstrapInfo {
         JoinPartMetadata(part, keySchema, valueSchema, Map.empty) // will be populated below
       })
 
-    // Enrich each external part with the expected output schema
-    logger.info(s"\nCreating BootstrapInfo for ExternalParts for Join ${joinConf.metaData.name}")
+    // Enrich online only external parts with the expected output schema
+    logger.info(s"\nCreating BootstrapInfo for online-only ExternalParts for Join ${joinConf.metaData.name}")
     val externalParts: Seq[ExternalPartMetadata] = Option(joinConf.onlineExternalParts.toScala)
       .getOrElse(Seq.empty)
+      .filter(_.source.offlineGroupBy == null)  // Only online-only ExternalParts
       .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
 
     val leftFields = leftSchema
@@ -354,5 +359,34 @@ object BootstrapInfo {
     logger.info(s"\n======= Finalized Bootstrap Info ${joinConf.metaData.name} END =======\n")
 
     bootstrapInfo
+  }
+
+  /**
+   * Converts ExternalParts with offlineGroupBy to JoinParts for parallel processing.
+   * This allows offline-capable ExternalParts to be processed alongside regular JoinParts
+   * in the same parallel execution pool, gaining benefits from bloom filter optimization,
+   * small mode optimization, and bootstrap coverage analysis.
+   *
+   * @param joinConf Join configuration containing ExternalParts to convert
+   * @return Sequence of JoinParts converted from offline-capable ExternalParts
+   */
+  private def convertExternalPartsToJoinParts(joinConf: api.Join): Seq[JoinPart] = {
+    logger.info(s"\nConverting offline-capable ExternalParts to JoinParts for Join ${joinConf.metaData.name}")
+
+    Option(joinConf.onlineExternalParts.toScala)
+      .getOrElse(Seq.empty)
+      .filter(_.source.offlineGroupBy != null)  // Only offline-capable ExternalParts
+      .map { externalPart =>
+        // Convert ExternalPart to synthetic JoinPart
+        val syntheticJoinPart = new api.JoinPart()
+        syntheticJoinPart.setGroupBy(externalPart.source.offlineGroupBy)
+        if (externalPart.keyMapping != null) {
+          syntheticJoinPart.setKeyMapping(externalPart.keyMapping)
+        }
+        if (externalPart.prefix != null) {
+          syntheticJoinPart.setPrefix(externalPart.prefix)
+        }
+        syntheticJoinPart
+      }
   }
 }
