@@ -963,7 +963,7 @@ object Extensions {
     private[api] def baseSemanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
       logger.info(s"Join Left Object: ${ThriftJsonCodec.toJsonStr(join.left)}")
-      val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
+      val partHashes = join.getCombinedJoinParts.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
       val derivedHashMap = Option(join.derivations)
         .map { derivations =>
           val derivedHash =
@@ -991,7 +991,7 @@ object Extensions {
       }
 
       cleanTopicInSource(join.left)
-      join.getJoinParts.toScala.foreach(_.groupBy.sources.toScala.foreach(cleanTopicInSource))
+      join.getCombinedJoinParts.foreach(_.groupBy.sources.toScala.foreach(cleanTopicInSource))
       join
     }
 
@@ -1099,8 +1099,46 @@ object Extensions {
     }
 
     def setups: Seq[String] =
-      (join.left.query.setupsSeq ++ join.joinParts.toScala
+      (join.left.query.setupsSeq ++ join.getCombinedJoinParts
         .flatMap(_.groupBy.setups)).distinct
+
+    /**
+     * Converts offline-capable ExternalParts to JoinParts for unified processing during backfill.
+     * This enables external sources with offlineGroupBy to participate in offline computation
+     * while maintaining compatibility with existing join processing logic.
+     *
+     * @return Sequence of JoinParts converted from offline-capable ExternalParts
+     */
+    private def getExternalJoinParts: Seq[JoinPart] = {
+      Option(join.onlineExternalParts)
+        .map(_.toScala)
+        .getOrElse(Seq.empty)
+        .filter(_.source.offlineGroupBy != null)  // Only offline-capable ExternalParts
+        .map { externalPart =>
+          // Convert ExternalPart to synthetic JoinPart
+          val syntheticJoinPart = new JoinPart()
+          syntheticJoinPart.setGroupBy(externalPart.source.offlineGroupBy)
+          if (externalPart.keyMapping != null) {
+            syntheticJoinPart.setKeyMapping(externalPart.keyMapping)
+          }
+          if (externalPart.prefix != null) {
+            syntheticJoinPart.setPrefix(externalPart.prefix)
+          }
+          syntheticJoinPart
+        }
+    }
+
+    /**
+     * Get all join parts including both regular joinParts and external join parts.
+     * This provides a unified view of all join parts for processing.
+     *
+     * @return Sequence containing all JoinParts (regular + converted external)
+     */
+    def getCombinedJoinParts: Seq[JoinPart] = {
+      val regularJoinParts = Option(join.joinParts).map(_.toScala).getOrElse(Seq.empty)
+      val externalJoinParts = getExternalJoinParts
+      regularJoinParts ++ externalJoinParts
+    }
 
     def copyForVersioningComparison(): Join = {
       // When we compare previous-run join to current join to detect changes requiring table migration
@@ -1115,10 +1153,8 @@ object Extensions {
     }
 
     lazy val joinPartOps: Seq[JoinPartOps] =
-      Option(join.joinParts)
-        .getOrElse(new util.ArrayList[JoinPart]())
-        .toScala
-        .toSeq
+      Option(join.getCombinedJoinParts)
+        .getOrElse(Seq.empty[JoinPart])
         .map(new JoinPartOps(_))
 
     def logFullValues: Boolean = true // TODO: supports opt-out in the future
