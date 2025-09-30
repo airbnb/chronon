@@ -32,7 +32,6 @@ class ExternalSourceBackfillTest {
   private val tableUtils = TableUtils(spark)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
-  private val yearAgo = tableUtils.partitionSpec.minus(today, new Window(365, TimeUnit.DAYS))
 
   @Test
   def testExternalSourceBackfillComputeJoin(): Unit = {

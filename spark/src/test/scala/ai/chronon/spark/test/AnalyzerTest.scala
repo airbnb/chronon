@@ -26,7 +26,7 @@ import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{col, lit, to_json}
-import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{never, spy, verify, when}
@@ -907,6 +907,109 @@ class AnalyzerTest {
                                 skipTimestampCheck = true,
                                 validateTablePermission = false)
     analyzer.analyzeGroupBy(tableGroupBy)
+  }
+
+  @Test
+  def testExternalSourceValidationWithMatchingSchemas(): Unit = {
+    // Create compatible schemas using the correct DataType objects
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    // Create a query and source for the GroupBy
+    val query = Builders.Query(selects = Map("feature_value" -> "value"))
+    val source = Builders.Source.events(query, "test.table")
+
+    // Create GroupBy with matching key columns and sources
+    val groupBy = Builders.GroupBy(
+      keyColumns = Seq("user_id"),
+      sources = Seq(source)
+    )
+
+    // Create ExternalSource with compatible schemas
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+
+    // Manually set the offlineGroupBy field since the builder doesn't support it yet
+    externalSource.setOfflineGroupBy(groupBy)
+
+    // Create analyzer instance and call validation
+    val analyzer = new Analyzer(dummyTableUtils, externalSource, oneMonthAgo, today)
+    val errors = analyzer.validateOfflineGroupBy(externalSource)
+    assertTrue(s"Expected no errors, but got: ${errors.mkString(", ")}", errors.isEmpty)
+  }
+
+  @Test
+  def testExternalSourceValidationWithMismatchedKeySchemas(): Unit = {
+    // Create key schema with different fields
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    // Create a query and source for the GroupBy
+    val query = Builders.Query(selects = Map("feature_value" -> "feature_value"))
+    val source = Builders.Source.events(query, "test.table")
+
+    // Create GroupBy with different key columns
+    val groupBy = Builders.GroupBy(
+      keyColumns = Seq("different_key"),  // Mismatched key column
+      sources = Seq(source)
+    )
+
+    // Create ExternalSource with incompatible schemas
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+    externalSource.setOfflineGroupBy(groupBy)
+
+    // This should return validation errors
+    val analyzer = new Analyzer(dummyTableUtils, externalSource, oneMonthAgo, today)
+    val errors = analyzer.validateOfflineGroupBy(externalSource)
+    assertFalse("Expected validation errors for mismatched key schemas", errors.isEmpty)
+    assertTrue("Error should mention key schema mismatch",
+      errors.exists(_.contains("key schema contains columns")))
+  }
+
+  @Test
+  def testExternalSourceValidationWithMismatchedValueSchemas(): Unit = {
+    // Create compatible key schema but mismatched value schema
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    // Create a source for the GroupBy - this is needed for valueColumns to work
+    val query = Builders.Query(selects = Map("different_feature" -> "different_feature"))
+    val source = Builders.Source.events(query, "test.table")
+
+    // Create GroupBy with different value columns
+    val groupBy = Builders.GroupBy(
+      keyColumns = Seq("user_id"),
+      sources = Seq(source)
+    )
+
+    // Create ExternalSource with incompatible schemas
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+    externalSource.setOfflineGroupBy(groupBy)
+
+    // This should return validation errors
+    val analyzer = new Analyzer(dummyTableUtils, externalSource, oneMonthAgo, today)
+    val errors = analyzer.validateOfflineGroupBy(externalSource)
+    assertFalse("Expected validation errors for mismatched value schemas", errors.isEmpty)
+    assertTrue("Error should mention value schema mismatch",
+      errors.exists(_.contains("valueSchema contains columns")))
+  }
+
+  @Test
+  def testExternalSourceValidationWithNullOfflineGroupBy(): Unit = {
+    // Create ExternalSource without offlineGroupBy
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+    // Don't set offlineGroupBy (it remains null)
+
+    // This should return no errors (validation should be skipped)
+    val analyzer = new Analyzer(dummyTableUtils, externalSource, oneMonthAgo, today)
+    val errors = analyzer.validateOfflineGroupBy(externalSource)
+    assertTrue("Expected no errors when offlineGroupBy is null", errors.isEmpty)
   }
 
 }
