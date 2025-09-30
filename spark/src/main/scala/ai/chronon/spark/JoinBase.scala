@@ -474,7 +474,7 @@ abstract class JoinBase(joinConf: api.Join,
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
 
-    joinConf.joinParts.toScala.foreach { jp =>
+    joinConf.getCombinedJoinParts.foreach { jp =>
       assert(Option(jp.groupBy.metaData.team).nonEmpty,
              s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
     }

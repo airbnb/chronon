@@ -390,7 +390,7 @@ class Analyzer(tableUtils: TableUtils,
       )
       .getOrElse(Seq.empty)
 
-    joinConf.joinParts.toScala.foreach { part =>
+    joinConf.getCombinedJoinParts.foreach { part =>
       val analyzeGroupByResult =
         analyzeGroupBy(
           part.groupBy,
@@ -442,7 +442,7 @@ class Analyzer(tableUtils: TableUtils,
 
     val rightSchema = joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType))
 
-    val keyColumns: List[String] = joinConf.joinParts.toScala
+    val keyColumns: List[String] = joinConf.getCombinedJoinParts.toList
       .flatMap(joinPart => {
         val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
         if (joinPart.keyMapping == null) keyCols

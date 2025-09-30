@@ -84,10 +84,8 @@ object BootstrapInfo {
     // Enrich each join part with the expected output schema
     logger.info(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
 
-    // Combine regular JoinParts with converted ExternalParts before processing
-    val regularJoinParts = Option(joinConf.joinParts.toScala).getOrElse(Seq.empty)
-    val convertedJoinParts = convertExternalPartsToJoinParts(joinConf)
-    val allJoinParts = regularJoinParts ++ convertedJoinParts
+    // Get all join parts including both regular and external join parts
+    val allJoinParts = joinConf.getCombinedJoinParts
 
     var joinParts: Seq[JoinPartMetadata] = allJoinParts.map(part => {
         // set computeDependency to False as we compute dependency upstream
@@ -361,32 +359,4 @@ object BootstrapInfo {
     bootstrapInfo
   }
 
-  /**
-   * Converts ExternalParts with offlineGroupBy to JoinParts for parallel processing.
-   * This allows offline-capable ExternalParts to be processed alongside regular JoinParts
-   * in the same parallel execution pool, gaining benefits from bloom filter optimization,
-   * small mode optimization, and bootstrap coverage analysis.
-   *
-   * @param joinConf Join configuration containing ExternalParts to convert
-   * @return Sequence of JoinParts converted from offline-capable ExternalParts
-   */
-  private def convertExternalPartsToJoinParts(joinConf: api.Join): Seq[JoinPart] = {
-    logger.info(s"\nConverting offline-capable ExternalParts to JoinParts for Join ${joinConf.metaData.name}")
-
-    Option(joinConf.onlineExternalParts.toScala)
-      .getOrElse(Seq.empty)
-      .filter(_.source.offlineGroupBy != null)  // Only offline-capable ExternalParts
-      .map { externalPart =>
-        // Convert ExternalPart to synthetic JoinPart
-        val syntheticJoinPart = new api.JoinPart()
-        syntheticJoinPart.setGroupBy(externalPart.source.offlineGroupBy)
-        if (externalPart.keyMapping != null) {
-          syntheticJoinPart.setKeyMapping(externalPart.keyMapping)
-        }
-        if (externalPart.prefix != null) {
-          syntheticJoinPart.setPrefix(externalPart.prefix)
-        }
-        syntheticJoinPart
-      }
-  }
 }

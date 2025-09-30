@@ -221,7 +221,7 @@ class ExternalSourceBackfillTest {
     val externalSource = Builders.ExternalSource(
       metadata = Builders.MetaData(name = s"external_purchase_features_$namespace"),
       keySchema = StructType("external_keys", Array(StructField("user_id", StringType))),
-      valueSchema = StructType("external_values", Array(StructField("purchase_amount_avg_7d", DoubleType)))
+      valueSchema = StructType("external_values", Array(StructField("purchase_amount_average_7d", DoubleType)))
     )
     externalSource.setOfflineGroupBy(purchaseGroupBy)
 
@@ -306,7 +306,7 @@ class ExternalSourceBackfillTest {
 
     val featureTable = s"$namespace.user_features"
     spark.sql(s"DROP TABLE IF EXISTS $featureTable")
-    DataFrameGen.events(spark, featureColumns, 1000, partitions = 50).save(featureTable)
+    DataFrameGen.events(spark, featureColumns, 2000, partitions = 60).save(featureTable)
 
     // Create GroupBy using internal_user_id
     val featureGroupBy = Builders.GroupBy(
