@@ -135,7 +135,6 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   private def writeSignalPartitionMetadata(tableName: String): Unit = {
     val schema = org.apache.spark.sql.types.StructType(
       Seq(
-        // Add a dummy data column since tables cannot have only partition columns
         org.apache.spark.sql.types
           .StructField(StagingQuery.CREATED_AT_COLUMN, org.apache.spark.sql.types.StringType, false),
         org.apache.spark.sql.types
