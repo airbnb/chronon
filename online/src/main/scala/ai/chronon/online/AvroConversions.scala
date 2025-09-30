@@ -24,8 +24,9 @@ import org.apache.avro.util.Utf8
 
 import java.nio.ByteBuffer
 import java.util
-import scala.collection.JavaConverters._
 import scala.collection.{AbstractIterator, mutable}
+import scala.util.ScalaJavaConversions.{JListOps, ListOps}
+import scala.util.Try
 
 object AvroConversions {
 
@@ -39,15 +40,24 @@ object AvroConversions {
       case _                  => value
     }
 
-  def toChrononSchema(schema: Schema): DataType = {
+  def cleanSuffix(name: String): String = {
+    if (name.contains(RepetitionSuffix)) {
+      name.substring(0, name.indexOf(RepetitionSuffix))
+    } else {
+      name
+    }
+  }
+
+  def toChrononSchema(schema: Schema, cleanName: Boolean = false): DataType = {
+    def clean(name: String): String = if (cleanName) cleanSuffix(name) else name
     schema.getType match {
       case Schema.Type.RECORD =>
-        StructType(schema.getName,
-                   schema.getFields.asScala.toArray.map { field =>
-                     StructField(field.name(), toChrononSchema(field.schema()))
+        StructType(clean(schema.getName),
+                   schema.getFields.toScala.toArray.map { field =>
+                     StructField(clean(field.name()), toChrononSchema(field.schema(), cleanName))
                    })
-      case Schema.Type.ARRAY   => ListType(toChrononSchema(schema.getElementType))
-      case Schema.Type.MAP     => MapType(StringType, toChrononSchema(schema.getValueType))
+      case Schema.Type.ARRAY   => ListType(toChrononSchema(schema.getElementType, cleanName))
+      case Schema.Type.MAP     => MapType(StringType, toChrononSchema(schema.getValueType, cleanName))
       case Schema.Type.STRING  => StringType
       case Schema.Type.INT     => IntType
       case Schema.Type.LONG    => LongType
@@ -55,8 +65,9 @@ object AvroConversions {
       case Schema.Type.DOUBLE  => DoubleType
       case Schema.Type.BYTES   => BinaryType
       case Schema.Type.BOOLEAN => BooleanType
-      case Schema.Type.UNION   => toChrononSchema(schema.getTypes.get(1)) // unions are only used to represent nullability
-      case _                   => throw new UnsupportedOperationException(s"Cannot convert avro type ${schema.getType.toString}")
+      case Schema.Type.UNION =>
+        toChrononSchema(schema.getTypes.get(1), cleanName) // unions are only used to represent nullability
+      case _ => throw new UnsupportedOperationException(s"Cannot convert avro type ${schema.getType.toString}")
     }
   }
 
@@ -92,7 +103,7 @@ object AvroConversions {
                 defaultValue)
             }
             .toList
-            .asJava
+            .toJava
         )
       case ListType(elementType) => Schema.createArray(fromChrononSchema(elementType, nameSet))
       case MapType(keyType, valueType) => {
@@ -191,6 +202,10 @@ object AvroConversions {
 
 case class AvroSchemaTraverser(currentNode: Schema) extends SchemaTraverser[Schema] {
 
+  private lazy val cleanSchema = currentNode.getFields.toScala.map { f =>
+    AvroConversions.cleanSuffix(f.name()) -> f.schema()
+  }.toMap
+
   // We only use union types for nullable fields, and always
   // unbox them when writing the actual schema out.
   private def unboxUnion(maybeUnion: Schema): Schema =
@@ -200,10 +215,12 @@ case class AvroSchemaTraverser(currentNode: Schema) extends SchemaTraverser[Sche
       maybeUnion
     }
 
-  override def getField(field: StructField): SchemaTraverser[Schema] =
+  override def getField(field: StructField): SchemaTraverser[Schema] = {
     copy(
-      unboxUnion(currentNode.getField(field.name).schema())
+      unboxUnion(
+        Try(currentNode.getField(field.name).schema()).getOrElse(cleanSchema(AvroConversions.cleanSuffix(field.name))))
     )
+  }
 
   override def getCollectionType: SchemaTraverser[Schema] =
     copy(

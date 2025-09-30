@@ -30,7 +30,6 @@ import java.util.regex.Pattern
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
-import scala.collection.JavaConverters._
 
 object Extensions {
 
@@ -1076,6 +1075,26 @@ object Extensions {
   }
 
   implicit class ModelTransformOps(modelTransform: ModelTransform) {
+    lazy val name: String = {
+      if (modelTransform.isSetPrefix) {
+        Seq(modelTransform.prefix, modelTransform.model.metaData.name).mkString("_")
+      } else {
+        modelTransform.model.metaData.name
+      }
+    }
+
+    lazy val inputSchema: List[StructField] = {
+      modelTransform.model.inputSchemaScala.map { modelField =>
+        StructField(inputMappingsScala.getOrElse(modelField.name, modelField.name), modelField.fieldType)
+      }
+    }
+
+    lazy val outputSchema: List[StructField] = {
+      modelTransform.model.outputSchemaScala.map { modelField =>
+        StructField(outputMappingsScala.getOrElse(modelField.name, modelField.name), modelField.fieldType)
+      }
+    }
+
     lazy val inputMappingsScala: Map[String, String] =
       Option(modelTransform.inputMappings).map(_.toScala).getOrElse(Map.empty)
     lazy val outputMappingsScala: Map[String, String] =

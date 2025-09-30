@@ -16,7 +16,8 @@
 
 package ai.chronon.online
 
-import ai.chronon.api.{Join, Model}
+import ai.chronon.api.{Join, Model, ModelTransform}
+import org.apache.spark.sql.{DataFrame, SparkSession}
 
 import scala.collection.Seq
 import scala.concurrent.Future
@@ -31,7 +32,23 @@ case class RunModelInferenceResponse(request: RunModelInferenceRequest, outputs:
 
 trait ModelBackend {
 
+  /**
+    * Run online model inference which returns the model output directly.
+    * This method is used in fetcher.fetchJoin to process the model inference
+    * @return RunModelInferenceResponse containing the model outputs for the given inputs.
+    */
   def runModelInference(runModelInferenceRequest: RunModelInferenceRequest): Future[RunModelInferenceResponse]
-  // Run online model inference which returns the model output directly.
-  // Will be used in fetcher.fetchJoin
+
+  /**
+    * Run batch model inference job which will be executed asynchronously in batch.
+    * @return a job ID that can be used to check the status of the job.
+    */
+  def runModelInferenceBatchJob(
+      sparkSession: SparkSession,
+      join: Join,
+      startPartition: String,
+      endPartition: String,
+      modelTransform: Option[ModelTransform] = None,
+      jobContextJson: Option[String] = None
+  ): Option[DataFrame] = None
 }

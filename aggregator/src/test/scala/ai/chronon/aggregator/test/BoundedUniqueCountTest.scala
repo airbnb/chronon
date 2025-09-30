@@ -1,12 +1,12 @@
 package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.base.BoundedUniqueCount
-import ai.chronon.api.{StringType, IntType, LongType, DoubleType, FloatType, BinaryType}
+import ai.chronon.api.{BinaryType, DoubleType, FloatType, IntType, LongType, StringType}
 import junit.framework.TestCase
 import org.junit.Assert._
 
 import java.util
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.JListOps
 
 class BoundedUniqueCountTest extends TestCase {
   def testHappyCase(): Unit = {
@@ -35,8 +35,8 @@ class BoundedUniqueCountTest extends TestCase {
 
   def testMerge(): Unit = {
     val boundedDistinctCount = new BoundedUniqueCount[String](StringType, 5)
-    val ir1 = new util.HashSet[Any](Seq("1", "2", "3").asJava)
-    val ir2 = new util.HashSet[Any](Seq("4", "5", "6").asJava)
+    val ir1 = new util.HashSet[Any](Seq("1", "2", "3").toJava)
+    val ir2 = new util.HashSet[Any](Seq("4", "5", "6").toJava)
 
     val merged = boundedDistinctCount.merge(ir1, ir2)
     val result = boundedDistinctCount.finalize(merged)
@@ -69,8 +69,8 @@ class BoundedUniqueCountTest extends TestCase {
 
   def testIntTypeMerge(): Unit = {
     val boundedDistinctCount = new BoundedUniqueCount[Int](IntType, 5)
-    val ir1 = new util.HashSet[Any](Seq(1, 2, 3).asJava)
-    val ir2 = new util.HashSet[Any](Seq(4, 5, 6).asJava)
+    val ir1 = new util.HashSet[Any](Seq(1, 2, 3).toJava)
+    val ir2 = new util.HashSet[Any](Seq(4, 5, 6).toJava)
 
     val merged = boundedDistinctCount.merge(ir1, ir2)
     val result = boundedDistinctCount.finalize(merged)
@@ -178,8 +178,8 @@ class BoundedUniqueCountTest extends TestCase {
 
   def testBinaryTypeMerge(): Unit = {
     val boundedDistinctCount = new BoundedUniqueCount[Array[Byte]](BinaryType, 5)
-    val ir1 = new util.HashSet[Any](Seq(Array[Byte](1), Array[Byte](2), Array[Byte](3)).asJava)
-    val ir2 = new util.HashSet[Any](Seq(Array[Byte](4), Array[Byte](5), Array[Byte](6)).asJava)
+    val ir1 = new util.HashSet[Any](Seq(Array[Byte](1), Array[Byte](2), Array[Byte](3)).toJava)
+    val ir2 = new util.HashSet[Any](Seq(Array[Byte](4), Array[Byte](5), Array[Byte](6)).toJava)
 
     val merged = boundedDistinctCount.merge(ir1, ir2)
     val result = boundedDistinctCount.finalize(merged)

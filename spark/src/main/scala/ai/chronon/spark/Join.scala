@@ -34,7 +34,6 @@ import scala.collection.compat._
 import scala.collection.{Seq, mutable}
 import scala.concurrent.duration.Duration
 import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
-import scala.jdk.CollectionConverters._
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
 
@@ -216,7 +215,7 @@ class Join(joinConf: api.Join,
   }
 
   private def getRightPartsData(leftRange: PartitionRange): Seq[(JoinPart, DataFrame)] = {
-    joinConf.joinParts.asScala.flatMap { joinPart =>
+    joinConf.joinParts.toScala.flatMap { joinPart =>
       val partTable = joinConf.partOutputTable(joinPart)
       if (!tableUtils.tableExists(partTable)) {
         // When a JoinPart is fully bootstrapped, its partTable may not exist and we skip it during final join.
@@ -324,7 +323,7 @@ class Join(joinConf: api.Join,
                   rightCol -> leftBlooms.get(leftCol)
               }.toJMap
 
-              val bloomSizes = rightBlooms.asScala.map {
+              val bloomSizes = rightBlooms.toScala.map {
                 case (rightCol, bloom) =>
                   s"$rightCol -> ${bloom.bitSize()}"
               }

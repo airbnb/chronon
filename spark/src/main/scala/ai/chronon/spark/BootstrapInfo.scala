@@ -51,6 +51,8 @@ case class BootstrapInfo(
     externalParts: Seq[ExternalPartMetadata],
     // derivations schema
     derivations: Array[StructField],
+    // modelTransforms schema
+    modelTransforms: Array[StructField],
     hashToSchema: Map[String, Array[StructField]]
 ) {
 
@@ -58,7 +60,7 @@ case class BootstrapInfo(
 
   private lazy val fields: Seq[StructField] = {
     joinParts.flatMap(_.keySchema) ++ joinParts.flatMap(_.valueSchema) ++
-      externalParts.flatMap(_.keySchema) ++ externalParts.flatMap(_.valueSchema) ++ derivations
+      externalParts.flatMap(_.keySchema) ++ externalParts.flatMap(_.valueSchema) ++ derivations ++ modelTransforms
   }
   private lazy val fieldsMap: Map[String, StructField] = fields.map(f => f.name -> f).toMap
 
@@ -89,26 +91,7 @@ object BootstrapInfo {
           .toChrononSchema(gb.keySchema)
           .map(field => StructField(part.rightToLeft(field._1), field._2))
 
-        if (tableUtils.chrononAvroSchemaValidation) {
-          // Validate that the baseDf schema is compatible with AvroSchema acceptable types
-          // This is required for online serving to work
-          try {
-            gb.keySchema.toAvroSchema("Key")
-            gb.preAggSchema.toAvroSchema("Value")
-          } catch {
-            case e: UnsupportedOperationException =>
-              throw new RuntimeException(
-                "In order to enable online serving, " +
-                  "please make sure that the data types of your groupBy column types " +
-                  "are compatible with AvroSchema acceptable types: " +
-                  "You should cast the current data types to Avro compatible data types " +
-                  "- e.g. tinyint is not supported in Avro, if you have a tinyint col1, " +
-                  "you can CAST(col1 AS INT). If your use case is offline only, " +
-                  "you can set chrononAvroSchemaValidation to false to disable Avro schema validation if you don't need online serving. \n"
-                  + e.getMessage,
-                e)
-          }
-        }
+        Analyzer.validateAvroCompatibility(tableUtils, gb, part.groupBy)
 
         val keyAndPartitionFields =
           gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
@@ -167,6 +150,7 @@ object BootstrapInfo {
     } else {
       Array.empty[(StructField, String)]
     }
+    val modelTransformsSchema = joinConf.modelSchema.fields
 
     /*
      * Partition bootstrap into log-based versus regular table-based.
@@ -283,7 +267,8 @@ object BootstrapInfo {
     joinParts = joinParts.map { part =>
       part.copy(derivationDependencies = findDerivationDependencies(part))
     }
-    val bootstrapInfo = BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema.map(_._1), hashToSchema)
+    val bootstrapInfo =
+      BootstrapInfo(joinConf, joinParts, externalParts, derivedSchema.map(_._1), modelTransformsSchema, hashToSchema)
 
     // validate that all selected fields except keys from (non-log) bootstrap tables match with
     // one of defined fields in join parts or external parts
@@ -345,6 +330,11 @@ object BootstrapInfo {
       logger.info(s"""Bootstrap Info for Derivations
                  |${stringify(derivedSchema.map(_._1))}
                  |""".stripMargin)
+    }
+    if (modelTransformsSchema.nonEmpty) {
+      logger.info(s"""Bootstrap Info for Model Transforms
+                     |${stringify(modelTransformsSchema)}
+                     |""".stripMargin)
     }
     logger.info(s"""Bootstrap Info for Log Bootstraps
          |Log Hashes: ${logHashes.keys.prettyInline}

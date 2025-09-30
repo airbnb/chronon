@@ -31,8 +31,8 @@ import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
-import scala.collection.JavaConverters._
 import scala.concurrent.duration.DurationInt
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 
 class GroupBy(inputStream: DataFrame,
               session: SparkSession,
@@ -45,16 +45,16 @@ class GroupBy(inputStream: DataFrame,
   private def buildStreamingQuery(inputTable: String): String = {
     val streamingSource = groupByConf.streamingSource.get
     val query = streamingSource.query
-    val selects = Option(query.selects).map(_.asScala.toMap).orNull
+    val selects = Option(query.selects).map(_.toScala.toMap).orNull
     val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
     val fillIfAbsent = groupByConf.dataModel match {
       case DataModel.Entities =>
         Map(Constants.TimeColumn -> timeColumn, Constants.ReversalColumn -> null, Constants.MutationTimeColumn -> null)
       case chronon.api.DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
     }
-    val keys = groupByConf.getKeyColumns.asScala
+    val keys = groupByConf.getKeyColumns.toScala
 
-    val baseWheres = Option(query.wheres).map(_.asScala).getOrElse(Seq.empty[String])
+    val baseWheres = Option(query.wheres).map(_.toScala).getOrElse(Seq.empty[String])
     val selectMap = Option(selects).getOrElse(Map.empty[String, String])
     val keyWhereOption = keys
       .map { key =>
@@ -147,7 +147,7 @@ class GroupBy(inputStream: DataFrame,
     if (groupByConf.dataModel == api.DataModel.Entities) {
       assert(selectedDf.schema.fieldNames.contains(Constants.MutationTimeColumn), "Required Mutation ts")
     }
-    val keys = groupByConf.keyColumns.asScala.toArray
+    val keys = groupByConf.keyColumns.toScala.toArray
     val keyIndices = keys.map(selectedDf.schema.fieldIndex)
     val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
       case api.DataModel.Entities => Constants.MutationAvroColumns -> Constants.MutationTimeColumn

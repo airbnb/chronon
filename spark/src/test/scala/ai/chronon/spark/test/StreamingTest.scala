@@ -22,15 +22,14 @@ import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Windo
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
-import ai.chronon.online.{MetadataStore}
+import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
-import org.apache.spark.sql.{SparkSession}
+import org.apache.spark.sql.SparkSession
 
 import java.util.TimeZone
-
-import scala.collection.JavaConverters.{asScalaBufferConverter, _}
+import scala.util.ScalaJavaConversions.ListOps
 
 object StreamingTest {
   def buildInMemoryKvStore(): InMemoryKvStore = {
@@ -110,7 +109,7 @@ class StreamingTest extends TestCase {
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
     inMemoryKvStore.create(ChrononMetadataKey)
     metadataStore.putJoinConf(joinConf)
-    joinConf.joinParts.asScala.foreach(jp =>
+    joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKvStore, namespace, today, jp.groupBy))
   }
 }

@@ -27,9 +27,8 @@ import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.util.sketch.BloomFilter
 
-import scala.collection.JavaConverters._
 import scala.collection.Seq
-import scala.util.ScalaJavaConversions.IterableOps
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import java.util
 
 class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
@@ -46,7 +45,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
   private val outputLabelTable = joinConf.metaData.outputLabelTable
   private val labelJoinConf = joinConf.labelPart
   private val confTableProps = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
+    .map(_.toScala.toMap)
     .getOrElse(Map.empty[String, String])
 
   // offsets are inclusive, e.g label_ds = 04-03, left_start_offset = left_end_offset = 3, left_ds will be 04-01
@@ -61,7 +60,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
 
-    labelJoinConf.labels.asScala.foreach { jp =>
+    labelJoinConf.labels.toScala.foreach { jp =>
       if (Option(jp.groupBy.aggregations).isDefined) {
         assert(Option(jp.groupBy.dataModel).equals(Option(Events)),
                s"groupBy.dataModel must be Events for label join with aggregations ${jp.groupBy.metaData.name}")
@@ -153,7 +152,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     }.toJMap
 
     // compute joinParts in parallel
-    val rightDfs = labelJoinConf.labels.asScala.map { labelJoinPart =>
+    val rightDfs = labelJoinConf.labels.toScala.map { labelJoinPart =>
       val labelJoinPartMetrics = Metrics.Context(metrics, labelJoinPart)
       if (labelJoinPart.groupBy.aggregations == null) {
         // no need to generate join part cache if there are no aggregations
@@ -197,7 +196,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
     logger.info("Label Join filtering left df with only row identifier:", rowIdentifier.mkString(", "))
     val leftFiltered = JoinUtils.filterColumns(leftDf, rowIdentifier)
 
-    val joined = rightDfs.zip(labelJoinConf.labels.asScala).foldLeft(leftFiltered) {
+    val joined = rightDfs.zip(labelJoinConf.labels.toScala).foldLeft(leftFiltered) {
       case (partialDf, (rightDf, joinPart)) => joinWithLeft(partialDf, rightDf, joinPart)
     }
 

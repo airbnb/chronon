@@ -13,7 +13,7 @@ import org.junit.{After, Before, Test}
 import org.mockito.Mockito.withSettings
 import org.scalatestplus.mockito.MockitoSugar.mock
 
-import scala.jdk.CollectionConverters.asScalaBufferConverter
+import scala.util.ScalaJavaConversions.ListOps
 
 class FlinkJobIntegrationTest {
 
@@ -34,7 +34,7 @@ class FlinkJobIntegrationTest {
 
     // Get all keys we expect to be in the GenericRecord
     val decodedKeys: List[String] =
-      groupByServingInfoParsed.groupBy.keyColumns.asScala.map(record.get(_).toString).toList
+      groupByServingInfoParsed.groupBy.keyColumns.toScala.map(record.get(_).toString).toList
 
     val tsMills = in.tsMillis.get
     TimestampedTile(decodedKeys, tileBytes, tsMills)
@@ -86,7 +86,7 @@ class FlinkJobIntegrationTest {
     env.execute("FlinkJobIntegrationTest")
 
     // capture the datastream of the 'created' timestamps of all the written out events
-    val writeEventCreatedDS = CollectSink.values.asScala
+    val writeEventCreatedDS = CollectSink.values.toScala
 
     assert(writeEventCreatedDS.size == elements.size)
     // check that the timestamps of the written out events match the input events
@@ -124,7 +124,7 @@ class FlinkJobIntegrationTest {
     env.execute("TiledFlinkJobIntegrationTest")
 
     // capture the datastream of the 'created' timestamps of all the written out events
-    val writeEventCreatedDS = CollectSink.values.asScala
+    val writeEventCreatedDS = CollectSink.values.toScala
 
     // BASIC ASSERTIONS
     // All elements were processed
