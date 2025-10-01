@@ -71,6 +71,16 @@ class ExternalSourceBackfillTest {
           windows = Seq(new Window(30, TimeUnit.DAYS))
         )
       ),
+      derivations = Seq(
+        // External part will have fullName "ext_ext_external_transaction_features_XXX"
+        // (Constants.ExternalPrefix + "_" + prefix + "_" + metadata.name)
+        // So we need to derive column with that prefix + field name
+        Builders.Derivation.star(), // Keep all base aggregation columns
+        Builders.Derivation(
+          name = s"ext_ext_external_transaction_features_${namespace}_amount_sum_30d",
+          expression = "amount_sum_30d"
+        )
+      ),
       metaData = Builders.MetaData(name = s"user_transaction_features_$namespace", namespace = namespace),
       accuracy = Accuracy.TEMPORAL
     )
@@ -187,6 +197,15 @@ class ExternalSourceBackfillTest {
           operation = Operation.AVERAGE,
           inputColumn = "purchase_amount",
           windows = Seq(new Window(7, TimeUnit.DAYS))
+        )
+      ),
+      derivations = Seq(
+        // External part will have fullName "ext_purchase_external_purchase_features_XXX"
+        // So we need to derive column with that prefix + field name
+        Builders.Derivation.star(), // Keep all base aggregation columns
+        Builders.Derivation(
+          name = s"ext_purchase_external_purchase_features_${namespace}_purchase_amount_average_7d",
+          expression = "purchase_amount_average_7d"
         )
       ),
       metaData = Builders.MetaData(name = s"purchase_features_$namespace", namespace = namespace),
@@ -324,6 +343,15 @@ class ExternalSourceBackfillTest {
           operation = Operation.MAX,
           inputColumn = "feature_score",
           windows = Seq(new Window(30, TimeUnit.DAYS))
+        )
+      ),
+      derivations = Seq(
+        // External part will have fullName "ext_mapped_external_features_XXX"
+        // So we need to derive column with that prefix + field name
+        Builders.Derivation.star(), // Keep all base aggregation columns
+        Builders.Derivation(
+          name = s"ext_mapped_external_features_${namespace}_feature_score_max_30d",
+          expression = "feature_score_max_30d"
         )
       ),
       metaData = Builders.MetaData(name = s"feature_gb_$namespace", namespace = namespace),

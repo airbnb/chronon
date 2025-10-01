@@ -18,7 +18,6 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.Builders.Query
 import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
@@ -919,10 +918,14 @@ class AnalyzerTest {
     val query = Builders.Query(selects = Map("feature_value" -> "value"))
     val source = Builders.Source.events(query, "test.table")
 
-    // Create GroupBy with matching key columns and sources
+    // Create GroupBy with matching key columns, sources, and derivation to match external feature name
+    // The external part will have fullName "ext_test_external_source", so the feature will be "ext_test_external_source_feature_value"
     val groupBy = Builders.GroupBy(
       keyColumns = Seq("user_id"),
-      sources = Seq(source)
+      sources = Seq(source),
+      derivations = Seq(
+        Builders.Derivation(name = "ext_test_external_source_feature_value", expression = "feature_value")
+      )
     )
 
     // Create ExternalSource with compatible schemas
@@ -932,9 +935,12 @@ class AnalyzerTest {
     // Manually set the offlineGroupBy field since the builder doesn't support it yet
     externalSource.setOfflineGroupBy(groupBy)
 
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
     // Create analyzer instance and call validation
     val analyzer = new Analyzer(dummyTableUtils, externalSource, oneMonthAgo, today)
-    val errors = analyzer.validateOfflineGroupBy(externalSource)
+    val errors = analyzer.validateOfflineGroupBy(externalPart)
     assertTrue(s"Expected no errors, but got: ${errors.mkString(", ")}", errors.isEmpty)
   }
 
@@ -959,9 +965,12 @@ class AnalyzerTest {
     val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
     externalSource.setOfflineGroupBy(groupBy)
 
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
     // This should return validation errors
     val analyzer = new Analyzer(dummyTableUtils, externalSource, oneMonthAgo, today)
-    val errors = analyzer.validateOfflineGroupBy(externalSource)
+    val errors = analyzer.validateOfflineGroupBy(externalPart)
     assertFalse("Expected validation errors for mismatched key schemas", errors.isEmpty)
     assertTrue("Error should mention key schema mismatch",
       errors.exists(_.contains("key schema contains columns")))
@@ -977,10 +986,14 @@ class AnalyzerTest {
     val query = Builders.Query(selects = Map("different_feature" -> "different_feature"))
     val source = Builders.Source.events(query, "test.table")
 
-    // Create GroupBy with different value columns
+    // Create GroupBy with different derived column name that doesn't match external feature name
+    // The external part expects "ext_test_external_source_feature_value" but GroupBy produces "wrong_name"
     val groupBy = Builders.GroupBy(
       keyColumns = Seq("user_id"),
-      sources = Seq(source)
+      sources = Seq(source),
+      derivations = Seq(
+        Builders.Derivation(name = "wrong_name", expression = "different_feature")
+      )
     )
 
     // Create ExternalSource with incompatible schemas
@@ -988,9 +1001,12 @@ class AnalyzerTest {
     val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
     externalSource.setOfflineGroupBy(groupBy)
 
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
     // This should return validation errors
     val analyzer = new Analyzer(dummyTableUtils, externalSource, oneMonthAgo, today)
-    val errors = analyzer.validateOfflineGroupBy(externalSource)
+    val errors = analyzer.validateOfflineGroupBy(externalPart)
     assertFalse("Expected validation errors for mismatched value schemas", errors.isEmpty)
     assertTrue("Error should mention value schema mismatch",
       errors.exists(_.contains("valueSchema contains columns")))
@@ -1006,9 +1022,12 @@ class AnalyzerTest {
     val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
     // Don't set offlineGroupBy (it remains null)
 
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
     // This should return no errors (validation should be skipped)
     val analyzer = new Analyzer(dummyTableUtils, externalSource, oneMonthAgo, today)
-    val errors = analyzer.validateOfflineGroupBy(externalSource)
+    val errors = analyzer.validateOfflineGroupBy(externalPart)
     assertTrue("Expected no errors when offlineGroupBy is null", errors.isEmpty)
   }
 
