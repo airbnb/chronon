@@ -1064,8 +1064,10 @@ object Extensions {
     }
 
     lazy val joinPartOps: Seq[JoinPartOps] =
-      Option(join.getRegularAndExternalJoinParts)
-        .getOrElse(Seq.empty[JoinPart])
+      Option(join.joinParts)
+        .getOrElse(new util.ArrayList[JoinPart]())
+        .toScala
+        .toSeq
         .map(new JoinPartOps(_))
 
     def logFullValues: Boolean = true // TODO: supports opt-out in the future

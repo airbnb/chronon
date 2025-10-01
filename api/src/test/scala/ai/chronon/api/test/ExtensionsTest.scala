@@ -16,7 +16,7 @@
 
 package ai.chronon.api.test
 
-import ai.chronon.api.{Accuracy, Builders, Constants, GroupBy, StringType, DoubleType, StructType, StructField}
+import ai.chronon.api.{Accuracy, Builders, Constants, GroupBy}
 import org.junit.Test
 import ai.chronon.api.Extensions._
 import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
@@ -248,5 +248,4 @@ class ExtensionsTest {
     assertEquals(join1.semanticHash(excludeTopic = true), join2.semanticHash(excludeTopic = true))
     assertEquals(join1.semanticHash(excludeTopic = false), join2.semanticHash(excludeTopic = false))
   }
-
 }
