@@ -368,6 +368,7 @@ class Analyzer(tableUtils: TableUtils,
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
     val joinIntermediateValuesMetadata = ListBuffer[AggregationMetadata]()
+    val externalGroupByMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbStartPartitions = mutable.Map[String, List[String]]()
     val noAccessTables = mutable.Set[String]() ++= leftNoAccessTables
@@ -400,7 +401,9 @@ class Analyzer(tableUtils: TableUtils,
           skipTimestampCheck = skipTimestampCheck || leftNoAccessTables.nonEmpty,
           validateTablePermission = validateTablePermission
         )
-      joinIntermediateValuesMetadata ++= analyzeGroupByResult.outputMetadata.map { aggMeta =>
+
+      val target = if (!part.isExternal) joinIntermediateValuesMetadata else externalGroupByMetadata
+      target ++= analyzeGroupByResult.outputMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
                             aggMeta.operation,
@@ -408,6 +411,7 @@ class Analyzer(tableUtils: TableUtils,
                             aggMeta.inputColumn,
                             part.getGroupBy.getMetaData.getName)
       }
+
       // Run validation checks.
       keysWithError ++= runSchemaValidation(leftSchema.toMap, analyzeGroupByResult.keySchema.toMap, part.rightToLeft)
       val subPartitionFilters =
@@ -424,9 +428,12 @@ class Analyzer(tableUtils: TableUtils,
       if (gbStartPartition.nonEmpty)
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
+
+    val externalGroupBySchema = externalGroupByMetadata.map(aggregation => (aggregation.name, aggregation.columnType))
+
     if (joinConf.onlineExternalParts != null) {
       // Validate ExternalSource schemas if they have offlineGroupBy configured
-      externalSourceErrors ++= runExternalSourceCheck(joinConf)
+      externalSourceErrors ++= runExternalSourceCheck(joinConf, externalGroupBySchema)
 
       joinConf.onlineExternalParts.toScala.foreach { part =>
         joinIntermediateValuesMetadata ++= part.source.valueFields.map { field =>
@@ -812,11 +819,15 @@ class Analyzer(tableUtils: TableUtils,
     * This ensures that online and offline serving will produce consistent results.
     *
     * @param externalPart The external part to validate
+    * @param externalGroupBySchema The schema of the external groupBy features from offline computation
     * @return Sequence of error messages, empty if no errors
     */
-  def validateOfflineGroupBy(externalPart: api.ExternalPart): Seq[String] =
+  def validateOfflineGroupBy(externalPart: api.ExternalPart,
+                             externalGroupBySchema: Seq[(String, DataType)]): Seq[String] =
     Option(externalPart.source.offlineGroupBy)
-      .map(_ => validateKeySchemaCompatibility(externalPart.source) ++ validateValueSchemaCompatibility(externalPart))
+      .map(_ =>
+        validateKeySchemaCompatibility(externalPart.source) ++ validateValueSchemaCompatibility(externalPart,
+                                                                                                externalGroupBySchema))
       .getOrElse(Seq.empty)
 
   private def validateKeySchemaCompatibility(externalSource: api.ExternalSource): Seq[String] = {
@@ -858,7 +869,8 @@ class Analyzer(tableUtils: TableUtils,
     errors
   }
 
-  private def validateValueSchemaCompatibility(externalPart: api.ExternalPart): Seq[String] = {
+  private def validateValueSchemaCompatibility(externalPart: api.ExternalPart,
+                                               externalGroupBySchema: Seq[(String, DataType)]): Seq[String] = {
     val errors = scala.collection.mutable.ListBuffer[String]()
 
     if (externalPart.source.valueSchema == null) {
@@ -866,26 +878,41 @@ class Analyzer(tableUtils: TableUtils,
       return errors
     }
 
+    // Get expected schema from ExternalPart (what online expects)
     val externalValueFields = externalPart.valueSchemaFull
-    val externalValueNames = externalValueFields.map(_.name).toSet
+    val expectedSchema = externalValueFields.map(field => (field.name, field.fieldType)).toMap
 
-    // External features use full names that include the prefix: ext_[prefix_]sourceName_fieldName
-    // The offlineGroupBy must define derivations to produce features with matching names.
-    // For example, if the external part has fullName="ext_prefix_source" and valueField="feature_value",
-    // the final feature name will be "ext_prefix_source_feature_value", which must match a derived column name.
-    val groupByDerivedColumns = externalPart.source.offlineGroupBy.derivationsScala.map(_.name).toSet
+    // Get actual schema from offline GroupBy computation (what offline produces)
+    val prefix = externalPart.fullName + "_"
+    val actualSchema = externalGroupBySchema
+      .filter(_._1.startsWith(prefix))
+      .toMap
 
-    // Check that ExternalSource value schema fields are compatible with GroupBy output
-    val missingValueColumns = externalValueNames -- groupByDerivedColumns
+    // Check for fields in expected but not in actual (missing fields)
+    val missingFields = expectedSchema.keySet -- actualSchema.keySet
+    if (missingFields.nonEmpty) {
+      errors += s"ExternalSource ${externalPart.source.metadata.name} offline GroupBy is missing value fields: " +
+        s"[${missingFields.mkString(", ")}]. These fields are defined in the ExternalSource valueSchema " +
+        s"but are not produced by the offlineGroupBy."
+    }
 
-    if (missingValueColumns.nonEmpty) {
-      // This is an error because ExternalSource valueSchema must be compatible with GroupBy output
-      // to ensure consistency between online and offline serving
-      errors += s"ExternalSource ${externalPart.source.metadata.name} valueSchema contains columns [${missingValueColumns
-        .mkString(", ")}] " +
-        s"that are not present in offlineGroupBy derived output columns [${groupByDerivedColumns.mkString(", ")}]. " +
-        s"This indicates schema incompatibility between online and offline serving. " +
-        s"Please ensure ExternalSource valueSchema matches the expected output of the GroupBy aggregations."
+    // Check for fields in actual but not in expected (extra fields)
+    val extraFields = actualSchema.keySet -- expectedSchema.keySet
+    if (extraFields.nonEmpty) {
+      errors += s"ExternalSource ${externalPart.source.metadata.name} offline GroupBy produces extra value fields: " +
+        s"[${extraFields.mkString(", ")}]. These fields are not defined in the ExternalSource valueSchema."
+    }
+
+    // Check for type mismatches in common fields
+    val commonFields = expectedSchema.keySet.intersect(actualSchema.keySet)
+    commonFields.foreach { fieldName =>
+      val expectedType = expectedSchema(fieldName)
+      val actualType = actualSchema(fieldName)
+      if (expectedType != actualType) {
+        errors += s"ExternalSource ${externalPart.source.metadata.name} field '$fieldName' has type mismatch: " +
+          s"expected ${DataType.toString(expectedType)} (from ExternalSource valueSchema) " +
+          s"but offline GroupBy produces ${DataType.toString(actualType)}"
+      }
     }
 
     errors
@@ -896,11 +923,12 @@ class Analyzer(tableUtils: TableUtils,
     * This ensures schema compatibility between ExternalSources and their offlineGroupBy configurations.
     *
     * @param joinConf The join configuration to validate
+    * @param externalGroupBySchema The schema of the external groupBy features from offline computation
     * @return Sequence of error messages, empty if no errors
     */
-  def runExternalSourceCheck(joinConf: api.Join): Seq[String] =
+  def runExternalSourceCheck(joinConf: api.Join, externalGroupBySchema: Seq[(String, DataType)]): Seq[String] =
     Option(joinConf.onlineExternalParts)
-      .map(_.toScala.flatMap(part => validateOfflineGroupBy(part)))
+      .map(_.toScala.flatMap(part => validateOfflineGroupBy(part, externalGroupBySchema)))
       .getOrElse(Seq.empty)
 
   def run(exportSchema: Boolean = false): Unit =

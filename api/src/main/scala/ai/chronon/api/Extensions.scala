@@ -745,8 +745,17 @@ object Extensions {
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
-    lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
+    lazy val fullPrefix = {
+      Option(groupBy.getMetaData.customJsonLookUp("customizedFullPrefix"))
+        .map(_.toString)
+        .getOrElse((Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_"))
+    }
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
+
+    lazy val isExternal: Boolean = Option(groupBy.getMetaData.customJsonLookUp("isExternal"))
+      .map(_.toString)
+      .getOrElse("false")
+      .toBoolean
 
     def valueColumns: Seq[String] = joinPart.groupBy.valueColumns.map(fullPrefix + "_" + _)
 
@@ -1026,9 +1035,21 @@ object Extensions {
         .getOrElse(Seq.empty)
         .filter(_.source.offlineGroupBy != null) // Only offline-capable ExternalParts
         .map { externalPart =>
+          // Set customJson with fullPrefix override
+          val offlineGroupBy = externalPart.source.offlineGroupBy.deepCopy()
+          val existingCustomJson = Option(offlineGroupBy.metaData.customJson).getOrElse("{}")
+
+          val mapper = new ObjectMapper()
+          val typeRef = new TypeReference[java.util.HashMap[String, Object]]() {}
+          val customJsonMap: java.util.Map[String, Object] = mapper.readValue(existingCustomJson, typeRef)
+          customJsonMap.put("customizedFullPrefix", externalPart.fullName)
+          customJsonMap.put("isExternal", "true") // Mark as external for JoinPartOps.isExternal
+          val updatedCustomJson = mapper.writeValueAsString(customJsonMap)
+          offlineGroupBy.metaData.setCustomJson(updatedCustomJson)
+
           // Convert ExternalPart to synthetic JoinPart
           val syntheticJoinPart = new JoinPart()
-          syntheticJoinPart.setGroupBy(externalPart.source.offlineGroupBy)
+          syntheticJoinPart.setGroupBy(offlineGroupBy)
           if (externalPart.keyMapping != null) {
             syntheticJoinPart.setKeyMapping(externalPart.keyMapping)
           }
