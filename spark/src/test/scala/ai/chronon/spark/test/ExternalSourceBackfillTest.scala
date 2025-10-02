@@ -38,7 +38,7 @@ class ExternalSourceBackfillTest {
     val spark: SparkSession =
       SparkSessionBuilder.build("ExternalSourceBackfillTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
-    val namespace = "test_namespace_ext_backfill" + "_" + Random.alphanumeric.take(6).mkString
+    val namespace = "test_namespace_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
 
     // Create user transaction data for offline GroupBy
@@ -72,24 +72,21 @@ class ExternalSourceBackfillTest {
         )
       ),
       derivations = Seq(
-        // External part will have fullName "ext_ext_external_transaction_features_XXX"
-        // (Constants.ExternalPrefix + "_" + prefix + "_" + metadata.name)
-        // So we need to derive column with that prefix + field name
         Builders.Derivation.star(), // Keep all base aggregation columns
         Builders.Derivation(
-          name = s"ext_ext_external_transaction_features_${namespace}_amount_sum_30d",
+          name = s"es_amount",
           expression = "amount_sum_30d"
         )
       ),
-      metaData = Builders.MetaData(name = s"user_transaction_features_$namespace", namespace = namespace),
+      metaData = Builders.MetaData(name = s"gb_amount", namespace = namespace),
       accuracy = Accuracy.TEMPORAL
     )
 
     // Create ExternalSource with offline GroupBy
     val externalSource = Builders.ExternalSource(
-      metadata = Builders.MetaData(name = s"external_transaction_features_$namespace"),
+      metadata = Builders.MetaData(name = s"test_external_source"),
       keySchema = StructType("external_keys", Array(StructField("user_id", StringType))),
-      valueSchema = StructType("external_values", Array(StructField("amount_sum_30d", LongType)))
+      valueSchema = StructType("external_values", Array(StructField("es_amount", LongType)))
     )
     externalSource.setOfflineGroupBy(offlineGroupBy)
 
@@ -113,13 +110,14 @@ class ExternalSourceBackfillTest {
         ),
         table = userEventTable
       ),
+      joinParts = Seq(),
       externalParts = Seq(
         Builders.ExternalPart(
           externalSource,
-          prefix = "ext"
+          prefix = "txn"
         )
       ),
-      metaData = Builders.MetaData(name = s"test_external_join_$namespace", namespace = namespace)
+      metaData = Builders.MetaData(name = s"test_external_part", namespace = namespace)
     )
 
     // Run analyzer to ensure GroupBy tables are created
@@ -157,7 +155,7 @@ class ExternalSourceBackfillTest {
     val spark: SparkSession =
       SparkSessionBuilder.build("ExternalSourceBackfillTest_Mixed" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
-    val namespace = "test_namespace_mixed" + "_" + Random.alphanumeric.take(6).mkString
+    val namespace = "test_namespace_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
 
     // Create transaction data for external source GroupBy
@@ -200,15 +198,13 @@ class ExternalSourceBackfillTest {
         )
       ),
       derivations = Seq(
-        // External part will have fullName "ext_purchase_external_purchase_features_XXX"
-        // So we need to derive column with that prefix + field name
         Builders.Derivation.star(), // Keep all base aggregation columns
         Builders.Derivation(
-          name = s"ext_purchase_external_purchase_features_${namespace}_purchase_amount_average_7d",
+          name = s"purchase_amount",
           expression = "purchase_amount_average_7d"
         )
       ),
-      metaData = Builders.MetaData(name = s"purchase_features_$namespace", namespace = namespace),
+      metaData = Builders.MetaData(name = s"gb_purchase", namespace = namespace),
       accuracy = Accuracy.TEMPORAL
     )
 
@@ -231,15 +227,15 @@ class ExternalSourceBackfillTest {
           windows = Seq(new Window(14, TimeUnit.DAYS))
         )
       ),
-      metaData = Builders.MetaData(name = s"session_features_$namespace", namespace = namespace),
+      metaData = Builders.MetaData(name = s"gb_session", namespace = namespace),
       accuracy = Accuracy.TEMPORAL
     )
 
     // Create ExternalSource with offline GroupBy
     val externalSource = Builders.ExternalSource(
-      metadata = Builders.MetaData(name = s"external_purchase_features_$namespace"),
+      metadata = Builders.MetaData(name = s"es_purchase"),
       keySchema = StructType("external_keys", Array(StructField("user_id", StringType))),
-      valueSchema = StructType("external_values", Array(StructField("purchase_amount_average_7d", DoubleType)))
+      valueSchema = StructType("external_values", Array(StructField("purchase_amount", DoubleType)))
     )
     externalSource.setOfflineGroupBy(purchaseGroupBy)
 
@@ -274,7 +270,7 @@ class ExternalSourceBackfillTest {
           prefix = "purchase"
         )
       ),
-      metaData = Builders.MetaData(name = s"test_mixed_join_$namespace", namespace = namespace)
+      metaData = Builders.MetaData(name = s"test_mixed_join", namespace = namespace)
     )
 
     // Run analyzer to ensure all GroupBy tables are created
@@ -292,18 +288,18 @@ class ExternalSourceBackfillTest {
 
     // Verify that both regular JoinPart and ExternalPart columns are present
     val columns = computed.columns.toSet
+    println(s"Columns: ${computed.columns.mkString(", ")}")
     assertTrue("Should contain left source columns", columns.contains("user_id"))
     assertTrue("Should contain left source columns", columns.contains("page_views"))
     assertTrue("Should contain regular JoinPart prefixed columns",
                columns.exists(_.startsWith("session_")))
     assertTrue("Should contain external source prefixed columns",
-               columns.exists(_.startsWith("purchase_")))
+               columns.exists(_.endsWith("purchase_amount")))
 
     // Show results for debugging
     println("=== Mixed External and JoinPart Results ===")
     computed.show(20, truncate = false)
     println(s"Total rows: ${computed.count()}")
-    println(s"Columns: ${computed.columns.mkString(", ")}")
 
     spark.sql(s"DROP DATABASE IF EXISTS $namespace CASCADE")
   }
@@ -313,7 +309,7 @@ class ExternalSourceBackfillTest {
     val spark: SparkSession =
       SparkSessionBuilder.build("ExternalSourceBackfillTest_KeyMapping" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
-    val namespace = "test_namespace_keymapping" + "_" + Random.alphanumeric.take(6).mkString
+    val namespace = "test_namespace_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
 
     // Create feature data with internal_user_id
@@ -346,23 +342,21 @@ class ExternalSourceBackfillTest {
         )
       ),
       derivations = Seq(
-        // External part will have fullName "ext_mapped_external_features_XXX"
-        // So we need to derive column with that prefix + field name
         Builders.Derivation.star(), // Keep all base aggregation columns
         Builders.Derivation(
-          name = s"ext_mapped_external_features_${namespace}_feature_score_max_30d",
+          name = s"feature_score",
           expression = "feature_score_max_30d"
         )
       ),
-      metaData = Builders.MetaData(name = s"feature_gb_$namespace", namespace = namespace),
+      metaData = Builders.MetaData(name = "gb_feature", namespace = namespace),
       accuracy = Accuracy.TEMPORAL
     )
 
     // Create ExternalSource that expects internal_user_id
     val externalSource = Builders.ExternalSource(
-      metadata = Builders.MetaData(name = s"external_features_$namespace"),
+      metadata = Builders.MetaData(name = "es_feature"),
       keySchema = StructType("external_keys", Array(StructField("internal_user_id", StringType))),
-      valueSchema = StructType("external_values", Array(StructField("feature_score_max_30d", LongType)))
+      valueSchema = StructType("external_values", Array(StructField("feature_score", LongType)))
     )
     externalSource.setOfflineGroupBy(featureGroupBy)
 
@@ -392,7 +386,7 @@ class ExternalSourceBackfillTest {
           prefix = "mapped"
         )
       ),
-      metaData = Builders.MetaData(name = s"test_keymapping_join_$namespace", namespace = namespace)
+      metaData = Builders.MetaData(name = s"test_keymapping_join", namespace = namespace)
     )
 
     // Run analyzer to ensure GroupBy tables are created
@@ -413,7 +407,7 @@ class ExternalSourceBackfillTest {
     assertTrue("Should contain external_user_id from left", columns.contains("external_user_id"))
     assertTrue("Should contain request_type from left", columns.contains("request_type"))
     assertTrue("Should contain mapped external columns",
-               columns.exists(_.startsWith("mapped_")))
+               columns.exists(_.startsWith("ext_mapped_")))
 
     // Show results for debugging
     println("=== Key Mapping External Source Results ===")
