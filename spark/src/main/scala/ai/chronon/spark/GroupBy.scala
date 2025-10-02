@@ -763,18 +763,16 @@ object GroupBy {
     )
 
     val incrementalGroupByAggParts  = partitionRangeHoles.map { holes =>
-      holes.foreach { hole =>
+      val incrementalAggregationParts = holes.map{ hole =>
         logger.info(s"Filling hole in incremental table: $hole")
         val incrementalGroupByBackfill =
           from(groupByConf, hole, tableUtils, computeDependency = true, incrementalMode = true)
         incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, hole, tableProps)
+        incrementalGroupByBackfill.flattenedAgg.aggregationParts
       }
 
-      holes.headOption.map { firstHole =>
-        from(groupByConf, firstHole, tableUtils, computeDependency = true, incrementalMode = true)
-          .flattenedAgg.aggregationParts
-        }.getOrElse(Seq.empty)
-      }.getOrElse(Seq.empty)
+      incrementalAggregationParts.headOption.getOrElse(Seq.empty)
+    }.getOrElse(Seq.empty)
 
     (incrementalQueryableRange, incrementalGroupByAggParts)
   }
