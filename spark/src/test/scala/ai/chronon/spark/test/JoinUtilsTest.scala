@@ -19,10 +19,11 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.{Builders, Constants}
-import ai.chronon.spark.JoinUtils.{contains_any, set_add}
+import ai.chronon.spark.JoinUtils.{contains_any, dropDuplicatesUsingJoinShuffle, set_add}
 import ai.chronon.spark.{GroupBy, JoinUtils, PartitionRange, SparkSessionBuilder, TableUtils}
 import ai.chronon.spark.Extensions._
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.execution.exchange.Exchange
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -100,6 +101,147 @@ class JoinUtilsTest {
     expected.zip(actual).map {
       case (e, a) => e == a
     }
+  }
+
+  @Test
+  def reuseDedupShuffle(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val leftDf = spark.createDataFrame(spark.sparkContext.parallelize(Seq(
+      (1.0, "a2")
+    )))
+    val rightDf = spark.createDataFrame(spark.sparkContext.parallelize(Seq(
+      (1.0, "a2")
+    )))
+
+    val keys = Seq("_1")
+    val deduped = dropDuplicatesUsingJoinShuffle(rightDf, leftDf, keys)
+      .as[(String, String)](spark.implicits.newProductEncoder)
+
+    val exchanges = leftDf.join(deduped, keys)
+      .queryExecution.executedPlan
+      .collect { case _: Exchange => true }
+      .length
+
+    assertEquals(2, exchanges)
+  }
+
+  private def runDropDuplicates(left: Seq[(String, String)], right: Seq[(String, String)], keys: Seq[String]): Seq[(String, String)] = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinUtilsTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val leftDf = spark.createDataFrame(spark.sparkContext.parallelize(left))
+    val rightDf = spark.createDataFrame(spark.sparkContext.parallelize(right))
+
+    dropDuplicatesUsingJoinShuffle(rightDf, leftDf, keys)
+      .as[(String, String)](spark.implicits.newProductEncoder)
+      .collect()
+      .toSeq
+  }
+
+  @Test
+  def testNoDuplicates(): Unit = {
+    val left = Seq(
+      ("a1", "a2"),
+      ("b1", "b2"),
+      ("c1", "c2")
+    )
+    val right = Seq(
+      ("a1", "a2"),
+      ("b1", "b2"),
+      ("c1", "c2")
+    )
+    val keys = Seq("_1")
+
+    val expected = right
+    val result = runDropDuplicates(left, right, keys)
+
+    assertEquals(expected.length, result.length)
+    result.foreach { r => assertTrue(expected.contains(r)) }
+  }
+
+  @Test
+  def testNoDuplicatesColumn2(): Unit = {
+    val left = Seq(
+      ("a1", "a2"),
+      ("b1", "b2"),
+      ("c1", "c2")
+    )
+    val right = Seq(
+      ("a1", "a2"),
+      ("a1", "b2"),
+      ("a1", "c2")
+    )
+    val keys = Seq("_1", "_2")
+
+    val expected = right
+    val result = runDropDuplicates(left, right, keys)
+
+    assertEquals(expected.length, result.length)
+    result.foreach { r => assertTrue(expected.contains(r)) }
+  }
+
+  @Test
+  def testDuplicates(): Unit = {
+    val left = Seq(
+      ("a1", "a2"),
+      ("b1", "b2"),
+      ("c1", "c2")
+    )
+    val right = Seq(
+      ("a1", "a2"),
+      ("a1", "b2"),
+      ("c1", "c2")
+    )
+    val keys = Seq("_1")
+
+    // to handle nondeterministic sort
+    val expected1 = Seq(
+      ("a1", "a2"),
+      ("c1", "c2")
+    )
+    val expected2 = Seq(
+      ("a1", "b2"),
+      ("c1", "c2")
+    )
+    val result = runDropDuplicates(left, right, keys)
+
+    assertEquals(expected1.length, result.length)
+    result.foreach { r => assertTrue(expected1.contains(r) || expected2.contains(r)) }
+  }
+
+  @Test
+  def test2ColumnDedup(): Unit = {
+    val left = Seq(
+      ("a1", "a2"),
+      ("b1", "b2"),
+      ("c1", "c2")
+    )
+    val right = Seq(
+      ("a1", "a2"),
+      ("a1", "a2"),
+      ("a1", "c2")
+    )
+    val keys = Seq("_1", "_2")
+
+    val expected = Seq(
+      ("a1", "a2"),
+      ("a1", "c2")
+    )
+    val result = runDropDuplicates(left, right, keys)
+
+    assertEquals(expected.length, result.length)
+    result.foreach { r => assertTrue(expected.contains(r)) }
+  }
+
+  @Test
+  def testEmpty(): Unit = {
+    val left = Seq()
+    val right = Seq()
+    val keys = Seq("_1")
+
+    val result = runDropDuplicates(left, right, keys)
+
+    assertTrue(result.isEmpty)
   }
 
   private def testJoinScenario(leftSchema: StructType,
