@@ -1,4 +1,4 @@
-so ththe # affirm/group_bys/instrument_risk/instrument_risk_data_v1_0.py
+ # affirm/group_bys/instrument_risk/instrument_risk_data_v1_0.py
 
 from ai.chronon.api.ttypes import Source, EntitySource, MetaData, Aggregation, Operation, Window, TimeUnit
 from ai.chronon.query import Query, select
