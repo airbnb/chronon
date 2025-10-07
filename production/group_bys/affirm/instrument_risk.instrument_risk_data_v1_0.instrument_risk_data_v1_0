@@ -1,0 +1,122 @@
+{
+  "metaData": {
+    "name": "affirm.instrument_risk.instrument_risk_data_v1_0.instrument_risk_data_v1_0",
+    "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_affirm_instrument_risk_staging_query_v1_ds\", \"spec\": \"affirm_instrument_risk_staging_query_v1/ds={{ ds }}\", \"start\": null, \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "default",
+    "team": "affirm",
+    "offlineSchedule": "@daily"
+  },
+  "sources": [
+    {
+      "entities": {
+        "snapshotTable": "affirm_instrument_risk_staging_query_v1",
+        "query": {
+          "selects": {
+            "user_ari": "user_ari",
+            "snapshot_time": "snapshot_time",
+            "processed_time": "processed_time",
+            "model_name": "model_name",
+            "model_version": "model_version",
+            "galactus__predict_pay__instrument_aris__v1": "galactus__predict_pay__instrument_aris__v1",
+            "galactus__predict_pay__instrument_risk_scores__v1": "galactus__predict_pay__instrument_risk_scores__v1"
+          },
+          "timeColumn": "snapshot_time",
+          "setups": []
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "user_ari"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "model_version",
+      "operation": 3,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__predict_pay__instrument_risk_scores__v1",
+      "operation": 3,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__predict_pay__instrument_aris__v1",
+      "operation": 3,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "model_name",
+      "operation": 3,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "snapshot_time",
+      "operation": 6,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    }
+  ]
+}

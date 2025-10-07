@@ -1,0 +1,12 @@
+{
+  "metaData": {
+    "name": "affirm.instrument_risk_staging_query.v1",
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "affirm",
+    "team": "affirm"
+  },
+  "query": "\n        SELECT *, \n               CONCAT(year, '-', LPAD(month, 2, '0'), '-', LPAD(day, 2, '0')) as ds\n        FROM (\n          SELECT *, \n                 INPUT_FILE_NAME() as file_path,\n                 REGEXP_EXTRACT(INPUT_FILE_NAME(), '.*/([0-9]{4})/([0-9]{1,2})/([0-9]{1,2})/.*', 1) as year,\n                 REGEXP_EXTRACT(INPUT_FILE_NAME(), '.*/([0-9]{4})/([0-9]{1,2})/([0-9]{1,2})/.*', 2) as month,\n                 REGEXP_EXTRACT(INPUT_FILE_NAME(), '.*/([0-9]{4})/([0-9]{1,2})/([0-9]{1,2})/.*', 3) as day\n          FROM parquet.`s3://affirm-risk-sherlock-ca/feature-store/instrument_risk_data/v1`\n          WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'\n        )\n    ",
+  "startPartition": "2024-01-01"
+}
