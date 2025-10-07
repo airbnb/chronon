@@ -855,8 +855,6 @@ case class TableUtils(sparkSession: SparkSession) {
                      inputToOutputShift: Int = 0,
                      skipFirstHole: Boolean = true): Option[Seq[PartitionRange]] = {
 
-    logger.info(s"-----------UnfilledRanges---------------------")
-    logger.info(s"unfilled range called for output table: $outputTable")
     val validPartitionRange = if (outputPartitionRange.start == null) { // determine partition range automatically
       val inputStart = inputTables.flatMap(
         _.map(table =>
@@ -874,8 +872,6 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       outputPartitionRange
     }
-
-    logger.info(s"Determined valid partition range: $validPartitionRange")
     val outputExisting = partitions(outputTable)
     logger.info(s"outputExisting : ${outputExisting}")
     // To avoid recomputing partitions removed by retention mechanisms we will not fill holes in the very beginning of the range
@@ -895,10 +891,8 @@ case class TableUtils(sparkSession: SparkSession) {
         validPartitionRange.partitions.toSet
       }
 
-    logger.info(s"Fillable partitions : ${fillablePartitions}")
     val outputMissing = fillablePartitions -- outputExisting
 
-    logger.info(s"outputMissing : ${outputMissing}")
     val allInputExisting = inputTables
       .map { tables =>
         tables
@@ -910,9 +904,7 @@ case class TableUtils(sparkSession: SparkSession) {
           .map(partitionSpec.shift(_, inputToOutputShift))
       }
       .getOrElse(fillablePartitions)
-
-    logger.info(s"allInputExisting : ${allInputExisting}")
-
+    
     val inputMissing = fillablePartitions -- allInputExisting
     val missingPartitions = outputMissing -- inputMissing
     val missingChunks = chunk(missingPartitions)
