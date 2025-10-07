@@ -62,8 +62,12 @@
         "description": "Used for the unit test cases",
         "namespace": "default"
     },
-  "cs_ds": {
+    "cs_ds": {
         "description": "Used for unit testing purposes",
+        "namespace": "default"
+    },
+    "affirm": {
+        "description": "Affirm team configurations",
         "namespace": "default"
     }
 }
