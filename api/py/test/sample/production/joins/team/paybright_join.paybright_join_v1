@@ -1,0 +1,110 @@
+{
+  "metaData": {
+    "name": "team.paybright_join.paybright_join_v1",
+    "online": 0,
+    "production": 0,
+    "customJson": "{\"check_consistency\": false, \"lag\": 0, \"join_tags\": null, \"join_part_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_checkouts_ds\", \"spec\": \"checkouts/ds={{ ds }}\", \"start\": null, \"end\": null}",
+      "{\"name\": \"wait_for_ml_ofs_galactus_materialize_paybright_repayment_data_ds\", \"spec\": \"ml_ofs_galactus_materialize_paybright_repayment_data/ds={{ ds }}\", \"start\": null, \"end\": null}",
+      "{\"name\": \"wait_for_ml_ofs_galactus_paybright_user_features_ds\", \"spec\": \"ml_ofs_galactus_paybright_user_features/ds={{ ds }}\", \"start\": null, \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "default",
+    "team": "team",
+    "samplePercent": 100.0,
+    "offlineSchedule": "@daily"
+  },
+  "left": {
+    "events": {
+      "table": "checkouts",
+      "query": {
+        "selects": {
+          "user_id": "user_id",
+          "ts": "ts"
+        },
+        "timeColumn": "ts",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "team.paybright_repayment_data.paybright_repayment_data_v1",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_ml_ofs_galactus_materialize_paybright_repayment_data_ds\", \"spec\": \"ml_ofs_galactus_materialize_paybright_repayment_data/ds={{ ds }}\", \"start\": null, \"end\": null}"
+          ],
+          "team": "team",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "ml_ofs_galactus_materialize_paybright_repayment_data",
+              "query": {
+                "selects": {
+                  "user_id": "user_id",
+                  "snapshot_time": "snapshot_time",
+                  "galactus_paybright_user__history_average_lateness_days_v1": "galactus_paybright_user__history_average_lateness_days_v1",
+                  "galactus_paybright_user__history_average_zeroed_lateness_days_v1": "galactus_paybright_user__history_average_zeroed_lateness_days_v1",
+                  "galactus_paybright_user__history_max_lateness_days_v1": "galactus_paybright_user__history_max_lateness_days_v1",
+                  "galactus_paybright_user__history_num_outstanding_loans_v1": "galactus_paybright_user__history_num_outstanding_loans_v1",
+                  "galactus_paybright_user__history_num_payments_last_60d_v1": "galactus_paybright_user__history_num_payments_last_60d_v1",
+                  "galactus_paybright_user__history_prop_fully_paid_off_loans_v1": "galactus_paybright_user__history_prop_fully_paid_off_loans_v1",
+                  "galactus_paybright_user__history_total_payment_amount_cents_60d_v1": "galactus_paybright_user__history_total_payment_amount_cents_60d_v1",
+                  "galactus_paybright_user__history_total_payment_amount_cents_v1": "galactus_paybright_user__history_total_payment_amount_cents_v1"
+                },
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "user_id"
+        ]
+      }
+    },
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "team.paybright_user_features.paybright_user_features_v1",
+          "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+          "dependencies": [
+            "{\"name\": \"wait_for_ml_ofs_galactus_paybright_user_features_ds\", \"spec\": \"ml_ofs_galactus_paybright_user_features/ds={{ ds }}\", \"start\": null, \"end\": null}"
+          ],
+          "team": "team",
+          "offlineSchedule": "@daily"
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "ml_ofs_galactus_paybright_user_features",
+              "query": {
+                "selects": {
+                  "user_id": "user_id",
+                  "galactus_paybright_user__history_average_lateness_days_v1": "galactus_paybright_user__history_average_lateness_days_v1",
+                  "galactus_paybright_user__history_average_zeroed_lateness_days_v1": "galactus_paybright_user__history_average_zeroed_lateness_days_v1",
+                  "galactus_paybright_user__history_max_lateness_days_v1": "galactus_paybright_user__history_max_lateness_days_v1",
+                  "galactus_paybright_user__history_num_outstanding_loans_v1": "galactus_paybright_user__history_num_outstanding_loans_v1",
+                  "galactus_paybright_user__history_num_payments_last_60d_v1": "galactus_paybright_user__history_num_payments_last_60d_v1",
+                  "galactus_paybright_user__history_prop_fully_paid_off_loans_v1": "galactus_paybright_user__history_prop_fully_paid_off_loans_v1",
+                  "galactus_paybright_user__history_total_payment_amount_cents_60d_v1": "galactus_paybright_user__history_total_payment_amount_cents_60d_v1",
+                  "galactus_paybright_user__history_total_payment_amount_cents_v1": "galactus_paybright_user__history_total_payment_amount_cents_v1"
+                },
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "user_id"
+        ]
+      }
+    }
+  ]
+}
