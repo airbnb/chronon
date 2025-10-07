@@ -1,0 +1,16 @@
+{
+  "metaData": {
+    "name": "team.paybright_repayment_data.v1",
+    "dependencies": [
+      "your_warehouse.paybright.repayment_data/ds={{ ds }}"
+    ],
+    "tableProperties": {
+      "source": "chronon",
+      "description": "Paybright repayment data materialization - replaces Airflow DAG"
+    },
+    "outputNamespace": "default",
+    "team": "team"
+  },
+  "query": "\nSELECT \n    user_id,\n    repayment_amount,\n    transaction_id,\n    merchant_id,\n    repayment_date,\n    country_code,\n    status,\n    ds  -- partition column for daily processing\nFROM your_warehouse.paybright.repayment_data  -- Replace with your actual table\nWHERE ds = '{{ ds }}'  -- This gets replaced with the actual date\n  AND country_code = 'ca'  -- Based on your DAG's country filter\n",
+  "startPartition": "2023-03-07"
+}
