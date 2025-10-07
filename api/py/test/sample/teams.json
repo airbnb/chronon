@@ -65,5 +65,22 @@
   "cs_ds": {
         "description": "Used for unit testing purposes",
         "namespace": "default"
+    },
+    "team": {
+        "description": "Team for purchases and repayment data",
+        "namespace": "default",
+        "production": {
+            "backfill": {
+                "EXECUTOR_CORES": "4",
+                "DRIVER_MEMORY": "8G",
+                "EXECUTOR_MEMORY": "16G",
+                "PARALLELISM": "1000"
+            },
+            "upload": {
+                "EXECUTOR_CORES": "2",
+                "EXECUTOR_MEMORY": "8G",
+                "PARALLELISM": "500"
+            }
+        }
     }
 }

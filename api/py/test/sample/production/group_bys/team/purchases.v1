@@ -1,0 +1,297 @@
+{
+  "metaData": {
+    "name": "team.purchases.v1",
+    "online": 1,
+    "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_data.purchases_ds\", \"spec\": \"data.purchases/ds={{ ds }}\", \"start\": null, \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "default",
+    "team": "team",
+    "offlineSchedule": "@daily"
+  },
+  "sources": [
+    {
+      "events": {
+        "table": "data.purchases",
+        "query": {
+          "selects": {
+            "user_id": "user_id",
+            "purchase_amount": "purchase_amount",
+            "repayment_amount": "repayment_amount",
+            "transaction_type": "transaction_type",
+            "merchant_id": "merchant_id",
+            "country_code": "country_code"
+          },
+          "timeColumn": "ts",
+          "setups": []
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "user_id"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "purchase_amount",
+      "operation": 7,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_amount",
+      "operation": 6,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_amount",
+      "operation": 8,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_amount",
+      "operation": 1,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "repayment_amount",
+      "operation": 7,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "repayment_amount",
+      "operation": 6,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "repayment_amount",
+      "operation": 8,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "transaction_type",
+      "operation": 6,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "merchant_id",
+      "operation": 4,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 14,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_amount",
+      "operation": 13,
+      "argMap": {
+        "k": "5"
+      }
+    },
+    {
+      "inputColumn": "repayment_amount",
+      "operation": 13,
+      "argMap": {
+        "k": "3"
+      }
+    }
+  ]
+}
