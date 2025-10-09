@@ -19,7 +19,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
+import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, ExternalJoinPart, TimeUnit, Window}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import ai.chronon.spark.Extensions.StructTypeOps
@@ -402,7 +402,7 @@ class Analyzer(tableUtils: TableUtils,
           validateTablePermission = validateTablePermission
         )
 
-      val target = if (!part.isExternal) joinIntermediateValuesMetadata else externalGroupByMetadata
+      val target = if (!part.isInstanceOf[ExternalJoinPart]) joinIntermediateValuesMetadata else externalGroupByMetadata
       target ++= analyzeGroupByResult.outputMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
