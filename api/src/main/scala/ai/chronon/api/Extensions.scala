@@ -704,10 +704,11 @@ object Extensions {
   }
 
   implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
-    lazy val fullName: String =
+    lazy val fullName: String = {
       Constants.ExternalPrefix + "_" +
         Option(externalPart.prefix).map(_ + "_").getOrElse("") +
         externalPart.source.metadata.name.sanitize
+    }
 
     def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
       val rightToLeft = right_keys.map(k => k -> flipped.getOrElse(k, k))
@@ -746,16 +747,14 @@ object Extensions {
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
     lazy val fullPrefix = {
-      Option(groupBy.getMetaData.customJsonLookUp("customizedFullPrefix"))
-        .map(_.toString)
-        .getOrElse((Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_"))
+      joinPart match {
+        case part: ExternalJoinPart =>
+          part.externalJoinFullPrefix
+        case _ =>
+          (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
+      }
     }
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
-
-    lazy val isExternal: Boolean = Option(groupBy.getMetaData.customJsonLookUp("isExternal"))
-      .map(_.toString)
-      .getOrElse("false")
-      .toBoolean
 
     def valueColumns: Seq[String] = joinPart.groupBy.valueColumns.map(fullPrefix + "_" + _)
 
@@ -1029,7 +1028,7 @@ object Extensions {
       *
       * @return Sequence of JoinParts converted from offline-capable ExternalParts
       */
-    private def getExternalJoinParts: Seq[JoinPart] = {
+    private def getExternalJoinParts: Seq[ExternalJoinPart] = {
       Option(join.onlineExternalParts)
         .map(_.toScala)
         .getOrElse(Seq.empty)
@@ -1037,15 +1036,6 @@ object Extensions {
         .map { externalPart =>
           // Set customJson with fullPrefix override
           val offlineGroupBy = externalPart.source.offlineGroupBy.deepCopy()
-          val existingCustomJson = Option(offlineGroupBy.metaData.customJson).getOrElse("{}")
-
-          val mapper = new ObjectMapper()
-          val typeRef = new TypeReference[java.util.HashMap[String, Object]]() {}
-          val customJsonMap: java.util.Map[String, Object] = mapper.readValue(existingCustomJson, typeRef)
-          customJsonMap.put("customizedFullPrefix", externalPart.fullName)
-          customJsonMap.put("isExternal", "true") // Mark as external for JoinPartOps.isExternal
-          val updatedCustomJson = mapper.writeValueAsString(customJsonMap)
-          offlineGroupBy.metaData.setCustomJson(updatedCustomJson)
 
           // Convert ExternalPart to synthetic JoinPart
           val syntheticJoinPart = new JoinPart()
@@ -1056,7 +1046,7 @@ object Extensions {
           if (externalPart.prefix != null) {
             syntheticJoinPart.setPrefix(externalPart.prefix)
           }
-          syntheticJoinPart
+          new ExternalJoinPart(syntheticJoinPart, externalPart.fullName)
         }
     }
 

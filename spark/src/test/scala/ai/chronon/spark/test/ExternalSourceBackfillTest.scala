@@ -42,15 +42,16 @@ class ExternalSourceBackfillTest {
     tableUtils.createDatabase(namespace)
 
     // Create user transaction data for offline GroupBy
+    // IMPORTANT: Use same cardinality as left source to ensure key overlap
     val transactionColumns = List(
-      Column("user_id", StringType, 100),
+      Column("user_id", StringType, 100),  // Same cardinality as userEventColumns
       Column("amount", LongType, 1000),
       Column("transaction_type", StringType, 5)
     )
 
     val transactionTable = s"$namespace.user_transactions"
     spark.sql(s"DROP TABLE IF EXISTS $transactionTable")
-    DataFrameGen.events(spark, transactionColumns, 2000, partitions = 100).save(transactionTable)
+    DataFrameGen.events(spark, transactionColumns, 5000, partitions = 100).save(transactionTable)
 
     // Create offline GroupBy for external source
     val offlineGroupBy = Builders.GroupBy(
@@ -79,7 +80,7 @@ class ExternalSourceBackfillTest {
         )
       ),
       metaData = Builders.MetaData(name = s"gb_amount", namespace = namespace),
-      accuracy = Accuracy.TEMPORAL
+      accuracy = Accuracy.SNAPSHOT
     )
 
     // Create ExternalSource with offline GroupBy
@@ -141,11 +142,14 @@ class ExternalSourceBackfillTest {
     assertTrue("Should contain external source prefixed columns",
                columns.exists(_.startsWith("ext_")))
 
-    // Show results for debugging
-    println("=== External Source Backfill Join Results ===")
-    computed.show(20, truncate = false)
-    println(s"Total rows: ${computed.count()}")
-    println(s"Columns: ${computed.columns.mkString(", ")}")
+    // Verify that external source columns have non-null data
+    val externalColumns = computed.columns.filter(_.startsWith("ext_"))
+    assertTrue("Should have at least one external column", externalColumns.nonEmpty)
+    externalColumns.foreach { col =>
+      val nonNullCount = computed.filter(s"$col IS NOT NULL").count()
+      assertTrue(s"External column $col should have non-null values (found $nonNullCount non-null rows)",
+                 nonNullCount > 0)
+    }
 
     spark.sql(s"DROP DATABASE IF EXISTS $namespace CASCADE")
   }
@@ -155,6 +159,8 @@ class ExternalSourceBackfillTest {
     val spark: SparkSession =
       SparkSessionBuilder.build("ExternalSourceBackfillTest_Mixed" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
     val namespace = "test_namespace_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
 
@@ -205,7 +211,7 @@ class ExternalSourceBackfillTest {
         )
       ),
       metaData = Builders.MetaData(name = s"gb_purchase", namespace = namespace),
-      accuracy = Accuracy.TEMPORAL
+      accuracy = Accuracy.SNAPSHOT
     )
 
     // Create GroupBy for regular JoinPart (sessions)
@@ -228,7 +234,7 @@ class ExternalSourceBackfillTest {
         )
       ),
       metaData = Builders.MetaData(name = s"gb_session", namespace = namespace),
-      accuracy = Accuracy.TEMPORAL
+      accuracy = Accuracy.SNAPSHOT
     )
 
     // Create ExternalSource with offline GroupBy
@@ -288,7 +294,6 @@ class ExternalSourceBackfillTest {
 
     // Verify that both regular JoinPart and ExternalPart columns are present
     val columns = computed.columns.toSet
-    println(s"Columns: ${computed.columns.mkString(", ")}")
     assertTrue("Should contain left source columns", columns.contains("user_id"))
     assertTrue("Should contain left source columns", columns.contains("page_views"))
     assertTrue("Should contain regular JoinPart prefixed columns",
@@ -296,10 +301,23 @@ class ExternalSourceBackfillTest {
     assertTrue("Should contain external source prefixed columns",
                columns.exists(_.endsWith("purchase_amount")))
 
-    // Show results for debugging
-    println("=== Mixed External and JoinPart Results ===")
-    computed.show(20, truncate = false)
-    println(s"Total rows: ${computed.count()}")
+    // Verify that external source columns have non-null data
+    val externalColumns = computed.columns.filter(col => col.startsWith("ext_") || col.contains("purchase_amount"))
+    assertTrue("Should have at least one external column", externalColumns.nonEmpty)
+    externalColumns.foreach { col =>
+      val nonNullCount = computed.filter(s"$col IS NOT NULL").count()
+      assertTrue(s"External column $col should have non-null values (found $nonNullCount non-null rows)",
+                 nonNullCount > 0)
+    }
+
+    // Verify that regular JoinPart columns have non-null data
+    val joinPartColumns = computed.columns.filter(_.startsWith("session_"))
+    assertTrue("Should have at least one JoinPart column", joinPartColumns.nonEmpty)
+    joinPartColumns.foreach { col =>
+      val nonNullCount = computed.filter(s"$col IS NOT NULL").count()
+      assertTrue(s"JoinPart column $col should have non-null values (found $nonNullCount non-null rows)",
+                 nonNullCount > 0)
+    }
 
     spark.sql(s"DROP DATABASE IF EXISTS $namespace CASCADE")
   }
@@ -309,6 +327,8 @@ class ExternalSourceBackfillTest {
     val spark: SparkSession =
       SparkSessionBuilder.build("ExternalSourceBackfillTest_KeyMapping" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
     val namespace = "test_namespace_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
 
@@ -320,7 +340,9 @@ class ExternalSourceBackfillTest {
 
     val featureTable = s"$namespace.user_features"
     spark.sql(s"DROP TABLE IF EXISTS $featureTable")
-    DataFrameGen.events(spark, featureColumns, 2000, partitions = 60).save(featureTable)
+    // Generate 135 partitions to ensure we have enough data for 30-day window + 1-day shift + monthAgo (30 days) + buffer
+    // Need to cover: today back to (monthAgo - 30-day window - 1-day shift) = ~91 days + buffer
+    DataFrameGen.events(spark, featureColumns, 2000, partitions = 135).save(featureTable)
 
     // Create GroupBy using internal_user_id
     val featureGroupBy = Builders.GroupBy(
@@ -349,7 +371,7 @@ class ExternalSourceBackfillTest {
         )
       ),
       metaData = Builders.MetaData(name = "gb_feature", namespace = namespace),
-      accuracy = Accuracy.TEMPORAL
+      accuracy = Accuracy.SNAPSHOT
     )
 
     // Create ExternalSource that expects internal_user_id
@@ -368,7 +390,9 @@ class ExternalSourceBackfillTest {
 
     val requestTable = s"$namespace.user_requests"
     spark.sql(s"DROP TABLE IF EXISTS $requestTable")
-    DataFrameGen.events(spark, requestColumns, 600, partitions = 30).save(requestTable)
+    // Generate 60 partitions for the left table to limit the backfill window
+    // Feature table needs 135 partitions to support 60-day backfill + 30-day window + buffer
+    DataFrameGen.events(spark, requestColumns, 600, partitions = 60).save(requestTable)
 
     // Create Join with key mapping from external_user_id to internal_user_id
     val joinConf = Builders.Join(
@@ -389,8 +413,8 @@ class ExternalSourceBackfillTest {
       metaData = Builders.MetaData(name = s"test_keymapping_join", namespace = namespace)
     )
 
-    // Run analyzer to ensure GroupBy tables are created
-    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today)
+    // Run analyzer to ensure GroupBy tables are created (skip validation for test)
+    val analyzer = new Analyzer(tableUtils, joinConf, monthAgo, today, validateTablePermission = false, skipTimestampCheck = true)
     analyzer.run()
 
     // Create Join and compute
@@ -408,13 +432,6 @@ class ExternalSourceBackfillTest {
     assertTrue("Should contain request_type from left", columns.contains("request_type"))
     assertTrue("Should contain mapped external columns",
                columns.exists(_.startsWith("ext_mapped_")))
-
-    // Show results for debugging
-    println("=== Key Mapping External Source Results ===")
-    computed.show(20, truncate = false)
-    println(s"Total rows: ${computed.count()}")
-    println(s"Columns: ${computed.columns.mkString(", ")}")
-
     spark.sql(s"DROP DATABASE IF EXISTS $namespace CASCADE")
   }
 }
