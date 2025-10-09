@@ -1,0 +1,205 @@
+{
+  "metaData": {
+    "name": "affirm.paybright.repayment_data_v1_0.paybright_repayment_data_v1_0",
+    "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_affirm_paybright_staging_query_v1_ds\", \"spec\": \"affirm_paybright_staging_query_v1/ds={{ ds }}\", \"start\": null, \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "default",
+    "team": "affirm",
+    "offlineSchedule": "@daily"
+  },
+  "sources": [
+    {
+      "entities": {
+        "snapshotTable": "affirm_paybright_staging_query_v1",
+        "query": {
+          "selects": {
+            "user_phone_number": "user_phone_number",
+            "snapshot_time": "snapshot_time",
+            "galactus__paybright__user__history_average_lateness_days__v1": "galactus__paybright__user__history_average_lateness_days__v1",
+            "galactus__paybright__user__history_average_zeroed_lateness_days__v1": "galactus__paybright__user__history_average_zeroed_lateness_days__v1",
+            "galactus__paybright__user__history_days_since_last_payment__v1": "galactus__paybright__user__history_days_since_last_payment__v1",
+            "galactus__paybright__user__history_max_lateness_days__v1": "galactus__paybright__user__history_max_lateness_days__v1",
+            "galactus__paybright__user__history_num_outstanding_loans__v1": "galactus__paybright__user__history_num_outstanding_loans__v1",
+            "galactus__paybright__user__history_num_payments_last_60d__v1": "galactus__paybright__user__history_num_payments_last_60d__v1",
+            "galactus__paybright__user__history_prop_fully_paid_off_loans__il__v1": "galactus__paybright__user__history_prop_fully_paid_off_loans__il__v1",
+            "galactus__paybright__user__history_prop_fully_paid_off_loans__sp__v1": "galactus__paybright__user__history_prop_fully_paid_off_loans__sp__v1",
+            "galactus__paybright__user__history_total_payment_amount_cents_60d__v1": "galactus__paybright__user__history_total_payment_amount_cents_60d__v1",
+            "galactus__paybright__user__history_total_payment_amount_cents__v1": "galactus__paybright__user__history_total_payment_amount_cents__v1"
+          },
+          "timeColumn": "snapshot_time",
+          "setups": []
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "user_phone_number"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "galactus__paybright__user__history_average_lateness_days__v1",
+      "operation": 8,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__paybright__user__history_average_zeroed_lateness_days__v1",
+      "operation": 8,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__paybright__user__history_max_lateness_days__v1",
+      "operation": 1,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__paybright__user__history_days_since_last_payment__v1",
+      "operation": 0,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__paybright__user__history_num_outstanding_loans__v1",
+      "operation": 6,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__paybright__user__history_num_payments_last_60d__v1",
+      "operation": 7,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__paybright__user__history_prop_fully_paid_off_loans__il__v1",
+      "operation": 8,
+      "windows": [
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__paybright__user__history_prop_fully_paid_off_loans__sp__v1",
+      "operation": 8,
+      "windows": [
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__paybright__user__history_total_payment_amount_cents_60d__v1",
+      "operation": 7,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "galactus__paybright__user__history_total_payment_amount_cents__v1",
+      "operation": 7,
+      "windows": [
+        {
+          "length": 7,
+          "timeUnit": 1
+        },
+        {
+          "length": 30,
+          "timeUnit": 1
+        },
+        {
+          "length": 90,
+          "timeUnit": 1
+        }
+      ]
+    }
+  ]
+}
