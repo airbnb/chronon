@@ -295,7 +295,6 @@ object JoinUtils {
 
   def injectKeyFilter(leftDf: DataFrame, originalJoinPart: api.JoinPart): api.JoinPart = {
     // make a copy of the original joinPart to avoid accumulating the key filters into the same object
-    // IMPORTANT: Preserve ExternalJoinPart type if present
     val joinPart = originalJoinPart.deepCopy()
     // Modifies the joinPart to inject the key filter into the where Clause of GroupBys by hardcoding the keyset
     val groupByKeyNames = joinPart.groupBy.getKeyColumns.toScala
@@ -356,4 +355,5 @@ object JoinUtils {
       .filterNot(col => filter.contains(col))
     df.drop(columnsToDrop: _*)
   }
+
 }
