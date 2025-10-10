@@ -163,4 +163,78 @@ object SparkConversions {
       extraneousRecord
     )
   }
+
+  /**
+    * Converts a single Spark column value to Chronon normalized IR format.
+    *
+    * This is the inverse of toSparkRow() - used when reading pre-computed IR values
+    * from Spark DataFrames. Each IR column in the DataFrame is converted based on its
+    * Chronon IR type.
+    *
+    * Examples:
+    * - Count IR: Long → Long (pass-through, primitives stay primitives)
+    * - Sum IR: Double → Double (pass-through)
+    * - Average IR: Spark Row(sum, count) → Array[Any](sum, count)
+    * - UniqueCount IR: Spark Array[T] → java.util.ArrayList[T]
+    * - Histogram IR: Spark Map[K,V] → java.util.HashMap[K,V]
+    * - ApproxPercentile IR: Array[Byte] → Array[Byte] (pass-through for binary)
+    *
+    * @param sparkValue The value from a Spark DataFrame column
+    * @param irType The Chronon IR type for this column (from RowAggregator.incrementalOutputSchema)
+    * @return Normalized IR value ready for denormalize()
+    */
+  def fromSparkValue(sparkValue: Any, irType: api.DataType): Any = {
+    if (sparkValue == null) return null
+
+    (sparkValue, irType) match {
+      // Primitives - pass through (Count, Sum, Min, Max, Binary sketches)
+      case (v,
+            api.IntType | api.LongType | api.ShortType | api.ByteType | api.FloatType | api.DoubleType |
+            api.StringType | api.BooleanType | api.BinaryType) =>
+        v
+
+      // Spark Row → Array[Any] (Average, Variance, Skew, Kurtosis, FirstK/LastK)
+      case (row: Row, api.StructType(_, fields)) =>
+        val arr = new Array[Any](fields.length)
+        fields.zipWithIndex.foreach {
+          case (field, idx) =>
+            arr(idx) = fromSparkValue(row.get(idx), field.fieldType)
+        }
+        arr
+
+      // Spark mutable.WrappedArray → util.ArrayList (UniqueCount, TopK, BottomK)
+      case (arr: mutable.WrappedArray[_], api.ListType(elementType)) =>
+        val result = new util.ArrayList[Any](arr.length)
+        arr.foreach { elem =>
+          result.add(fromSparkValue(elem, elementType))
+        }
+        result
+
+      // Spark native Array → util.ArrayList (alternative array representation)
+      case (arr: Array[_], api.ListType(elementType)) =>
+        val result = new util.ArrayList[Any](arr.length)
+        arr.foreach { elem =>
+          result.add(fromSparkValue(elem, elementType))
+        }
+        result
+
+      // Spark scala.collection.Map → util.HashMap (Histogram)
+      case (map: scala.collection.Map[_, _], api.MapType(keyType, valueType)) =>
+        val result = new util.HashMap[Any, Any]()
+        map.foreach {
+          case (k, v) =>
+            result.put(
+              fromSparkValue(k, keyType),
+              fromSparkValue(v, valueType)
+            )
+        }
+        result
+
+      case (value, tpe) =>
+        throw new IllegalArgumentException(
+          s"Cannot convert Spark value $value (${value.getClass.getSimpleName}) " +
+            s"to Chronon IR type $tpe"
+        )
+    }
+  }
 }

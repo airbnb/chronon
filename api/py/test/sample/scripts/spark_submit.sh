@@ -28,13 +28,14 @@
 
 set -euxo pipefail
 CHRONON_WORKING_DIR=${CHRONON_TMPDIR:-/tmp}/${USER}
+echo $CHRONON_WORKING_DIR
 mkdir -p ${CHRONON_WORKING_DIR}
 export TEST_NAME="${APP_NAME}_${USER}_test"
 unset PYSPARK_DRIVER_PYTHON
 unset PYSPARK_PYTHON
 unset SPARK_HOME
 unset SPARK_CONF_DIR
-export LOG4J_FILE="${CHRONON_WORKING_DIR}/log4j_file"
+export LOG4J_FILE="${CHRONON_WORKING_DIR}/log4j.properties"
 cat > ${LOG4J_FILE} << EOF
 log4j.rootLogger=INFO, stdout
 log4j.appender.stdout=org.apache.log4j.ConsoleAppender
@@ -47,6 +48,9 @@ EOF
 $SPARK_SUBMIT_PATH \
 --driver-java-options " -Dlog4j.configuration=file:${LOG4J_FILE}" \
 --conf "spark.executor.extraJavaOptions= -XX:ParallelGCThreads=4 -XX:+UseParallelGC -XX:+UseCompressedOops" \
+--conf "spark.driver.extraJavaOptions=-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005 -Dlog4j.configuration=file:${LOG4J_FILE}" \
+--conf "spark.sql.warehouse.dir=/home/chaitu/projects/chronon/spark-warehouse" \
+--conf "javax.jdo.option.ConnectionURL=jdbc:derby:;databaseName=/home/chaitu/projects/chronon/hive-metastore/metastore_db;create=true" \
 --conf spark.sql.shuffle.partitions=${PARALLELISM:-4000} \
 --conf spark.dynamicAllocation.maxExecutors=${MAX_EXECUTORS:-1000} \
 --conf spark.default.parallelism=${PARALLELISM:-4000} \
@@ -76,4 +80,7 @@ grep --line-buffered -v "TransportResponseHandler:144"     |
 tee ${CHRONON_WORKING_DIR}/${APP_NAME}_spark.log
 
 
+
+
+#--conf "spark.driver.extraJavaOptions=-agentlib:jdwp=transport=dt_socket,server=y,suspend=y,address=5005 -Dlog4j.rootLogger=INFO,console" \
 
