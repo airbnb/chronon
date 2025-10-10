@@ -217,13 +217,6 @@ object ColumnAggregator {
   private def toJavaDouble[A: Numeric](inp: Any) =
     implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A]).asInstanceOf[java.lang.Double]
 
-
-  private def toStructArray(inp: Any): Array[Any] = inp match {
-    case r: org.apache.spark.sql.Row => r.toSeq.toArray
-    case null => null
-    case other => throw new IllegalArgumentException(s"Expected Row, got: $other")
-  }
-
   def construct(baseInputType: DataType,
                 aggregationPart: AggregationPart,
                 columnIndices: ColumnIndices,
@@ -349,7 +342,6 @@ object ColumnAggregator {
           case ShortType  => simple(new Average, toDouble[Short])
           case DoubleType => simple(new Average)
           case FloatType  => simple(new Average, toDouble[Float])
-          case StructType(name, fields) => simple(new AverageIR, toStructArray)
           case _          => mismatchException
         }
 

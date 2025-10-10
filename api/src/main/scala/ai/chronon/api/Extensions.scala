@@ -185,7 +185,6 @@ object Extensions {
 
   }
 
-
   implicit class AggregationOps(aggregation: Aggregation) {
 
     // one agg part per bucket per window

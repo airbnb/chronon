@@ -44,8 +44,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               val mutationDfFn: () => DataFrame = null,
               skewFilter: Option[String] = None,
               finalize: Boolean = true,
-              incrementalMode: Boolean = false
-             )
+              incrementalMode: Boolean = false)
     extends Serializable {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
@@ -102,7 +101,6 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
   lazy val flattenedAgg: RowAggregator = new RowAggregator(selectedSchema, aggregations.flatMap(_.unWindowed))
   lazy val incrementalSchema: Array[(String, api.DataType)] = flattenedAgg.incrementalOutputSchema
-
 
   @transient
   protected[spark] lazy val windowAggregator: RowAggregator =
@@ -368,22 +366,27 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
   }
 
-  def flattenOutputArrayType(hopsArrays: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)]): RDD[(Array[Any], Array[Any])] = {
-    hopsArrays.flatMap { case (keyWithHash: KeyWithHash, hopsArray: HopsAggregator.OutputArrayType) =>
-      val hopsArrayHead: Array[HopIr] = hopsArray.headOption.get
-      hopsArrayHead.map { array: HopIr =>
-        val timestamp = array.last.asInstanceOf[Long]
-        val withoutTimestamp = array.dropRight(1)
-        ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), withoutTimestamp)
-      }
+  def flattenOutputArrayType(
+      hopsArrays: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)]): RDD[(Array[Any], Array[Any])] = {
+    hopsArrays.flatMap {
+      case (keyWithHash: KeyWithHash, hopsArray: HopsAggregator.OutputArrayType) =>
+        val hopsArrayHead: Array[HopIr] = hopsArray.headOption.get
+        hopsArrayHead.map { array: HopIr =>
+          val timestamp = array.last.asInstanceOf[Long]
+          val withoutTimestamp = array.dropRight(1)
+          // Convert IR to Spark-native format for DataFrame storage
+          val sparkIr = SerializeIR.toSparkRow(withoutTimestamp, flattenedAgg)
+          ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), sparkIr)
+        }
     }
   }
 
   def convertHopsToDf(hops: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)],
-                             schema: Array[(String, ai.chronon.api.DataType)]
-                            ): DataFrame = {
+                      schema: Array[(String, ai.chronon.api.DataType)]): DataFrame = {
     val hopsDf = flattenOutputArrayType(hops)
-    toDf(hopsDf, Seq(tableUtils.partitionColumn -> StringType, Constants.TimeColumn -> LongType), Some(SparkConversions.fromChrononSchema(schema)))
+    toDf(hopsDf,
+         Seq(tableUtils.partitionColumn -> StringType, Constants.TimeColumn -> LongType),
+         Some(SparkConversions.fromChrononSchema(schema)))
   }
 
   // convert raw data into IRs, collected by hopSizes
@@ -409,7 +412,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   }
 
   protected[spark] def toDf(aggregateRdd: RDD[(Array[Any], Array[Any])],
-                            additionalFields: Seq[(String, DataType)], schema: Option[StructType] = None): DataFrame = {
+                            additionalFields: Seq[(String, DataType)],
+                            schema: Option[StructType] = None): DataFrame = {
     val finalKeySchema = StructType(keySchema ++ additionalFields.map { case (name, typ) => StructField(name, typ) })
     KvRdd(aggregateRdd, finalKeySchema, schema.getOrElse(postAggSchema)).toFlatDf
   }
@@ -421,15 +425,12 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       windowAggregator.normalize(ir)
     }
 
+  def computeIncrementalDf(incrementalOutputTable: String, range: PartitionRange, tableProps: Map[String, String]) = {
 
-    def computeIncrementalDf(incrementalOutputTable: String,
-                             range: PartitionRange,
-                             tableProps: Map[String, String]) = {
-
-      val hops = hopsAggregate(range.toTimePoints.min, DailyResolution)
-      val hopsDf: DataFrame = convertHopsToDf(hops, incrementalSchema)
-      hopsDf.save(incrementalOutputTable, tableProps)
-    }
+    val hops = hopsAggregate(range.toTimePoints.min, DailyResolution)
+    val hopsDf: DataFrame = convertHopsToDf(hops, incrementalSchema)
+    hopsDf.save(incrementalOutputTable, tableProps)
+  }
 }
 
 // TODO: truncate queryRange for caching
@@ -505,8 +506,10 @@ object GroupBy {
            incrementalMode: Boolean = false): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
-    val sourceQueryWindow: Option[Window]  = if (incrementalMode) Some(new Window(queryRange.daysBetween, TimeUnit.DAYS)) else groupByConf.maxWindow
-    val backfillQueryRange: PartitionRange = if (incrementalMode) PartitionRange(queryRange.end, queryRange.end)(tableUtils) else queryRange
+    val sourceQueryWindow: Option[Window] =
+      if (incrementalMode) Some(new Window(queryRange.daysBetween, TimeUnit.DAYS)) else groupByConf.maxWindow
+    val backfillQueryRange: PartitionRange =
+      if (incrementalMode) PartitionRange(queryRange.end, queryRange.end)(tableUtils) else queryRange
     val inputDf = groupByConf.sources.toScala
       .map { source =>
         val partitionColumn = tableUtils.getPartitionColumn(source.query)
@@ -606,12 +609,11 @@ object GroupBy {
     }
 
     new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
-        keyColumns,
-        nullFiltered,
-        mutationDfFn,
-        finalize = finalizeValue,
-        incrementalMode = incrementalMode,
-    )
+                keyColumns,
+                nullFiltered,
+                mutationDfFn,
+                finalize = finalizeValue,
+                incrementalMode = incrementalMode)
   }
 
   def getIntersectedRange(source: api.Source,
@@ -740,11 +742,11 @@ object GroupBy {
     * @param tableUtils
     */
   def computeIncrementalDf(
-                            groupByConf: api.GroupBy,
-                            range: PartitionRange,
-                            tableUtils: TableUtils,
-                            incrementalOutputTable: String,
-                          ): (PartitionRange, Seq[api.AggregationPart]) = {
+      groupByConf: api.GroupBy,
+      range: PartitionRange,
+      tableUtils: TableUtils,
+      incrementalOutputTable: String
+  ): (PartitionRange, Seq[api.AggregationPart]) = {
 
     val tableProps: Map[String, String] = Option(groupByConf.metaData.tableProperties)
       .map(_.toScala)
@@ -759,50 +761,82 @@ object GroupBy {
 
     val partitionRangeHoles: Option[Seq[PartitionRange]] = tableUtils.unfilledRanges(
       incrementalOutputTable,
-      incrementalQueryableRange,
+      incrementalQueryableRange
     )
 
-    val incrementalGroupByAggParts  = partitionRangeHoles.map { holes =>
-      val incrementalAggregationParts = holes.map{ hole =>
-        logger.info(s"Filling hole in incremental table: $hole")
-        val incrementalGroupByBackfill =
-          from(groupByConf, hole, tableUtils, computeDependency = true, incrementalMode = true)
-        incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, hole, tableProps)
-        incrementalGroupByBackfill.flattenedAgg.aggregationParts
-      }
+    val incrementalGroupByAggParts = partitionRangeHoles
+      .map { holes =>
+        val incrementalAggregationParts = holes.map { hole =>
+          logger.info(s"Filling hole in incremental table: $hole")
+          val incrementalGroupByBackfill =
+            from(groupByConf, hole, tableUtils, computeDependency = true, incrementalMode = true)
+          incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, hole, tableProps)
+          incrementalGroupByBackfill.flattenedAgg.aggregationParts
+        }
 
-      incrementalAggregationParts.headOption.getOrElse(Seq.empty)
-    }.getOrElse(Seq.empty)
+        incrementalAggregationParts.headOption.getOrElse(Seq.empty)
+      }
+      .getOrElse(Seq.empty)
 
     (incrementalQueryableRange, incrementalGroupByAggParts)
   }
 
-
   def fromIncrementalDf(
-                       groupByConf: api.GroupBy,
-                       range: PartitionRange,
-                       tableUtils: TableUtils,
-                     ): GroupBy = {
+      groupByConf: api.GroupBy,
+      range: PartitionRange,
+      tableUtils: TableUtils
+  ): GroupBy = {
 
     val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
 
-    val (incrementalQueryableRange, aggregationParts) = computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable)
+    val (incrementalQueryableRange, aggregationParts) =
+      computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable)
 
-    val (_, incrementalDf: DataFrame) =  incrementalQueryableRange.scanQueryStringAndDf(null, incrementalOutputTable)
+    val (_, incrementalDf: DataFrame) = incrementalQueryableRange.scanQueryStringAndDf(null, incrementalOutputTable)
 
-    val incrementalAggregations = aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
-      val newAgg = agg.deepCopy()
-      newAgg.setInputColumn(part.incrementalOutputColumnName)
-      newAgg
+    // Create RowAggregator for deserializing and merging IRs
+    val selectedSchema = SparkConversions.toChrononSchema(incrementalDf.schema)
+    val flattenedAggregations = groupByConf.getAggregations.toScala.flatMap(_.unWindowed)
+    val flattenedAgg = new RowAggregator(selectedSchema, flattenedAggregations)
+
+    // Convert Spark DataFrame to RDD, deserialize IRs, and merge by key
+    val keyColumns = groupByConf.getKeyColumns.toScala
+    val keySchema = StructType(keyColumns.map(incrementalDf.schema.apply).toArray)
+
+    val irRdd = incrementalDf.rdd.map { sparkRow =>
+      // Extract keys
+      val keys = keyColumns.map(sparkRow.getAs[Any]).toArray
+
+      // Deserialize IR columns from Spark Row
+      val ir = SerializeIR.fromSparkRow(sparkRow, flattenedAgg)
+
+      (keys.toSeq, ir)
     }
 
+    // Merge IRs by key
+    val mergedRdd = irRdd.reduceByKey { (ir1, ir2) =>
+      flattenedAgg.merge(ir1, ir2)
+    }
+
+    // Finalize IRs to get final feature values
+    val finalRdd = mergedRdd.map {
+      case (keys, ir) =>
+        (keys.toArray, flattenedAgg.finalize(ir))
+    }
+
+    // Convert back to DataFrame
+    val outputChrononSchema = flattenedAgg.outputSchema
+    val outputSparkSchema = SparkConversions.fromChrononSchema(outputChrononSchema)
+    implicit val session: SparkSession = incrementalDf.sparkSession
+    val finalDf = KvRdd(finalRdd, keySchema, outputSparkSchema).toFlatDf
+
     new GroupBy(
-      incrementalAggregations,
-      groupByConf.getKeyColumns.toScala,
-      incrementalDf,
+      groupByConf.getAggregations.toScala,
+      keyColumns,
+      finalDf,
       () => null,
       finalize = true,
-      incrementalMode = false,
+      incrementalMode = false
     )
 
   }

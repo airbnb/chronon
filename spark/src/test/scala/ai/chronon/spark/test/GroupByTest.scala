@@ -452,7 +452,6 @@ class GroupByTest {
              additionalAgg = aggs)
   }
 
-
   private def createTestSource(windowSize: Int = 365,
                                suffix: String = "",
                                partitionColOpt: Option[String] = None): (Source, String) = {
@@ -866,10 +865,10 @@ class GroupByTest {
     val testDatabase = s"staging_query_view_test_${Random.alphanumeric.take(6).mkString}"
     tableUtils.createDatabase(testDatabase)
 
-    // Create source data table with partitions  
+    // Create source data table with partitions
     val sourceSchema = List(
       Column("user", StringType, 20),
-      Column("item", StringType, 50), 
+      Column("item", StringType, 50),
       Column("time_spent_ms", LongType, 5000),
       Column("price", DoubleType, 100)
     )
@@ -892,7 +891,7 @@ class GroupByTest {
     stagingQueryJob.createStagingQueryView()
 
     val viewTable = s"$testDatabase.test_staging_view"
-    
+
     // Now create a GroupBy that uses the staging query view as its source
     val source = Builders.Source.events(
       table = viewTable,
@@ -901,12 +900,12 @@ class GroupByTest {
 
     val aggregations = Seq(
       Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
-      Builders.Aggregation(operation = Operation.AVERAGE, 
-                          inputColumn = "price",
-                          windows = Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(operation = Operation.AVERAGE,
+                           inputColumn = "price",
+                           windows = Seq(new Window(7, TimeUnit.DAYS))),
       Builders.Aggregation(operation = Operation.MAX,
-                          inputColumn = "time_spent_ms", 
-                          windows = Seq(new Window(30, TimeUnit.DAYS)))
+                           inputColumn = "time_spent_ms",
+                           windows = Seq(new Window(30, TimeUnit.DAYS)))
     )
 
     val groupByConf = Builders.GroupBy(
@@ -963,7 +962,8 @@ class GroupByTest {
 
   @Test
   def testIncrementalMode(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncremental" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTestIncremental" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val namespace = "incremental"
     tableUtils.createDatabase(namespace)
@@ -978,9 +978,9 @@ class GroupByTest {
     println(s"Input DataFrame: ${df.count()}")
 
     val aggregations: Seq[Aggregation] = Seq(
-        //Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
-        //Builders.Aggregation(Operation.UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
-        Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
+      //Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+      //Builders.Aggregation(Operation.UNIQUE_COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS), WindowUtils.Unbounded)),
+      Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
     )
 
     val tableProps: Map[String, String] = Map(
@@ -988,7 +988,9 @@ class GroupByTest {
     )
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
-    groupBy.computeIncrementalDf("incremental.testIncrementalOutput", PartitionRange("2025-05-01", "2025-06-01"), tableProps)
+    groupBy.computeIncrementalDf("incremental.testIncrementalOutput",
+                                 PartitionRange("2025-05-01", "2025-06-01"),
+                                 tableProps)
 
     val actualIncrementalDf = spark.sql(s"select * from incremental.testIncrementalOutput where ds='2025-05-11'")
     df.createOrReplaceTempView("test_incremental_input")
@@ -1016,7 +1018,8 @@ class GroupByTest {
 
   @Test
   def testSnapshotIncrementalEvents(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val schema = List(
       Column("user", StringType, 10), // ts = last 10 days
@@ -1032,7 +1035,7 @@ class GroupByTest {
     df.createOrReplaceTempView(viewName)
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS))),
-        Builders.Aggregation(Operation.SUM, "rating", Seq(new Window(10, TimeUnit.DAYS)))
+      Builders.Aggregation(Operation.SUM, "rating", Seq(new Window(10, TimeUnit.DAYS)))
     )
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
@@ -1062,7 +1065,8 @@ class GroupByTest {
     }
     assertEquals(0, diff.count())
 
-    val diffIncremental = Comparison.sideBySide(actualDfIncremental, expectedDf, List("user", tableUtils.partitionColumn))
+    val diffIncremental =
+      Comparison.sideBySide(actualDfIncremental, expectedDf, List("user", tableUtils.partitionColumn))
     if (diffIncremental.count() > 0) {
       diffIncremental.show()
       println("diff result rows incremental")
