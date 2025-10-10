@@ -17,6 +17,7 @@
 package ai.chronon.spark
 
 import ai.chronon.spark.LocalTableExporter.DefaultNamespace
+import ai.chronon.spark.catalog.TableUtils
 import com.google.common.io.Files
 import org.apache.commons.io.FileUtils
 import org.apache.spark.sql.SaveMode

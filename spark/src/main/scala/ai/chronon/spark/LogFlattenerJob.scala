@@ -26,15 +26,15 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-import java.util.Base64
 
+import java.util.Base64
 import scala.+:
 import scala.collection.mutable
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{IterableOps, MapOps}
 import scala.util.{Failure, Success, Try}
-
 import ai.chronon.online.DerivationUtils.timeFields
+import ai.chronon.spark.catalog.TableUtils
 
 /**
   * Purpose of LogFlattenerJob is to unpack serialized Avro data from online requests and flatten each field

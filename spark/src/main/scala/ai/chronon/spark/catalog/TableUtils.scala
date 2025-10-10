@@ -14,34 +14,29 @@
  *    limitations under the License.
  */
 
-package ai.chronon.spark
+package ai.chronon.spark.catalog
 
-import java.io.{PrintWriter, Serializable, StringWriter}
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
-import ai.chronon.api.{Constants, PartitionSpec, Query}
 import ai.chronon.api.Extensions._
-import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
-import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
-import ai.chronon.spark.Hive.parseHivePartition
-import io.delta.tables.DeltaTable
-import jnr.ffi.annotations.Synchronized
+import ai.chronon.api.{Constants, PartitionSpec, Query}
+import ai.chronon.spark.Extensions.DfStats
+import ai.chronon.spark.{PartitionRange, SparkConstants}
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.delta.DeltaLog
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.sql._
 import org.apache.spark.storage.StorageLevel
+import org.slf4j.LoggerFactory
 
+import java.io.{PrintWriter, Serializable, StringWriter}
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
-import java.util.concurrent.{ExecutorService, Executors}
-import scala.collection.{Seq, mutable}
-import scala.collection.immutable
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import scala.collection.{Seq, immutable, mutable}
 import scala.util.{Failure, Success, Try}
 
 /**

@@ -20,6 +20,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.ParametricMacro
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import org.slf4j.LoggerFactory
 import org.apache.spark.sql.Row
 

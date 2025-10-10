@@ -18,12 +18,13 @@ package ai.chronon.spark.test
 
 import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel}
-import ai.chronon.spark.{GenericRowHandler, GroupByUpload, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{GenericRowHandler, GroupByUpload, SparkSessionBuilder}
 import ai.chronon.spark.streaming.{GroupBy, JoinSourceRunner}
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.sql.streaming.Trigger
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online.{AvroConversions, KVStore, TileCodec}
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.SparkSession
 
 import scala.annotation.tailrec

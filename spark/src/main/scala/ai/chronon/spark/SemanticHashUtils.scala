@@ -3,6 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api.Constants
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.spark.JoinUtils.logger
+import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 
 import scala.util.ScalaJavaConversions.MapOps
