@@ -19,23 +19,11 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{
-  Aggregation,
-  Builders,
-  Constants,
-  Derivation,
-  DoubleType,
-  IntType,
-  LongType,
-  Operation,
-  Source,
-  StringType,
-  TimeUnit,
-  Window
-}
+import ai.chronon.api.{Aggregation, Builders, Constants, Derivation, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
+import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}

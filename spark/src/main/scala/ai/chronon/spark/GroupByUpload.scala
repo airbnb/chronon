@@ -24,6 +24,7 @@ import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online.Extensions.ChrononStructTypeOps
 import ai.chronon.online.{GroupByServingInfoParsed, Metrics, SparkConversions}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.SparkEnv
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions.{col, lit, not}

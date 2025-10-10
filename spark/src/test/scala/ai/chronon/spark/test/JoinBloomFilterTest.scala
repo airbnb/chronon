@@ -4,23 +4,13 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.StructField
 import ai.chronon.api.Builders.Derivation
-import ai.chronon.api.{
-  Accuracy,
-  Builders,
-  Constants,
-  JoinPart,
-  LongType,
-  Operation,
-  PartitionSpec,
-  StringType,
-  TimeUnit,
-  Window
-}
+import ai.chronon.api.{Accuracy, Builders, Constants, JoinPart, LongType, Operation, PartitionSpec, StringType, TimeUnit, Window}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.{logger, renderDataSourceQuery}
 import ai.chronon.spark.SemanticHashUtils.{tableHashesChanged, tablesToRecompute}
 import ai.chronon.spark._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.SummaryJob
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD

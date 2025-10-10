@@ -20,6 +20,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -29,11 +30,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.SparkFiles
 import org.apache.spark.sql.streaming.StreamingQueryListener
-import org.apache.spark.sql.streaming.StreamingQueryListener.{
-  QueryProgressEvent,
-  QueryStartedEvent,
-  QueryTerminatedEvent
-}
+import org.apache.spark.sql.streaming.StreamingQueryListener.{QueryProgressEvent, QueryStartedEvent, QueryTerminatedEvent}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}

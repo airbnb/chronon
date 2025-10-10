@@ -19,7 +19,8 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{Join, SparkSessionBuilder}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types.DecimalType

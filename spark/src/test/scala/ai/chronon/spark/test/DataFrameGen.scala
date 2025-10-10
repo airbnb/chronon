@@ -19,7 +19,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, RowsWithSchema}
 import ai.chronon.api.{Constants, LongType, StringType}
 import ai.chronon.online.SparkConversions
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions._

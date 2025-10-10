@@ -19,6 +19,7 @@ package ai.chronon.spark.test
 import org.slf4j.LoggerFactory
 import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.spark._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
 import org.junit.Test

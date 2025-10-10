@@ -23,6 +23,7 @@ import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit,
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import ai.chronon.spark.Extensions.StructTypeOps
+import ai.chronon.spark.catalog.TableUtils
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
