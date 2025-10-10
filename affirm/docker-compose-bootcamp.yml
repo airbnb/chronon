@@ -1,0 +1,133 @@
+# Chronon Bootcamp Docker Compose - Minimal Setup for Learning
+# This setup includes only the essential services needed for GroupBy development
+
+services:
+
+  # MinIO for S3-compatible storage (ESSENTIAL for Iceberg)
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"  # API
+      - "9001:9001"  # Console
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # MongoDB - Chronon's built-in KV store (ESSENTIAL for online serving)
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin
+    volumes:
+      - mongodb_data:/opt/mongo/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Spark Master (ESSENTIAL for GroupBy computation)
+  spark-master:
+    image: bitnami/spark:3.5.0
+    ports:
+      - "8080:8080"  # Spark UI
+      - "7077:7077"  # Spark Master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+      - spark_events:/opt/bitnami/spark/spark-events
+
+  # Spark Worker (ESSENTIAL for GroupBy computation)
+  spark-worker:
+    image: bitnami/spark:3.5.0
+    depends_on:
+      - spark-master
+      - minio
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2G
+      - SPARK_WORKER_CORES=2
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes: []
+    scale: 2
+
+  # Chronon Main Container (ESSENTIAL for GroupBy execution)
+  chronon-main:
+    image: ezvz/chronon
+    command: bash -c "spark-shell -i scripts/data-loader.scala && tail -f /dev/null"
+    ports:
+      - "4040:4040"  # Spark UI
+      - "4041:4041"  # Spark UI (backup)
+    environment:
+      - USER=root
+      - SPARK_SUBMIT_PATH=spark-submit
+      - PYTHONPATH=/srv/chronon
+      - SPARK_VERSION=3.5.2
+      - JOB_MODE=spark://spark-master:7077
+      - PARALLELISM=4
+      - EXECUTOR_MEMORY=2G
+      - EXECUTOR_CORES=2
+      - DRIVER_MEMORY=1G
+      - CHRONON_LOG_TABLE=default.chronon_log_table
+      - CHRONON_ONLINE_CLASS=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
+      - CHRONON_ONLINE_ARGS=-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin
+      # Iceberg Configuration with Spark's built-in Hive catalog
+      - SPARK_SQL_EXTENSIONS=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+      - SPARK_SQL_CATALOG_SPARK_CATALOG=org.apache.iceberg.spark.SparkSessionCatalog
+      - SPARK_SQL_CATALOG_SPARK_CATALOG_TYPE=hive
+      - SPARK_SQL_CATALOG_SPARK_CATALOG_WAREHOUSE=s3a://chronon/warehouse
+      - SPARK_CHRONON_TABLE_WRITE_FORMAT=iceberg
+      - SPARK_CHRONON_TABLE_READ_FORMAT=iceberg
+      # S3 Configuration
+      - AWS_ACCESS_KEY_ID=minioadmin
+      - AWS_SECRET_ACCESS_KEY=minioadmin
+      - S3_ENDPOINT=http://minio:9000
+      - S3_PATH_STYLE_ACCESS=true
+    volumes:
+      - ../api/py/test/sample:/srv/chronon
+      - ./scripts:/srv/scripts
+      - spark_events:/opt/spark/spark-events
+    depends_on:
+      - spark-master
+      - minio
+      - mongodb
+
+  # Jupyter Notebook (ESSENTIAL for data exploration and verification)
+  jupyter:
+    image: jupyter/pyspark-notebook:latest
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - SPARK_MASTER=spark://spark-master:7077
+      - JUPYTER_TOKEN=chronon-dev
+    volumes:
+      - ../api/py:/home/jovyan/work/chronon-api
+      - ../api/py/test/sample:/home/jovyan/work/sample-data
+    depends_on:
+      - spark-master
+      - chronon-main
+
+volumes:
+  minio_data:
+  mongodb_data:
+  spark_events:
