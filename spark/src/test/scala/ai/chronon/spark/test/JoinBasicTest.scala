@@ -4,7 +4,18 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.StructField
 import ai.chronon.api.Builders.Derivation
-import ai.chronon.api.{Accuracy, Builders, Constants, JoinPart, LongType, Operation, PartitionSpec, StringType, TimeUnit, Window}
+import ai.chronon.api.{
+  Accuracy,
+  Builders,
+  Constants,
+  JoinPart,
+  LongType,
+  Operation,
+  PartitionSpec,
+  StringType,
+  TimeUnit,
+  Window
+}
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.{logger, renderDataSourceQuery}
