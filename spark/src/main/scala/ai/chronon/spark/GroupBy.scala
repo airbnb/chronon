@@ -44,7 +44,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               val mutationDfFn: () => DataFrame = null,
               skewFilter: Option[String] = None,
               finalize: Boolean = true,
-              incrementalMode: Boolean = false
+              val userInputAggregations: Seq[api.Aggregation] = null
              )
     extends Serializable {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -105,8 +105,13 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
 
   @transient
-  protected[spark] lazy val windowAggregator: RowAggregator =
-    new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack))
+  protected[spark] lazy val windowAggregator: RowAggregator = {
+    if (userInputAggregations != null) {
+       new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack), Option(userInputAggregations.flatMap(_.unpack)))
+    } else {
+        new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack))
+    }
+  }
 
   def snapshotEntitiesBase: RDD[(Array[Any], Array[Any])] = {
     val keys = (keyColumns :+ tableUtils.partitionColumn).toArray
@@ -421,7 +426,12 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       windowAggregator.normalize(ir)
     }
 
-
+  /**
+   * computes incremental daily table
+   * @param incrementalOutputTable output of the incremental data stored here
+   * @param range date range to calculate daily aggregatiosn
+   * @param tableProps
+   */
     def computeIncrementalDf(incrementalOutputTable: String,
                              range: PartitionRange,
                              tableProps: Map[String, String]) = {
@@ -610,7 +620,6 @@ object GroupBy {
         nullFiltered,
         mutationDfFn,
         finalize = finalizeValue,
-        incrementalMode = incrementalMode,
     )
   }
 
@@ -760,6 +769,7 @@ object GroupBy {
     val partitionRangeHoles: Option[Seq[PartitionRange]] = tableUtils.unfilledRanges(
       incrementalOutputTable,
       incrementalQueryableRange,
+      skipFirstHole = false
     )
 
     val incrementalGroupByAggParts  = partitionRangeHoles.map { holes =>
@@ -802,7 +812,7 @@ object GroupBy {
       incrementalDf,
       () => null,
       finalize = true,
-      incrementalMode = false,
+      userInputAggregations=groupByConf.aggregations.toScala
     )
 
   }

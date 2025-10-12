@@ -24,7 +24,10 @@ import scala.collection.Seq
 
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
-class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationParts: Seq[AggregationPart])
+// userAggregationParts is used when incrementalMode = True.
+class RowAggregator(val inputSchema: Seq[(String, DataType)],
+                    val aggregationParts: Seq[AggregationPart],
+                    val userInputAggregationParts: Option[Seq[AggregationPart]] = None )
     extends Serializable
     with SimpleAggregator[Row, Array[Any], Array[Any]] {
 
@@ -70,15 +73,24 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationPar
     .toArray
     .zip(columnAggregators.map(_.irType))
 
-  val incrementalOutputSchema = aggregationParts
+  val incrementalOutputSchema: Array[(String, DataType)] = aggregationParts
     .map(_.incrementalOutputColumnName)
     .toArray
     .zip(columnAggregators.map(_.irType))
 
-  val outputSchema: Array[(String, DataType)] = aggregationParts
+  val aggregationPartsOutputSchema: Array[(String, DataType)] = aggregationParts
     .map(_.outputColumnName)
     .toArray
     .zip(columnAggregators.map(_.outputType))
+
+  val outputSchema: Array[(String, DataType)] = userInputAggregationParts
+    .map{ parts =>
+      parts
+        .map(_.outputColumnName)
+        .toArray
+        .zip(columnAggregators.map(_.outputType))
+    }.getOrElse(aggregationPartsOutputSchema)
+
 
   val isNotDeletable: Boolean = columnAggregators.forall(!_.isDeletable)
 
