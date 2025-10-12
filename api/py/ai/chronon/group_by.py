@@ -362,6 +362,7 @@ def GroupBy(
     tags: Optional[Dict[str, str]] = None,
     derivations: Optional[List[ttypes.Derivation]] = None,
     deprecation_date: Optional[str] = None,
+    description: Optional[str] = None,
     is_incremental: Optional[bool] = False,
     **kwargs,
 ) -> ttypes.GroupBy:
