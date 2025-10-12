@@ -19,20 +19,7 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{
-  Aggregation,
-  Builders,
-  Constants,
-  Derivation,
-  DoubleType,
-  IntType,
-  LongType,
-  Operation,
-  Source,
-  StringType,
-  TimeUnit,
-  Window
-}
+import ai.chronon.api.{Aggregation, Builders, Constants, Derivation, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
@@ -116,6 +103,7 @@ class GroupByTest {
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+
     val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
     val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
     val datesViewName = "test_group_by_snapshot_events_output_range"
@@ -450,6 +438,7 @@ class GroupByTest {
              tableUtils = tableUtils,
              additionalAgg = aggs)
   }
+
 
   private def createTestSource(windowSize: Int = 365,
                                suffix: String = "",
@@ -958,4 +947,192 @@ class GroupByTest {
     """)
     assertTrue("Should be able to filter GroupBy results", filteredResult.count() >= 0)
   }
+
+
+  private def createTestSourceIncremental(windowSize: Int = 365,
+                               suffix: String = "",
+                               partitionColOpt: Option[String] = None): (Source, String) = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByIncrementalTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val startPartition = tableUtils.partitionSpec.minus(today, new Window(windowSize, TimeUnit.DAYS))
+    val endPartition = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val sourceSchema = List(
+      Column("user", StringType, 10), // ts = last 10 days
+      Column("session_length", IntType, 2),
+      Column("rating", DoubleType, 2000)
+    )
+    val namespace = "chronon_incremental_test"
+    val sourceTable = s"$namespace.test_group_by_steps$suffix"
+
+    tableUtils.createDatabase(namespace)
+    val genDf =
+      DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200, partitionColOpt = partitionColOpt)
+    partitionColOpt match {
+      case Some(partitionCol) => genDf.save(sourceTable, partitionColumns = Seq(partitionCol))
+      case None               => genDf.save(sourceTable)
+    }
+
+    val source = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("ts", "user", "time_spent_ms", "price"),
+        startPartition = startPartition,
+        partitionColumn = partitionColOpt.orNull),
+      table = sourceTable
+    )
+    (source, endPartition)
+  }
+
+  /**
+   * the test compute daily intermediate aggregations
+   *
+   *  Test is one daily partition data is correct
+   */
+  @Test
+  def testIncrementalDailyData(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncremental" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace = s"incremental_groupBy_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+    val schema = List(
+      Column("user", StringType, 10), // ts = last 10 days
+      Column("session_length", IntType, 2),
+      Column("rating", DoubleType, 2000)
+    )
+
+    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
+
+    val aggregations: Seq[Aggregation] = Seq(
+        Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
+    )
+
+    val tableProps: Map[String, String] = Map(
+      "source" -> "chronon"
+    )
+
+    val partitionRange = PartitionRange("2025-05-01", "2025-06-01")
+    val groupBy = new GroupBy(aggregations, Seq("user"), df)
+    groupBy.computeIncrementalDf(s"${namespace}.testIncrementalOutput", partitionRange, tableProps)
+
+    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalOutput where ds='2025-05-11'")
+    df.createOrReplaceTempView("test_incremental_input")
+
+    val query =
+      s"""
+         |select user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000 as ts, sum(session_length) as session_length_sum
+         |from test_incremental_input
+         |where ds='2025-05-11'
+         |group by user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000
+         |""".stripMargin
+
+    val expectedDf = spark.sql(query)
+
+    val diff = Comparison.sideBySide(actualIncrementalDf, expectedDf, List("user", tableUtils.partitionColumn))
+    if (diff.count() > 0) {
+      diff.show()
+      println("diff result rows")
+    }
+    assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testSnapshotIncrementalEvents(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace =  s"incremental_groupBy_snapshot_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+
+    val outputDates = CStream.genPartitions(10, tableUtils.partitionSpec)
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.SUM, "time_spent_ms", Seq(new Window(10, TimeUnit.DAYS), new Window(5, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.SUM, "price", Seq(new Window(10, TimeUnit.DAYS)))
+    )
+
+    val (source, endPartition) = createTestSource(windowSize = 30, suffix = "_snapshot_events", partitionColOpt = Some(tableUtils.partitionColumn))
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = aggregations,
+      metaData = Builders.MetaData(name = "testSnapshotIncremental", namespace = namespace, team = "chronon"),
+      backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+        new Window(20, TimeUnit.DAYS))
+    )
+
+    val df = spark.read.table(source.table)
+    val groupBy = new GroupBy(aggregations, Seq("item"), df.filter("item is not null"))
+    val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+
+    val  groupByIncremental = GroupBy.fromIncrementalDf(groupByConf, PartitionRange(outputDates.min, outputDates.max), tableUtils)
+    val incrementalExpectedDf = groupByIncremental.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+
+    val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
+    val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
+    val datesViewName = "test_group_by_snapshot_events_output_range"
+    outputDatesDf.createOrReplaceTempView(datesViewName)
+
+    val diff = Comparison.sideBySide(actualDf, incrementalExpectedDf, List("item", tableUtils.partitionColumn))
+    if (diff.count() > 0) {
+      diff.show()
+      println("diff result rows")
+    }
+    assertEquals(0, diff.count())
+  }
+
+
+  @Test
+  def testIncrementalModeReuseAggregation(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncrementalReuseAgg" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace = s"incremental_groupBy_reuse_agg_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+    val schema = List(
+      Column("user", StringType, 10), // ts = last 10 days
+      Column("session_length", IntType, 2),
+      Column("rating", DoubleType, 2000)
+    )
+
+    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
+
+    println(s"Input DataFrame: ${df.count()}")
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS), new Window(20, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "session_length", Seq(new Window(20, TimeUnit.DAYS)))
+    )
+
+    val tableProps: Map[String, String] = Map(
+      "source" -> "chronon"
+    )
+
+    val incrementalOutputTableName = "testIncrementalOutputReuseAgg"
+    val groupBy = new GroupBy(aggregations, Seq("user"), df)
+    groupBy.computeIncrementalDf(s"${namespace}.${incrementalOutputTableName}", PartitionRange("2025-05-01", "2025-06-01"), tableProps)
+
+    val tempView = "test_incremental_input_reuse_agg"
+    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.${incrementalOutputTableName} where ds='2025-05-11'")
+    df.createOrReplaceTempView(tempView)
+
+    spark.sql(s"select * from ${namespace}.${incrementalOutputTableName} where ds='2025-05-11'").show()
+
+    val query =
+      s"""
+         |select user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000 as ts, sum(session_length) as session_length_sum, count(session_length) as session_length_count
+         |from ${tempView}
+         |where ds='2025-05-11'
+         |group by user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000
+         |""".stripMargin
+
+    val expectedDf = spark.sql(query)
+
+    val diff = Comparison.sideBySide(actualIncrementalDf, expectedDf, List("user", tableUtils.partitionColumn))
+    if (diff.count() > 0) {
+      diff.show()
+      println("diff result rows")
+    }
+    assertEquals(0, diff.count())
+  }
+
+
 }
