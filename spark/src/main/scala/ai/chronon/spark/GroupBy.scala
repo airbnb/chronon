@@ -26,6 +26,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro, Source, TimeUnit, Window}
 import ai.chronon.online.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._

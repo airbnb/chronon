@@ -17,8 +17,8 @@
 package ai.chronon.api
 
 import java.util
-import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.collection.mutable
+import scala.util.ScalaJavaConversions.IteratorOps
 
 trait Row {
   def get(index: Int): Any
@@ -157,7 +157,7 @@ object Row {
             composer(
               list
                 .iterator()
-                .asScala
+                .toScala
                 .zipWithIndex
                 .map { case (value, idx) => edit(value, fields(idx).fieldType, getFieldSchema(fields(idx))) },
               dataType,
@@ -177,7 +177,7 @@ object Row {
         value match {
           case list: util.ArrayList[Any] =>
             collector(
-              list.iterator().asScala.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
+              list.iterator().toScala.map(edit(_, elemType, schemaTraverser.map(_.getCollectionType))),
               list.size()
             )
           case arr: Array[_] => // avro only recognizes arrayList for its ArrayType/ListType
@@ -198,7 +198,7 @@ object Row {
             map
               .entrySet()
               .iterator()
-              .asScala
+              .toScala
               .foreach { entry =>
                 newMap.put(
                   edit(

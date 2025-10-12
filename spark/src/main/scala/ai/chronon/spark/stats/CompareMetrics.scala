@@ -20,7 +20,8 @@ import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowUtils}
 import ai.chronon.api._
 import ai.chronon.online.{DataMetrics, SparkConversions}
-import ai.chronon.spark.{Comparison, TableUtils, TimedKvRdd}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{Comparison, TimedKvRdd}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.expressions.UserDefinedFunction

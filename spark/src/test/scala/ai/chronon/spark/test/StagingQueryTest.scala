@@ -20,6 +20,7 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.{TableUtils, View}
 import ai.chronon.spark.{StagingQuery, _}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
@@ -323,28 +324,35 @@ class StagingQueryTest {
     val outputView = stagingQueryConfView.metaData.outputTable
     val isView = tableUtils.tableReadFormat(outputView) match {
       case View => true
-      case _ => false
+      case _    => false
     }
-    
+
     assert(isView, s"Expected $outputView to be a view when createView=true")
 
     // Verify virtual partition metadata was written for the view
-    val virtualPartitionExists = try {
-      val metadataCount = tableUtils.sql(s"SELECT COUNT(*) as count FROM ${stagingQueryView.signalPartitionsTable} WHERE table_name = '$outputView'").collect()(0).getAs[Long]("count")
-      metadataCount > 0
-    } catch {
-      case _: Exception => false
-    }
+    val virtualPartitionExists =
+      try {
+        val metadataCount = tableUtils
+          .sql(
+            s"SELECT COUNT(*) as count FROM ${stagingQueryView.signalPartitionsTable} WHERE table_name = '$outputView'")
+          .collect()(0)
+          .getAs[Long]("count")
+        metadataCount > 0
+      } catch {
+        case _: Exception => false
+      }
     assert(virtualPartitionExists, s"Expected virtual partition metadata to exist for view $outputView")
 
     // Verify the structure of virtual partition metadata
     if (virtualPartitionExists) {
-      val metadataRows = tableUtils.sql(s"SELECT * FROM ${stagingQueryView.signalPartitionsTable} WHERE table_name = '$outputView'").collect()
+      val metadataRows = tableUtils
+        .sql(s"SELECT * FROM ${stagingQueryView.signalPartitionsTable} WHERE table_name = '$outputView'")
+        .collect()
       assert(metadataRows.length > 0, "Should have at least one partition metadata entry")
-      
+
       val firstRow = metadataRows(0)
       val tableName = firstRow.getAs[String]("table_name")
-      
+
       assertEquals(s"Virtual partition metadata should have correct table name", outputView, tableName)
     }
 
@@ -362,19 +370,25 @@ class StagingQueryTest {
     val outputTable = stagingQueryConfTable.metaData.outputTable
     val isTable = tableUtils.tableReadFormat(outputTable) match {
       case View => false
-      case _ => true
+      case _    => true
     }
-    
+
     assert(isTable, s"Expected $outputTable to be a table when createView=false")
 
     // Verify virtual partition metadata was NOT written for the table
-    val virtualPartitionExistsForTable = try {
-      val metadataCountForTable = tableUtils.sql(s"SELECT COUNT(*) as count FROM ${stagingQueryTable.signalPartitionsTable} WHERE table_name = '$outputTable'").collect()(0).getAs[Long]("count")
-      metadataCountForTable > 0
-    } catch {
-      case _: Exception => false
-    }
-    assert(!virtualPartitionExistsForTable, s"Expected NO virtual partition metadata for table $outputTable when createView=false")
+    val virtualPartitionExistsForTable =
+      try {
+        val metadataCountForTable = tableUtils
+          .sql(
+            s"SELECT COUNT(*) as count FROM ${stagingQueryTable.signalPartitionsTable} WHERE table_name = '$outputTable'")
+          .collect()(0)
+          .getAs[Long]("count")
+        metadataCountForTable > 0
+      } catch {
+        case _: Exception => false
+      }
+    assert(!virtualPartitionExistsForTable,
+           s"Expected NO virtual partition metadata for table $outputTable when createView=false")
 
     // Test Case 3: createView unset (should default to false and create table)
     val stagingQueryConfUnset = Builders.StagingQuery(
@@ -389,9 +403,9 @@ class StagingQueryTest {
     val outputUnset = stagingQueryConfUnset.metaData.outputTable
     val isTableUnset = tableUtils.tableReadFormat(outputUnset) match {
       case View => false
-      case _ => true
+      case _    => true
     }
-    
+
     assert(isTableUnset, s"Expected $outputUnset to be a table when createView is unset")
   }
 }

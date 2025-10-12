@@ -20,6 +20,7 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.ParametricMacro
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import org.slf4j.LoggerFactory
 import org.apache.spark.sql.Row
 
@@ -135,7 +136,6 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
   private def writeSignalPartitionMetadata(tableName: String): Unit = {
     val schema = org.apache.spark.sql.types.StructType(
       Seq(
-        // Add a dummy data column since tables cannot have only partition columns
         org.apache.spark.sql.types
           .StructField(StagingQuery.CREATED_AT_COLUMN, org.apache.spark.sql.types.StringType, false),
         org.apache.spark.sql.types

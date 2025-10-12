@@ -143,7 +143,7 @@ class SawtoothOnlineAggregatorTest extends TestCase {
         operation = Operation.HISTOGRAM,
         inputColumn = "action",
         windows = Seq(
-          new Window(3, TimeUnit.DAYS),
+          new Window(3, TimeUnit.DAYS)
         )
       )
     )
@@ -162,15 +162,15 @@ class SawtoothOnlineAggregatorTest extends TestCase {
 
     val finalBatchIr = FinalBatchIr(
       Array[Any](
-        null,                       // collapsed (T-1 -> T)
+        null // collapsed (T-1 -> T)
       ),
       Array(
-        Array.empty,                // 1‑day hops (not used)
-        Array(                      // 1-hour hops
-          hop(1, 1746745200000L),   // 2025-05-08 23:00:00 UTC
-          hop(1, 1746766800000L),   // 2025-05-09 05:00:00 UTC
+        Array.empty, // 1‑day hops (not used)
+        Array( // 1-hour hops
+              hop(1, 1746745200000L), // 2025-05-08 23:00:00 UTC
+              hop(1, 1746766800000L) // 2025-05-09 05:00:00 UTC
         ),
-        Array.empty                  // 5‑minute hops (not used)
+        Array.empty // 5‑minute hops (not used)
       )
     )
     val queryTs = batchEndTs + 100

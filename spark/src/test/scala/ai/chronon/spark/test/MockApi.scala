@@ -21,7 +21,7 @@ import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.Fetcher.Response
 import ai.chronon.online._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}
@@ -166,7 +166,7 @@ class MockApi(kvStore: () => KVStore, val namespace: String, val modelBackend: M
     df.withTimeBasedColumn("ds", "tsMillis").camelToSnake
   }
 
-  override def externalRegistry: ExternalSourceRegistry = {
+  override lazy val externalRegistry: ExternalSourceRegistry = {
     val registry = new ExternalSourceRegistry
     registry.add("plus_one", new PlusOneExternalHandler)
     registry.add("always_fails", new AlwaysFailsHandler)

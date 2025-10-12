@@ -21,6 +21,7 @@ import ai.chronon.spark.Extensions._
 import ai.chronon.spark.GroupBy.{logger, renderDataSourceQuery}
 import ai.chronon.spark.SemanticHashUtils.{tableHashesChanged, tablesToRecompute}
 import ai.chronon.spark._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.SummaryJob
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
@@ -33,7 +34,6 @@ import org.scalatest.Assertions.intercept
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.Row
 
-import scala.collection.JavaConverters._
 import scala.util.Random
 import scala.util.ScalaJavaConversions.ListOps
 import scala.util.Try

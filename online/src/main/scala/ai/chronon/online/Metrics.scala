@@ -39,6 +39,7 @@ object Metrics {
     val JoinLogFlatten = "join.log_flatten"
     val LabelJoin = "label_join"
     val ModelTransform = "model_transform"
+    val ModelTransformBatch = "model_transform.batch"
   }
 
   import Environment._

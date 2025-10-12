@@ -22,6 +22,8 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
+import ai.chronon.spark.Extensions.StructTypeOps
+import ai.chronon.spark.catalog.TableUtils
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
@@ -33,6 +35,7 @@ import org.slf4j.LoggerFactory
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, immutable, mutable}
 import scala.util.ScalaJavaConversions.ListOps
+import scala.util.Try
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -62,6 +65,31 @@ class ItemSketchSerializable extends Serializable {
 }
 
 case class Field(name: String, data_type: String)
+
+object Analyzer {
+  def validateAvroCompatibility(tableUtils: TableUtils, groupBy: GroupBy, groupByConf: api.GroupBy): Unit = {
+    if (tableUtils.chrononAvroSchemaValidation && groupByConf.metaData.online) {
+      // Validate that the baseDf schema is compatible with AvroSchema acceptable types
+      // This is required for online serving to work
+      try {
+        groupBy.keySchema.toAvroSchema("Key")
+        groupBy.preAggSchema.toAvroSchema("Value")
+      } catch {
+        case e: UnsupportedOperationException =>
+          throw new RuntimeException(
+            "In order to enable online serving, " +
+              "please make sure that the data types of your groupBy column types " +
+              "are compatible with AvroSchema acceptable types: " +
+              "You should cast the current data types to Avro compatible data types " +
+              "- e.g. tinyint is not supported in Avro, if you have a tinyint col1, " +
+              "you can CAST(col1 AS INT). If your use case is offline only, " +
+              "you can set chrononAvroSchemaValidation to false to disable Avro schema validation if you don't need online serving. \n"
+              + e.getMessage,
+            e)
+      }
+    }
+  }
+}
 
 class Analyzer(tableUtils: TableUtils,
                conf: Any,
@@ -230,6 +258,9 @@ class Analyzer(tableUtils: TableUtils,
                 groupByConf.keyColumns.toScala.toArray,
                 groupByConf.sources.toScala.map(_.table).mkString(","))
       else ""
+
+    Analyzer.validateAvroCompatibility(tableUtils, groupBy, groupByConf)
+
     val schema = if (groupByConf.hasDerivations) {
       val keyAndPartitionFields =
         groupBy.keySchema.fields ++ Seq(
@@ -774,8 +805,25 @@ class Analyzer(tableUtils: TableUtils,
           runAnalyzeJoin(parseConf[api.Join](confPath), exportSchema)
         } else if (confPath.contains("/group_bys/")) {
           runAnalyzeGroupBy(parseConf[api.GroupBy](confPath), exportSchema)
+        } else {
+          val joinConfTry = Try(parseConf[api.Join](confPath))
+          if (joinConfTry.isSuccess) {
+            runAnalyzeJoin(joinConfTry.get, exportSchema)
+          } else {
+            val groupByConfTry = Try(parseConf[api.GroupBy](confPath))
+            if (groupByConfTry.isSuccess) {
+              runAnalyzeGroupBy(groupByConfTry.get, exportSchema)
+            } else {
+              throw new IllegalArgumentException(
+                s"Cannot parse the config at $confPath as either Join or GroupBy. Please check the config file."
+              )
+            }
+          }
         }
       case groupByConf: api.GroupBy => runAnalyzeGroupBy(groupByConf, exportSchema)
       case joinConf: api.Join       => runAnalyzeJoin(joinConf, exportSchema)
+      case _ =>
+        throw new IllegalArgumentException(
+          "conf must be either a path to a config file, or a GroupBy or Join config: " + conf)
     }
 }
