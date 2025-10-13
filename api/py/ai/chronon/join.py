@@ -140,6 +140,7 @@ def ExternalSource(
     custom_json: Optional[str] = None,
     factory_name: Optional[str] = None,
     factory_params: Optional[Dict[str, str]] = None,
+    offline_group_by: Optional[api.GroupBy] = None,
 ) -> api.ExternalSource:
     """
     External sources are online only data sources. During fetching, using
@@ -180,6 +181,9 @@ def ExternalSource(
         creating the external source handler.
     :param factory_params: Optional parameters to pass to the factory when
         creating the handler.
+    :param offline_group_by: Optional GroupBy configuration to be used for
+        offline backfill computation. When provided, enables point-in-time
+        correct (PITC) offline computation for the external source.
 
     """
     assert name != "contextual", "Please use `ContextualSource`"
@@ -193,6 +197,7 @@ def ExternalSource(
         keySchema=DataType.STRUCT(f"ext_{name}_keys", *key_fields),
         valueSchema=DataType.STRUCT(f"ext_{name}_values", *value_fields),
         factoryConfig=factory_config,
+        offlineGroupBy=offline_group_by,
     )
 
 
