@@ -17,10 +17,10 @@
 package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
-import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, Builders, DoubleType, LongType, Operation, StringType, StructField, StructType, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert._
 import org.junit.Test
