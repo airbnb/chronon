@@ -1,0 +1,71 @@
+package build.service
+
+import mill._
+import mill.javalib._
+import mill.javalib.publish._
+import mill.scalalib.SbtModule
+
+object `package` extends SbtModule with PublishModule {
+
+  def scalaVersion = "2.12.12"
+
+  def mvnDeps = Seq(
+    mvn"ch.qos.logback:logback-classic:1.2.11",
+    mvn"com.typesafe:config:1.4.3",
+    mvn"io.micrometer:micrometer-registry-statsd:1.13.6",
+    mvn"io.netty:netty-all:4.1.111.Final",
+    mvn"io.vertx:vertx-config:4.5.10",
+    mvn"io.vertx:vertx-core:4.5.10",
+    mvn"io.vertx:vertx-micrometer-metrics:4.5.10",
+    mvn"io.vertx:vertx-web:4.5.10",
+    mvn"org.slf4j:slf4j-api:1.7.36"
+  )
+
+  def moduleDeps = super.moduleDeps ++ Seq(build.online)
+
+  def pomSettings = PomSettings(
+    "Chronon is a feature engineering platform",
+    "ai.chronon",
+    "https://github.com/airbnb/chronon",
+    Seq(License(
+      "Apache 2",
+      "Apache 2",
+      "http://www.apache.org/licenses/LICENSE-2.0.txt",
+      false,
+      false,
+      "repo"
+    )),
+    VersionControl(
+      Some("https://github.com/airbnb/chronon"),
+      Some("scm:git@github.com:airbnb/chronon.git"),
+      None,
+      None
+    ),
+    Seq(Developer(
+      "nikhilsimha",
+      "Nikhil Simha",
+      "http://nikhilsimha.com",
+      None,
+      None
+    ))
+  )
+
+  def publishVersion = "cb0ceedc95c0a4602315424f558e418f4c2628ef-SNAPSHOT"
+
+  object test extends SbtTests with TestModule.Junit4 {
+
+    def mvnDeps = Seq(
+      mvn"com.novocode:junit-interface:0.11",
+      mvn"io.vertx:vertx-codegen:4.5.10",
+      mvn"io.vertx:vertx-unit:4.5.10",
+      mvn"junit:junit:4.13.2",
+      mvn"org.mockito:mockito-core:4.11.0"
+    )
+
+    def moduleDeps = super.moduleDeps ++ Seq(build.online.test)
+
+    def testSandboxWorkingDir = false
+    def testParallelism = false
+
+  }
+}
