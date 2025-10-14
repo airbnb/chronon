@@ -24,7 +24,7 @@ class MetadataStoreTest extends TestCase {
   val acceptedEndPoints = List(MetadataEndPoint.ConfByKeyEndPointName, MetadataEndPoint.NameByTeamEndPointName)
 
   def testMetadataStoreSingleFile(): Unit = {
-    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("MetadataStoreTest_testMetadataStoreSingleFile")
     val singleFileDataSet = ChrononMetadataKey
     val singleFileMetaDataSet = NameByTeamEndPointName
     val singleFileMetadataStore = new MetadataStore(inMemoryKvStore, singleFileDataSet, timeoutMillis = 10000)
@@ -57,7 +57,7 @@ class MetadataStoreTest extends TestCase {
   }
 
   def testMetadataStoreDirectory(): Unit = {
-    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("MetadataStoreTest_testMetadataStoreDirectory")
     val directoryDataSetDataSet = ChrononMetadataKey
     val directoryMetadataDataSet = NameByTeamEndPointName
     val directoryMetadataStore = new MetadataStore(inMemoryKvStore, directoryDataSetDataSet, timeoutMillis = 10000)

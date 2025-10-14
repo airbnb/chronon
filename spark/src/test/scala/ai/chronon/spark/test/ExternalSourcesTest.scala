@@ -91,7 +91,7 @@ class ExternalSourcesTest {
     )
 
     // put this join into kv store
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("external_test")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("ExternalSourcesTest_testFetch")
     val mockApi = new MockApi(kvStoreFunc, "external_test")
     val fetcher = mockApi.buildFetcher(true)
     fetcher.kvStore.create(ChrononMetadataKey)
@@ -197,7 +197,7 @@ class ExternalSourcesTest {
     )
 
     // Setup MockApi with factory registration
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("factory_test")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("ExternalSourcesTest_testFactoryBasedExternalSources")
     val mockApi = new MockApi(kvStoreFunc, "factory_test")
 
     // Register a test factory that creates handlers dynamically
@@ -311,7 +311,7 @@ class ExternalSourcesTest {
     )
 
     // Setup MockApi with factory registration
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("offline_test")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("ExternalSourcesTest_testExternalSourceWithOfflineGroupBy")
     val mockApi = new MockApi(kvStoreFunc, "offline_test")
 
     // Register a test factory that returns specific values

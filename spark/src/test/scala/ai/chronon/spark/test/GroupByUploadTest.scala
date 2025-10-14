@@ -304,9 +304,9 @@ class GroupByUploadTest {
       )
     )
 
-    val kvStore = OnlineUtils.buildInMemoryKVStore("chaining_test")
+    val kvStore = OnlineUtils.buildInMemoryKVStore("GroupByUploadTest_listingRatingCategoryJoinSourceTest")
     val endDs = "2023-08-15"
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("chaining_test")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("GroupByUploadTest_listingRatingCategoryJoinSourceTest")
 
     // DO-NOT-SET debug=true here since the streaming job won't put data into kv store
     joinConf.joinParts.toScala.foreach(jp =>

@@ -212,7 +212,7 @@ class ChainingFetcherTest extends TestCase {
   def executeFetch(joinConf: api.Join, endDs: String, namespace: String): (DataFrame, Seq[Row]) = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     implicit val tableUtils: TableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("ChainingFetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore(s"ChainingFetcherTest_$namespace")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
 
