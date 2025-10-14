@@ -223,6 +223,41 @@ copy_sample_data_to_minio() {
     fi
 }
 
+# Function to create Spark tables from parquet files
+create_spark_tables() {
+    print_status "Creating Spark tables from parquet data..."
+    
+    # Download S3A JARs if not present
+    if [ ! -f "/tmp/hadoop-aws-3.2.4.jar" ]; then
+        print_status "Downloading Hadoop AWS JARs..."
+        curl -s -o /tmp/hadoop-aws-3.2.4.jar https://repo1.maven.org/maven2/org/apache/hadoop/hadoop-aws/3.2.4/hadoop-aws-3.2.4.jar
+        curl -s -o /tmp/aws-java-sdk-bundle-1.11.1026.jar https://repo1.maven.org/maven2/com/amazonaws/aws-java-sdk-bundle/1.11.1026/aws-java-sdk-bundle-1.11.1026.jar
+    fi
+    
+    # Copy JARs to container
+    CHRONON_CONTAINER=$(docker-compose -f "$COMPOSE_FILE" ps -q chronon-main)
+    docker cp /tmp/hadoop-aws-3.2.4.jar ${CHRONON_CONTAINER}:/tmp/ >/dev/null 2>&1
+    docker cp /tmp/aws-java-sdk-bundle-1.11.1026.jar ${CHRONON_CONTAINER}:/tmp/ >/dev/null 2>&1
+    
+    # Create partitioned purchases table
+    print_status "Creating partitioned 'purchases' table..."
+    docker-compose -f "$COMPOSE_FILE" exec -T chronon-main spark-sql \
+      --jars /tmp/hadoop-aws-3.2.4.jar,/tmp/aws-java-sdk-bundle-1.11.1026.jar \
+      --conf spark.hadoop.fs.s3a.endpoint=http://minio:9000 \
+      --conf spark.hadoop.fs.s3a.access.key=minioadmin \
+      --conf spark.hadoop.fs.s3a.secret.key=minioadmin \
+      --conf spark.hadoop.fs.s3a.path.style.access=true \
+      --conf spark.hadoop.fs.s3a.impl=org.apache.hadoop.fs.s3a.S3AFileSystem \
+      --conf spark.hadoop.fs.s3a.aws.credentials.provider=org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider \
+      -e "CREATE TABLE IF NOT EXISTS purchases (user_id STRING, purchase_price DOUBLE, item_category STRING, ts BIGINT) USING PARQUET PARTITIONED BY (ds STRING); INSERT INTO purchases SELECT user_id, purchase_price, item_category, CAST(UNIX_TIMESTAMP(ts) * 1000 AS BIGINT) as ts, DATE_FORMAT(ts, 'yyyy-MM-dd') as ds FROM parquet.\`s3a://chronon/warehouse/data/purchases/purchases.parquet\`" >/dev/null 2>&1
+    
+    if [ $? -eq 0 ]; then
+        print_success "Created partitioned 'purchases' table with 7 partitions (2023-12-01 to 2023-12-07)"
+    else
+        print_warning "Failed to create purchases table - you may need to create it manually"
+    fi
+}
+
 # Function to start processing services
 start_processing_services() {
     print_status "Starting processing services..."
@@ -346,6 +381,7 @@ main() {
     start_core_services
     configure_minio
     copy_sample_data_to_minio
+    create_spark_tables
     start_processing_services
     start_development_tools
     verify_services

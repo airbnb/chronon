@@ -4,19 +4,17 @@
     "online": 1,
     "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
     "dependencies": [
-      "{\"name\": \"wait_for_raw_data_ds\", \"spec\": \"raw_data/ds={{ ds }}\", \"start\": null, \"end\": null}"
+      "{\"name\": \"wait_for_purchases_ds\", \"spec\": \"purchases/ds={{ ds }}\", \"start\": null, \"end\": null}"
     ],
-    "tableProperties": {
-      "location": "s3a://chronon/warehouse/bootcamp/user_purchase_features/"
-    },
-    "outputNamespace": "bootcamp",
+    "tableProperties": {},
+    "outputNamespace": "default",
     "team": "bootcamp",
     "offlineSchedule": "@daily"
   },
   "sources": [
     {
       "events": {
-        "table": "raw_data",
+        "table": "purchases",
         "query": {
           "selects": {
             "user_id": "user_id",
@@ -24,9 +22,7 @@
             "item_category": "item_category"
           },
           "timeColumn": "ts",
-          "setups": [
-            "CREATE TEMPORARY VIEW raw_data AS SELECT *, DATE_FORMAT(ts, 'yyyy-MM-dd') as ds FROM parquet.`s3a://chronon/warehouse/data/purchases/purchases.parquet`"
-          ]
+          "setups": []
         }
       }
     }
@@ -81,5 +77,5 @@
       ]
     }
   ],
-  "backfillStartDate": "2023-01-01"
+  "backfillStartDate": "2023-12-01"
 }

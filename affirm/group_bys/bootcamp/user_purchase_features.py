@@ -41,4 +41,5 @@ v1 = GroupBy(
         ),
     ],
     online=True,
+    backfill_start_date="2023-12-01",  # Start date for backfill
 )

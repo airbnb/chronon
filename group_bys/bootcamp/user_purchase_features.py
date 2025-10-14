@@ -2,20 +2,12 @@ from ai.chronon.api.ttypes import Source, EventSource
 from ai.chronon.query import Query, select
 from ai.chronon.group_by import GroupBy, Aggregation, Operation, Window, TimeUnit
 
-# Define the source reading from MinIO S3
+# Define the source using sample data
 source = Source(
     events=EventSource(
-        table="raw_data",
+        table="purchases",  # Sample purchase data
         query=Query(
-            selects=select(
-                "user_id",
-                "purchase_price",
-                "item_category",
-                "ts"
-            ),
-            setups=[
-                "CREATE TEMPORARY VIEW raw_data AS SELECT *, DATE_FORMAT(ts, 'yyyy-MM-dd') as ds FROM parquet.`s3a://chronon/warehouse/data/purchases/purchases.parquet`"
-            ],
+            selects=select("user_id", "purchase_price", "item_category"),
             time_column="ts"
         )
     )
@@ -49,9 +41,5 @@ v1 = GroupBy(
         ),
     ],
     online=True,
-    backfill_start_date="2023-01-01",
-    output_namespace="bootcamp",
-    table_properties={
-        "location": "s3a://chronon/warehouse/bootcamp/user_purchase_features/"
-    }
+    backfill_start_date="2023-12-01",  # Start date for backfill
 )
