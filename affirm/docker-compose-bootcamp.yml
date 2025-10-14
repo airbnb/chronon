@@ -1,14 +1,9 @@
-# Chronon Bootcamp Docker Compose - Minimal Setup for Learning
-# This setup includes only the essential services needed for GroupBy development
-
 services:
-
-  # MinIO for S3-compatible storage (ESSENTIAL for Iceberg)
   minio:
     image: minio/minio:latest
     ports:
-      - "9000:9000"  # API
-      - "9001:9001"  # Console
+      - "9000:9000"
+      - "9001:9001"
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -21,7 +16,6 @@ services:
       timeout: 20s
       retries: 3
 
-  # MongoDB - Chronon's built-in KV store (ESSENTIAL for online serving)
   mongodb:
     image: mongo:latest
     ports:
@@ -37,71 +31,80 @@ services:
       timeout: 10s
       retries: 3
 
-  # Spark Master (ESSENTIAL for GroupBy computation)
   spark-master:
-    image: bitnami/spark:3.5.0
+    image: apache/spark:3.5.2
     ports:
-      - "8080:8080"  # Spark UI
-      - "7077:7077"  # Spark Master
+      - "8080:8080"   # Master UI
+      - "7077:7077"   # Master RPC
     environment:
-      - SPARK_MODE=master
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: "7077"
+      SPARK_MASTER_WEBUI_PORT: "8080"
+      SPARK_DAEMON_JAVA_OPTS: -Dspark.deploy.recoveryMode=FILESYSTEM -Dspark.deploy.recoveryDirectory=/tmp/spark-recovery
+    command:
+      [
+        "/opt/spark/bin/spark-class","org.apache.spark.deploy.master.Master",
+        "--host","spark-master","--port","7077","--webui-port","8080"
+      ]
     volumes:
-      - spark_events:/opt/bitnami/spark/spark-events
+      - spark_events:/opt/spark/spark-events
+    healthcheck:
+      test: ["CMD-SHELL", "ps -ef | grep -q '[o]rg.apache.spark.deploy.master.Master' || exit 1; command -v wget >/dev/null 2>&1 && wget -qO- http://127.0.0.1:8080 >/dev/null || true"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 5s
+    restart: unless-stopped
 
-  # Spark Worker (ESSENTIAL for GroupBy computation)
   spark-worker:
-    image: bitnami/spark:3.5.0
+    image: apache/spark:3.5.2
     depends_on:
-      - spark-master
-      - minio
+      spark-master:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    command:
+      [
+        "/opt/spark/bin/spark-class","org.apache.spark.deploy.worker.Worker",
+        "spark://spark-master:7077",
+        "--cores","2","--memory","2G",
+        "--webui-port","8081"
+      ]
     environment:
-      - SPARK_MODE=worker
-      - SPARK_MASTER_URL=spark://spark-master:7077
-      - SPARK_WORKER_MEMORY=2G
-      - SPARK_WORKER_CORES=2
-      - SPARK_RPC_AUTHENTICATION_ENABLED=no
-      - SPARK_RPC_ENCRYPTION_ENABLED=no
-      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
-      - SPARK_SSL_ENABLED=no
-    volumes: []
-    scale: 2
+      SPARK_WORKER_DIR: /opt/spark/work-dir
+    volumes:
+      - spark_events:/opt/spark/spark-events
+    restart: unless-stopped
 
-  # Chronon Main Container (ESSENTIAL for GroupBy execution)
   chronon-main:
     image: ezvz/chronon
     command: bash -c "spark-shell -i scripts/data-loader.scala && tail -f /dev/null"
     ports:
-      - "4040:4040"  # Spark UI
-      - "4041:4041"  # Spark UI (backup)
+      - "4040:4040"
+      - "4041:4041"
     environment:
-      - USER=root
-      - SPARK_SUBMIT_PATH=spark-submit
-      - PYTHONPATH=/srv/chronon
-      - SPARK_VERSION=3.5.2
-      - JOB_MODE=spark://spark-master:7077
-      - PARALLELISM=4
-      - EXECUTOR_MEMORY=2G
-      - EXECUTOR_CORES=2
-      - DRIVER_MEMORY=1G
-      - CHRONON_LOG_TABLE=default.chronon_log_table
-      - CHRONON_ONLINE_CLASS=ai.chronon.quickstart.online.ChrononMongoOnlineImpl
-      - CHRONON_ONLINE_ARGS=-Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin
-      # Iceberg Configuration with Spark's built-in Hive catalog
-      - SPARK_SQL_EXTENSIONS=org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
-      - SPARK_SQL_CATALOG_SPARK_CATALOG=org.apache.iceberg.spark.SparkSessionCatalog
-      - SPARK_SQL_CATALOG_SPARK_CATALOG_TYPE=hive
-      - SPARK_SQL_CATALOG_SPARK_CATALOG_WAREHOUSE=s3a://chronon/warehouse
-      - SPARK_CHRONON_TABLE_WRITE_FORMAT=iceberg
-      - SPARK_CHRONON_TABLE_READ_FORMAT=iceberg
-      # S3 Configuration
-      - AWS_ACCESS_KEY_ID=minioadmin
-      - AWS_SECRET_ACCESS_KEY=minioadmin
-      - S3_ENDPOINT=http://minio:9000
-      - S3_PATH_STYLE_ACCESS=true
+      USER: root
+      SPARK_SUBMIT_PATH: spark-submit
+      PYTHONPATH: /srv/chronon
+      SPARK_VERSION: "3.5.2"
+      JOB_MODE: spark://spark-master:7077
+      PARALLELISM: "4"
+      EXECUTOR_MEMORY: 2G
+      EXECUTOR_CORES: "2"
+      DRIVER_MEMORY: 1G
+      CHRONON_LOG_TABLE: default.chronon_log_table
+      CHRONON_ONLINE_CLASS: ai.chronon.quickstart.online.ChrononMongoOnlineImpl
+      CHRONON_ONLINE_ARGS: -Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin
+      SPARK_SQL_EXTENSIONS: org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+      SPARK_SQL_CATALOG_SPARK_CATALOG: org.apache.iceberg.spark.SparkSessionCatalog
+      SPARK_SQL_CATALOG_SPARK_CATALOG_TYPE: hive
+      SPARK_SQL_CATALOG_SPARK_CATALOG_WAREHOUSE: s3a://chronon/warehouse
+      SPARK_CHRONON_TABLE_WRITE_FORMAT: iceberg
+      SPARK_CHRONON_TABLE_READ_FORMAT: iceberg
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_ENDPOINT: http://minio:9000
+      S3_PATH_STYLE_ACCESS: "true"
     volumes:
       - ../api/py/test/sample:/srv/chronon
       - ./scripts:/srv/scripts
@@ -111,15 +114,14 @@ services:
       - minio
       - mongodb
 
-  # Jupyter Notebook (ESSENTIAL for data exploration and verification)
   jupyter:
     image: jupyter/pyspark-notebook:latest
     ports:
       - "8888:8888"
     environment:
-      - JUPYTER_ENABLE_LAB=yes
-      - SPARK_MASTER=spark://spark-master:7077
-      - JUPYTER_TOKEN=chronon-dev
+      JUPYTER_ENABLE_LAB: "yes"
+      SPARK_MASTER: spark://spark-master:7077
+      JUPYTER_TOKEN: chronon-dev
     volumes:
       - ../api/py:/home/jovyan/work/chronon-api
       - ../api/py/test/sample:/home/jovyan/work/sample-data

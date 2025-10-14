@@ -117,7 +117,7 @@ services:
 
   # Spark Master
   spark-master:
-    image: bitnami/spark:3.5.0
+    image: apache/spark:3.5.2
     ports:
       - "8080:8080"  # Spark UI
       - "7077:7077"  # Spark Master
@@ -128,11 +128,11 @@ services:
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
       - SPARK_SSL_ENABLED=no
     volumes:
-      - spark_events:/opt/bitnami/spark/spark-events
+      - spark_events:/opt/apache/spark/spark-events
 
   # Spark Worker
   spark-worker:
-    image: bitnami/spark:3.5.0
+    image: apache/spark:3.5.2
     depends_on:
       - spark-master
       - minio
