@@ -19,7 +19,17 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataKind, DataType, ExternalJoinPart, TDataType, TimeUnit, Window}
+import ai.chronon.api.{
+  Accuracy,
+  AggregationPart,
+  Constants,
+  DataKind,
+  DataType,
+  ExternalJoinPart,
+  TDataType,
+  TimeUnit,
+  Window
+}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import ai.chronon.spark.Extensions.StructTypeOps
