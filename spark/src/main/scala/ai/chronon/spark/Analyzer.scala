@@ -19,7 +19,7 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, ExternalJoinPart, TimeUnit, Window}
+import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataKind, DataType, ExternalJoinPart, TDataType, TimeUnit, Window}
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import ai.chronon.spark.Extensions.StructTypeOps
@@ -869,6 +869,56 @@ class Analyzer(tableUtils: TableUtils,
     errors
   }
 
+  /**
+    * Recursively clears struct names from a DataType to enable name-agnostic comparison.
+    * This is needed because TDataType.equals() compares the name field.
+    *
+    * @param dataType The DataType to process
+    * @return A TDataType with all struct names cleared
+    */
+  private def clearStructNames(dataType: DataType): TDataType = {
+    val tDataType = DataType.toTDataType(dataType)
+
+    // Clear the name if this is a struct type
+    if (tDataType.getKind == DataKind.STRUCT) {
+      tDataType.unsetName()
+    }
+
+    // Recursively clear names in nested types
+    if (tDataType.isSetParams) {
+      val params = tDataType.getParams
+      params.forEach { param =>
+        if (param.isSetDataType) {
+          val nestedType = DataType.fromTDataType(param.getDataType)
+          val clearedNested = clearStructNames(nestedType)
+          param.setDataType(clearedNested)
+        }
+      }
+    }
+
+    tDataType
+  }
+
+  /**
+    * Deep comparison of two DataType objects with logging.
+    * For StructType, ignores the name and only compares fields.
+    * Uses TDataType conversion for proper deep comparison.
+    *
+    * @param expected The expected DataType
+    * @param actual The actual DataType
+    * @return true if the types match, false otherwise
+    */
+  private def compareDataTypes(expected: DataType, actual: DataType): Boolean = {
+    // Convert to TDataType and clear struct names for comparison
+    val expectedTDataType = clearStructNames(expected)
+    val actualTDataType = clearStructNames(actual)
+
+    logger.error(s"Expected TDataType: $expectedTDataType")
+    logger.error(s"Actual TDataType: $actualTDataType")
+
+    expectedTDataType.equals(actualTDataType)
+  }
+
   private def validateValueSchemaCompatibility(externalPart: api.ExternalPart,
                                                externalGroupBySchema: Seq[(String, DataType)]): Seq[String] = {
     val errors = scala.collection.mutable.ListBuffer[String]()
@@ -903,12 +953,13 @@ class Analyzer(tableUtils: TableUtils,
         s"[${extraFields.mkString(", ")}]. These fields are not defined in the ExternalSource valueSchema."
     }
 
-    // Check for type mismatches in common fields
+    // Check for type mismatches in common fields using deep comparison
     val commonFields = expectedSchema.keySet.intersect(actualSchema.keySet)
     commonFields.foreach { fieldName =>
       val expectedType = expectedSchema(fieldName)
       val actualType = actualSchema(fieldName)
-      if (expectedType != actualType) {
+      logger.error(s"=== Validating field '$fieldName' for ExternalSource ${externalPart.source.metadata.name} ===")
+      if (!compareDataTypes(expectedType, actualType)) {
         errors += s"ExternalSource ${externalPart.source.metadata.name} field '$fieldName' has type mismatch: " +
           s"expected ${DataType.toString(expectedType)} (from ExternalSource valueSchema) " +
           s"but offline GroupBy produces ${DataType.toString(actualType)}"

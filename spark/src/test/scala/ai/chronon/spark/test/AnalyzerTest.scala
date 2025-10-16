@@ -922,7 +922,20 @@ class AnalyzerTest {
 
     // Create compatible schemas using the correct DataType objects
     val keySchema = StructType("key", Array(StructField("user_id", StringType)))
-    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+    val valueSchema = StructType("value", Array(
+      StructField("feature_value", DoubleType),
+      StructField("list_value",
+        api.ListType(
+          api.StructType("contradiction",
+            Array(
+              StructField("reason", api.StringType),
+              StructField("standardRule", api.StringType),
+              StructField("additionalRule", api.StringType)
+            )
+          )
+        )
+      )
+    ))
 
     // Create right side table for GroupBy
     val rightSchema = List(Column("user_id", api.StringType, 100), Column("value", api.DoubleType, 100))
@@ -939,7 +952,9 @@ class AnalyzerTest {
       keyColumns = Seq("user_id"),
       sources = Seq(source),
       derivations = Seq(
-        Builders.Derivation(name = "feature_value", expression = "feature_value")
+        Builders.Derivation(name = "feature_value", expression = "feature_value"),
+        Builders.Derivation(name = "list_value",
+          expression = "array(named_struct('reason', 'test_reason', 'standardRule', 'test_standard', 'additionalRule', 'test_additional'))")
       ),
       metaData = Builders.MetaData(name = "test_external_gb", namespace = namespace)
     )
