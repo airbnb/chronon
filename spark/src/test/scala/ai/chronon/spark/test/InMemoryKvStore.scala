@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api.Constants
 import ai.chronon.online.KVStore
 import ai.chronon.online.KVStore.{PutRequest, TimedValue}
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.Row
 
 import java.util.concurrent.ConcurrentHashMap

@@ -19,8 +19,9 @@ package ai.chronon.spark.test
 import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.online.DataMetrics
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.CompareBaseJob
-import ai.chronon.spark.{SparkSessionBuilder, TableUtils, TimedKvRdd}
+import ai.chronon.spark.{SparkSessionBuilder, TimedKvRdd}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.junit.Test
 

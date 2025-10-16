@@ -17,7 +17,8 @@
 package ai.chronon.spark.test
 
 import ai.chronon.spark.Driver.{LocalExportTableAbility, OfflineSubcommand}
-import ai.chronon.spark.{LocalTableExporter, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{LocalTableExporter, SparkSessionBuilder}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.junit.Test

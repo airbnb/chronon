@@ -24,6 +24,7 @@ import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf}
 import ai.chronon.spark.SemanticHashUtils.{shouldRecomputeLeft, tablesToRecompute}
+import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._

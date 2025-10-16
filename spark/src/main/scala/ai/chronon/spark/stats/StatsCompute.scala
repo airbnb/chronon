@@ -21,7 +21,6 @@ import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.spark.Extensions._
 import ai.chronon.online.SparkConversions
-import ai.chronon.spark.TableUtils
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.kll.KllFloatsSketch
 import org.apache.spark.sql.functions.col
@@ -29,6 +28,7 @@ import org.apache.spark.sql.{Column, DataFrame, functions}
 
 import scala.util.Try
 import ai.chronon.spark.TimedKvRdd
+import ai.chronon.spark.catalog.TableUtils
 
 class StatsCompute(inputDf: DataFrame, keys: Seq[String], name: String) extends Serializable {
 

@@ -20,7 +20,8 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.JoinOps
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{Comparison, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{Comparison, SparkSessionBuilder}
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse}

@@ -24,6 +24,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
 import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession

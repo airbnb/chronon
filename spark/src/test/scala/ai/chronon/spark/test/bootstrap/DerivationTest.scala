@@ -25,6 +25,7 @@ import ai.chronon.online.MetadataStore
 import ai.chronon.spark
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._

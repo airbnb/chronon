@@ -20,6 +20,7 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.{TableUtils, View}
 import ai.chronon.spark.{StagingQuery, _}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals

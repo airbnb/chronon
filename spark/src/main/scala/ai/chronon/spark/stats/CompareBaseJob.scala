@@ -20,7 +20,8 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api._
 import ai.chronon.online.{SparkConversions, _}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{TableUtils, TimedKvRdd}
+import ai.chronon.spark.{TimedKvRdd}
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.types.DataType
 

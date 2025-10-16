@@ -22,7 +22,8 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, ResponseWithContext}
 import ai.chronon.online.KVStore.PutRequest
 import ai.chronon.online._
-import ai.chronon.spark.{EncoderUtil, GenericRowHandler, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{EncoderUtil, GenericRowHandler}
 import com.google.gson.Gson
 import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema

@@ -19,8 +19,9 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.{Constants, IntType, LongType, StringType}
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.test.LocalTableExporterTest.{spark, tmpDir}
-import ai.chronon.spark.{LocalTableExporter, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{LocalTableExporter, SparkSessionBuilder}
 import com.google.common.io.Files
 import org.apache.commons.io.FileUtils
 import org.apache.spark.sql.{SaveMode, SparkSession}

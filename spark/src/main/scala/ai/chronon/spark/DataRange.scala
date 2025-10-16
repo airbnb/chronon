@@ -19,6 +19,7 @@ package ai.chronon.spark
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.Extensions.QueryOps
 import ai.chronon.api.{Constants, Query, QueryUtils}
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.DataFrame
 
 import scala.util.ScalaJavaConversions.ListOps

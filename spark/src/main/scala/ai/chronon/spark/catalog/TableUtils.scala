@@ -14,34 +14,29 @@
  *    limitations under the License.
  */
 
-package ai.chronon.spark
+package ai.chronon.spark.catalog
 
-import java.io.{PrintWriter, Serializable, StringWriter}
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
-import ai.chronon.api.{Constants, PartitionSpec, Query}
 import ai.chronon.api.Extensions._
-import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
-import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
-import ai.chronon.spark.Hive.parseHivePartition
-import io.delta.tables.DeltaTable
-import jnr.ffi.annotations.Synchronized
+import ai.chronon.api.{Constants, PartitionSpec, Query}
+import ai.chronon.spark.Extensions.DfStats
+import ai.chronon.spark.{PartitionRange, SparkConstants}
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.delta.DeltaLog
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.sql._
 import org.apache.spark.storage.StorageLevel
+import org.slf4j.LoggerFactory
 
+import java.io.{PrintWriter, Serializable, StringWriter}
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
-import java.util.concurrent.{ExecutorService, Executors}
-import scala.collection.{Seq, mutable}
-import scala.collection.immutable
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import scala.collection.{Seq, immutable, mutable}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -256,26 +251,30 @@ case object Iceberg extends Format {
                                    partitionColumn: String,
                                    subPartitionsFilter: Map[String, String])(implicit
       sparkSession: SparkSession): Seq[String] = {
-    val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
+    var partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions").select("partition")
+
     val index = partitionsDf.schema.fieldIndex("partition")
-    if (
-      partitionsDf
-        .schema(index)
-        .dataType
-        .asInstanceOf[StructType]
-        .fieldNames
-        .contains("hr") && subPartitionsFilter.isEmpty
-    ) {
-      // For iceberg tables with hr partition column but without sub-partition filter, only retain the records where hr=null.
-      partitionsDf
-        .select(s"partition.$partitionColumn", "partition.hr")
-        .collect()
-        .filter(_.get(1) == null)
-        .map(_.getString(0))
-        .toSeq
-    } else {
-      super.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)
+    val partitionFields = partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames
+    val hasHrPartition = partitionFields.contains("hr")
+
+    if (hasHrPartition && subPartitionsFilter.isEmpty) {
+      // For tables with hr partition but no sub-partition filter, only retain records where hr=null
+      partitionsDf = partitionsDf.filter(col("partition.hr").isNull)
     }
+
+    // Apply sub-partition filters at DataFrame level
+    // push down to Spark SQL optimizer to optimize the query for multiple partitions
+    subPartitionsFilter.foreach {
+      case (filterKey, filterValue) =>
+        partitionsDf = partitionsDf.filter(col(s"partition.$filterKey") === filterValue)
+    }
+
+    // Select primary partition column and collect
+    partitionsDf
+      .select(col(s"partition.$partitionColumn"))
+      .collect()
+      .map(row => String.valueOf(row.get(0)))
+      .toSeq
   }
 
   def createTableTypeString: String = "USING iceberg"

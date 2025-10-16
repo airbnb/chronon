@@ -23,6 +23,8 @@ import ai.chronon.api
 import ai.chronon.api.ThriftJsonCodec
 import ai.chronon.online.Metrics
 import ai.chronon.online.Metrics.Environment
+import ai.chronon.spark.catalog.TableUtils
+
 import java.nio.file.{Files, Paths}
 import org.apache.spark.sql.functions._
 

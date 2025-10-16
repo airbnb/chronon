@@ -16,7 +16,8 @@
 
 package ai.chronon.spark.test
 
-import ai.chronon.spark.{LogUtils, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{LogUtils, SparkSessionBuilder}
 
 object SchemaEvolutionUtils {
   def runLogSchemaGroupBy(mockApi: MockApi, ds: String, backfillStartDate: String): Unit = {

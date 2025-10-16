@@ -23,6 +23,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, JoinPart, TimeUnit, Window}
 import ai.chronon.spark.Extensions._
 import ai.chronon.online.Metrics
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions.lit
 import org.apache.spark.util.sketch.BloomFilter

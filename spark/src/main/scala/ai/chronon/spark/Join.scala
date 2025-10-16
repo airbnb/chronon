@@ -23,6 +23,7 @@ import ai.chronon.api._
 import ai.chronon.online.{DerivationUtils, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql
 import org.apache.spark.sql.{Column, DataFrame}
 import org.apache.spark.sql.functions._

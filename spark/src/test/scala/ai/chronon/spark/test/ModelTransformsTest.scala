@@ -24,7 +24,8 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.{ModelBackend, RunModelInferenceRequest, RunModelInferenceResponse}
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.{ModelTransformBatchJob, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{ModelTransformBatchJob, SparkSessionBuilder}
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.apache.spark.sql.functions.{col, lit, max}
 import org.junit.Assert.{assertEquals, assertTrue}
