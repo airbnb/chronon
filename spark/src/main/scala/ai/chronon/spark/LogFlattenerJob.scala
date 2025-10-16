@@ -62,7 +62,8 @@ class LogFlattenerJob(session: SparkSession,
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinLogFlatten, joinConf)
 
   private def getUnfilledRanges(inputTable: String, outputTable: String): Seq[PartitionRange] = {
-    val partitionName: String = joinConf.metaData.nameToFilePath.replace("/", "%2F")
+    // Don't URL-encode - column values in data table are unencoded
+    val partitionName: String = joinConf.metaData.nameToFilePath
     val unfilledRangeTry = Try(
       tableUtils.unfilledRanges(
         outputTable,
@@ -74,9 +75,10 @@ class LogFlattenerJob(session: SparkSession,
 
     val ranges = unfilledRangeTry match {
       case Failure(_: AssertionError) => {
-        logger.info(s"""
+        logger.error(s"""
              |The join name ${joinConf.metaData.nameToFilePath} does not have available logged data yet.
              |Please double check your logging status""".stripMargin)
+        System.exit(1)
         Seq()
       }
       case Success(None) => {
