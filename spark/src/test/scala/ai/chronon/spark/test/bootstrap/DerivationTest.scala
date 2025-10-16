@@ -428,7 +428,7 @@ class DerivationTest {
     )
 
     // Init artifacts to run online fetching and logging
-    val kvStore = OnlineUtils.buildInMemoryKVStore(namespace)
+    val kvStore = OnlineUtils.buildInMemoryKVStore(s"DerivationTest_$namespace")
     val mockApi = new MockApi(() => kvStore, namespace)
     OnlineUtils.serve(tableUtils, kvStore, () => kvStore, namespace, endDs, groupBy)
     val fetcher = mockApi.buildFetcher(debug = true)

@@ -382,7 +382,7 @@ class SchemaEvolutionTest extends TestCase {
     assert(joinSuiteV1.joinConf.metaData.name == joinSuiteV2.joinConf.metaData.name,
            message = "Schema evolution can only be tested on changes of the SAME join")
     val tableUtils: TableUtils = TableUtils(spark)
-    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore(namespace)
+    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore(s"SchemaEvolutionTest_$namespace")
     val mockApi = new MockApi(() => inMemoryKvStore, namespace)
     inMemoryKvStore.create(ChrononMetadataKey)
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
@@ -520,7 +520,7 @@ class SchemaEvolutionTest extends TestCase {
     val joinTestSuite = createStructJoin(namespace)
 
     val tableUtils: TableUtils = TableUtils(spark)
-    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore(namespace)
+    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore("SchemaEvolutionTest_testStructFeatures")
     val mockApi = new MockApi(() => inMemoryKvStore, namespace)
     inMemoryKvStore.create(ChrononMetadataKey)
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)

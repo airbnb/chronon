@@ -124,7 +124,7 @@ class FetchStatsTest extends TestCase {
     joinJob.computeJoin()
     // Load some data.
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetchStatsTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetchStatsTest_testFetchStats")
     val inMemoryKvStore = kvStoreFunc()
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
     inMemoryKvStore.create(ChrononMetadataKey)

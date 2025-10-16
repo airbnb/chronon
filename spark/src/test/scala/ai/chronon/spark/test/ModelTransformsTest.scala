@@ -85,7 +85,7 @@ class ModelTransformsTest {
     val spark = createSparkSession()
     val tableUtils = TableUtils(spark)
 
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("testModelTransformSimple")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore(s"ModelTransformsTest_$namespace")
     val inMemoryKvStore = kvStoreFunc()
     val defaultEmbedding = Array(0.1, 0.2, 0.3, 0.4)
     val defaultMap = Map("embedding" -> defaultEmbedding.asInstanceOf[AnyRef])

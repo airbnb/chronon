@@ -535,11 +535,12 @@ class FetcherTest extends TestCase {
                            endDs: String,
                            namespace: String,
                            consistencyCheck: Boolean,
-                           dropDsOnWrite: Boolean): Unit = {
+                           dropDsOnWrite: Boolean,
+                           sessionName: String): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     val spark: SparkSession = createSparkSession()
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore(sessionName)
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
 
@@ -668,7 +669,8 @@ class FetcherTest extends TestCase {
   def testTemporalFetchJoinDeterministic(): Unit = {
     val namespace = "deterministic_fetch"
     val joinConf = generateMutationData(namespace)
-    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true,
+      sessionName = "FetcherTest_testTemporalFetchJoinDeterministic")
   }
 
   def testTemporalFetchJoinDerivation(): Unit = {
@@ -682,7 +684,8 @@ class FetcherTest extends TestCase {
     )
     joinConf.setDerivations(derivations.toJava)
 
-    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true,
+      sessionName = "FetcherTest_testTemporalFetchJoinDerivation")
   }
 
   def testTemporalFetchJoinDerivationRenameOnly(): Unit = {
@@ -692,7 +695,8 @@ class FetcherTest extends TestCase {
       Seq(Builders.Derivation.star(), Builders.Derivation(name = "listing_id_renamed", expression = "listing_id"))
     joinConf.setDerivations(derivations.toJava)
 
-    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true,
+      sessionName = "FetcherTest_testTemporalFetchJoinDerivationRenameOnly")
   }
 
   def testTemporalFetchJoinGenerated(): Unit = {
@@ -702,13 +706,15 @@ class FetcherTest extends TestCase {
                          dummyTableUtils.partitionSpec.at(System.currentTimeMillis()),
                          namespace,
                          consistencyCheck = true,
-                         dropDsOnWrite = false)
+                         dropDsOnWrite = false,
+                         sessionName = "FetcherTest_testTemporalFetchJoinGenerated")
   }
 
   def testTemporalTiledFetchJoinDeterministic(): Unit = {
     val namespace = "deterministic_tiled_fetch"
     val joinConf = generateEventOnlyData(namespace, groupByCustomJson = Some("{\"enable_tiling\": true}"))
-    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+    compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true,
+      sessionName = "FetcherTest_testTemporalTiledFetchJoinDeterministic")
   }
 
   // test soft-fail on missing keys
@@ -717,7 +723,7 @@ class FetcherTest extends TestCase {
     val namespace = "empty_request"
     val joinConf = generateRandomData(namespace, 5, 5)
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#empty_request")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest_testEmptyRequest")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
 
@@ -743,7 +749,7 @@ class FetcherTest extends TestCase {
     val joinConf = generateMutationData(namespace, Some(spark))
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest_testTemporalFetchGroupByNonExistKey")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher(debug = false)
@@ -770,7 +776,7 @@ class FetcherTest extends TestCase {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
 
     val kvStoreFunc = () =>
-      OnlineUtils.buildInMemoryKVStore("FetcherTest#test_kv_store_partial_failure", hardFailureOnInvalidDataset = true)
+      OnlineUtils.buildInMemoryKVStore("FetcherTest_testKVStorePartialFailure", hardFailureOnInvalidDataset = true)
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
 
@@ -798,7 +804,7 @@ class FetcherTest extends TestCase {
     val groupByConf = joinConf.joinParts.toScala.head.groupBy
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest_testGroupByServingInfoTtlCacheRefresh")
     OnlineUtils.serve(tableUtils, kvStoreFunc(), kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
 
     val spyKvStore = spy(kvStoreFunc())
@@ -833,7 +839,7 @@ class FetcherTest extends TestCase {
     val joinConf = generateMutationData(namespace, Some(spark))
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest_testJoinConfTtlCacheRefresh")
     val inMemoryKvStore = kvStoreFunc()
     joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy, dropDsOnWrite = true))

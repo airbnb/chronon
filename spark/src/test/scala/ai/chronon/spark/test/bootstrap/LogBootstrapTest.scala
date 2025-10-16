@@ -104,7 +104,7 @@ class LogBootstrapTest {
     val joinV2 = createBootstrapJoin(baseJoinV2)
 
     // Init artifacts to run online fetching and logging
-    val kvStore = OnlineUtils.buildInMemoryKVStore(namespace)
+    val kvStore = OnlineUtils.buildInMemoryKVStore("LogBootstrapTest_testBootstrap")
     val mockApi = new MockApi(() => kvStore, namespace)
     val endDs = spark.table(queryTable).select(max(tableUtils.partitionColumn)).head().getString(0)
     OnlineUtils.serve(tableUtils, kvStore, () => kvStore, namespace, endDs, groupBy)
