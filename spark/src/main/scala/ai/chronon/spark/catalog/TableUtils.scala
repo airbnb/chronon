@@ -251,10 +251,8 @@ case object Iceberg extends Format {
                                    partitionColumn: String,
                                    subPartitionsFilter: Map[String, String])(implicit
       sparkSession: SparkSession): Seq[String] = {
-    // Start with reading partitions metadata
     var partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions").select("partition")
 
-    // Check if table has 'hr' partition and apply filter if needed
     val index = partitionsDf.schema.fieldIndex("partition")
     val partitionFields = partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames
     val hasHrPartition = partitionFields.contains("hr")
@@ -264,7 +262,8 @@ case object Iceberg extends Format {
       partitionsDf = partitionsDf.filter(col("partition.hr").isNull)
     }
 
-    // Apply sub-partition filters at DataFrame level (push down to Spark)
+    // Apply sub-partition filters at DataFrame level
+    // push down to Spark SQL optimizer to optimize the query for multiple partitions
     subPartitionsFilter.foreach {
       case (filterKey, filterValue) =>
         partitionsDf = partitionsDf.filter(col(s"partition.$filterKey") === filterValue)

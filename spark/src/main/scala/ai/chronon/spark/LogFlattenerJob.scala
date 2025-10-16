@@ -62,7 +62,6 @@ class LogFlattenerJob(session: SparkSession,
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinLogFlatten, joinConf)
 
   private def getUnfilledRanges(inputTable: String, outputTable: String): Seq[PartitionRange] = {
-    // Don't URL-encode - column values in data table are unencoded
     val partitionName: String = joinConf.metaData.nameToFilePath
     val unfilledRangeTry = Try(
       tableUtils.unfilledRanges(
