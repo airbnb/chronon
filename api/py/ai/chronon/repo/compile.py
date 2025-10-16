@@ -136,6 +136,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
             # In case of join, we need to materialize the following underlying group_bys
             # 1. group_bys whose online param is set
             # 2. group_bys whose backfill_start_date param is set.
+            # 3. offline group_bys from external parts (always materialized)
             if obj_class is Join:
                 online_group_bys = {}
                 offline_backfill_enabled_group_bys = {}
@@ -147,6 +148,10 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
                         offline_backfill_enabled_group_bys[jp.groupBy.metaData.name] = jp.groupBy
                     else:
                         offline_gbs.append(jp.groupBy.metaData.name)
+
+                # Extract and always materialize online GroupBys from external parts
+                external_offline_gbs = _extract_external_part_offline_group_bys(obj, team_name, teams_path)
+                online_group_bys.update(external_offline_gbs)
 
                 _print_debug_info(list(online_group_bys.keys()), "Online Groupbys", log_level)
                 _print_debug_info(
@@ -443,6 +448,27 @@ def _set_templated_values(obj, cls, teams_path, team_name):
         ]
     if cls == api.GroupBy and obj.metaData.dependencies:
         obj.metaData.dependencies = [__fill_template(dep, obj, namespace) for dep in obj.metaData.dependencies]
+
+
+def _extract_external_part_offline_group_bys(join_obj: api.Join, team_name: str, teams_path: str):
+    """
+    Extract offline GroupBys from external parts in a Join.
+    Sets proper metadata (name, team, namespace) for each offline GroupBy.
+    Returns a dictionary of {groupby_name: groupby_object}.
+    """
+    external_offline_gbs = {}
+
+    if not join_obj.onlineExternalParts:
+        return external_offline_gbs
+
+    for external_part in join_obj.onlineExternalParts:
+        if not external_part.source or not external_part.source.offlineGroupBy:
+            continue
+
+        offline_gb = external_part.source.offlineGroupBy
+        external_offline_gbs[offline_gb.metaData.name] = offline_gb
+
+    return external_offline_gbs
 
 
 def _write_obj(
