@@ -273,7 +273,7 @@ case object Iceberg extends Format {
     partitionsDf
       .select(col(s"partition.$partitionColumn"))
       .collect()
-      .map(_.get(0).toString)
+      .map(row => String.valueOf(row.get(0)))
       .toSeq
   }
 

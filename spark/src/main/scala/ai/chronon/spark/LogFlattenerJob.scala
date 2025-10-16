@@ -34,6 +34,7 @@ import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{IterableOps, MapOps}
 import scala.util.{Failure, Success, Try}
 import ai.chronon.online.DerivationUtils.timeFields
+import ai.chronon.spark.{catalog}
 import ai.chronon.spark.catalog.TableUtils
 
 /**
@@ -62,7 +63,13 @@ class LogFlattenerJob(session: SparkSession,
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinLogFlatten, joinConf)
 
   private def getUnfilledRanges(inputTable: String, outputTable: String): Seq[PartitionRange] = {
-    val partitionName: String = joinConf.metaData.nameToFilePath
+    // For Hive tables, partition paths are URL-encoded on disk (e.g., team_name%2Ffeature_name)
+    // For Iceberg/delta lake tables, partition values in metadata are unencoded (e.g., team_name/feature_name)
+    val tableFormat = tableUtils.tableReadFormat(inputTable)
+    val partitionName: String = tableFormat match {
+      case catalog.Hive => joinConf.metaData.nameToFilePath.replace("/", "%2F")
+      case _ => joinConf.metaData.nameToFilePath
+    }
     val unfilledRangeTry = Try(
       tableUtils.unfilledRanges(
         outputTable,
