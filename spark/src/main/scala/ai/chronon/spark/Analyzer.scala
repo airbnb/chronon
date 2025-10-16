@@ -23,6 +23,7 @@ import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit,
 import ai.chronon.online.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import ai.chronon.spark.Extensions.StructTypeOps
+import ai.chronon.spark.catalog.TableUtils
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
@@ -34,6 +35,7 @@ import org.slf4j.LoggerFactory
 import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, immutable, mutable}
 import scala.util.ScalaJavaConversions.ListOps
+import scala.util.Try
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -803,8 +805,25 @@ class Analyzer(tableUtils: TableUtils,
           runAnalyzeJoin(parseConf[api.Join](confPath), exportSchema)
         } else if (confPath.contains("/group_bys/")) {
           runAnalyzeGroupBy(parseConf[api.GroupBy](confPath), exportSchema)
+        } else {
+          val joinConfTry = Try(parseConf[api.Join](confPath))
+          if (joinConfTry.isSuccess) {
+            runAnalyzeJoin(joinConfTry.get, exportSchema)
+          } else {
+            val groupByConfTry = Try(parseConf[api.GroupBy](confPath))
+            if (groupByConfTry.isSuccess) {
+              runAnalyzeGroupBy(groupByConfTry.get, exportSchema)
+            } else {
+              throw new IllegalArgumentException(
+                s"Cannot parse the config at $confPath as either Join or GroupBy. Please check the config file."
+              )
+            }
+          }
         }
       case groupByConf: api.GroupBy => runAnalyzeGroupBy(groupByConf, exportSchema)
       case joinConf: api.Join       => runAnalyzeJoin(joinConf, exportSchema)
+      case _ =>
+        throw new IllegalArgumentException(
+          "conf must be either a path to a config file, or a GroupBy or Join config: " + conf)
     }
 }

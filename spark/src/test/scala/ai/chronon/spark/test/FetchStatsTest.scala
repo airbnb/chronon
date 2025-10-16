@@ -27,8 +27,9 @@ import ai.chronon.online.Fetcher.{SeriesStatsResponse, StatsRequest}
 import scala.compat.java8.FutureConverters
 import ai.chronon.online.{JavaStatsRequest, MetadataStore}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.ConsistencyJob
-import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder}
 import com.google.gson.GsonBuilder
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession

@@ -19,7 +19,8 @@ package ai.chronon.spark.test
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.{LabelPartOps, MetadataOps}
 import ai.chronon.api.{Builders, LongType, StringType, StructField, StructType}
-import ai.chronon.spark.{Comparison, LabelJoin, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{Comparison, LabelJoin, SparkSessionBuilder}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.sql.functions.{max, min}
 import org.junit.Assert.assertEquals

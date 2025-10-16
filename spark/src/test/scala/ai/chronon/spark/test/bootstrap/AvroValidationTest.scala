@@ -17,7 +17,8 @@
 package ai.chronon.spark.test.bootstrap
 
 import ai.chronon.api.{Accuracy, Builders, Operation, TimeUnit, Window}
-import ai.chronon.spark.{BootstrapInfo, PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{BootstrapInfo, PartitionRange, SparkSessionBuilder}
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
 
