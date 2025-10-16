@@ -73,12 +73,11 @@ class LogFlattenerJob(session: SparkSession,
     )
 
     val ranges = unfilledRangeTry match {
-      case Failure(_: AssertionError) => {
-        logger.error(s"""
-             |The join name ${joinConf.metaData.nameToFilePath} does not have available logged data yet.
-             |Please double check your logging status""".stripMargin)
-        System.exit(1)
-        Seq()
+      case Failure(e: AssertionError) => {
+        val errorMsg = s"""The join name ${joinConf.metaData.nameToFilePath} does not have available logged data yet.
+             |Please double check your logging status""".stripMargin
+        logger.error(errorMsg)
+        throw new RuntimeException(errorMsg, e)
       }
       case Success(None) => {
         logger.info(
