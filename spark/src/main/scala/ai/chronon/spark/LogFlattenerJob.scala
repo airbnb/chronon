@@ -68,7 +68,7 @@ class LogFlattenerJob(session: SparkSession,
     val tableFormat = tableUtils.tableReadFormat(inputTable)
     val partitionName: String = tableFormat match {
       case catalog.Hive => joinConf.metaData.nameToFilePath.replace("/", "%2F")
-      case _ => joinConf.metaData.nameToFilePath
+      case _            => joinConf.metaData.nameToFilePath
     }
     val unfilledRangeTry = Try(
       tableUtils.unfilledRanges(
