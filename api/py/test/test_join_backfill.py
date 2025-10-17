@@ -73,11 +73,13 @@ class TestJoinBackfill(unittest.TestCase):
         flow = self.channing_join_backfill.build_flow()
         self.assertEqual(
             {
-                "compute_join__sample_team_sample_chaining_join_parent_join__sample_team_entity_sample_group_by_from_module_v1",
+                "compute_join__sample_team_sample_chaining_join_parent_join__"
+                "sample_team_entity_sample_group_by_from_module_v1",
                 "compute_join__sample_team_sample_chaining_join_parent_join__left_table",
                 "compute_join__chronon_db_sample_team_sample_chaining_join_v1",
                 "compute_join__sample_team_sample_chaining_join_v1__sample_team_sample_chaining_group_by",
-                "compute_join__sample_team_sample_chaining_join_parent_join__sample_team_event_sample_group_by_v1",
+                "compute_join__sample_team_sample_chaining_join_parent_join__"
+                "sample_team_event_sample_group_by_v1",
                 "compute_join__chronon_db_sample_team_sample_chaining_join_parent_join",
                 "compute_join__sample_team_sample_chaining_join_v1__left_table",
             },
@@ -119,7 +121,49 @@ class TestJoinBackfill(unittest.TestCase):
         group_by_node = self._get_node(
             flow.nodes, "compute_join__sample_team_sample_join_v1__sample_team_sample_group_by_v1"
         )
+        expected_command = (
+            "export SPARK_VERSION=3.1.1 && export EXECUTOR_MEMORY=4G && export DRIVER_MEMORY=4G && "
+            "export EXECUTOR_CORES=2 && run.py --conf=production/joins/sample_team/sample_join.v1 "
+            "--ds=2025-01-01 --mode=backfill --selected-join-parts=sample_team_sample_group_by_v1 "
+            "--use-cached-left --start-ds=2025-01-01"
+        )
+        self.assertEqual(expected_command, group_by_node.command)
+
+    def test_join_with_external_parts_with_offline_groupby(self):
+        """Test that external parts with offlineGroupBy are included in the flow"""
+        conf_file = (
+            "api/py/test/sample/production/joins/sample_team/"
+            "sample_join_with_derivations_on_external_parts.v1"
+        )
+        join_backfill = JoinBackfill(config_path=conf_file, start_date="2025-01-01", end_date="2025-01-01")
+
+        flow = join_backfill.build_flow()
+        node_names = {node.name for node in flow.nodes}
+
+        # Verify we have the expected nodes
         self.assertEqual(
-            "export SPARK_VERSION=3.1.1 && export EXECUTOR_MEMORY=4G && export DRIVER_MEMORY=4G && export EXECUTOR_CORES=2 && run.py --conf=production/joins/sample_team/sample_join.v1 --ds=2025-01-01 --mode=backfill --selected-join-parts=sample_team_sample_group_by_v1 --use-cached-left --start-ds=2025-01-01",
-            group_by_node.command,
+            4, len(node_names), "Should have 4 nodes: left, regular part, external part, final"
+        )
+
+        # Should have nodes for regular join parts
+        self.assertTrue(
+            any("sample_team_entity_sample_group_by_from_module_v1" in name for name in node_names),
+            "Should have node for regular join part"
+        )
+
+        # Should have nodes for external parts with offlineGroupBy
+        # This verifies that get_regular_and_external_join_parts() includes external parts
+        self.assertTrue(
+            any("sample_team_event_sample_group_by_v1" in name for name in node_names),
+            "Should have node for external part with offlineGroupBy"
+        )
+
+        # Verify left table and final join nodes exist
+        self.assertTrue(
+            any("left_table" in name for name in node_names),
+            "Should have left table node"
+        )
+        self.assertTrue(
+            any("chronon_db_sample_team" in name for name in node_names),
+            "Should have final join node"
         )

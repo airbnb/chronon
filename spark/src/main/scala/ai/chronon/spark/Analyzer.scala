@@ -897,7 +897,7 @@ class Analyzer(tableUtils: TableUtils,
     // Recursively clear names in nested types
     if (tDataType.isSetParams) {
       val params = tDataType.getParams
-      params.forEach { param =>
+      params.toScala.foreach { param =>
         if (param.isSetDataType) {
           val nestedType = DataType.fromTDataType(param.getDataType)
           val clearedNested = clearStructNames(nestedType)

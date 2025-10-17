@@ -645,6 +645,7 @@ def Join(
         modelTransforms=model_transforms,
     )
 
+
 def _auto_set_group_by_name(group_by: api.GroupBy, context: str = "GroupBy") -> None:
     """
     Automatically set the GroupBy name by finding its source module using garbage collection.
