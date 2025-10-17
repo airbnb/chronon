@@ -495,7 +495,7 @@ class LineageParser:
                 derived_features.remove("*")
                 features = pre_derived_internal_features + pre_derived_external_features
                 features.extend(derived_features)
-                derived_external_features.extend(pre_derived_external_features)
+                derived_external_features.update(pre_derived_external_features)
 
                 # If it is a rename only derivation, then remove the original feature name
                 removed_features = [
