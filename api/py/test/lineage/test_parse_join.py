@@ -362,9 +362,11 @@ class TestParseJoin(unittest.TestCase):
         self.assertTrue(join_table_name in parser.metadata.tables)
         self.assertEqual(TableType.JOIN, parser.metadata.tables[join_table_name].table_type)
 
-        # Verify columns include both internal and external features
-        self.assertTrue("ext_test_external_source_value_str" in parser.metadata.tables[join_table_name].columns)
-        self.assertTrue("ext_test_external_source_value_long" in parser.metadata.tables[join_table_name].columns)
+        # Verify columns not including pre-derived features
+        self.assertFalse("ext_test_external_source_value_str" in parser.metadata.tables[join_table_name].columns)
+        self.assertFalse("ext_test_external_source_value_long" in parser.metadata.tables[join_table_name].columns)
+
+        # Verify columns including derived features
         self.assertTrue("external_value_renamed" in parser.metadata.tables[join_table_name].columns)
         self.assertTrue("external_derived" in parser.metadata.tables[join_table_name].columns)
         self.assertTrue("internal_derived" in parser.metadata.tables[join_table_name].columns)
@@ -372,28 +374,15 @@ class TestParseJoin(unittest.TestCase):
         # Get all features stored
         join_features = {k: v for k, v in parser.metadata.features.items() if k.startswith("test_join_external.")}
 
-        # Verify external features are NOT in the features list (no lineage tracked)
+        # Verify pre-derived external features are NOT in the features list
         self.assertNotIn("test_join_external.ext_test_external_source_value_str", join_features)
         self.assertNotIn("test_join_external.ext_test_external_source_value_long", join_features)
-        self.assertNotIn("test_join_external.external_value_renamed", join_features)
-        self.assertNotIn("test_join_external.external_derived", join_features)
+
+        # Verify derived external features are in the features list
+        self.assertIn("test_join_external.external_value_renamed", join_features)
+        self.assertIn("test_join_external.external_derived", join_features)
 
         # Verify internal features ARE in the features list (lineage tracked)
         self.assertIn("test_join_external.test_group_by_event_id_sum", join_features)
         self.assertIn("test_join_external.test_group_by_cnt_count", join_features)
         self.assertIn("test_join_external.internal_derived", join_features)
-
-        # Verify lineage exists for internal features but not for external features
-        lineages = parser.metadata.filter_lineages(output_table=join_table_name)
-        lineage_output_columns = {lineage.output_column for lineage in lineages}
-
-        # External feature columns should not have lineage
-        self.assertNotIn("ext_test_external_source_value_str", lineage_output_columns)
-        self.assertNotIn("ext_test_external_source_value_long", lineage_output_columns)
-        self.assertNotIn("external_value_renamed", lineage_output_columns)
-        self.assertNotIn("external_derived", lineage_output_columns)
-
-        # Internal feature columns should have lineage
-        self.assertIn("test_group_by_event_id_sum", lineage_output_columns)
-        self.assertIn("test_group_by_cnt_count", lineage_output_columns)
-        self.assertIn("internal_derived", lineage_output_columns)
