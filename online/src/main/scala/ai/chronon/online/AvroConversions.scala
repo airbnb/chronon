@@ -30,6 +30,10 @@ import scala.util.Try
 
 object AvroConversions {
 
+  private val BYTE_TYPE_PROP = "byte" // aka tinyint
+  private val SHORT_TYPE_PROP = "short" // aka smallint
+  private val LOGICAL_TYPE_PROP_KEY = "logicalType"
+
   def toAvroValue(value: AnyRef, schema: Schema): Object =
     schema.getType match {
       case Schema.Type.UNION  => toAvroValue(value, schema.getTypes.get(1))
@@ -56,10 +60,17 @@ object AvroConversions {
                    schema.getFields.toScala.toArray.map { field =>
                      StructField(clean(field.name()), toChrononSchema(field.schema(), cleanName))
                    })
-      case Schema.Type.ARRAY   => ListType(toChrononSchema(schema.getElementType, cleanName))
-      case Schema.Type.MAP     => MapType(StringType, toChrononSchema(schema.getValueType, cleanName))
-      case Schema.Type.STRING  => StringType
-      case Schema.Type.INT     => IntType
+      case Schema.Type.ARRAY  => ListType(toChrononSchema(schema.getElementType, cleanName))
+      case Schema.Type.MAP    => MapType(StringType, toChrononSchema(schema.getValueType, cleanName))
+      case Schema.Type.STRING => StringType
+      case Schema.Type.INT =>
+        Option(schema.getProp(LOGICAL_TYPE_PROP_KEY)) match {
+          case Some(BYTE_TYPE_PROP)  => ByteType
+          case Some(SHORT_TYPE_PROP) => ShortType
+          case Some(prop) =>
+            throw new UnsupportedOperationException(s"Unknown logicalType annotation $prop on INT type")
+          case None => IntType
+        }
       case Schema.Type.LONG    => LongType
       case Schema.Type.FLOAT   => FloatType
       case Schema.Type.DOUBLE  => DoubleType
@@ -110,8 +121,18 @@ object AvroConversions {
         assert(keyType == StringType, s"Avro only supports string keys for a map")
         Schema.createMap(fromChrononSchema(valueType, nameSet))
       }
-      case StringType  => Schema.create(Schema.Type.STRING)
-      case IntType     => Schema.create(Schema.Type.INT)
+      case StringType => Schema.create(Schema.Type.STRING)
+      case IntType    => Schema.create(Schema.Type.INT)
+      case ByteType => {
+        val schema = Schema.create(Schema.Type.INT)
+        schema.addProp(LOGICAL_TYPE_PROP_KEY, BYTE_TYPE_PROP.asInstanceOf[AnyRef])
+        schema
+      }
+      case ShortType => {
+        val schema = Schema.create(Schema.Type.INT)
+        schema.addProp(LOGICAL_TYPE_PROP_KEY, SHORT_TYPE_PROP.asInstanceOf[AnyRef])
+        schema
+      }
       case LongType    => Schema.create(Schema.Type.LONG)
       case FloatType   => Schema.create(Schema.Type.FLOAT)
       case DoubleType  => Schema.create(Schema.Type.DOUBLE)

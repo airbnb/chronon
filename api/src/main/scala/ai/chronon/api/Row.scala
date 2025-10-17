@@ -120,6 +120,8 @@ object Row {
         }
       case BinaryType => debinarizer(value.asInstanceOf[BinaryType])
       case StringType => deStringer(value.asInstanceOf[StringType])
+      case ShortType  => value.asInstanceOf[Number].shortValue()
+      case ByteType   => value.asInstanceOf[Number].byteValue()
       case _          => value
     }
   }
