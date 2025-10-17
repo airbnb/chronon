@@ -1,6 +1,7 @@
 import json
 import os
 
+import ai.chronon.api.ttypes as api
 from ai.chronon.scheduler.interfaces.flow import Flow
 from ai.chronon.scheduler.interfaces.node import Node
 from ai.chronon.scheduler.interfaces.orchestrator import WorkflowOrchestrator
@@ -23,6 +24,35 @@ DEFAULT_SPARK_SETTINGS = {
         "executor_cores": 2,
     }
 }
+
+
+def get_regular_and_external_join_parts(join):
+    """
+    Get all join parts including external parts with offlineGroupBy.
+    This mirrors the Scala implementation in Extensions.scala#getRegularAndExternalJoinParts.
+
+    External parts with offlineGroupBy are converted to synthetic JoinParts so they can
+    participate in offline backfill computation.
+
+    :param join: Join object
+    :return: List of JoinParts (regular + converted external with offlineGroupBy)
+    """
+    regular_join_parts = list(join.joinParts) if join.joinParts else []
+
+    # Convert external parts with offlineGroupBy to synthetic JoinParts
+    external_join_parts = []
+    if join.onlineExternalParts:
+        for ext_part in join.onlineExternalParts:
+            if ext_part.source.offlineGroupBy is not None:
+                # Create synthetic JoinPart from external part with offlineGroupBy
+                synthetic_jp = api.JoinPart(
+                    groupBy=ext_part.source.offlineGroupBy,
+                    keyMapping=ext_part.keyMapping if ext_part.keyMapping else None,
+                    prefix=ext_part.prefix if ext_part.prefix else None
+                )
+                external_join_parts.append(synthetic_jp)
+
+    return regular_join_parts + external_join_parts
 
 
 class JoinBackfill:
@@ -75,7 +105,8 @@ class JoinBackfill:
         )
         flow.add_node(final_node)
         flow.add_node(left_node)
-        for join_part in join.joinParts:
+        # Iterate through all join parts including external parts with offlineGroupBy
+        for join_part in get_regular_and_external_join_parts(join):
             for src in join_part.groupBy.sources:
                 if "joinSource" in src:
                     dep_node = self.add_join_to_flow(flow, src.joinSource.join)
