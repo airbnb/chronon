@@ -32,6 +32,8 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{never, spy, verify, when}
 import org.slf4j.LoggerFactory
 
+import java.sql.Timestamp
+import java.time.Instant
 import scala.util.Random
 
 class AnalyzerTest {
@@ -791,63 +793,65 @@ class AnalyzerTest {
     assertEquals(valueSchemaExpected, valueSchema)
   }
 
-  @Test(expected = classOf[RuntimeException])
-  def testAvroSchemaValidationWithUnsupportedTypesOnline(): Unit = {
-    val spark: SparkSession =
-      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
-
-    val tableUtilsWithValidation = TableUtils(spark)
-
+  private def createUnsupportedTypeGroupBy(spark: SparkSession, tableUtils: TableUtils, online: Boolean): GroupBy = {
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
-    tableUtilsWithValidation.createDatabase(namespace)
+    tableUtils.createDatabase(namespace)
 
     // Create test data with ShortType data
     import spark.implicits._
     val currentTime = System.currentTimeMillis()
     val dateString = "2025-09-01"
     val testData = Seq(
-      ("key1", 100.toShort, currentTime, dateString),
-      ("key2", 200.toShort, currentTime, dateString),
-      ("key1", 300.toShort, currentTime, dateString)
-    ).toDF("key", "short_col", "ts", "ds")
+      ("key1", Timestamp.from(Instant.parse("2025-09-01T00:00:00Z")), currentTime, dateString),
+      ("key2", Timestamp.from(Instant.parse("2025-09-01T00:01:00Z")), currentTime, dateString),
+      ("key3", Timestamp.from(Instant.parse("2025-09-01T00:02:00Z")), currentTime, dateString)
+    ).toDF("key", "timestamp_col", "ts", "ds")
 
-    val tableName = "short_types_table"
-    val shortTypesTable = s"$namespace.$tableName"
+    val tableName = "table_with_timestamp_col"
+    val fullTableName = s"$namespace.$tableName"
 
     // Create partitioned table by ds column
     testData.write
       .mode("overwrite")
       .partitionBy("ds")
-      .saveAsTable(shortTypesTable)
+      .saveAsTable(fullTableName)
 
     // Create Source using Builders.Source.events
-    val testSource = Builders.Source.events(
+    val testSource = Builders.Source.entities(
       query = Builders.Query(
-        selects = Builders.Selects("key", "short_col"),
+        selects = Builders.Selects("key", "timestamp_col"),
         startPartition = dateString
       ),
-      table = shortTypesTable
+      snapshotTable = fullTableName
     )
 
     val tableGroupBy = Builders.GroupBy(
       sources = Seq(testSource),
       keyColumns = Seq("key"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "short_col")
-      ),
-      metaData = Builders.MetaData(name = "group_by_analyzer_test_short", namespace = namespace, online = true),
-      accuracy = Accuracy.TEMPORAL
+      metaData = Builders.MetaData(name = "group_by_analyzer_test_timestamp", namespace = namespace, online = online),
+      accuracy = Accuracy.SNAPSHOT
     )
 
-    // Should throw RuntimeException due to ShortType in schema
-    val analyzer = new Analyzer(tableUtilsWithValidation,
-                                tableGroupBy,
+    tableGroupBy
+  }
+
+  @Test(expected = classOf[RuntimeException])
+  def testAvroSchemaValidationWithUnsupportedTypesOnline(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+
+    val tableUtils = TableUtils(spark)
+    val onlineGroupBy = createUnsupportedTypeGroupBy(spark, tableUtils, online = true)
+
+    // Should throw RuntimeException due to TimestampType in schema
+    val analyzer = new Analyzer(tableUtils,
+                                onlineGroupBy,
                                 "2025-09-01",
                                 today,
                                 enableHitter = false,
                                 skipTimestampCheck = true,
                                 validateTablePermission = false)
-    analyzer.analyzeGroupBy(tableGroupBy)
+    analyzer.analyzeGroupBy(onlineGroupBy)
   }
 
   @Test
@@ -855,58 +859,18 @@ class AnalyzerTest {
     val spark: SparkSession =
       SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
 
-    val tableUtilsWithValidation = TableUtils(spark)
+    val tableUtils = TableUtils(spark)
+    val offlineGroupBy = createUnsupportedTypeGroupBy(spark, tableUtils, online = false)
 
-    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
-    tableUtilsWithValidation.createDatabase(namespace)
-
-    // Create test data with ShortType data
-    import spark.implicits._
-    val currentTime = System.currentTimeMillis()
-    val dateString = "2025-09-01"
-    val testData = Seq(
-      ("key1", 100.toShort, currentTime, dateString),
-      ("key2", 200.toShort, currentTime, dateString),
-      ("key1", 300.toShort, currentTime, dateString)
-    ).toDF("key", "short_col", "ts", "ds")
-
-    val tableName = "short_types_table"
-    val shortTypesTable = s"$namespace.$tableName"
-
-    // Create partitioned table by ds column
-    testData.write
-      .mode("overwrite")
-      .partitionBy("ds")
-      .saveAsTable(shortTypesTable)
-
-    // Create Source using Builders.Source.events
-    val testSource = Builders.Source.events(
-      query = Builders.Query(
-        selects = Builders.Selects("key", "short_col"),
-        startPartition = dateString
-      ),
-      table = shortTypesTable
-    )
-
-    val tableGroupBy = Builders.GroupBy(
-      sources = Seq(testSource),
-      keyColumns = Seq("key"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "short_col")
-      ),
-      metaData = Builders.MetaData(name = "group_by_analyzer_test_short", namespace = namespace, online = false),
-      accuracy = Accuracy.TEMPORAL
-    )
-
-    // Because online is false, this should pass without exception
-    val analyzer = new Analyzer(tableUtilsWithValidation,
-                                tableGroupBy,
+    // Should NOT throw RuntimeException due to TimestampType in schema
+    val analyzer = new Analyzer(tableUtils,
+                                offlineGroupBy,
                                 "2025-09-01",
                                 today,
                                 enableHitter = false,
                                 skipTimestampCheck = true,
                                 validateTablePermission = false)
-    analyzer.analyzeGroupBy(tableGroupBy)
+    analyzer.analyzeGroupBy(offlineGroupBy)
   }
 
 }
