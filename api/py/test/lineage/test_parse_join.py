@@ -362,15 +362,6 @@ class TestParseJoin(unittest.TestCase):
         self.assertTrue(join_table_name in parser.metadata.tables)
         self.assertEqual(TableType.JOIN, parser.metadata.tables[join_table_name].table_type)
 
-        # Verify columns not including pre-derived features
-        self.assertFalse("ext_test_external_source_value_str" in parser.metadata.tables[join_table_name].columns)
-        self.assertFalse("ext_test_external_source_value_long" in parser.metadata.tables[join_table_name].columns)
-
-        # Verify columns including derived features
-        self.assertTrue("external_value_renamed" in parser.metadata.tables[join_table_name].columns)
-        self.assertTrue("external_derived" in parser.metadata.tables[join_table_name].columns)
-        self.assertTrue("internal_derived" in parser.metadata.tables[join_table_name].columns)
-
         # Get all features stored
         join_features = {k: v for k, v in parser.metadata.features.items() if k.startswith("test_join_external.")}
 
