@@ -365,9 +365,10 @@ class TestParseJoin(unittest.TestCase):
         # Get all features stored
         join_features = {k: v for k, v in parser.metadata.features.items() if k.startswith("test_join_external.")}
 
-        # Verify pre-derived external features are NOT in the features list
+        # Verify pre-derived external features are NOT in the features list if it is renamed
         self.assertNotIn("test_join_external.ext_test_external_source_value_str", join_features)
-        self.assertNotIn("test_join_external.ext_test_external_source_value_long", join_features)
+        # Verify pre-derived external features are in the features list if it is not renamed
+        self.assertIn("test_join_external.ext_test_external_source_value_long", join_features)
 
         # Verify derived external features are in the features list
         self.assertIn("test_join_external.external_value_renamed", join_features)
