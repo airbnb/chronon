@@ -3,7 +3,8 @@ package ai.chronon.flink
 import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps}
 import ai.chronon.api.{Constants, GroupBy, Query, StructType => ChrononStructType}
-import ai.chronon.online.{CatalystUtil, SparkConversions}
+import ai.chronon.online.CatalystUtil
+import ai.chronon.online.serde.SparkConversions
 import com.codahale.metrics.ExponentiallyDecayingReservoir
 import org.apache.flink.api.common.functions.RichFlatMapFunction
 import org.apache.flink.configuration.Configuration

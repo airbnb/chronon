@@ -14,7 +14,7 @@
  *    limitations under the License.
  */
 
-package ai.chronon.online
+package ai.chronon.online.serde
 
 import ai.chronon.api._
 import org.apache.avro.Schema

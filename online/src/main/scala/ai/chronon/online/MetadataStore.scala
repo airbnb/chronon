@@ -23,6 +23,7 @@ import ai.chronon.api._
 import ai.chronon.online.KVStore.{GetRequest, PutRequest, TimedValue}
 import ai.chronon.online.MetadataEndPoint.{ConfByKeyEndPointName, NameByTeamEndPointName}
 import ai.chronon.online.Metrics.Name.Exception
+import ai.chronon.online.serde.AvroCodec
 import com.google.gson.{Gson, GsonBuilder}
 import org.apache.thrift.TBase
 

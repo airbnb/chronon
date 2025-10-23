@@ -10,7 +10,8 @@ import ai.chronon.flink.window.{
   KeySelector,
   TimestampedTile
 }
-import ai.chronon.online.{GroupByServingInfoParsed, SparkConversions}
+import ai.chronon.online.GroupByServingInfoParsed
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment}
 import org.apache.spark.sql.Encoder

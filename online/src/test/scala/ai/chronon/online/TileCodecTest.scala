@@ -30,6 +30,7 @@ import ai.chronon.api.{
   TimeUnit,
   Window
 }
+import ai.chronon.online.serde.ArrayRow
 import org.junit.Assert.assertEquals
 import org.junit.Test
 

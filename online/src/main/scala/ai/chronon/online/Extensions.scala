@@ -17,6 +17,7 @@
 package ai.chronon.online
 
 import ai.chronon.api
+import ai.chronon.online.serde.{AvroCodec, AvroConversions, SparkConversions}
 import org.apache.avro.Schema
 import org.apache.spark.sql.types.StructType
 

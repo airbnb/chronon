@@ -23,7 +23,8 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request}
-import ai.chronon.online.{MetadataStore, SparkConversions}
+import ai.chronon.online.MetadataStore
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{Join => _, _}
 import junit.framework.TestCase

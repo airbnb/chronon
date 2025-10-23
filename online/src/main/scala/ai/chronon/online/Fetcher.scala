@@ -33,6 +33,7 @@ import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildDerivedFields}
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
+import ai.chronon.online.serde.{AvroCodec, AvroConversions}
 import com.google.gson.Gson
 import com.timgroup.statsd.Event
 import com.timgroup.statsd.Event.AlertType

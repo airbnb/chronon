@@ -27,6 +27,7 @@ import ai.chronon.spark.{EncoderUtil, GenericRowHandler}
 import com.google.gson.Gson
 import org.apache.spark.sql._
 import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger}
+import ai.chronon.online.serde.{AvroConversions, SparkConversions}
 
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}

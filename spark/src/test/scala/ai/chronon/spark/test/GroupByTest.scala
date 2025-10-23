@@ -33,7 +33,7 @@ import ai.chronon.api.{
   TimeUnit,
   Window
 }
-import ai.chronon.online.{RowWrapper, SparkConversions}
+import ai.chronon.online.serde.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
 import com.google.gson.Gson

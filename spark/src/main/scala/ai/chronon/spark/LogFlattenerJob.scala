@@ -27,6 +27,7 @@ import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
 import java.util.Base64
+import ai.chronon.online.serde.{AvroConversions, SparkConversions}
 
 import scala.+:
 import scala.collection.mutable

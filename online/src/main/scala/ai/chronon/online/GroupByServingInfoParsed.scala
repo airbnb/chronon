@@ -21,6 +21,7 @@ import ai.chronon.aggregator.windowing.SawtoothOnlineAggregator
 import ai.chronon.api.Constants.{ReversalField, TimeField}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps}
 import ai.chronon.api._
+import ai.chronon.online.serde.{AvroCodec, AvroConversions}
 import org.apache.avro.Schema
 import org.apache.spark.sql.SparkSession
 import scala.collection.JavaConverters.asScalaBufferConverter

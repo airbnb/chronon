@@ -18,6 +18,7 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.{BooleanType, DataType, GroupBy, StructType}
+import ai.chronon.online.serde.{AvroCodec, AvroConversions}
 import org.apache.avro.generic.GenericData
 import ai.chronon.api.Extensions.{AggregationOps, MetadataOps, WindowUtils}
 
