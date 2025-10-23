@@ -23,7 +23,8 @@ import ai.chronon.spark.streaming.{GroupBy, JoinSourceRunner}
 import ai.chronon.spark.stats.SummaryJob
 import org.apache.spark.sql.streaming.Trigger
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
-import ai.chronon.online.{AvroConversions, KVStore, TileCodec}
+import ai.chronon.online.{KVStore, TileCodec}
+import ai.chronon.online.serde.AvroConversions
 import org.apache.spark.sql.SparkSession
 
 import scala.annotation.tailrec

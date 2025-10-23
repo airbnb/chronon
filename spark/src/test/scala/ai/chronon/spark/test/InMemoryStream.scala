@@ -18,7 +18,8 @@ package ai.chronon.spark.test
 
 import org.slf4j.LoggerFactory
 import ai.chronon.api.{Constants, GroupBy, StructType}
-import ai.chronon.online.{AvroConversions, Mutation, SparkConversions, TileCodec}
+import ai.chronon.online.{Mutation, TileCodec}
+import ai.chronon.online.serde.{AvroConversions, SparkConversions}
 import ai.chronon.online.Extensions.StructTypeOps
 import ai.chronon.spark.{GenericRowHandler, TableUtils}
 import com.esotericsoftware.kryo.Kryo

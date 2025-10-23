@@ -23,7 +23,8 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore}
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}

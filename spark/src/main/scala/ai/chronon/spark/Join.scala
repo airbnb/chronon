@@ -20,7 +20,8 @@ import ai.chronon.api
 import ai.chronon.api.DataModel.Entities
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import ai.chronon.online.{DerivationUtils, SparkConversions}
+import ai.chronon.online.DerivationUtils
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils._
 import org.apache.spark.sql

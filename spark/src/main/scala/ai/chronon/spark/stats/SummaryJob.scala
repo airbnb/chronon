@@ -17,7 +17,7 @@
 package ai.chronon.spark.stats
 
 import org.slf4j.LoggerFactory
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.Extensions._
 import ai.chronon.api._

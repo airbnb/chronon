@@ -18,7 +18,8 @@ package ai.chronon.spark.stats
 
 import org.slf4j.LoggerFactory
 import ai.chronon.api._
-import ai.chronon.online.{SparkConversions, _}
+import ai.chronon.online._
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.{TableUtils, TimedKvRdd}
 import org.apache.spark.sql.DataFrame

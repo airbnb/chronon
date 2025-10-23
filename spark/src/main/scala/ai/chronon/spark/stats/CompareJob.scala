@@ -21,7 +21,8 @@ import ai.chronon.api
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
-import ai.chronon.online.{DataMetrics, SparkConversions}
+import ai.chronon.online.DataMetrics
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.stats.CompareJob.getJoinKeys
 import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils, TimedKvRdd}
 import org.apache.spark.sql.{DataFrame, SaveMode}
