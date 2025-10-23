@@ -19,7 +19,7 @@ package ai.chronon.spark
 import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Constants
-import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
+import ai.chronon.online.serde.{AvroCodec, AvroConversions, SparkConversions}
 import ai.chronon.spark.catalog.TableUtils
 import org.apache.avro.Schema
 import org.apache.spark.sql.{DataFrame, Row}

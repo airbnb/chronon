@@ -19,7 +19,8 @@ package ai.chronon.spark.stats
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.{AggregationPartOps, WindowUtils}
 import ai.chronon.api._
-import ai.chronon.online.{DataMetrics, SparkConversions}
+import ai.chronon.online.DataMetrics
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.{Comparison, TimedKvRdd}
 import org.apache.spark.rdd.RDD

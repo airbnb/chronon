@@ -17,7 +17,8 @@
 package ai.chronon.online.test
 
 import ai.chronon.api.{Derivation, Join, StructType}
-import ai.chronon.online.{CatalystUtil, SerializableFunction, SparkConversions, TBaseDecoderFactory}
+import ai.chronon.online.{CatalystUtil, SerializableFunction, TBaseDecoderFactory}
+import ai.chronon.online.serde.SparkConversions
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.Row

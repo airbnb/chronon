@@ -20,6 +20,7 @@ import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.Fetcher.Response
 import ai.chronon.online._
+import ai.chronon.online.serde.{AvroConversions, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
 import org.apache.avro.Schema

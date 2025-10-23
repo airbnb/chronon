@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Constants, ExternalPart, JoinPart, StructField}
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.Row

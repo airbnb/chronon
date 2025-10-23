@@ -19,6 +19,7 @@ package ai.chronon.online
 import ai.chronon.api.{DataType, StructType}
 import ai.chronon.online.CatalystUtil.{IteratorWrapper, PoolKey, poolMap}
 import ai.chronon.online.Extensions.StructTypeOps
+import ai.chronon.online.serde.SparkConversions
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.UnsafeProjection
 import org.apache.spark.sql.catalyst.expressions.codegen.CodeGenerator
