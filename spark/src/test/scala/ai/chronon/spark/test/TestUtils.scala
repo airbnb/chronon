@@ -21,7 +21,7 @@ import ai.chronon.api
 import ai.chronon.api._
 import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 

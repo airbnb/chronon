@@ -22,8 +22,9 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.test.{MockApi, OnlineUtils, SchemaEvolutionUtils}
-import ai.chronon.spark.{Comparison, LogFlattenerJob, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{Comparison, LogFlattenerJob, SparkSessionBuilder}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions._
 import org.junit.Assert.assertEquals

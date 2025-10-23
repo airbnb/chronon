@@ -21,8 +21,9 @@ import ai.chronon.spark._
 import ai.chronon.spark.test.TestUtils.makeDf
 import ai.chronon.api.{StructField, _}
 import ai.chronon.online.serde.SparkConversions
-import ai.chronon.spark.{IncompatibleSchemaException, PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{PartitionRange, SparkSessionBuilder}
 import ai.chronon.spark.SparkSessionBuilder.FormatTestEnvVar
+import ai.chronon.spark.catalog.{Hive, IncompatibleSchemaException, TableUtils, View}
 import org.apache.hadoop.hive.ql.exec.UDF
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SparkSession, types}

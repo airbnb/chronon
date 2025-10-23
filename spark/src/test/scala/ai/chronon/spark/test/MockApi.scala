@@ -22,7 +22,7 @@ import ai.chronon.online.Fetcher.Response
 import ai.chronon.online._
 import ai.chronon.online.serde.{AvroConversions, SparkConversions}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}

@@ -1,7 +1,8 @@
 package ai.chronon.spark.test
 
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{Comparison, PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{Comparison, PartitionRange, SparkSessionBuilder}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test

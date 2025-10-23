@@ -26,6 +26,7 @@ import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
 import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore}
 import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
 import com.google.gson.GsonBuilder

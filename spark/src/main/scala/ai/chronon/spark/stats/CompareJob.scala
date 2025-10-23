@@ -23,8 +23,9 @@ import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
 import ai.chronon.online.DataMetrics
 import ai.chronon.online.serde.SparkConversions
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.CompareJob.getJoinKeys
-import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils, TimedKvRdd}
+import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TimedKvRdd}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}

@@ -18,6 +18,7 @@ package ai.chronon.spark
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps, ModelTransformOps, SourceOps}
 import ai.chronon.api.ModelTransform
 import ai.chronon.online.{Metrics, ModelBackend}
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.{DataFrame, SparkSession}
 import org.slf4j.LoggerFactory
 
