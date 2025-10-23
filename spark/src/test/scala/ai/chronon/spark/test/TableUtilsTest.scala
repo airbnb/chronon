@@ -20,7 +20,7 @@ import ai.chronon.api._
 import ai.chronon.spark._
 import ai.chronon.spark.test.TestUtils.makeDf
 import ai.chronon.api.{StructField, _}
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.{PartitionRange, SparkSessionBuilder}
 import ai.chronon.spark.SparkSessionBuilder.FormatTestEnvVar
 import ai.chronon.spark.catalog.{Hive, IncompatibleSchemaException, TableUtils, View}

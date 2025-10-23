@@ -18,7 +18,7 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.{CStream, Column, RowsWithSchema}
 import ai.chronon.api.{Constants, LongType, StringType}
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow

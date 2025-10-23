@@ -20,7 +20,7 @@ import ai.chronon.api
 import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Driver.parseConf
 import ai.chronon.spark.Extensions.StructTypeOps
 import ai.chronon.spark.catalog.TableUtils

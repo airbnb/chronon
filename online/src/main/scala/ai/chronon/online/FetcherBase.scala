@@ -27,6 +27,7 @@ import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvSt
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
+import ai.chronon.online.serde.AvroConversions
 import com.google.gson.Gson
 
 import java.util

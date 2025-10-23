@@ -23,7 +23,7 @@ import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
-import ai.chronon.online.{RowWrapper, SparkConversions}
+import ai.chronon.online.serde.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.rdd.RDD
