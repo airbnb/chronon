@@ -58,7 +58,7 @@ def JoinPart(
         components like GroupBys.
     """
     # Automatically set the GroupBy name if not already set
-    _auto_set_group_by_name(group_by, context="JoinPart")
+    _auto_set_group_by_name(group_by)
 
     if key_mapping:
         utils.check_contains(key_mapping.values(), group_by.keyColumns, "key", group_by.metaData.name)
@@ -171,7 +171,7 @@ def ExternalSource(
 
     # Automatically set the name for offline_group_by if not already set
     if offline_group_by is not None:
-        _auto_set_group_by_name(offline_group_by, context="ExternalSource")
+        _auto_set_group_by_name(offline_group_by)
 
     factory_config = None
     if factory_name is not None or factory_params is not None:
@@ -646,18 +646,13 @@ def Join(
     )
 
 
-def _auto_set_group_by_name(group_by: api.GroupBy, context: str = "GroupBy") -> None:
+def _auto_set_group_by_name(group_by: api.GroupBy) -> None:
     """
     Automatically set the GroupBy name by finding its source module using garbage collection.
     This is used by both JoinPart and ExternalSource to automatically name GroupBys.
 
     :param group_by: The GroupBy object to set the name for
-    :param context: Context string for error messages (e.g., "JoinPart", "ExternalSource")
     """
-    if group_by.metaData.name:
-        # Name already set, nothing to do
-        return
-
     # Save and restore __import__ to preserve original behavior
     import_copy = __builtins__["__import__"]
 
@@ -671,15 +666,15 @@ def _auto_set_group_by_name(group_by: api.GroupBy, context: str = "GroupBy") -> 
                 break
 
         if group_by_module_name:
-            logging.debug(f"{context}: group_by's module info from garbage collector {group_by_module_name}")
+            logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
             group_by_module = importlib.import_module(group_by_module_name)
             __builtins__["__import__"] = eo.import_module_set_name(group_by_module, api.GroupBy)
         else:
             if not group_by.metaData.name:
-                logging.error(f"{context}: No group_by file or custom group_by name found")
+                logging.error("No group_by file or custom group_by name found")
                 raise ValueError(
-                    f"[{context}] Must specify a group_by name if group_by is not defined in separate file. "
-                    "You can set it via GroupBy(metaData=MetaData(name='team.file.variable_name'))"
+                    "[GroupBy] Must specify a group_by name if group_by is not defined in separate file. "
+                    "You may pass it in via GroupBy.name. \n"
                 )
     finally:
         # Reset before next run
