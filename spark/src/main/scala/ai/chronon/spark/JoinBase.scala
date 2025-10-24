@@ -329,7 +329,10 @@ abstract class JoinBase(joinConf: api.Join,
       }
     }
     val rightDfWithDerivations = if (joinPart.groupBy.hasDerivations) {
-      val finalOutputColumns = joinPart.groupBy.derivationsScala.finalOutputColumn(rightDf.columns).toSeq
+      val finalOutputColumns = joinPart.groupBy.derivationsScala.finalOutputColumn(
+        rightDf.columns,
+        ensureKeys = joinPart.groupBy.keys(tableUtils.partitionColumn)
+      ).toSeq
       val result = rightDf.select(finalOutputColumns: _*)
       result
     } else {

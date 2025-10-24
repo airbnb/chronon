@@ -1335,4 +1335,96 @@ class JoinTest {
     aggregationsMetadata.exists(_.name == "item")
   }
 
+  /**
+   * Test that join parts with GroupBy derivations (without wildcards) preserve infrastructure columns.
+   * This validates the fix where join part derivations would drop key/partition columns.
+   */
+  @Test
+  def testJoinPartDerivationsPreserveInfrastructureColumns(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinPartDerivationsTest_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_join_part_derivs_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left table (queries)
+    val leftTable = s"$namespace.queries"
+    val leftData = List(
+      Column("user", StringType, 100),
+      Column("item", StringType, 100)
+    )
+    DataFrameGen.events(spark, leftData, 50, partitions = 10).save(leftTable)
+
+    // Create right table (events)
+    val rightTable = s"$namespace.events"
+    val rightData = List(
+      Column("user", StringType, 100),
+      Column("value", LongType, 1000)
+    )
+    DataFrameGen.events(spark, rightData, 100, partitions = 20).save(rightTable)
+
+    // Create GroupBy with derivations WITHOUT wildcards for the join part
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.events(
+          table = rightTable,
+          query = Builders.Query(
+            selects = Builders.Selects("value"),
+            startPartition = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                                                            new Window(30, TimeUnit.DAYS))
+          )
+        )
+      ),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "value"),
+        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "value")
+      ),
+      derivations = Seq(
+        // NO WILDCARD! Before fix, this would drop key+partition columns when used in join part
+        Builders.Derivation(name = "total_value", expression = "value_sum"),
+        Builders.Derivation(name = "event_count", expression = "value_count")
+      ),
+      metaData = Builders.MetaData(name = "test_join_part_gb", namespace = namespace, team = "chronon")
+    )
+
+    // Create Join with this GroupBy as a join part
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(
+        table = leftTable,
+        query = Builders.Query(
+          startPartition = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                                                          new Window(30, TimeUnit.DAYS))
+        )
+      ),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupByConf)),
+      metaData = Builders.MetaData(name = "test_join_part_derivs", namespace = namespace, team = "chronon")
+    )
+
+    // Run the join
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val endPartition = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+
+    val joinJob = new Join(joinConf, endPartition, tableUtils)
+    val result = joinJob.computeJoin()
+
+    assertNotNull("Join should produce result", result)
+
+    val resultColumns = result.columns.toSet
+
+    // Verify join output has expected columns
+    assertTrue("Join output should contain left key 'user'", resultColumns.contains("user"))
+    assertTrue("Join output should contain left key 'item'", resultColumns.contains("item"))
+
+    // Verify derived columns from join part are present
+    val expectedDerivedCols = Set("test_join_part_gb_total_value", "test_join_part_gb_event_count")
+    expectedDerivedCols.foreach { col =>
+      assertTrue(s"Join output should contain derived column '$col'", resultColumns.contains(col))
+    }
+
+    println(s"✅ Join part derivations correctly preserved infrastructure columns:")
+    println(s"   Columns: ${result.columns.mkString(", ")}")
+    result.show(5)
+  }
+
 }

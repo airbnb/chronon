@@ -1222,7 +1222,7 @@ object Extensions {
       derivationsWithoutStar.filter(d => JoinOps.isIdentifier(d.expression))
 
     // Used during offline spark job and this method preserves ordering of derivations
-    def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
+    def derivationProjection(baseColumns: Seq[String], ensureKeys: Seq[String] = Seq.empty): Seq[(String, String)] = {
       val wildcardDerivations = if (derivationsContainStar) { // select all baseColumns except renamed ones
         val expressions = derivations.iterator.map(_.expression).toSet
         baseColumns.filterNot(expressions)
@@ -1230,17 +1230,27 @@ object Extensions {
         Seq.empty
       }
 
-      derivations.iterator.flatMap { d =>
+      // expand wildcard derivations
+      val expandedDerivations = derivations.iterator.flatMap { d =>
         if (d.name == "*") {
           wildcardDerivations.map(c => c -> c)
         } else {
           Seq(d.name -> d.expression)
         }
       }.toSeq
+
+      val expandedDerivationCols = expandedDerivations.map(_._1).toSet
+
+      // Ensure infrastructure columns (keys, partition column) are preserved even if not in derivations
+      val missingKeys = ensureKeys
+        .filterNot(expandedDerivationCols.contains)
+        .map { key => key -> key }
+
+      missingKeys ++ expandedDerivations
     }
 
-    def finalOutputColumn(baseColumns: Seq[String]): Seq[Column] = {
-      val projections = derivationProjection(baseColumns)
+    def finalOutputColumn(baseColumns: Seq[String], ensureKeys: Seq[String] = Seq.empty): Seq[Column] = {
+      val projections = derivationProjection(baseColumns, ensureKeys)
       val finalOutputColumns = projections
         .flatMap {
           case (name, expression) => Some(expr(expression).as(name))

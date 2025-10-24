@@ -952,10 +952,91 @@ class GroupByTest {
 
     // Verify we can query the results successfully with partition pushdown
     val filteredResult = tableUtils.sql(s"""
-      SELECT user, time_spent_ms_count 
-      FROM $groupByOutputTable 
+      SELECT user, time_spent_ms_count
+      FROM $groupByOutputTable
       WHERE ds >= '${tableUtils.partitionSpec.minus(today, new Window(7, TimeUnit.DAYS))}'
     """)
     assertTrue("Should be able to filter GroupBy results", filteredResult.count() >= 0)
+  }
+
+  /**
+   * Test that GroupBy derivations without wildcards preserve infrastructure columns (keys, partition, time).
+   * This validates the fix for the bug where derivations would drop necessary columns.
+   */
+  @Test
+  def testGroupByDerivationsPreserveInfrastructureColumns(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByDerivationsTest_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_derivations_infra_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create a simple events table
+    val eventsTable = s"$namespace.events"
+    val eventsData = List(
+      Column("user", StringType, 100),
+      Column("item", StringType, 100),
+      Column("value", LongType, 1000)
+    )
+    DataFrameGen.events(spark, eventsData, 50, partitions = 10).save(eventsTable)
+
+    // Create GroupBy with derivations WITHOUT wildcards
+    // Before fix, this would drop key columns and partition column
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.events(
+          table = eventsTable,
+          query = Builders.Query(
+            selects = Builders.Selects("value"),
+            startPartition = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                                                            new Window(30, TimeUnit.DAYS))
+          )
+        )
+      ),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "value"),
+        Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "value")
+      ),
+      derivations = Seq(
+        // NO WILDCARD! This used to drop infrastructure columns
+        Builders.Derivation(name = "total", expression = "value_sum"),
+        Builders.Derivation(name = "avg", expression = "value_average")
+      ),
+      metaData = Builders.MetaData(name = "test_derivations_infra", namespace = namespace, team = "chronon"),
+      backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                                                         new Window(60, TimeUnit.DAYS))
+    )
+
+    // Run the GroupBy backfill
+    val outputTable = groupByConf.metaData.outputTable
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val endPartition = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+
+    GroupBy.computeBackfill(groupByConf, endPartition, tableUtils)
+
+    // Verify the output has infrastructure columns
+    val result = tableUtils.sql(s"SELECT * FROM $outputTable LIMIT 10")
+    val resultColumns = result.columns.toSet
+
+    // Infrastructure columns that MUST be preserved:
+    // 1. Key column
+    assertTrue(s"Output should contain key column 'user'", resultColumns.contains("user"))
+
+    // 2. Partition column
+    assertTrue(s"Output should contain partition column '${tableUtils.partitionColumn}'",
+               resultColumns.contains(tableUtils.partitionColumn))
+
+    // 3. Derived columns
+    assertTrue(s"Output should contain derived column 'total'", resultColumns.contains("total"))
+    assertTrue(s"Output should contain derived column 'avg'", resultColumns.contains("avg"))
+
+    // 4. Original aggregation columns should NOT be present (only derived ones)
+    assertFalse(s"Output should NOT contain original 'value_sum' column", resultColumns.contains("value_sum"))
+    assertFalse(s"Output should NOT contain original 'value_average' column", resultColumns.contains("value_average"))
+
+    println(s"✅ GroupBy derivations correctly preserved infrastructure columns:")
+    println(s"   Columns: ${result.columns.mkString(", ")}")
+    result.show(5)
   }
 }
