@@ -686,83 +686,6 @@ object Extensions {
     lazy val valueFields: Array[StructField] = schemaFields(externalSource.valueSchema)
 
     def isContextualSource: Boolean = externalSource.metadata.name == Constants.ContextualSourceName
-
-    /**
-     * Validates schema compatibility between ExternalSource and its offlineGroupBy.
-     * This ensures that online and offline serving will produce consistent results.
-     *
-     * @return Sequence of error messages, empty if no errors
-     */
-    def validateOfflineGroupBy(): Seq[String] = Option(externalSource.offlineGroupBy)
-      .map(_ => validateKeySchemaCompatibility() ++ validateValueSchemaCompatibility())
-      .getOrElse(Seq.empty)
-
-    private def validateKeySchemaCompatibility(): Seq[String] = {
-      val errors = scala.collection.mutable.ListBuffer[String]()
-
-      if (externalSource.keySchema == null) {
-        errors += s"ExternalSource ${externalSource.metadata.name} keySchema cannot be null when offlineGroupBy is specified"
-        return errors
-      }
-
-      if (externalSource.offlineGroupBy.keyColumns == null || externalSource.offlineGroupBy.keyColumns.isEmpty) {
-        errors += s"ExternalSource ${externalSource.metadata.name} offlineGroupBy keyColumns cannot be null or empty"
-        return errors
-      }
-
-      val externalKeyFields = keyFields
-      val groupByKeyColumns = externalSource.offlineGroupBy.keyColumns.toScala.toSet
-
-      // Extract field names from external source key schema
-      val externalKeyNames = externalKeyFields.map(_.name).toSet
-
-      // Validate that GroupBy has key columns that match ExternalSource key schema
-      val missingKeys = externalKeyNames -- groupByKeyColumns
-      val extraKeys = groupByKeyColumns -- externalKeyNames
-
-      if (missingKeys.nonEmpty) {
-        errors += s"ExternalSource ${externalSource.metadata.name} key schema contains columns [${missingKeys.mkString(", ")}] " +
-          s"that are not present in offlineGroupBy keyColumns [${groupByKeyColumns.mkString(", ")}]. " +
-          s"All ExternalSource key columns must be present in the GroupBy key columns."
-      }
-
-      if (extraKeys.nonEmpty) {
-        errors += s"ExternalSource ${externalSource.metadata.name} offlineGroupBy keyColumns contain [${extraKeys.mkString(", ")}] " +
-          s"that are not present in ExternalSource keySchema [${externalKeyNames.mkString(", ")}]. " +
-          s"GroupBy key columns cannot contain keys not defined in ExternalSource keySchema."
-      }
-
-      errors
-    }
-
-    private def validateValueSchemaCompatibility(): Seq[String] = {
-      val errors = scala.collection.mutable.ListBuffer[String]()
-
-      if (externalSource.valueSchema == null) {
-        errors += s"ExternalSource ${externalSource.metadata.name} valueSchema cannot be null when offlineGroupBy is specified"
-        return errors
-      }
-
-      val externalValueFields = valueFields
-      val externalValueNames = externalValueFields.map(_.name).toSet
-
-      // For GroupBy value schema, we need to derive the output schema from aggregations
-      val groupByValueColumns = externalSource.offlineGroupBy.valueColumns.toSet
-
-      // Check that ExternalSource value schema fields are compatible with GroupBy output
-      val missingValueColumns = externalValueNames -- groupByValueColumns
-
-      if (missingValueColumns.nonEmpty) {
-        // This is an error because ExternalSource valueSchema must be compatible with GroupBy output
-        // to ensure consistency between online and offline serving
-        errors += s"ExternalSource ${externalSource.metadata.name} valueSchema contains columns [${missingValueColumns.mkString(", ")}] " +
-          s"that are not present in offlineGroupBy output columns [${groupByValueColumns.mkString(", ")}]. " +
-          s"This indicates schema incompatibility between online and offline serving. " +
-          s"Please ensure ExternalSource valueSchema matches the expected output of the GroupBy aggregations."
-      }
-
-      errors
-    }
   }
 
   object KeyMappingHelper {
@@ -781,10 +704,11 @@ object Extensions {
   }
 
   implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
-    lazy val fullName: String =
+    lazy val fullName: String = {
       Constants.ExternalPrefix + "_" +
         Option(externalPart.prefix).map(_ + "_").getOrElse("") +
         externalPart.source.metadata.name.sanitize
+    }
 
     def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
       val rightToLeft = right_keys.map(k => k -> flipped.getOrElse(k, k))
@@ -822,7 +746,14 @@ object Extensions {
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
-    lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
+    lazy val fullPrefix = {
+      joinPart match {
+        case part: ExternalJoinPart =>
+          part.externalJoinFullPrefix
+        case _ =>
+          (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
+      }
+    }
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
 
     def valueColumns: Seq[String] = joinPart.groupBy.valueColumns.map(fullPrefix + "_" + _)
@@ -960,7 +891,9 @@ object Extensions {
     private[api] def baseSemanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
       logger.info(s"Join Left Object: ${ThriftJsonCodec.toJsonStr(join.left)}")
-      val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
+      val partHashes = join.getRegularAndExternalJoinParts.map { jp =>
+        partOutputTable(jp) -> jp.groupBy.semanticHash
+      }.toMap
       val derivedHashMap = Option(join.derivations)
         .map { derivations =>
           val derivedHash =
@@ -988,7 +921,7 @@ object Extensions {
       }
 
       cleanTopicInSource(join.left)
-      join.getJoinParts.toScala.foreach(_.groupBy.sources.toScala.foreach(cleanTopicInSource))
+      join.getRegularAndExternalJoinParts.foreach(_.groupBy.sources.toScala.foreach(cleanTopicInSource))
       join
     }
 
@@ -1027,16 +960,6 @@ object Extensions {
           .flatMap(_.toSet))
         .getOrElse(Seq.empty)
     }
-
-    /**
-     * Validates all ExternalSources in this Join's onlineExternalParts.
-     * This ensures schema compatibility between ExternalSources and their offlineGroupBy configurations.
-     *
-     * @return Sequence of error messages, empty if no errors
-     */
-    def validateExternalSources(): Seq[String] = Option(join.onlineExternalParts)
-      .map(_.toScala.flatMap(_.source.validateOfflineGroupBy()))
-      .getOrElse(Seq.empty)
 
     def isProduction: Boolean = join.getMetaData.isProduction
 
@@ -1095,8 +1018,49 @@ object Extensions {
     }
 
     def setups: Seq[String] =
-      (join.left.query.setupsSeq ++ join.joinParts.toScala
+      (join.left.query.setupsSeq ++ join.getRegularAndExternalJoinParts
         .flatMap(_.groupBy.setups)).distinct
+
+    /**
+      * Converts offline-capable ExternalParts to JoinParts for unified processing during backfill.
+      * This enables external sources with offlineGroupBy to participate in offline computation
+      * while maintaining compatibility with existing join processing logic.
+      *
+      * @return Sequence of JoinParts converted from offline-capable ExternalParts
+      */
+    private def getExternalJoinParts: Seq[ExternalJoinPart] = {
+      Option(join.onlineExternalParts)
+        .map(_.toScala)
+        .getOrElse(Seq.empty)
+        .filter(_.source.offlineGroupBy != null) // Only offline-capable ExternalParts
+        .map { externalPart =>
+          // Set customJson with fullPrefix override
+          val offlineGroupBy = externalPart.source.offlineGroupBy.deepCopy()
+
+          // Convert ExternalPart to synthetic JoinPart
+          val syntheticJoinPart = new JoinPart()
+          syntheticJoinPart.setGroupBy(offlineGroupBy)
+          if (externalPart.keyMapping != null) {
+            syntheticJoinPart.setKeyMapping(externalPart.keyMapping)
+          }
+          if (externalPart.prefix != null) {
+            syntheticJoinPart.setPrefix(externalPart.prefix)
+          }
+          new ExternalJoinPart(syntheticJoinPart, externalPart.fullName)
+        }
+    }
+
+    /**
+      * Get all join parts including both regular joinParts and external join parts.
+      * This provides a unified view of all join parts for processing.
+      *
+      * @return Sequence containing all JoinParts (regular + converted external)
+      */
+    def getRegularAndExternalJoinParts: Seq[JoinPart] = {
+      val regularJoinParts = Option(join.joinParts).map(_.toScala).getOrElse(Seq.empty)
+      val externalJoinParts = getExternalJoinParts
+      regularJoinParts ++ externalJoinParts
+    }
 
     def copyForVersioningComparison(): Join = {
       // When we compare previous-run join to current join to detect changes requiring table migration

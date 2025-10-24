@@ -57,33 +57,14 @@ def JoinPart(
         JoinPart specifies how the left side of a join, or the query in online setting, would join with the right side
         components like GroupBys.
     """
-    # used for reset for next run
-    import_copy = __builtins__["__import__"]
-    # get group_by's module info from garbage collector
-    gc.collect()
-    group_by_module_name = None
-    for ref in gc.get_referrers(group_by):
-        if "__name__" in ref and ref["__name__"].startswith("group_bys"):
-            group_by_module_name = ref["__name__"]
-            break
-    if group_by_module_name:
-        logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
-        group_by_module = importlib.import_module(group_by_module_name)
-        __builtins__["__import__"] = eo.import_module_set_name(group_by_module, api.GroupBy)
-    else:
-        if not group_by.metaData.name:
-            logging.error("No group_by file or custom group_by name found")
-            raise ValueError(
-                "[GroupBy] Must specify a group_by name if group_by is not defined in separate file. "
-                "You may pass it in via GroupBy.name. \n"
-            )
+    # Automatically set the GroupBy name if not already set
+    _auto_set_group_by_name(group_by, context="JoinPart")
+
     if key_mapping:
         utils.check_contains(key_mapping.values(), group_by.keyColumns, "key", group_by.metaData.name)
 
     join_part = api.JoinPart(groupBy=group_by, keyMapping=key_mapping, prefix=prefix)
     join_part.tags = tags
-    # reset before next run
-    __builtins__["__import__"] = import_copy
     return join_part
 
 
@@ -140,6 +121,7 @@ def ExternalSource(
     custom_json: Optional[str] = None,
     factory_name: Optional[str] = None,
     factory_params: Optional[Dict[str, str]] = None,
+    offline_group_by: Optional[api.GroupBy] = None,
 ) -> api.ExternalSource:
     """
     External sources are online only data sources. During fetching, using
@@ -180,9 +162,16 @@ def ExternalSource(
         creating the external source handler.
     :param factory_params: Optional parameters to pass to the factory when
         creating the handler.
+    :param offline_group_by: Optional GroupBy configuration to be used for
+        offline backfill computation consuming from a mutation table for the service data.
+        When provided, enables point-in-time correct (PITC) offline computation for the external source.
 
     """
     assert name != "contextual", "Please use `ContextualSource`"
+
+    # Automatically set the name for offline_group_by if not already set
+    if offline_group_by is not None:
+        _auto_set_group_by_name(offline_group_by, context="ExternalSource")
 
     factory_config = None
     if factory_name is not None or factory_params is not None:
@@ -193,6 +182,7 @@ def ExternalSource(
         keySchema=DataType.STRUCT(f"ext_{name}_keys", *key_fields),
         valueSchema=DataType.STRUCT(f"ext_{name}_values", *value_fields),
         factoryConfig=factory_config,
+        offlineGroupBy=offline_group_by,
     )
 
 
@@ -654,3 +644,43 @@ def Join(
         derivations=derivations,
         modelTransforms=model_transforms,
     )
+
+
+def _auto_set_group_by_name(group_by: api.GroupBy, context: str = "GroupBy") -> None:
+    """
+    Automatically set the GroupBy name by finding its source module using garbage collection.
+    This is used by both JoinPart and ExternalSource to automatically name GroupBys.
+
+    :param group_by: The GroupBy object to set the name for
+    :param context: Context string for error messages (e.g., "JoinPart", "ExternalSource")
+    """
+    if group_by.metaData.name:
+        # Name already set, nothing to do
+        return
+
+    # Save and restore __import__ to preserve original behavior
+    import_copy = __builtins__["__import__"]
+
+    try:
+        # Use garbage collector to find the module where this GroupBy was defined
+        gc.collect()
+        group_by_module_name = None
+        for ref in gc.get_referrers(group_by):
+            if "__name__" in ref and ref["__name__"].startswith("group_bys"):
+                group_by_module_name = ref["__name__"]
+                break
+
+        if group_by_module_name:
+            logging.debug(f"{context}: group_by's module info from garbage collector {group_by_module_name}")
+            group_by_module = importlib.import_module(group_by_module_name)
+            __builtins__["__import__"] = eo.import_module_set_name(group_by_module, api.GroupBy)
+        else:
+            if not group_by.metaData.name:
+                logging.error(f"{context}: No group_by file or custom group_by name found")
+                raise ValueError(
+                    f"[{context}] Must specify a group_by name if group_by is not defined in separate file. "
+                    "You can set it via GroupBy(metaData=MetaData(name='team.file.variable_name'))"
+                )
+    finally:
+        # Reset before next run
+        __builtins__["__import__"] = import_copy

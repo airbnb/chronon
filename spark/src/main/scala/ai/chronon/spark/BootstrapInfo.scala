@@ -83,44 +83,47 @@ object BootstrapInfo {
 
     // Enrich each join part with the expected output schema
     logger.info(s"\nCreating BootstrapInfo for GroupBys for Join ${joinConf.metaData.name}")
-    var joinParts: Seq[JoinPartMetadata] = Option(joinConf.joinParts.toScala)
-      .getOrElse(Seq.empty)
-      .map(part => {
-        // set computeDependency to False as we compute dependency upstream
-        val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency)
-        val keySchema = SparkConversions
-          .toChrononSchema(gb.keySchema)
-          .map(field => StructField(part.rightToLeft(field._1), field._2))
 
-        Analyzer.validateAvroCompatibility(tableUtils, gb, part.groupBy)
+    // Get all join parts including both regular and external join parts
+    val allJoinParts = joinConf.getRegularAndExternalJoinParts
 
-        val keyAndPartitionFields =
-          gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
-        // todo: this change is only valid for offline use case
-        // we need to revisit logic for the logging part to make sure the derived columns are also logged
-        // to make bootstrap continue to work
-        val outputSchema = if (part.groupBy.hasDerivations) {
-          val sparkSchema = {
-            StructType(SparkConversions.fromChrononSchema(gb.outputSchema).fields ++ keyAndPartitionFields)
-          }
-          val dummyOutputDf = tableUtils.sparkSession
-            .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
-          val finalOutputColumns = part.groupBy.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
-          val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
-          val columns = SparkConversions.toChrononSchema(
-            StructType(derivedDummyOutputDf.schema.filterNot(keyAndPartitionFields.contains)))
-          api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
-        } else {
-          gb.outputSchema
+    var joinParts: Seq[JoinPartMetadata] = allJoinParts.map(part => {
+      // set computeDependency to False as we compute dependency upstream
+      val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency)
+      val keySchema = SparkConversions
+        .toChrononSchema(gb.keySchema)
+        .map(field => StructField(part.rightToLeft(field._1), field._2))
+
+      Analyzer.validateAvroCompatibility(tableUtils, gb, part.groupBy)
+
+      val keyAndPartitionFields =
+        gb.keySchema.fields ++ Seq(org.apache.spark.sql.types.StructField(tableUtils.partitionColumn, StringType))
+      // todo: this change is only valid for offline use case
+      // we need to revisit logic for the logging part to make sure the derived columns are also logged
+      // to make bootstrap continue to work
+      val outputSchema = if (part.groupBy.hasDerivations) {
+        val sparkSchema = {
+          StructType(SparkConversions.fromChrononSchema(gb.outputSchema).fields ++ keyAndPartitionFields)
         }
-        val valueSchema = outputSchema.fields.map(part.constructJoinPartSchema)
-        JoinPartMetadata(part, keySchema, valueSchema, Map.empty) // will be populated below
-      })
+        val dummyOutputDf = tableUtils.sparkSession
+          .createDataFrame(tableUtils.sparkSession.sparkContext.parallelize(immutable.Seq[Row]()), sparkSchema)
+        val finalOutputColumns = part.groupBy.derivationsScala.finalOutputColumn(dummyOutputDf.columns).toSeq
+        val derivedDummyOutputDf = dummyOutputDf.select(finalOutputColumns: _*)
+        val columns = SparkConversions.toChrononSchema(
+          StructType(derivedDummyOutputDf.schema.filterNot(keyAndPartitionFields.contains)))
+        api.StructType("", columns.map(tup => api.StructField(tup._1, tup._2)))
+      } else {
+        gb.outputSchema
+      }
+      val valueSchema = outputSchema.fields.map(part.constructJoinPartSchema)
+      JoinPartMetadata(part, keySchema, valueSchema, Map.empty) // will be populated below
+    })
 
-    // Enrich each external part with the expected output schema
-    logger.info(s"\nCreating BootstrapInfo for ExternalParts for Join ${joinConf.metaData.name}")
+    // Enrich online only external parts with the expected output schema
+    logger.info(s"\nCreating BootstrapInfo for online-only ExternalParts for Join ${joinConf.metaData.name}")
     val externalParts: Seq[ExternalPartMetadata] = Option(joinConf.onlineExternalParts.toScala)
       .getOrElse(Seq.empty)
+      .filter(_.source.offlineGroupBy == null) // Only online-only ExternalParts
       .map(part => ExternalPartMetadata(part, part.keySchemaFull, part.valueSchemaFull))
 
     val leftFields = leftSchema
@@ -355,4 +358,5 @@ object BootstrapInfo {
 
     bootstrapInfo
   }
+
 }
