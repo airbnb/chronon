@@ -217,7 +217,8 @@ class Join(joinConf: api.Join,
   }
 
   private def getRightPartsData(leftRange: PartitionRange): Seq[(JoinPart, DataFrame)] = {
-    joinConf.joinParts.toScala.flatMap { joinPart =>
+    // Use getRegularAndExternalJoinParts to include external parts with offlineGroupBy
+    joinConf.getRegularAndExternalJoinParts.flatMap { joinPart =>
       val partTable = joinConf.partOutputTable(joinPart)
       if (!tableUtils.tableExists(partTable)) {
         // When a JoinPart is fully bootstrapped, its partTable may not exist and we skip it during final join.
