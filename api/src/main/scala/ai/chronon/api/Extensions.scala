@@ -1240,9 +1240,13 @@ object Extensions {
       }.toSeq
 
       val expandedDerivationCols = expandedDerivations.map(_._1).toSet
+      val baseColumnsSet = baseColumns.toSet
 
       // Ensure infrastructure columns (keys, partition column) are preserved even if not in derivations
+      // Only include keys that actually exist in the base columns (to handle cases where ts is expected
+      // but not present in snapshot aggregations)
       val missingKeys = ensureKeys
+        .filter(baseColumnsSet.contains)  // Only ensure keys that exist in the DataFrame
         .filterNot(expandedDerivationCols.contains)
         .map { key => key -> key }
 

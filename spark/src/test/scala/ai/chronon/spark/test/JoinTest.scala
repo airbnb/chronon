@@ -1427,4 +1427,110 @@ class JoinTest {
     result.show(5)
   }
 
+  @Test
+  def testTemporalGroupByWithSnapshotJoin(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("TemporalGroupBySnapshotJoin_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_temporal_gb_snapshot_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left table (entities - training data)
+    val leftTable = s"$namespace.training_data"
+    val leftData = List(
+      Column("profile_id", StringType, 100),
+      Column("entity_id", StringType, 100),
+      Column("label", LongType, 2)
+    )
+    DataFrameGen.entities(spark, leftData, 50, partitions = 10).save(leftTable)
+
+    // Create right table (events - viewing data)
+    val rightTable = s"$namespace.viewing_events"
+    val rightData = List(
+      Column("profile_id", StringType, 100),
+      Column("show_title_id", LongType, 1000),
+      Column("watch_duration", LongType, 10000)
+    )
+    DataFrameGen.events(spark, rightData, 100, partitions = 20).save(rightTable)
+
+    // Create TEMPORAL GroupBy (has topic set) with derivations
+    // This simulates the qualified_watching_v0 scenario
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.events(
+          table = rightTable,
+          topic = "test_viewing_topic", // This makes it TEMPORAL
+          query = Builders.Query(
+            selects = Builders.Selects("show_title_id", "watch_duration"),
+            startPartition = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                                                            new Window(30, TimeUnit.DAYS))
+          )
+        )
+      ),
+      keyColumns = Seq("profile_id"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "show_title_id"),
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "watch_duration")
+      ),
+      derivations = Seq(
+        Builders.Derivation(name = "*", expression = "*"),
+        Builders.Derivation(name = "avg_watch_duration",
+                           expression = "watch_duration_sum / show_title_id_count")
+      ),
+      metaData = Builders.MetaData(name = "test_temporal_viewing_gb", namespace = namespace, team = "chronon")
+    )
+
+    // Create Join with Entities left + TEMPORAL Events right (snapshot join case)
+    val joinConf = Builders.Join(
+      left = Builders.Source.entities(
+        snapshotTable = leftTable,
+        query = Builders.Query(
+          startPartition = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+                                                          new Window(30, TimeUnit.DAYS))
+        )
+      ),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupByConf, prefix = "viewing")),
+      metaData = Builders.MetaData(name = "test_temporal_gb_snapshot_join", namespace = namespace, team = "chronon")
+    )
+
+    // Run the join - this should NOT fail even though GroupBy is TEMPORAL
+    // and ts is in ensureKeys but not in snapshotEvents output
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val endPartition = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+
+    val joinJob = new Join(joinConf, endPartition, tableUtils)
+    val result = joinJob.computeJoin()
+
+    assertNotNull("Join should produce result without failing on missing ts column", result)
+
+    val resultColumns = result.columns.toSet
+
+    // Verify essential columns are present
+    assertTrue("Join output should contain left key 'profile_id'", resultColumns.contains("profile_id"))
+    assertTrue("Join output should contain left key 'entity_id'", resultColumns.contains("entity_id"))
+    assertTrue("Join output should contain left column 'label'", resultColumns.contains("label"))
+
+    // The main assertion: the join should complete without errors even though:
+    // 1. The GroupBy has TEMPORAL accuracy (topic is set)
+    // 2. The GroupBy.keys() method includes "ts" in ensureKeys
+    // 3. But snapshotEvents doesn't produce "ts" in the output
+    // Before the fix, this would fail with: Column 'ts' does not exist
+
+    // Verify ts column is NOT in output (since this is a snapshot join)
+    assertFalse("Join output should NOT contain 'ts' for snapshot join with TEMPORAL GroupBy",
+                resultColumns.contains("ts"))
+    assertFalse("Join output should NOT contain 'viewing_ts' for snapshot join with TEMPORAL GroupBy",
+                resultColumns.contains("viewing_ts"))
+
+    // If there are any join part columns, they should not include ts either
+    val joinPartCols = resultColumns.filter(_.startsWith("viewing_"))
+    joinPartCols.foreach { col =>
+      assertFalse(s"Join part column '$col' should not be 'ts'", col == "viewing_ts")
+    }
+
+    println(s"✅ TEMPORAL GroupBy with snapshot join correctly handles missing ts column:")
+    println(s"   Columns: ${result.columns.mkString(", ")}")
+    result.show(5)
+  }
+
 }
