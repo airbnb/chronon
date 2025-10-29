@@ -67,4 +67,5 @@ object Constants {
   val chrononArchiveFlag: String = "chronon_archived"
   val ChainingRequestTs: String = "chaining_request_ts"
   val ChainingFetchTs: String = "chaining_fetch_ts"
+  val GlobalAggregationKVStoreKey: String = "__global_aggregation_dummy_key__"
 }

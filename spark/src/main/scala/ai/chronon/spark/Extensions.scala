@@ -43,7 +43,7 @@ object Extensions {
       }
 
       // pad the first column so that the second column is aligned vertically
-      val padding = schemaTuples.map(_._1.length).max
+      val padding = if (schemaTuples.isEmpty) 0 else schemaTuples.map(_._1.length).max
       schemaTuples
         .map {
           case (typ, name) => s"  ${typ.padTo(padding, ' ')} : $name"
@@ -60,8 +60,8 @@ object Extensions {
   case class DfStats(count: Long, partitionRange: PartitionRange)
   // helper class to maintain datafram stats that are necessary for downstream operations
   case class DfWithStats(df: DataFrame, partitionCounts: Map[String, Long])(implicit val tableUtils: TableUtils) {
-    private val minPartition: String = partitionCounts.keys.min
-    private val maxPartition: String = partitionCounts.keys.max
+    private val minPartition: String = if (partitionCounts.isEmpty) null else partitionCounts.keys.min
+    private val maxPartition: String = if (partitionCounts.isEmpty) null else partitionCounts.keys.max
     val partitionRange: PartitionRange = PartitionRange(minPartition, maxPartition)
     val count: Long = partitionCounts.values.sum
 
@@ -226,9 +226,13 @@ object Extensions {
     }
 
     def removeNulls(cols: Seq[String]): DataFrame = {
-      logger.info(s"filtering nulls from columns: [${cols.mkString(", ")}]")
-      // do not use != or <> operator with null, it doesn't return false ever!
-      df.filter(cols.map(_ + " IS NOT NULL").mkString(" AND "))
+      if (cols.isEmpty) {
+        df  // Return unfiltered DataFrame for empty columns
+      } else {
+        logger.info(s"filtering nulls from columns: [${cols.mkString(", ")}]")
+        // do not use != or <> operator with null, it doesn't return false ever!
+        df.filter(cols.map(_ + " IS NOT NULL").mkString(" AND "))
+      }
     }
 
     def nullSafeJoin(right: DataFrame, keys: Seq[String], joinType: String): DataFrame = {

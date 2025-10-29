@@ -506,7 +506,7 @@ class JoinBasicTests {
     val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
     val joinConf = Builders.Join(
       left = Builders.Source.entities(Builders.Query(selects = Map("user" -> "user"), startPartition = start),
-                                      snapshotTable = usersTable),
+        snapshotTable = usersTable),
       joinParts = Seq(Builders.JoinPart(groupBy = namesGroupBy)),
       metaData = Builders.MetaData(name = "test.user_features", namespace = namespace, team = "chronon")
     )
@@ -537,6 +537,86 @@ class JoinBasicTests {
       expected.show()
       logger.debug(
         s"Left side count: ${spark.sql(s"SELECT user, ds from $namesTable where ds >= '$start' and ds <= '$end'").count()}")
+      logger.debug(s"Actual count: ${computed.count()}")
+      logger.debug(s"Expected count: ${expected.count()}")
+    }
+    val diff = Comparison.sideBySide(computed, expected, List("user", "ds"))
+    val diffCount = diff.count()
+    if (diffCount > 0) {
+      logger.warn(s"Diff count: $diffCount")
+      logger.warn(s"diff result rows")
+      diff.show()
+    }
+    assertEquals(diffCount, 0)
+  }
+
+  @Test
+  def testGlobalAggregation(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinBasicTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create a table for global aggregation (no keys)
+    val statsSchema = List(
+      Column("metric_value", api.LongType, 1000)
+    )
+    val statsTable = s"$namespace.stats"
+    DataFrameGen.entities(spark, statsSchema, 1000, partitions = 200).save(statsTable)
+
+    val statsSource = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("metric_value"), startPartition = yearAgo, endPartition = dayAndMonthBefore),
+      snapshotTable = statsTable
+    )
+
+    val globalGroupBy = Builders.GroupBy(
+      sources = Seq(statsSource),
+      keyColumns = Seq(), // Empty keys = global aggregation
+      aggregations = Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "metric_value")),
+      metaData = Builders.MetaData(name = "unit_test.global_stats", team = "chronon")
+    )
+
+    // left side
+    val userSchema = List(Column("user", api.StringType, 100))
+    val usersTable = s"$namespace.users"
+    DataFrameGen.entities(spark, userSchema, 1000, partitions = 200).dropDuplicates().save(usersTable)
+
+    val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
+    val joinConf = Builders.Join(
+      left = Builders.Source.entities(Builders.Query(selects = Map("user" -> "user"), startPartition = start),
+                                      snapshotTable = usersTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = globalGroupBy)),
+      metaData = Builders.MetaData(name = "test.user_with_global_stats", namespace = namespace, team = "chronon")
+    )
+
+    val runner = new Join(joinConf, end, tableUtils)
+    val computed = runner.computeJoin(Some(7))
+    logger.debug(s"join start = $start")
+
+    val expected = tableUtils.sql(s"""
+                                     |WITH
+                                     |   users AS (SELECT user, ds from $usersTable where ds >= '$start' and ds <= '$end'),
+                                     |   global_agg AS (
+                                     |      SELECT SUM(metric_value) as unit_test_global_stats_metric_value_sum,
+                                     |             ds
+                                     |      FROM $statsTable
+                                     |      WHERE ds >= '$yearAgo' and ds <= '$dayAndMonthBefore'
+                                     |      GROUP BY ds)
+                                     |   SELECT users.user,
+                                     |        global_agg.unit_test_global_stats_metric_value_sum,
+                                     |        users.ds
+                                     | FROM users left outer join global_agg
+                                     | ON users.ds = global_agg.ds
+    """.stripMargin)
+    if (logger.isDebugEnabled) {
+      logger.debug("showing join result")
+      computed.show()
+      logger.debug("showing query result")
+      expected.show()
+      logger.debug(
+        s"Left side count: ${spark.sql(s"SELECT user, ds from $usersTable where ds >= '$start' and ds <= '$end'").count()}")
       logger.debug(s"Actual count: ${computed.count()}")
       logger.debug(s"Expected count: ${expected.count()}")
     }
