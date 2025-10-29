@@ -48,7 +48,7 @@ def get_regular_and_external_join_parts(join):
                 synthetic_jp = api.JoinPart(
                     groupBy=ext_part.source.offlineGroupBy,
                     keyMapping=ext_part.keyMapping if ext_part.keyMapping else None,
-                    prefix=ext_part.prefix if ext_part.prefix else None
+                    prefix=ext_part.prefix if ext_part.prefix else None,
                 )
                 external_join_parts.append(synthetic_jp)
 
@@ -105,8 +105,16 @@ class JoinBackfill:
         )
         flow.add_node(final_node)
         flow.add_node(left_node)
+
         # Iterate through all join parts including external parts with offlineGroupBy
-        for join_part in get_regular_and_external_join_parts(join):
+        jps = get_regular_and_external_join_parts(join)
+
+        if len(jps) == 0:
+            # Add dependency from left table to final join directly if no join parts
+            final_node.add_dependency(left_node)
+            return final_node
+
+        for join_part in jps:
             for src in join_part.groupBy.sources:
                 if "joinSource" in src:
                     dep_node = self.add_join_to_flow(flow, src.joinSource.join)
@@ -122,6 +130,7 @@ class JoinBackfill:
             flow.add_node(jp_node)
             jp_node.add_dependency(left_node)
             final_node.add_dependency(jp_node)
+
         return final_node
 
     def export_template(self, settings: dict):
