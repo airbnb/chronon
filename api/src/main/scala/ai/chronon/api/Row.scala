@@ -165,6 +165,15 @@ object Row {
               dataType,
               schemaTraverser.map(_.currentNode)
             )
+          case map: collection.Map[String, Any] =>
+            composer(
+              fields.iterator.map { field =>
+                val fieldValue = map.getOrElse(field.name, null)
+                edit(fieldValue, field.fieldType, getFieldSchema(field))
+              },
+              dataType,
+              schemaTraverser.map(_.currentNode)
+            )
           case value: Any =>
             assert(extraneousRecord != null, s"No handler for $value of class ${value.getClass}")
             composer(
