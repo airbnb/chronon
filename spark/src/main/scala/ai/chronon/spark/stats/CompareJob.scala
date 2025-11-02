@@ -21,9 +21,11 @@ import ai.chronon.api
 import ai.chronon.api.{Constants, PartitionSpec}
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions._
-import ai.chronon.online.{DataMetrics, SparkConversions}
+import ai.chronon.online.DataMetrics
+import ai.chronon.online.serde.SparkConversions
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.CompareJob.getJoinKeys
-import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TableUtils, TimedKvRdd}
+import ai.chronon.spark.{Analyzer, PartitionRange, StagingQuery, TimedKvRdd}
 import org.apache.spark.sql.{DataFrame, SaveMode}
 
 import scala.util.ScalaJavaConversions.{ListOps, MapOps}
@@ -92,7 +94,8 @@ class CompareJob(
   def validate(): Unit = {
     // Extract the schema of the Join, StagingQuery and the keys before calling this.
     val analyzer = new Analyzer(tableUtils, joinConf, startDate, endDate, enableHitter = false)
-    val joinChrononSchema = analyzer.analyzeJoin(joinConf, false)._1
+    val analyzerResult = analyzer.analyzeJoin(joinConf)
+    val joinChrononSchema = analyzerResult.leftSchema ++ analyzerResult.finalOutputSchema
     val joinSchema = joinChrononSchema.map { case (k, v) => (k, SparkConversions.fromChrononType(v)) }.toMap
     val finalStagingQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, startDate, endDate, endDate)
     val stagingQuerySchema =

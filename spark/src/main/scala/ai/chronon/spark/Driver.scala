@@ -19,7 +19,8 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
-import ai.chronon.online.{Api, Fetcher, MetadataDirWalker, MetadataEndPoint, MetadataStore}
+import ai.chronon.online._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -42,13 +43,13 @@ import org.slf4j.LoggerFactory
 import java.io.{File, IOException}
 import java.net.URI
 import java.nio.file.{Files, Paths}
-import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, Future}
 import scala.io.Source
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
 
 // useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
@@ -531,6 +532,18 @@ object Driver {
           descr = "skip sampling and timestamp checks - setting to true will result in timestamp checks being skipped",
           default = Some(false)
         )
+      val skipTablePermissionCheck: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          descr = "skip table permission check - setting to true will skip the table permission check",
+          default = Some(false)
+        )
+      val exportSchema: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          descr = "export schema from analyzer result into a schema table, default is false",
+          default = Some(false)
+        )
 
       override def subcommandName() = "analyzer_util"
     }
@@ -545,7 +558,8 @@ object Driver {
                    args.sample(),
                    args.enableHitter(),
                    silenceMode = false,
-                   skipTimestampCheck = args.skipTimestampCheck()).run
+                   skipTimestampCheck = args.skipTimestampCheck(),
+                   validateTablePermission = !args.skipTablePermissionCheck()).run(args.exportSchema())
     }
   }
 
@@ -554,12 +568,21 @@ object Driver {
       val inputRootPath: ScallopOption[String] =
         opt[String](required = true, descr = "Base path of config repo to export from")
       val outputRootPath: ScallopOption[String] =
-        opt[String](required = true, descr = "Base path to write output metadata files to")
+        opt[String](required = false, descr = "Base path to write output metadata files to")
+      val outputTableName: ScallopOption[String] =
+        opt[String](required = false, descr = "Hive table to write output metadata to")
+      val outputTablePropertiesJson: ScallopOption[String] =
+        opt[String](required = false, descr = "Optional output table properties in JSON format")
       override def subcommandName() = "metadata-export"
     }
 
     def run(args: Args): Unit = {
-      MetadataExporter.run(args.inputRootPath(), args.outputRootPath())
+      val dsOpt: Option[String] = if (args.endDate().isEmpty) None else Some(args.endDate())
+      MetadataExporter.run(args.inputRootPath(),
+                           args.outputRootPath.toOption,
+                           args.outputTableName.toOption,
+                           dsOpt,
+                           args.outputTablePropertiesJson.toOption)
     }
   }
 
@@ -581,10 +604,16 @@ object Driver {
         args.endDate(),
         tableUtils
       )
-      stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
-                                          args.enableAutoExpand.toOption,
-                                          args.startPartitionOverride.toOption,
-                                          !args.runFirstHole())
+
+      // Check if we should use createStagingQueryView instead of computeStagingQuery
+      if (Option(args.stagingQueryConf.createView).getOrElse(false)) {
+        stagingQueryJob.createStagingQueryView()
+      } else {
+        stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
+                                            args.enableAutoExpand.toOption,
+                                            args.startPartitionOverride.toOption,
+                                            !args.runFirstHole())
+      }
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)
@@ -771,13 +800,13 @@ object Driver {
       require(!args.confPath.isEmpty || !args.name.isEmpty, "--conf-path or --name should be specified!")
       val objectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
       def readMap: String => Map[String, AnyRef] = { json =>
-        objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
+        objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).toScala.toMap
       }
       def readMapList: String => Seq[Map[String, AnyRef]] = { jsonList =>
         objectMapper
           .readValue(jsonList, classOf[java.util.List[java.util.Map[String, AnyRef]]])
-          .asScala
-          .map(_.asScala.toMap)
+          .toScala
+          .map(_.toScala.toMap)
           .toSeq
       }
       val keyMapList =
@@ -1013,6 +1042,41 @@ object Driver {
     }
   }
 
+  object ModelTransformBatch {
+    class Args extends Subcommand("model-transform-batch") with OfflineSubcommand with OnlineSubcommand {
+      override def subcommandName() = "model-transform-batch"
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      val modelTransformOverride: ScallopOption[String] =
+        opt[String](required = false, descr = "Name of the specific model transforms to run")
+      val jobContextJson: ScallopOption[String] =
+        opt[String](required = false, descr = "JSON string of the job context to use for model transform")
+    }
+    def run(args: Args): Unit = {
+      val apiImpl = args.impl(args.serializableProps)
+      val modelBackend = apiImpl.genModelBackend
+
+      val modelTransformJob = ModelTransformBatchJob(
+        args.sparkSession,
+        modelBackend,
+        args.joinConf,
+        args.endDate(),
+        args.startPartitionOverride.toOption,
+        args.stepDays(),
+        args.modelTransformOverride.toOption,
+        args.jobContextJson.toOption
+      )
+      try {
+        modelTransformJob.run()
+      } catch {
+        case e: Throwable =>
+          e.printStackTrace()
+          logger.error("Model Transform Batch Job failed", e)
+          System.exit(-1)
+      }
+      System.exit(0) // Terminate once completion to shutdown execution context
+    }
+  }
+
   class Args(args: Array[String]) extends ScallopConf(args) {
     object JoinBackFillArgs extends JoinBackfill.Args
     addSubcommand(JoinBackFillArgs)
@@ -1048,6 +1112,9 @@ object Driver {
     addSubcommand(JoinBackfillFinalArgs)
     object LabelJoinArgs extends LabelJoin.Args
     addSubcommand(LabelJoinArgs)
+    object ModelTransformBatchArgs extends ModelTransformBatch.Args
+    addSubcommand(ModelTransformBatchArgs)
+
     requireSubcommand()
     verify()
   }
@@ -1083,6 +1150,7 @@ object Driver {
           case args.LabelJoinArgs            => LabelJoin.run(args.LabelJoinArgs)
           case args.JoinBackfillLeftArgs     => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
           case args.JoinBackfillFinalArgs    => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
+          case args.ModelTransformBatchArgs  => ModelTransformBatch.run(args.ModelTransformBatchArgs)
           case _                             => logger.info(s"Unknown subcommand: $x")
         }
       case None => logger.info(s"specify a subcommand please")

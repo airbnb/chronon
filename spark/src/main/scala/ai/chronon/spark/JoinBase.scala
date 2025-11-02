@@ -24,6 +24,7 @@ import ai.chronon.online.Metrics
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.JoinUtils.{coalescedJoin, leftDf}
 import ai.chronon.spark.SemanticHashUtils.{shouldRecomputeLeft, tablesToRecompute}
+import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.functions._
@@ -32,9 +33,8 @@ import org.slf4j.LoggerFactory
 
 import java.time.Instant
 import java.util
-import scala.collection.JavaConverters._
 import scala.collection.Seq
-import scala.util.ScalaJavaConversions.ListOps
+import scala.util.ScalaJavaConversions.{JMapOps, ListOps, MapOps}
 
 abstract class JoinBase(joinConf: api.Join,
                         endPartition: String,
@@ -46,25 +46,29 @@ abstract class JoinBase(joinConf: api.Join,
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
-  val outputTable = joinConf.metaData.outputTable
+  val outputTable = if (!joinConf.hasModelTransforms) {
+    joinConf.metaData.outputTable
+  } else {
+    joinConf.metaData.preModelTransformsTable
+  }
 
   // Used for parallelized JoinPart execution
   val bootstrapTable = joinConf.metaData.bootstrapTable
 
   // Get table properties from config
   protected val confTableProps: Map[String, String] = Option(joinConf.metaData.tableProperties)
-    .map(_.asScala.toMap)
+    .map(_.toScala.toMap)
     .getOrElse(Map.empty[String, String])
 
   private val gson = new Gson()
   // Combine tableProperties set on conf with encoded Join
   protected val tableProps: Map[String, String] =
     confTableProps ++ Map(
-      Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash(excludeTopic = true).asJava),
+      Constants.SemanticHashKey -> gson.toJson(joinConf.semanticHash(excludeTopic = true).toJava),
       Constants.SemanticHashOptionsKey -> gson.toJson(
         Map(
           Constants.SemanticHashExcludeTopic -> "true"
-        ).asJava)
+        ).toJava)
     )
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
@@ -470,7 +474,7 @@ abstract class JoinBase(joinConf: api.Join,
     assert(Option(joinConf.metaData.team).nonEmpty,
            s"join.metaData.team needs to be set for join ${joinConf.metaData.name}")
 
-    joinConf.joinParts.asScala.foreach { jp =>
+    joinConf.getRegularAndExternalJoinParts.foreach { jp =>
       assert(Option(jp.groupBy.metaData.team).nonEmpty,
              s"groupBy.metaData.team needs to be set for joinPart ${jp.groupBy.metaData.name}")
     }

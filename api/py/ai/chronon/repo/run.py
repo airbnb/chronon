@@ -32,12 +32,7 @@ ONLINE_ARGS = "--online-jar={online_jar} --online-class={online_class} "
 OFFLINE_ARGS = "--conf-path={conf_path} --end-date={ds} "
 ONLINE_WRITE_ARGS = "--conf-path={conf_path} " + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
-ONLINE_MODES = [
-    "streaming",
-    "metadata-upload",
-    "fetch",
-    "local-streaming",
-]
+ONLINE_MODES = ["streaming", "metadata-upload", "fetch", "local-streaming", "model-transform-batch"]
 SPARK_MODES = [
     "backfill",
     "backfill-left",
@@ -52,6 +47,7 @@ SPARK_MODES = [
     "log-flattener",
     "metadata-export",
     "label-join",
+    "model-transform-batch",
 ]
 MODES_USING_EMBEDDED = ["metadata-upload", "fetch", "local-streaming"]
 
@@ -76,6 +72,7 @@ MODE_ARGS = {
     "log-flattener": OFFLINE_ARGS,
     "metadata-export": OFFLINE_ARGS,
     "label-join": OFFLINE_ARGS,
+    "model-transform-batch": ONLINE_OFFLINE_WRITE_ARGS,
     "info": "",
 }
 
@@ -104,6 +101,7 @@ ROUTES = {
         "log-flattener": "log-flattener",
         "metadata-export": "metadata-export",
         "label-join": "label-join",
+        "model-transform-batch": "model-transform-batch",
     },
     "staging_queries": {
         "backfill": "staging-query-backfill",
@@ -290,7 +288,11 @@ def set_runtime_env(args):
                     environment["conf_env"] = conf_json.get("metaData").get("modeToEnvMap", {}).get(effective_mode, {})
                     # Load additional args used on backfill.
                     if custom_json(conf_json) and effective_mode in {
-                      "backfill", "backfill-left", "backfill-final", "upload"
+                        "backfill",
+                        "backfill-left",
+                        "backfill-final",
+                        "upload",
+                        "model-transform-batch",
                     }:
                         environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = " ".join(
                             custom_json(conf_json).get("additional_args", [])

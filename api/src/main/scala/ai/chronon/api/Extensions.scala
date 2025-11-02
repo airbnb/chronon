@@ -30,7 +30,6 @@ import java.util.regex.Pattern
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{IteratorOps, ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
-import scala.collection.JavaConverters._
 
 object Extensions {
 
@@ -98,10 +97,13 @@ object Extensions {
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
+
+    def preModelTransformsTable = s"${metaData.outputNamespace}.${metaData.cleanName}_pre_mt"
     def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
     def outputLatestLabelView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled_latest"
     def loggedTable = s"${outputTable}_logged"
+    def schemaTable = s"${outputTable}_schema"
 
     def bootstrapTable = s"${outputTable}_bootstrap"
 
@@ -650,6 +652,12 @@ object Extensions {
       )
       partitionColumns.headOption
     }
+
+    lazy val isModelChaining: Boolean = {
+      groupBy.sources.toScala.exists { source =>
+        source.isSetJoinSource && source.getJoinSource.getJoin.hasModelTransforms
+      }
+    }
   }
 
   implicit class StringOps(string: String) {
@@ -669,7 +677,7 @@ object Extensions {
 
     private def schemaFields(schema: TDataType): Array[StructField] =
       schema.params.toScala
-        .map(field => StructField(field.name, DataType.fromTDataType(field.dataType)))
+        .map(field => DataFieldOps(field).toStructField)
         .toArray
 
     lazy val keyNames: Array[String] = schemaNames(externalSource.keySchema)
@@ -696,10 +704,11 @@ object Extensions {
   }
 
   implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
-    lazy val fullName: String =
+    lazy val fullName: String = {
       Constants.ExternalPrefix + "_" +
         Option(externalPart.prefix).map(_ + "_").getOrElse("") +
         externalPart.source.metadata.name.sanitize
+    }
 
     def apply(query: Map[String, Any], flipped: Map[String, String], right_keys: Seq[String]): Map[String, AnyRef] = {
       val rightToLeft = right_keys.map(k => k -> flipped.getOrElse(k, k))
@@ -737,7 +746,14 @@ object Extensions {
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
-    lazy val fullPrefix = (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
+    lazy val fullPrefix = {
+      joinPart match {
+        case part: ExternalJoinPart =>
+          part.externalJoinFullPrefix
+        case _ =>
+          (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
+      }
+    }
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
 
     def valueColumns: Seq[String] = joinPart.groupBy.valueColumns.map(fullPrefix + "_" + _)
@@ -875,7 +891,9 @@ object Extensions {
     private[api] def baseSemanticHash: Map[String, String] = {
       val leftHash = ThriftJsonCodec.md5Digest(join.left)
       logger.info(s"Join Left Object: ${ThriftJsonCodec.toJsonStr(join.left)}")
-      val partHashes = join.joinParts.toScala.map { jp => partOutputTable(jp) -> jp.groupBy.semanticHash }.toMap
+      val partHashes = join.getRegularAndExternalJoinParts.map { jp =>
+        partOutputTable(jp) -> jp.groupBy.semanticHash
+      }.toMap
       val derivedHashMap = Option(join.derivations)
         .map { derivations =>
           val derivedHash =
@@ -903,7 +921,7 @@ object Extensions {
       }
 
       cleanTopicInSource(join.left)
-      join.getJoinParts.toScala.foreach(_.groupBy.sources.toScala.foreach(cleanTopicInSource))
+      join.getRegularAndExternalJoinParts.foreach(_.groupBy.sources.toScala.foreach(cleanTopicInSource))
       join
     }
 
@@ -1000,8 +1018,49 @@ object Extensions {
     }
 
     def setups: Seq[String] =
-      (join.left.query.setupsSeq ++ join.joinParts.toScala
+      (join.left.query.setupsSeq ++ join.getRegularAndExternalJoinParts
         .flatMap(_.groupBy.setups)).distinct
+
+    /**
+      * Converts offline-capable ExternalParts to JoinParts for unified processing during backfill.
+      * This enables external sources with offlineGroupBy to participate in offline computation
+      * while maintaining compatibility with existing join processing logic.
+      *
+      * @return Sequence of JoinParts converted from offline-capable ExternalParts
+      */
+    private def getExternalJoinParts: Seq[ExternalJoinPart] = {
+      Option(join.onlineExternalParts)
+        .map(_.toScala)
+        .getOrElse(Seq.empty)
+        .filter(_.source.offlineGroupBy != null) // Only offline-capable ExternalParts
+        .map { externalPart =>
+          // Set customJson with fullPrefix override
+          val offlineGroupBy = externalPart.source.offlineGroupBy.deepCopy()
+
+          // Convert ExternalPart to synthetic JoinPart
+          val syntheticJoinPart = new JoinPart()
+          syntheticJoinPart.setGroupBy(offlineGroupBy)
+          if (externalPart.keyMapping != null) {
+            syntheticJoinPart.setKeyMapping(externalPart.keyMapping)
+          }
+          if (externalPart.prefix != null) {
+            syntheticJoinPart.setPrefix(externalPart.prefix)
+          }
+          new ExternalJoinPart(syntheticJoinPart, externalPart.fullName)
+        }
+    }
+
+    /**
+      * Get all join parts including both regular joinParts and external join parts.
+      * This provides a unified view of all join parts for processing.
+      *
+      * @return Sequence containing all JoinParts (regular + converted external)
+      */
+    def getRegularAndExternalJoinParts: Seq[JoinPart] = {
+      val regularJoinParts = Option(join.joinParts).map(_.toScala).getOrElse(Seq.empty)
+      val externalJoinParts = getExternalJoinParts
+      regularJoinParts ++ externalJoinParts
+    }
 
     def copyForVersioningComparison(): Join = {
       // When we compare previous-run join to current join to detect changes requiring table migration
@@ -1032,6 +1091,90 @@ object Extensions {
     lazy val areDerivationsRenameOnly: Boolean = join.hasDerivations && derivationsScala.areDerivationsRenameOnly
     lazy val derivationExpressionSet: Set[String] =
       if (join.hasDerivations) derivationsScala.iterator.map(_.expression).toSet else Set.empty
+
+    def hasModelTransforms: Boolean = join.isSetModelTransforms && join.modelTransformsListScala.nonEmpty
+    lazy val models: List[Model] = modelTransformsListScala.map(_.model).distinct
+    lazy val modelTransformsListScala: List[ModelTransform] =
+      if (join.isSetModelTransforms) {
+        Option(join.modelTransforms).toList.flatMap(_.transforms.toScala)
+      } else {
+        List.empty
+      }
+
+    lazy val modelSchema: StructType = {
+      val fields = modelTransformsListScala.map(mt => {
+        mt.model.outputSchemaScala.map { field =>
+          field.copy(name = mt.mapOutputFieldName(field.name))
+        }
+      })
+      val distinctFields = fields.flatten.distinct.toArray
+      StructType(s"join_model_schema_${join.metaData.cleanName}", distinctFields)
+    }
+
+    lazy val modelTransformsPassthroughFieldsScala: Seq[String] = {
+      if (join.modelTransforms == null) {
+        Seq.empty
+      } else {
+        Option(join.modelTransforms.passthroughFields).map(_.toScala.toSeq).getOrElse(Seq.empty)
+      }
+    }
+  }
+
+  implicit class ModelOps(model: Model) {
+    lazy val inputSchemaScala: List[StructField] = model.inputSchema.params.toScala.map(DataFieldOps(_).toStructField)
+    lazy val outputSchemaScala: List[StructField] = model.outputSchema.params.toScala.map(DataFieldOps(_).toStructField)
+  }
+
+  implicit class ModelTransformOps(modelTransform: ModelTransform) {
+    lazy val name: String = {
+      if (modelTransform.isSetPrefix) {
+        Seq(modelTransform.prefix, modelTransform.model.metaData.name).mkString("_")
+      } else {
+        modelTransform.model.metaData.name
+      }
+    }
+
+    lazy val inputSchema: List[StructField] = {
+      modelTransform.model.inputSchemaScala.map { modelField =>
+        StructField(inputMappingsScala.getOrElse(modelField.name, modelField.name), modelField.fieldType)
+      }
+    }
+
+    lazy val outputSchema: List[StructField] = {
+      modelTransform.model.outputSchemaScala.map { modelField =>
+        StructField(outputMappingsScala.getOrElse(modelField.name, modelField.name), modelField.fieldType)
+      }
+    }
+
+    lazy val inputMappingsScala: Map[String, String] =
+      Option(modelTransform.inputMappings).map(_.toScala).getOrElse(Map.empty)
+    lazy val outputMappingsScala: Map[String, String] =
+      Option(modelTransform.outputMappings).map(_.toScala).getOrElse(Map.empty)
+
+    def mapInputs(inputs: Map[String, AnyRef]): Map[String, AnyRef] = {
+      modelTransform.model.inputSchemaScala.map { dataField =>
+        val mappedFieldName = inputMappingsScala.getOrElse(dataField.name, dataField.name)
+        dataField.name -> inputs.getOrElse(mappedFieldName, null)
+      }.toMap
+    }
+
+    def mapOutputFieldName(modelOutputFieldName: String): String = {
+      val mappedFieldName = outputMappingsScala.getOrElse(modelOutputFieldName, modelOutputFieldName)
+      (Option(modelTransform.prefix).toSeq :+ mappedFieldName).mkString("_")
+    }
+
+    def mapOutputs(outputs: Map[String, AnyRef]): Map[String, AnyRef] = {
+      val mappedOutputs = modelTransform.model.outputSchemaScala.map { dataField =>
+        mapOutputFieldName(dataField.name) -> outputs.getOrElse(dataField.name, null)
+      }.toMap
+      mappedOutputs
+    }
+  }
+
+  implicit class DataFieldOps(dataField: DataField) {
+    def toStructField: StructField = {
+      StructField(dataField.name, DataType.fromTDataType(dataField.dataType))
+    }
   }
 
   implicit class StringsOps(strs: Iterable[String]) {

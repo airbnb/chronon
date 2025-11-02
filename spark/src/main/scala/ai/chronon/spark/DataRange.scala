@@ -19,9 +19,10 @@ package ai.chronon.spark
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api.Extensions.QueryOps
 import ai.chronon.api.{Constants, Query, QueryUtils}
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.DataFrame
 
-import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.ListOps
 
 sealed trait DataRange {
   def toTimePoints: Array[Long]
@@ -152,7 +153,7 @@ case class PartitionRange(start: String, end: String)(implicit tableUtils: Table
     }
     val wheres =
       whereClauses(partitionCol) ++ queryOpt
-        .flatMap(q => Option(q.wheres).map(_.asScala))
+        .flatMap(q => Option(q.wheres).map(_.toScala))
         .getOrElse(Seq.empty[String])
     QueryUtils.build(selects = queryOpt.map(_.getQuerySelects).orNull,
                      from = table,

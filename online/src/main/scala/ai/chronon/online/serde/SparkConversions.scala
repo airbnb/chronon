@@ -14,7 +14,7 @@
  *    limitations under the License.
  */
 
-package ai.chronon.online
+package ai.chronon.online.serde
 
 import ai.chronon.api
 import org.apache.spark.sql.Row
@@ -135,6 +135,10 @@ object SparkConversions {
       case api.StructField(name, zType) =>
         StructField(name, fromChrononType(zType))
     })
+
+  def toSparkRowSparkType(value: Any, sparkType: StructType, extraneousRecord: Any => Array[Any] = null): Any = {
+    toSparkRow(value, api.StructType.from("record", toChrononSchema(sparkType)), extraneousRecord)
+  }
 
   def toSparkRow(value: Any, dataType: api.DataType, extraneousRecord: Any => Array[Any] = null): Any = {
     api.Row.to[GenericRow, Array[Byte], Array[Any], mutable.Map[Any, Any], StructType](

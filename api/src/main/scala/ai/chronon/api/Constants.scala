@@ -65,4 +65,6 @@ object Constants {
   val LabelViewPropertyKeyLabelTable: String = "label_table"
   val ChrononRunDs: String = "CHRONON_RUN_DS"
   val chrononArchiveFlag: String = "chronon_archived"
+  val ChainingRequestTs: String = "chaining_request_ts"
+  val ChainingFetchTs: String = "chaining_fetch_ts"
 }

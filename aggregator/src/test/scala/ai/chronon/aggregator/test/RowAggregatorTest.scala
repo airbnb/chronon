@@ -22,10 +22,10 @@ import junit.framework.TestCase
 import org.junit.Assert._
 
 import java.util
-import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.JListOps
 
 class TestRow(val fieldsSeq: Any*)(tsIndex: Int = 0) extends Row {
-  val fields: util.List[Any] = new java.util.ArrayList[Any](fieldsSeq.asJava)
+  val fields: util.List[Any] = new java.util.ArrayList[Any](fieldsSeq.toJava)
   override val length: Int = fields.size()
 
   override def get(index: Int): Any = fields.get(index)
@@ -85,7 +85,7 @@ class RowAggregatorTest extends TestCase {
     val mapAvg = new java.util.HashMap[String, Double]()
     mapAvg.put("A", 3.0)
     mapAvg.put("B", 1.0)
-    mapAvg.put("D", 3.0)  // sum = -3 / count = -1
+    mapAvg.put("D", 3.0) // sum = -3 / count = -1
     mapAvg.put(null, 2.0)
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(
@@ -93,11 +93,11 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.COUNT, "views") -> 3L,
       Builders.AggregationPart(Operation.SUM, "rating") -> 15.0,
       Builders.AggregationPart(Operation.LAST, "title") -> "B",
-      Builders.AggregationPart(Operation.LAST_K, "title", argMap = Map("k" -> "2")) -> List("B", "A").asJava,
-      Builders.AggregationPart(Operation.FIRST_K, "title", argMap = Map("k" -> "2")) -> List("A", "B").asJava,
+      Builders.AggregationPart(Operation.LAST_K, "title", argMap = Map("k" -> "2")) -> List("B", "A").toJava,
+      Builders.AggregationPart(Operation.FIRST_K, "title", argMap = Map("k" -> "2")) -> List("A", "B").toJava,
       Builders.AggregationPart(Operation.FIRST, "title") -> "A",
-      Builders.AggregationPart(Operation.TOP_K, "title", argMap = Map("k" -> "2")) -> List("D", "B").asJava,
-      Builders.AggregationPart(Operation.BOTTOM_K, "title", argMap = Map("k" -> "2")) -> List("A", "A").asJava,
+      Builders.AggregationPart(Operation.TOP_K, "title", argMap = Map("k" -> "2")) -> List("D", "B").toJava,
+      Builders.AggregationPart(Operation.BOTTOM_K, "title", argMap = Map("k" -> "2")) -> List("A", "A").toJava,
       Builders.AggregationPart(Operation.MAX, "title") -> "D",
       Builders.AggregationPart(Operation.MIN, "title") -> "A",
       Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title") -> 3L,

@@ -19,7 +19,8 @@ package ai.chronon.spark
 import org.slf4j.LoggerFactory
 import ai.chronon.api
 import ai.chronon.api.Constants
-import ai.chronon.online.{AvroCodec, AvroConversions, SparkConversions}
+import ai.chronon.online.serde.{AvroCodec, AvroConversions, SparkConversions}
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.avro.Schema
 import org.apache.spark.sql.{DataFrame, Row}
 import org.apache.spark.sql.catalyst.InternalRow
@@ -83,7 +84,7 @@ object Extensions {
         .groupBy(col(TableUtils(dataFrame.sparkSession).partitionColumn))
         .count()
         .collect()
-        .map(row => row.getString(0) -> row.getLong(1))
+        .map(row => row.get(0).toString -> row.getLong(1))
         .toMap
       DfWithStats(dataFrame, partitionCounts)
     }

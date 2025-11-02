@@ -17,8 +17,6 @@ import ai.chronon.online.KVStore.{GetRequest, TimedValue}
 import com.github.benmanes.caffeine.cache.{Cache => CaffeineCache}
 
 import scala.util.{Success, Try}
-import java.util.concurrent.ConcurrentHashMap
-import scala.collection.JavaConverters.mapAsScalaConcurrentMapConverter
 import scala.collection.Seq
 import org.slf4j.{Logger, LoggerFactory}
 

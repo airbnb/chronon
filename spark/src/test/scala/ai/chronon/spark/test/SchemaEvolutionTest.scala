@@ -21,12 +21,14 @@ import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online._
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions.DataframeOps
-import ai.chronon.spark.{LogFlattenerJob, LoggingSchema, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{LogFlattenerJob, LoggingSchema, SparkSessionBuilder}
 import junit.framework.TestCase
 import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
+import org.junit.Assert.{assertArrayEquals, assertEquals, assertFalse, assertNotEquals, assertSame, assertTrue}
 
 import java.nio.charset.StandardCharsets
 import java.util.{Base64, TimeZone}
@@ -171,6 +173,57 @@ class SchemaEvolutionTest extends TestCase {
     )
   }
 
+  def createStructGroupBy(namespace: String, spark: SparkSession, name: String): GroupByTestSuite = {
+    val schema = StructType(
+      "struct_schema",
+      Array(
+        StructField("id", LongType),
+        StructField(
+          name,
+          StructType(
+            name = "struct_schema_2",
+            fields =
+              Array(StructField("id", LongType),
+                    StructField("context",
+                                StructType(name = "struct_schema_3", fields = Array(StructField("id", LongType)))))
+          )
+        ),
+        StructField("ds", StringType)
+      )
+    )
+    val rows = List(
+      Row(1L, Row(100L, Row(1000L)), "2022-10-01"),
+      Row(1L, Row(200L, Row(2000L)), "2022-10-02"),
+      Row(2L, Row(300L, Row(3000L)), "2022-10-01"),
+      Row(2L, Row(400L, Row(4000L)), "2022-10-02")
+    )
+    val source = Builders.Source.entities(
+      query = Builders.Query(
+        selects = Map(
+          "id" -> "id",
+          name -> name
+        )
+      ),
+      snapshotTable = s"${namespace}.${name}"
+    )
+    val conf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("id"),
+      aggregations = null,
+      accuracy = Accuracy.SNAPSHOT,
+      metaData = Builders.MetaData(name = s"unit_test/${name}", namespace = namespace, team = "chronon")
+    )
+    val df = spark.createDataFrame(
+      rows.toJava,
+      SparkConversions.fromChrononSchema(schema)
+    )
+    GroupByTestSuite(
+      name,
+      conf,
+      df
+    )
+  }
+
   def createV1Join(namespace: String): JoinTestSuite = {
     val viewsGroupBy = createViewsGroupBy(namespace, spark)
     val joinConf = Builders.Join(
@@ -213,6 +266,31 @@ class SchemaEvolutionTest extends TestCase {
           "unit_test_listing_views_m_views_sum" -> 50L.asInstanceOf[AnyRef],
           "unit_test_listing_attributes_dim_bedrooms" -> 4.asInstanceOf[AnyRef],
           "unit_test_listing_attributes_dim_room_type" -> "ENTIRE_HOME"
+        )
+      )
+    )
+  }
+
+  def createStructJoin(namespace: String): JoinTestSuite = {
+    val groupBy = createStructGroupBy(namespace, spark, "list_struct_a")
+    val groupByB = createStructGroupBy(namespace, spark, "list_struct_b")
+    val joinConf = Builders.Join(
+      left = groupBy.groupByConf.sources.get(0),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = groupBy.groupByConf),
+        Builders.JoinPart(groupBy = groupByB.groupByConf)
+      ),
+      metaData = Builders.MetaData(name = "unit_test/test_join", namespace = namespace, team = "chronon")
+    )
+    JoinTestSuite(
+      joinConf,
+      Seq(groupBy, groupByB),
+      (
+        Map("id" -> 1L.asInstanceOf[AnyRef]),
+        Map(
+          // Unused
+          "unit_test_list_struct_a_list_struct_a" -> Array(200L, Array(2000L)),
+          "unit_test_list_struct_b_list_struct_b" -> Array(200L, Array(2000L))
         )
       )
     )
@@ -436,5 +514,62 @@ class SchemaEvolutionTest extends TestCase {
   def testRemoveFeatures(): Unit = {
     val namespace = "remove_features"
     testSchemaEvolution(namespace, createV2Join(namespace), createV1Join(namespace))
+  }
+
+  def testStructFeatures(): Unit = {
+    val namespace = "test_struct_features"
+    val joinTestSuite = createStructJoin(namespace)
+
+    val tableUtils: TableUtils = TableUtils(spark)
+    val inMemoryKvStore = OnlineUtils.buildInMemoryKVStore(namespace)
+    val mockApi = new MockApi(() => inMemoryKvStore, namespace)
+    inMemoryKvStore.create(ChrononMetadataKey)
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
+
+    /* STAGE 1: Create join v1 and upload the conf to MetadataStore */
+    metadataStore.putJoinConf(joinTestSuite.joinConf)
+    val fetcher = mockApi.buildFetcher(debug = true)
+    val response1 = fetchJoin(fetcher, joinTestSuite)
+    assertTrue(response1.values.get.keys.exists(_.endsWith("_exception")))
+    assertEquals(joinTestSuite.groupBys.length, response1.values.get.keys.size)
+
+    // empty responses are still logged and this schema version is still tracked
+    val logs1 = mockApi.flushLoggedValues
+    val (dataEvent1, _) = extractDataEventAndControlEvent(logs1)
+    assertEquals("", dataEvent1.keyBase64)
+    assertEquals("", dataEvent1.valueBase64)
+
+    /* STAGE 2: GroupBy upload completes and start having successful fetches & logs */
+    runGBUpload(namespace, joinTestSuite, tableUtils, inMemoryKvStore)
+    clearTTLCache(fetcher)
+    val response2 = fetchJoin(fetcher, joinTestSuite)
+    assertEquals(joinTestSuite.fetchExpectations._2.keys.toSeq, response2.values.get.keys.toSeq)
+
+    val logs2 = mockApi.flushLoggedValues
+    val (dataEvent2, controlEvent2) = extractDataEventAndControlEvent(logs2)
+    val schema2 = new String(Base64.getDecoder.decode(controlEvent2.valueBase64), StandardCharsets.UTF_8)
+    val recoveredSchemaHash2 = LoggingSchema.parseLoggingSchema(schema2).hash(joinTestSuite.joinConf.metaData.name)
+    assertEquals(dataEvent2.schemaHash, recoveredSchemaHash2)
+
+    val flattenedDf12 = verifyOfflineTables(
+      logs1 ++ logs2, // combine logs from stage 1 and stage 2 into offline DS = 2022-10-03
+      offlineDs = "2022-10-03",
+      mockApi,
+      joinTestSuite.joinConf,
+      tableUtils
+    )
+
+    // validate flattenedDf12 correctness
+    assertEquals(
+      flattenedDf12.columns.toSeq,
+      Seq(
+        "schema_hash",
+        "ts",
+        "id",
+        "unit_test_list_struct_a_list_struct_a",
+        "unit_test_list_struct_b_list_struct_b",
+        "ds"
+      )
+    )
   }
 }

@@ -5,7 +5,7 @@ import junit.framework.TestCase
 import org.junit.Assert._
 
 import java.util
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.JMapOps
 
 class FrequentItemsTest extends TestCase {
   def testNonPowerOfTwoAndTruncate(): Unit = {
@@ -154,5 +154,5 @@ class FrequentItemsTest extends TestCase {
     (sketch, ir)
   }
 
-  def toHashMap[T](map: Map[T, Long]): java.util.HashMap[T, Long] = new java.util.HashMap[T, Long](map.asJava)
+  def toHashMap[T](map: Map[T, Long]): java.util.HashMap[T, Long] = new java.util.HashMap[T, Long](map.toJava)
 }

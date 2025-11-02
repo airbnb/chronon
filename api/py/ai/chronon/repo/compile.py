@@ -441,6 +441,8 @@ def _set_templated_values(obj, cls, teams_path, team_name):
             label_dep.replace("{{ join_backfill_table }}", utils.output_table_name(obj, full_name=True))
             for label_dep in obj.labelPart.metaData.dependencies
         ]
+    if cls == api.GroupBy and obj.metaData.dependencies:
+        obj.metaData.dependencies = [__fill_template(dep, obj, namespace) for dep in obj.metaData.dependencies]
 
 
 def _write_obj(

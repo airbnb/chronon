@@ -20,9 +20,9 @@ import logging
 import os
 import re
 from collections import defaultdict
-from typing import Dict, List, Set
+from typing import Dict, List
 
-from ai.chronon.api.ttypes import Derivation, ExternalPart, GroupBy, Join, Source
+from ai.chronon.api.ttypes import Derivation, ExternalPart, GroupBy, Join, Source, StagingQuery
 from ai.chronon.group_by import get_output_col_names
 from ai.chronon.logger import get_logger
 from ai.chronon.repo import GROUP_BY_FOLDER_NAME, JOIN_FOLDER_NAME
@@ -96,17 +96,17 @@ def get_group_by_output_columns(group_by: GroupBy) -> List[str]:
     """
     From the group_by object, get the final output columns after derivations.
     """
-    output_columns = set(get_pre_derived_group_by_columns(group_by))
+    output_columns = get_pre_derived_group_by_columns(group_by)
     if group_by.derivations:
         return build_derived_columns(output_columns, group_by.derivations)
     else:
-        return list(output_columns)
+        return output_columns
 
 
 def get_pre_derived_join_internal_features(join: Join) -> List[str]:
     internal_features = []
     for jp in join.joinParts:
-        pre_derived_group_by_features = set(get_pre_derived_group_by_features(jp.groupBy))
+        pre_derived_group_by_features = get_pre_derived_group_by_features(jp.groupBy)
         derived_group_by_features = build_derived_columns(pre_derived_group_by_features, jp.groupBy.derivations)
         for col in derived_group_by_features:
             prefix = jp.prefix + "_" if jp.prefix else ""
@@ -156,22 +156,78 @@ def get_pre_derived_join_features(join: Join) -> Dict[FeatureDisplayKeys, List[s
     return columns
 
 
-def build_derived_columns(pre_derived_columns: Set[str], derivations: List[Derivation]) -> List[str]:
+def build_derived_columns(pre_derived_columns: List[str], derivations: List[Derivation]) -> List[str]:
     """
     Build the derived columns from pre-derived columns and derivations.
+    Mimics Extensions.scala -> DerivationOps -> derivationProjection
     """
+    if not derivations:
+        return pre_derived_columns
+
     # if derivations contain star, then all columns are included except the columns which are renamed
-    output_columns = pre_derived_columns
-    if derivations:
-        found = any(derivation.expression == "*" for derivation in derivations)
-        if not found:
-            output_columns.clear()
-        for derivation in derivations:
-            if found and is_identifier(derivation.expression):
-                output_columns.remove(derivation.expression)
-            if derivation.name != "*":
-                output_columns.add(derivation.name)
-    return list(output_columns)
+    is_wildcard = any(derivation.expression == "*" for derivation in derivations)
+    all_expressions = {derivation.expression for derivation in derivations}
+    if is_wildcard:
+        wildcard_derivations = [c for c in pre_derived_columns if c not in all_expressions]
+    else:
+        wildcard_derivations = []
+
+    output_columns = []
+    for derivation in derivations:
+        if derivation.name == "*":
+            output_columns.extend(wildcard_derivations)
+        else:
+            output_columns.append(derivation.name)
+    return output_columns
+
+
+def get_join_key_columns(join: Join) -> List[str]:
+    """
+    Extract key columns from a join configuration.
+
+    This follows the same logic as in Analyzer.scala:
+    - For each join part, get the key columns from the groupBy
+    - If the join part has key mapping, map the right keys to left keys
+    - Filter the result by columns available in the left source
+    - Return distinct list of key columns that exist in left source
+
+    Args:
+        join: The Join thrift object
+
+    Returns:
+        List of distinct key column names that exist in the left source
+    """
+    # Get all potential key columns from join parts
+    potential_key_columns = []
+
+    for join_part in join.joinParts:
+        # Get key columns from the groupBy
+        group_by_keys = join_part.groupBy.keyColumns
+
+        if join_part.keyMapping is None:
+            # No key mapping, use the keys as-is
+            potential_key_columns.extend(group_by_keys)
+        else:
+            # Key mapping exists, map right keys to left keys
+            # keyMapping is left->right, so we need to create right->left mapping
+            right_to_left = {v: k for k, v in join_part.keyMapping.items()}
+
+            for key in group_by_keys:
+                if key in right_to_left:
+                    # Map right key to left key
+                    potential_key_columns.append(right_to_left[key])
+                else:
+                    # No mapping for this key, use as-is
+                    potential_key_columns.append(key)
+
+    # Get distinct potential keys
+    distinct_potential_keys = list(set(potential_key_columns))
+
+    # Filter by columns available in the left source
+    left_columns = get_pre_derived_source_keys(join.left)
+    key_columns = [key for key in distinct_potential_keys if key in left_columns]
+
+    return key_columns
 
 
 def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
@@ -179,8 +235,10 @@ def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
     From the join object, get the final output columns after derivations.
     """
     columns = {}
-    keys = get_pre_derived_source_keys(join.left)
-    columns[FeatureDisplayKeys.SOURCE_KEYS] = keys
+    key_columns = get_join_key_columns(join)
+    columns[FeatureDisplayKeys.KEY_COLUMNS] = key_columns
+    left_columns = get_pre_derived_source_keys(join.left)
+    columns[FeatureDisplayKeys.LEFT_COLUMNS] = left_columns
     pre_derived_columns = get_pre_derived_join_features(join)
     columns.update({**pre_derived_columns})
 
@@ -189,9 +247,7 @@ def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
         pre_derived_columns_list.extend(value_list)
 
     if join.derivations:
-        columns[FeatureDisplayKeys.DERIVED_COLUMNS] = build_derived_columns(
-            set(pre_derived_columns_list), join.derivations
-        )
+        columns[FeatureDisplayKeys.DERIVED_COLUMNS] = build_derived_columns(pre_derived_columns_list, join.derivations)
         columns[FeatureDisplayKeys.OUTPUT_COLUMNS] = columns[FeatureDisplayKeys.DERIVED_COLUMNS]
         return columns
     else:
@@ -270,6 +326,8 @@ class ChrononRepoValidator(object):
             return self._validate_group_by(obj)
         elif isinstance(obj, Join):
             return self._validate_join(obj)
+        elif isinstance(obj, StagingQuery):
+            return self._validate_staging_query(obj)
         return []
 
     def _has_diff(self, obj: object, old_obj: object, skipped_fields=SKIPPED_FIELDS) -> bool:
@@ -376,9 +434,42 @@ class ChrononRepoValidator(object):
             for value_list in features.values():
                 pre_derived_columns_list.extend(value_list)
 
-            keys = get_pre_derived_source_keys(join.left)
-            columns = pre_derived_columns_list + keys
-            errors.extend(self._validate_derivations(keys, columns, join.derivations))
+            left_columns = get_pre_derived_source_keys(join.left)
+            columns = pre_derived_columns_list + left_columns
+            errors.extend(self._validate_derivations(left_columns, columns, join.derivations))
+        return errors
+
+    def _validate_staging_query(self, staging_query: StagingQuery) -> List[str]:
+        """
+        Validate staging query configuration.
+
+        Returns:
+          list of validation errors.
+        """
+        errors = []
+
+        # If createView is True, validate that start_date and end_date templates are not used
+        if staging_query.createView:
+            query = staging_query.query
+            if query:
+                # Check for start_date and end_date templates using regex
+                found_templates = []
+
+                start_date_pattern = r"\{\{\s*start_date\s*\}\}"
+                end_date_pattern = r"\{\{\s*end_date\s*\}\}"
+
+                if re.search(start_date_pattern, query, re.IGNORECASE):
+                    found_templates.append("start_date")
+                if re.search(end_date_pattern, query, re.IGNORECASE):
+                    found_templates.append("end_date")
+
+                if found_templates:
+                    errors.append(
+                        f"StagingQuery '{staging_query.metaData.name}' with createView=True cannot contain "
+                        f"date templates: {', '.join(found_templates)}. Views should contain all data and "
+                        f"use partition pushdown for filtering."
+                    )
+
         return errors
 
     def _validate_group_by(self, group_by: GroupBy) -> List[str]:

@@ -14,7 +14,7 @@
  *    limitations under the License.
  */
 
-package ai.chronon.online
+package ai.chronon.online.serde
 
 import ai.chronon.api.{DataType, Row}
 import org.apache.avro.Schema
@@ -40,6 +40,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private var jsonEncoder: JsonEncoder = null
   val fieldNames: Array[String] = schema.getFields.toScala.map(_.name()).toArray
   @transient lazy val chrononSchema: DataType = AvroConversions.toChrononSchema(schema)
+  @transient lazy val chrononSchemaClean: DataType = AvroConversions.toChrononSchema(schema, cleanName = true)
 
   @transient private var binaryEncoder: BinaryEncoder = null
   @transient private var decoder: BinaryDecoder = null

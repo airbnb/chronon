@@ -23,6 +23,7 @@ import org.apache.spark.SPARK_VERSION
 import java.io.File
 import java.util.logging.Logger
 import scala.util.Properties
+import java.util.UUID
 
 object SparkSessionBuilder {
   @transient private lazy val logger = LoggerFactory.getLogger(getClass)
@@ -39,6 +40,8 @@ object SparkSessionBuilder {
             additionalConfig: Option[Map[String, String]] = None,
             enforceKryoSerializer: Boolean = true): SparkSession = {
 
+    val userName = Properties.userName
+    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
     // allow us to override the format by specifying env vars. This allows us to not have to worry about interference
     // between Spark sessions created in existing chronon tests that need the hive format and some specific tests
     // that require a format override like delta lake.
@@ -50,6 +53,17 @@ object SparkSessionBuilder {
           "spark.chronon.table_write.format" -> "delta"
         )
         (configMap, "ai.chronon.spark.ChrononDeltaLakeKryoRegistrator")
+      case Some("iceberg") =>
+        val configMap = Map(
+          "spark.sql.extensions" -> "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+          "spark.sql.catalog.spark_catalog" -> "org.apache.iceberg.spark.SparkSessionCatalog",
+          "spark.chronon.table_write.format" -> "iceberg",
+          "spark.chronon.table_read.format" -> "iceberg",
+          "spark.sql.catalog.local" -> "org.apache.iceberg.spark.SparkCatalog",
+          "spark.sql.catalog.spark_catalog.type" -> "hadoop",
+          "spark.sql.catalog.spark_catalog.warehouse" -> s"$warehouseDir/data"
+        )
+        (configMap, "ai.chronon.spark.ChrononIcebergKryoRegistrator")
       case _ => (Map.empty, "ai.chronon.spark.ChrononKryoRegistrator")
     }
 
@@ -60,8 +74,7 @@ object SparkSessionBuilder {
       //required to run spark locally with hive support enabled - for sbt test
       System.setSecurityManager(null)
     }
-    val userName = Properties.userName
-    val warehouseDir = localWarehouseLocation.map(expandUser).getOrElse(DefaultWarehouseDir.getAbsolutePath)
+
     var baseBuilder = SparkSession
       .builder()
       .appName(name)

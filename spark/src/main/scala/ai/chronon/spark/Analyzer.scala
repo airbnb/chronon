@@ -16,23 +16,36 @@
 
 package ai.chronon.spark
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api
-import ai.chronon.api.{Accuracy, AggregationPart, Constants, DataType, TimeUnit, Window}
+import ai.chronon.api.DataModel.{DataModel, Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.online.SparkConversions
+import ai.chronon.api.{
+  Accuracy,
+  AggregationPart,
+  Constants,
+  DataKind,
+  DataType,
+  ExternalJoinPart,
+  TDataType,
+  TimeUnit,
+  Window
+}
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Driver.parseConf
+import ai.chronon.spark.Extensions.StructTypeOps
+import ai.chronon.spark.catalog.TableUtils
 import com.yahoo.memory.Memory
 import com.yahoo.sketches.ArrayOfStringsSerDe
 import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
-import org.apache.spark.sql.{Column, DataFrame, Row, types}
-import org.apache.spark.sql.functions.{col, from_unixtime, lit, sum, when}
+import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types.{StringType, StructType}
-import ai.chronon.api.DataModel.{DataModel, Entities, Events}
+import org.apache.spark.sql.{Column, DataFrame, Row, types}
+import org.slf4j.LoggerFactory
 
-import scala.collection.{Seq, immutable, mutable}
 import scala.collection.mutable.ListBuffer
-import scala.util.ScalaJavaConversions.{ListOps, MapOps}
+import scala.collection.{Seq, immutable, mutable}
+import scala.util.ScalaJavaConversions.ListOps
+import scala.util.Try
 
 //@SerialVersionUID(3457890987L)
 //class ItemSketchSerializable(var mapSize: Int) extends ItemsSketch[String](mapSize) with Serializable {}
@@ -61,6 +74,33 @@ class ItemSketchSerializable extends Serializable {
   }
 }
 
+case class Field(name: String, data_type: String)
+
+object Analyzer {
+  def validateAvroCompatibility(tableUtils: TableUtils, groupBy: GroupBy, groupByConf: api.GroupBy): Unit = {
+    if (tableUtils.chrononAvroSchemaValidation && groupByConf.metaData.online) {
+      // Validate that the baseDf schema is compatible with AvroSchema acceptable types
+      // This is required for online serving to work
+      try {
+        groupBy.keySchema.toAvroSchema("Key")
+        groupBy.preAggSchema.toAvroSchema("Value")
+      } catch {
+        case e: UnsupportedOperationException =>
+          throw new RuntimeException(
+            "In order to enable online serving, " +
+              "please make sure that the data types of your groupBy column types " +
+              "are compatible with AvroSchema acceptable types: " +
+              "You should cast the current data types to Avro compatible data types " +
+              "- e.g. tinyint is not supported in Avro, if you have a tinyint col1, " +
+              "you can CAST(col1 AS INT). If your use case is offline only, " +
+              "you can set chrononAvroSchemaValidation to false to disable Avro schema validation if you don't need online serving. \n"
+              + e.getMessage,
+            e)
+      }
+    }
+  }
+}
+
 class Analyzer(tableUtils: TableUtils,
                conf: Any,
                startDate: String,
@@ -69,7 +109,8 @@ class Analyzer(tableUtils: TableUtils,
                sample: Double = 0.1,
                enableHitter: Boolean = false,
                silenceMode: Boolean = false,
-               skipTimestampCheck: Boolean = false) {
+               skipTimestampCheck: Boolean = false,
+               validateTablePermission: Boolean = true) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   // include ts into heavy hitter analysis - useful to surface timestamps that have wrong units
   // include total approx row count - so it is easy to understand the percentage of skewed data
@@ -187,13 +228,20 @@ class Analyzer(tableUtils: TableUtils,
     AggregationMetadata(columnName, columnType, operation, "Unbounded", columnName)
   }
 
-  def analyzeGroupBy(
-      groupByConf: api.GroupBy,
-      prefix: String = "",
-      includeOutputTableName: Boolean = false,
-      enableHitter: Boolean = false,
-      skipTimestampCheck: Boolean = skipTimestampCheck,
-      validateTablePermission: Boolean = false): (Array[AggregationMetadata], Map[String, DataType], Set[String]) = {
+  private def stringifySchema(schema: Seq[(String, DataType)]): String = {
+    schema
+      .map {
+        case (name, dataType) => s" $name => $dataType"
+      }
+      .mkString("\n")
+  }
+
+  def analyzeGroupBy(groupByConf: api.GroupBy,
+                     prefix: String = "",
+                     includeOutputTableName: Boolean = false,
+                     enableHitter: Boolean = false,
+                     skipTimestampCheck: Boolean = skipTimestampCheck,
+                     validateTablePermission: Boolean = validateTablePermission): AnalyzeGroupByResult = {
     groupByConf.setups.foreach(tableUtils.sql)
     val groupBy = GroupBy.from(groupByConf, range, tableUtils, computeDependency = enableHitter, finalize = true)
     val name = "group_by/" + prefix + groupByConf.metaData.name
@@ -220,9 +268,10 @@ class Analyzer(tableUtils: TableUtils,
                 groupByConf.keyColumns.toScala.toArray,
                 groupByConf.sources.toScala.map(_.table).mkString(","))
       else ""
-    val schema = if (groupByConf.isSetBackfillStartDate && groupByConf.hasDerivations) {
-      // handle group by backfill mode for derivations
-      // todo: add the similar logic to join derivations
+
+    Analyzer.validateAvroCompatibility(tableUtils, groupBy, groupByConf)
+
+    val schema = if (groupByConf.hasDerivations) {
       val keyAndPartitionFields =
         groupBy.keySchema.fields ++ Seq(
           org.apache.spark.sql.types
@@ -240,6 +289,12 @@ class Analyzer(tableUtils: TableUtils,
     } else {
       groupBy.outputSchema
     }
+
+    val keySchema = groupBy.keySchema.map { field =>
+      field.name -> SparkConversions.toChrononType(field.name, field.dataType)
+    }
+    val valueSchema = schema.fields.map { field => field.name -> field.fieldType }
+
     if (silenceMode) {
       logger.info(s"""ANALYSIS completed for group_by/${name}.""".stripMargin)
     } else {
@@ -252,13 +307,11 @@ class Analyzer(tableUtils: TableUtils,
              |----- OUTPUT TABLE NAME -----
              |${groupByConf.metaData.outputTable}
                """.stripMargin)
-      val keySchema = groupBy.keySchema.fields.map { field => s"  ${field.name} => ${field.dataType}" }
-      schema.fields.map { field => s"  ${field.name} => ${field.fieldType}" }
       logger.info(s"""
            |----- KEY SCHEMA -----
-           |${keySchema.mkString("\n")}
+           |${stringifySchema(keySchema)}
            |----- OUTPUT SCHEMA -----
-           |${schema.mkString("\n")}
+           |${stringifySchema(valueSchema)}
            |------ END --------------
            |""".stripMargin)
     }
@@ -269,19 +322,25 @@ class Analyzer(tableUtils: TableUtils,
       groupBy.aggPartWithSchema.map { entry => toAggregationMetadata(entry._1, entry._2) }.toArray
     }
 
-    val keySchemaMap = groupBy.keySchema.map { field =>
-      field.name -> SparkConversions.toChrononType(field.name, field.dataType)
-    }.toMap
-    (aggMetadata, keySchemaMap, noAccessTables)
-
+    AnalyzeGroupByResult(keySchema, valueSchema, aggMetadata, noAccessTables)
   }
 
-  def analyzeJoin(
-      joinConf: api.Join,
-      enableHitter: Boolean = false,
-      validateTablePermission: Boolean = true,
-      validationAssert: Boolean = false,
-      skipTimestampCheck: Boolean = skipTimestampCheck): (Map[String, DataType], ListBuffer[AggregationMetadata]) = {
+  case class AnalyzeGroupByResult(keySchema: Seq[(String, DataType)],
+                                  valueSchema: Seq[(String, DataType)],
+                                  outputMetadata: Array[AggregationMetadata],
+                                  noAccessTables: Set[String])
+
+  case class AnalyzeJoinResult(leftSchema: Seq[(String, DataType)],
+                               rightSchema: Seq[(String, DataType)],
+                               keySchema: Seq[(String, DataType)],
+                               finalOutputSchema: Seq[(String, DataType)],
+                               finalOutputMetadata: ListBuffer[AggregationMetadata])
+
+  def analyzeJoin(joinConf: api.Join,
+                  enableHitter: Boolean = false,
+                  validateTablePermission: Boolean = validateTablePermission,
+                  validationAssert: Boolean = false,
+                  skipTimestampCheck: Boolean = skipTimestampCheck): AnalyzeJoinResult = {
     val name = "joins/" + joinConf.metaData.name
     logger.info(s"""|Running join analysis for $name ...""".stripMargin)
     // run SQL environment setups such as UDFs and JARs
@@ -318,13 +377,15 @@ class Analyzer(tableUtils: TableUtils,
 
     val leftSchema = leftDf.schema.fields
       .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
-      .toMap
     val joinIntermediateValuesMetadata = ListBuffer[AggregationMetadata]()
+    val externalGroupByMetadata = ListBuffer[AggregationMetadata]()
     val keysWithError: ListBuffer[(String, String)] = ListBuffer.empty[(String, String)]
     val gbStartPartitions = mutable.Map[String, List[String]]()
     val noAccessTables = mutable.Set[String]() ++= leftNoAccessTables
     // Pair of (table name, group_by name, expected_start) which indicate that the table no not have data available for the required group_by
     val dataAvailabilityErrors: ListBuffer[(String, String, String)] = ListBuffer.empty[(String, String, String)]
+    // ExternalSource schema validation errors
+    val externalSourceErrors: ListBuffer[String] = ListBuffer.empty[String]
 
     val rangeToFill =
       JoinUtils.getRangesToFill(joinConf.left, tableUtils, endDate, historicalBackfill = joinConf.historicalBackfill)
@@ -340,17 +401,19 @@ class Analyzer(tableUtils: TableUtils,
       )
       .getOrElse(Seq.empty)
 
-    joinConf.joinParts.toScala.foreach { part =>
-      val (aggMetadata, gbKeySchema, rightNoAccessTables) =
+    joinConf.getRegularAndExternalJoinParts.foreach { part =>
+      val analyzeGroupByResult =
         analyzeGroupBy(
           part.groupBy,
           part.fullPrefix,
           includeOutputTableName = true,
           enableHitter = enableHitter,
           skipTimestampCheck = skipTimestampCheck || leftNoAccessTables.nonEmpty,
-          validateTablePermission = true
+          validateTablePermission = validateTablePermission
         )
-      joinIntermediateValuesMetadata ++= aggMetadata.map { aggMeta =>
+
+      val target = if (!part.isInstanceOf[ExternalJoinPart]) joinIntermediateValuesMetadata else externalGroupByMetadata
+      target ++= analyzeGroupByResult.outputMetadata.map { aggMeta =>
         AggregationMetadata(part.fullPrefix + "_" + aggMeta.name,
                             aggMeta.columnType,
                             aggMeta.operation,
@@ -358,15 +421,16 @@ class Analyzer(tableUtils: TableUtils,
                             aggMeta.inputColumn,
                             part.getGroupBy.getMetaData.getName)
       }
+
       // Run validation checks.
-      keysWithError ++= runSchemaValidation(leftSchema, gbKeySchema, part.rightToLeft)
+      keysWithError ++= runSchemaValidation(leftSchema.toMap, analyzeGroupByResult.keySchema.toMap, part.rightToLeft)
       val subPartitionFilters =
         part.groupBy.sources.toScala.map(source => source.table -> source.subPartitionFilters).toMap
       dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel,
                                                           part.groupBy,
                                                           unfilledRanges,
                                                           subPartitionFilters)
-      noAccessTables ++= rightNoAccessTables
+      noAccessTables ++= analyzeGroupByResult.noAccessTables
       // list any startPartition dates for conflict checks
       val gbStartPartition = part.groupBy.sources.toScala
         .map(_.query.startPartition)
@@ -374,7 +438,13 @@ class Analyzer(tableUtils: TableUtils,
       if (gbStartPartition.nonEmpty)
         gbStartPartitions += (part.groupBy.metaData.name -> gbStartPartition)
     }
+
+    val externalGroupBySchema = externalGroupByMetadata.map(aggregation => (aggregation.name, aggregation.columnType))
+
     if (joinConf.onlineExternalParts != null) {
+      // Validate ExternalSource schemas if they have offlineGroupBy configured
+      externalSourceErrors ++= runExternalSourceCheck(joinConf, externalGroupBySchema)
+
       joinConf.onlineExternalParts.toScala.foreach { part =>
         joinIntermediateValuesMetadata ++= part.source.valueFields.map { field =>
           AggregationMetadata(part.fullName + "_" + field.name,
@@ -387,82 +457,31 @@ class Analyzer(tableUtils: TableUtils,
       }
     }
 
-    val rightSchema: Map[String, DataType] =
-      joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType)).toMap
-    if (silenceMode) {
-      logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
-    } else {
-      logger.info(s"""
-           |ANALYSIS for join/${joinConf.metaData.cleanName}:
-           |$analysis
-           |----- OUTPUT TABLE NAME -----
-           |${joinConf.metaData.outputTable}
-           |------ LEFT SIDE SCHEMA -------
-           |${leftSchema.mkString("\n")}
-           |------ RIGHT SIDE SCHEMA ----
-           |${rightSchema.mkString("\n")}
-           |------ END ------------------
-           |""".stripMargin)
-    }
+    val rightSchema = joinIntermediateValuesMetadata.map(aggregation => (aggregation.name, aggregation.columnType))
 
-    logger.info(s"----- Validations for join/${joinConf.metaData.cleanName} -----")
-    if (gbStartPartitions.nonEmpty) {
-      logger.info(
-        "----- Following Group_Bys contains a startPartition. Please check if any startPartition will conflict with your backfill. -----")
-      gbStartPartitions.foreach {
-        case (gbName, startPartitions) =>
-          logger.info(s"$gbName : ${startPartitions.mkString(",")}")
-      }
-    }
-    if (keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty) {
-      logger.info("----- Backfill validation completed. No errors found. -----")
-    } else {
-      logger.info(s"----- Schema validation completed. Found ${keysWithError.size} errors")
-      val keyErrorSet: Set[(String, String)] = keysWithError.toSet
-      logger.info(keyErrorSet.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
-      logger.info(
-        s"---- Table permission check completed. Found permission errors in ${noAccessTables.size} tables ----")
-      logger.info(noAccessTables.mkString("\n"))
-      logger.info(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
-      dataAvailabilityErrors.foreach(error =>
-        logger.info(s"Group_By ${error._2} : Source Tables ${error._1} : Expected start ${error._3}"))
-    }
+    val keyColumns: List[String] = joinConf.getRegularAndExternalJoinParts.toList
+      .flatMap(joinPart => {
+        val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
+        if (joinPart.keyMapping == null) keyCols
+        else {
+          keyCols.map(key => {
+            if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
+            else key
+          })
+        }
+      })
+      .distinct
+    val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
 
-    if (validationAssert) {
-      if (joinConf.isSetBootstrapParts) {
-        // For joins with bootstrap_parts, do not assert on data availability errors, as bootstrap can cover them
-        // Only print out the errors as a warning
-        assert(
-          keysWithError.isEmpty && noAccessTables.isEmpty,
-          "ERROR: Join validation failed. Please check error message for details."
-        )
-      } else {
-        assert(
-          keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty,
-          "ERROR: Join validation failed. Please check error message for details."
-        )
-      }
-    }
     // Derive the join online fetching output schema with metadata
-    val joinOutputValuesMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
-      val keyColumns: List[String] = joinConf.joinParts.toScala
-        .flatMap(joinPart => {
-          val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
-          if (joinPart.keyMapping == null) keyCols
-          else {
-            keyCols.map(key => {
-              if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
-              else key
-            })
-          }
-        })
-        .distinct
+    val finalOutputMetadata: ListBuffer[AggregationMetadata] = if (joinConf.hasDerivations) {
       val tsDsSchema: Map[String, DataType] = {
         Map("ts" -> api.StringType, "ds" -> api.StringType)
       }
       val sparkSchema = {
-        val keySchema = leftSchema.filter(tup => keyColumns.contains(tup._1))
-        val schema: Seq[(String, DataType)] = keySchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
+        // Allow leftSchema to be used as input to derivations. This is only valid for offline joins, and we
+        // assume that this requirement has been validated
+        val schema: Seq[(String, DataType)] = leftSchema.toSeq ++ rightSchema.toSeq ++ tsDsSchema
         StructType(SparkConversions.fromChrononSchema(schema))
       }
       val dummyOutputDf = tableUtils.sparkSession
@@ -476,8 +495,82 @@ class Analyzer(tableUtils: TableUtils,
     } else {
       joinIntermediateValuesMetadata
     }
-    // (schema map showing the names and datatypes, right side feature aggregations metadata for metadata upload)
-    (leftSchema ++ rightSchema, joinOutputValuesMetadata)
+    val finalOutputSchema = finalOutputMetadata.map {
+      case AggregationMetadata(name, columnType, _, _, _, _) =>
+        (name, columnType)
+    }
+
+    if (silenceMode) {
+      logger.info(s"""ANALYSIS completed for join/${joinConf.metaData.cleanName}.""".stripMargin)
+    } else {
+      logger.info(s"""
+           |ANALYSIS for join/${joinConf.metaData.cleanName}:
+           |$analysis
+           |----- OUTPUT TABLE NAME -----
+           |${joinConf.metaData.outputTable}
+           |------ LEFT SIDE SCHEMA -------
+           |${stringifySchema(leftSchema)}
+           |------ RIGHT SIDE SCHEMA ----
+           |${stringifySchema(rightSchema)}
+           |------ KEY SCHEMA ----
+           |${stringifySchema(keySchema)}
+           |------ FINAL OUTPUT SCHEMA ----
+           |${stringifySchema(finalOutputSchema)}
+           |------ END ------------------
+           |""".stripMargin)
+    }
+
+    logger.info(s"----- Validations for join/${joinConf.metaData.cleanName} -----")
+    if (gbStartPartitions.nonEmpty) {
+      logger.info(
+        "----- Following Group_Bys contains a startPartition. Please check if any startPartition will conflict with your backfill. -----")
+      gbStartPartitions.foreach {
+        case (gbName, startPartitions) =>
+          logger.info(s"$gbName : ${startPartitions.mkString(",")}")
+      }
+    }
+    if (
+      keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty && externalSourceErrors.isEmpty
+    ) {
+      logger.info("----- Backfill validation completed. No errors found. -----")
+    } else {
+      logger.info(s"----- Schema validation completed. Found ${keysWithError.size} errors")
+      val keyErrorSet: Set[(String, String)] = keysWithError.toSet
+      logger.info(keyErrorSet.map { case (key, errorMsg) => s"$key => $errorMsg" }.mkString("\n"))
+      logger.info(
+        s"---- Table permission check completed. Found permission errors in ${noAccessTables.size} tables ----")
+      logger.info(noAccessTables.mkString("\n"))
+      logger.info(s"---- Data availability check completed. Found issue in ${dataAvailabilityErrors.size} tables ----")
+      dataAvailabilityErrors.foreach(error =>
+        logger.info(s"Group_By ${error._2} : Source Tables ${error._1} : Expected start ${error._3}"))
+      logger.info(s"---- ExternalSource schema validation completed. Found ${externalSourceErrors.size} errors ----")
+      externalSourceErrors.foreach(error => logger.info(error))
+    }
+
+    if (validationAssert) {
+      if (joinConf.isSetBootstrapParts) {
+        // For joins with bootstrap_parts, do not assert on data availability errors, as bootstrap can cover them
+        // Only print out the errors as a warning
+        assert(
+          keysWithError.isEmpty && noAccessTables.isEmpty && externalSourceErrors.isEmpty,
+          "ERROR: Join validation failed. Please check error message for details."
+        )
+      } else {
+        assert(
+          keysWithError.isEmpty && noAccessTables.isEmpty && dataAvailabilityErrors.isEmpty && externalSourceErrors.isEmpty,
+          "ERROR: Join validation failed. Please check error message for details."
+        )
+      }
+    }
+
+    // Return analyzer result including schema at each step, as well as final output's metadata for export
+    AnalyzeJoinResult(
+      leftSchema,
+      rightSchema,
+      keySchema,
+      finalOutputSchema,
+      finalOutputMetadata
+    )
   }
 
   // validate the schema of the left and right side of the join and make sure the types match
@@ -674,19 +767,257 @@ class Analyzer(tableUtils: TableUtils,
       .toMap
   }
 
-  def run(): Unit =
+  private def exportGroupBySchema(analyzeGroupByResult: AnalyzeGroupByResult,
+                                  groupByConf: api.GroupBy,
+                                  partition: String): Unit = {
+    exportSchema(analyzeGroupByResult.keySchema,
+                 analyzeGroupByResult.valueSchema,
+                 groupByConf.metaData.schemaTable,
+                 partition,
+                 groupByConf.metaData.tableProps)
+  }
+
+  private def exportJoinSchema(analyzeJoinResult: AnalyzeJoinResult, joinConf: api.Join, partition: String): Unit = {
+    exportSchema(analyzeJoinResult.keySchema,
+                 analyzeJoinResult.finalOutputSchema,
+                 joinConf.metaData.schemaTable,
+                 partition,
+                 joinConf.metaData.tableProps)
+  }
+
+  private def exportSchema(keySchema: Seq[(String, DataType)],
+                           valueSchema: Seq[(String, DataType)],
+                           table: String,
+                           partition: String,
+                           tableProperties: Map[String, String]): Unit = {
+    import tableUtils.sparkSession.implicits._
+    def toFields(schema: Seq[(String, DataType)]): Seq[Field] = {
+      schema.toSeq.map {
+        case (name, dataType: DataType) => Field(name, SparkConversions.fromChrononType(dataType).catalogString)
+      }
+    }
+    val keys = toFields(keySchema)
+    val values = toFields(valueSchema)
+    val df = Seq((keys, values, partition)).toSeq.toDF("key_schema", "value_schema", tableUtils.partitionColumn)
+    tableUtils.insertPartitions(df, table, tableProperties)
+  }
+
+  def runAnalyzeJoin(joinConf: api.Join, exportSchema: Boolean = false): AnalyzeJoinResult = {
+    val analyzeJoinResult = analyzeJoin(joinConf,
+                                        enableHitter = enableHitter,
+                                        skipTimestampCheck = skipTimestampCheck,
+                                        validateTablePermission = validateTablePermission)
+    if (exportSchema) {
+      exportJoinSchema(analyzeJoinResult, joinConf, endDate)
+    }
+    analyzeJoinResult
+  }
+
+  private def runAnalyzeGroupBy(groupByConf: api.GroupBy, exportSchema: Boolean = false): AnalyzeGroupByResult = {
+    val analyzeGroupByResult = analyzeGroupBy(groupByConf,
+                                              enableHitter = enableHitter,
+                                              skipTimestampCheck = skipTimestampCheck,
+                                              validateTablePermission = validateTablePermission)
+    if (exportSchema) {
+      exportGroupBySchema(analyzeGroupByResult, groupByConf, endDate)
+    }
+    analyzeGroupByResult
+  }
+
+  /**
+    * Validates schema compatibility between ExternalPart and its offlineGroupBy.
+    * This ensures that online and offline serving will produce consistent results.
+    *
+    * @param externalPart The external part to validate
+    * @param externalGroupBySchema The schema of the external groupBy features from offline computation
+    * @return Sequence of error messages, empty if no errors
+    */
+  def validateOfflineGroupBy(externalPart: api.ExternalPart,
+                             externalGroupBySchema: Seq[(String, DataType)]): Seq[String] =
+    Option(externalPart.source.offlineGroupBy)
+      .map(_ =>
+        validateKeySchemaCompatibility(externalPart.source) ++ validateValueSchemaCompatibility(externalPart,
+                                                                                                externalGroupBySchema))
+      .getOrElse(Seq.empty)
+
+  private def validateKeySchemaCompatibility(externalSource: api.ExternalSource): Seq[String] = {
+    val errors = scala.collection.mutable.ListBuffer[String]()
+
+    if (externalSource.keySchema == null) {
+      errors += s"ExternalSource ${externalSource.metadata.name} keySchema cannot be null when offlineGroupBy is specified"
+      return errors
+    }
+
+    if (externalSource.offlineGroupBy.keyColumns == null || externalSource.offlineGroupBy.keyColumns.isEmpty) {
+      errors += s"ExternalSource ${externalSource.metadata.name} offlineGroupBy keyColumns cannot be null or empty"
+      return errors
+    }
+
+    val externalKeyFields = externalSource.keyFields
+    val groupByKeyColumns = externalSource.offlineGroupBy.keyColumns.toScala.toSet
+
+    // Extract field names from external source key schema
+    val externalKeyNames = externalKeyFields.map(_.name).toSet
+
+    // Validate that GroupBy has key columns that match ExternalSource key schema
+    val missingKeys = externalKeyNames -- groupByKeyColumns
+    val extraKeys = groupByKeyColumns -- externalKeyNames
+
+    if (missingKeys.nonEmpty) {
+      errors += s"ExternalSource ${externalSource.metadata.name} key schema contains columns [${missingKeys.mkString(", ")}] " +
+        s"that are not present in offlineGroupBy keyColumns [${groupByKeyColumns.mkString(", ")}]. " +
+        s"All ExternalSource key columns must be present in the GroupBy key columns."
+    }
+
+    if (extraKeys.nonEmpty) {
+      errors += s"ExternalSource ${externalSource.metadata.name} offlineGroupBy keyColumns contain [${extraKeys
+        .mkString(", ")}] " +
+        s"that are not present in ExternalSource keySchema [${externalKeyNames.mkString(", ")}]. " +
+        s"GroupBy key columns cannot contain keys not defined in ExternalSource keySchema."
+    }
+
+    errors
+  }
+
+  /**
+    * Recursively clears struct names from a DataType to enable name-agnostic comparison.
+    * This is needed because TDataType.equals() compares the name field.
+    *
+    * @param dataType The DataType to process
+    * @return A TDataType with all struct names cleared
+    */
+  private def clearStructNames(dataType: DataType): TDataType = {
+    val tDataType = DataType.toTDataType(dataType)
+
+    // Clear the name if this is a struct type
+    if (tDataType.getKind == DataKind.STRUCT) {
+      tDataType.unsetName()
+    }
+
+    // Recursively clear names in nested types
+    if (tDataType.isSetParams) {
+      val params = tDataType.getParams
+      params.toScala.foreach { param =>
+        if (param.isSetDataType) {
+          val nestedType = DataType.fromTDataType(param.getDataType)
+          val clearedNested = clearStructNames(nestedType)
+          param.setDataType(clearedNested)
+        }
+      }
+    }
+
+    tDataType
+  }
+
+  /**
+    * Deep comparison of two DataType objects with logging.
+    * For StructType, ignores the name and only compares fields.
+    * Uses TDataType conversion for proper deep comparison.
+    *
+    * @param expected The expected DataType
+    * @param actual The actual DataType
+    * @return true if the types match, false otherwise
+    */
+  private def compareDataTypes(expected: DataType, actual: DataType): Boolean = {
+    // Convert to TDataType and clear struct names for comparison
+    val expectedTDataType = clearStructNames(expected)
+    val actualTDataType = clearStructNames(actual)
+
+    logger.error(s"Expected TDataType: $expectedTDataType")
+    logger.error(s"Actual TDataType: $actualTDataType")
+
+    expectedTDataType.equals(actualTDataType)
+  }
+
+  private def validateValueSchemaCompatibility(externalPart: api.ExternalPart,
+                                               externalGroupBySchema: Seq[(String, DataType)]): Seq[String] = {
+    val errors = scala.collection.mutable.ListBuffer[String]()
+
+    if (externalPart.source.valueSchema == null) {
+      errors += s"ExternalSource ${externalPart.source.metadata.name} valueSchema cannot be null when offlineGroupBy is specified"
+      return errors
+    }
+
+    // Get expected schema from ExternalPart (what online expects)
+    val externalValueFields = externalPart.valueSchemaFull
+    val expectedSchema = externalValueFields.map(field => (field.name, field.fieldType)).toMap
+
+    // Get actual schema from offline GroupBy computation (what offline produces)
+    val prefix = externalPart.fullName + "_"
+    val actualSchema = externalGroupBySchema
+      .filter(_._1.startsWith(prefix))
+      .toMap
+
+    // Check for fields in expected but not in actual (missing fields)
+    val missingFields = expectedSchema.keySet -- actualSchema.keySet
+    if (missingFields.nonEmpty) {
+      errors += s"ExternalSource ${externalPart.source.metadata.name} offline GroupBy is missing value fields: " +
+        s"[${missingFields.mkString(", ")}]. These fields are defined in the ExternalSource valueSchema " +
+        s"but are not produced by the offlineGroupBy."
+    }
+
+    // Check for fields in actual but not in expected (extra fields)
+    val extraFields = actualSchema.keySet -- expectedSchema.keySet
+    if (extraFields.nonEmpty) {
+      errors += s"ExternalSource ${externalPart.source.metadata.name} offline GroupBy produces extra value fields: " +
+        s"[${extraFields.mkString(", ")}]. These fields are not defined in the ExternalSource valueSchema."
+    }
+
+    // Check for type mismatches in common fields using deep comparison
+    val commonFields = expectedSchema.keySet.intersect(actualSchema.keySet)
+    commonFields.foreach { fieldName =>
+      val expectedType = expectedSchema(fieldName)
+      val actualType = actualSchema(fieldName)
+      logger.error(s"=== Validating field '$fieldName' for ExternalSource ${externalPart.source.metadata.name} ===")
+      if (!compareDataTypes(expectedType, actualType)) {
+        errors += s"ExternalSource ${externalPart.source.metadata.name} field '$fieldName' has type mismatch: " +
+          s"expected ${DataType.toString(expectedType)} (from ExternalSource valueSchema) " +
+          s"but offline GroupBy produces ${DataType.toString(actualType)}"
+      }
+    }
+
+    errors
+  }
+
+  /**
+    * Validates all ExternalSources in this Join's onlineExternalParts.
+    * This ensures schema compatibility between ExternalSources and their offlineGroupBy configurations.
+    *
+    * @param joinConf The join configuration to validate
+    * @param externalGroupBySchema The schema of the external groupBy features from offline computation
+    * @return Sequence of error messages, empty if no errors
+    */
+  def runExternalSourceCheck(joinConf: api.Join, externalGroupBySchema: Seq[(String, DataType)]): Seq[String] =
+    Option(joinConf.onlineExternalParts)
+      .map(_.toScala.flatMap(part => validateOfflineGroupBy(part, externalGroupBySchema)))
+      .getOrElse(Seq.empty)
+
+  def run(exportSchema: Boolean = false): Unit =
     conf match {
       case confPath: String =>
         if (confPath.contains("/joins/")) {
-          val joinConf = parseConf[api.Join](confPath)
-          analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+          runAnalyzeJoin(parseConf[api.Join](confPath), exportSchema)
         } else if (confPath.contains("/group_bys/")) {
-          val groupByConf = parseConf[api.GroupBy](confPath)
-          analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+          runAnalyzeGroupBy(parseConf[api.GroupBy](confPath), exportSchema)
+        } else {
+          val joinConfTry = Try(parseConf[api.Join](confPath))
+          if (joinConfTry.isSuccess) {
+            runAnalyzeJoin(joinConfTry.get, exportSchema)
+          } else {
+            val groupByConfTry = Try(parseConf[api.GroupBy](confPath))
+            if (groupByConfTry.isSuccess) {
+              runAnalyzeGroupBy(groupByConfTry.get, exportSchema)
+            } else {
+              throw new IllegalArgumentException(
+                s"Cannot parse the config at $confPath as either Join or GroupBy. Please check the config file."
+              )
+            }
+          }
         }
-      case groupByConf: api.GroupBy =>
-        analyzeGroupBy(groupByConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
-      case joinConf: api.Join =>
-        analyzeJoin(joinConf, enableHitter = enableHitter, skipTimestampCheck = skipTimestampCheck)
+      case groupByConf: api.GroupBy => runAnalyzeGroupBy(groupByConf, exportSchema)
+      case joinConf: api.Join       => runAnalyzeJoin(joinConf, exportSchema)
+      case _ =>
+        throw new IllegalArgumentException(
+          "conf must be either a path to a config file, or a GroupBy or Join config: " + conf)
     }
 }

@@ -20,7 +20,8 @@ import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{MetadataExporter, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{MetadataExporter, SparkSessionBuilder}
 import com.google.common.io.Files
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
@@ -80,7 +81,7 @@ class MetadataExporterTest extends TestCase {
     sampleDf.save(sampleTable)
     val confResource = getClass.getResource("/")
     val tmpDir: File = Files.createTempDir()
-    MetadataExporter.run(confResource.getPath, tmpDir.getAbsolutePath)
+    MetadataExporter.run(confResource.getPath, Some(tmpDir.getAbsolutePath))
     printFilesInDirectory(s"${confResource.getPath}/joins/team")
     printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
     // Read the files.

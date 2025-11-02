@@ -26,15 +26,17 @@ import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Dataset, Row, SparkSession}
-import java.util.Base64
+import ai.chronon.online.serde.{AvroConversions, SparkConversions}
 
+import java.util.Base64
 import scala.+:
 import scala.collection.mutable
 import scala.collection.Seq
 import scala.util.ScalaJavaConversions.{IterableOps, MapOps}
 import scala.util.{Failure, Success, Try}
-
-import ai.chronon.online.OnlineDerivationUtil.timeFields
+import ai.chronon.online.DerivationUtils.timeFields
+import ai.chronon.spark.{catalog}
+import ai.chronon.spark.catalog.TableUtils
 
 /**
   * Purpose of LogFlattenerJob is to unpack serialized Avro data from online requests and flatten each field
@@ -62,7 +64,13 @@ class LogFlattenerJob(session: SparkSession,
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinLogFlatten, joinConf)
 
   private def getUnfilledRanges(inputTable: String, outputTable: String): Seq[PartitionRange] = {
-    val partitionName: String = joinConf.metaData.nameToFilePath.replace("/", "%2F")
+    // For Hive tables, partition paths are URL-encoded on disk (e.g., team_name%2Ffeature_name)
+    // For Iceberg/delta lake tables, partition values in metadata are unencoded (e.g., team_name/feature_name)
+    val tableFormat = tableUtils.tableReadFormat(inputTable)
+    val partitionName: String = tableFormat match {
+      case catalog.Hive => joinConf.metaData.nameToFilePath.replace("/", "%2F")
+      case _            => joinConf.metaData.nameToFilePath
+    }
     val unfilledRangeTry = Try(
       tableUtils.unfilledRanges(
         outputTable,
@@ -73,11 +81,11 @@ class LogFlattenerJob(session: SparkSession,
     )
 
     val ranges = unfilledRangeTry match {
-      case Failure(_: AssertionError) => {
-        logger.info(s"""
-             |The join name ${joinConf.metaData.nameToFilePath} does not have available logged data yet.
-             |Please double check your logging status""".stripMargin)
-        Seq()
+      case Failure(e: AssertionError) => {
+        val errorMsg = s"""The join name ${joinConf.metaData.nameToFilePath} does not have available logged data yet.
+             |Please double check your logging status""".stripMargin
+        logger.error(errorMsg)
+        throw new RuntimeException(errorMsg, e)
       }
       case Success(None) => {
         logger.info(

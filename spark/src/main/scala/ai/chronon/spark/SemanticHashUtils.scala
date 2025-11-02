@@ -3,6 +3,7 @@ package ai.chronon.spark
 import ai.chronon.api.Constants
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.spark.JoinUtils.logger
+import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 
 import scala.util.ScalaJavaConversions.MapOps
@@ -142,7 +143,11 @@ object SemanticHashUtils {
     val derivedChanges = oldSemanticHash.get(join.derivedKey) != newSemanticHash.get(join.derivedKey)
     // TODO: make this incremental, retain the main table and continue joining, dropping etc
     val mainTable = if (partsToDrop.nonEmpty || added.nonEmpty || derivedChanges) {
-      Some(join.metaData.outputTable)
+      if (join.hasModelTransforms) {
+        Some(join.metaData.preModelTransformsTable)
+      } else {
+        Some(join.metaData.outputTable)
+      }
     } else None
     partsToDrop ++ mainTable
   }

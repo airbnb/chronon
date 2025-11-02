@@ -30,8 +30,8 @@ import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
 
 import java.util
 import java.util.Properties
-import scala.collection.JavaConverters.{asScalaBufferConverter, asScalaIteratorConverter}
 import scala.reflect.ClassTag
+import scala.util.ScalaJavaConversions.{IteratorOps, ListOps}
 import scala.util.Try
 
 object TopicChecker {
@@ -60,7 +60,7 @@ object TopicChecker {
         topicsResult // find closestK matches based on edit distance.
           .entrySet()
           .iterator()
-          .asScala
+          .toScala
           .map { topicListing =>
             val existing = topicListing.getValue.name()
             EditDistance.betweenStrings(existing, topic).total / existing.length.toDouble -> existing
@@ -73,7 +73,7 @@ object TopicChecker {
                                       |
                                       | ------ Most similar topics are ------
                                       |
-                                      |  ${result.asScala.map(_._2).mkString("\n  ")}
+                                      |  ${result.toScala.map(_._2).mkString("\n  ")}
                                       |
                                       | ------ End ------
                                       |""".stripMargin)

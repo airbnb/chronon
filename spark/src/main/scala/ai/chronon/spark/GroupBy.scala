@@ -23,8 +23,9 @@ import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
-import ai.chronon.online.{RowWrapper, SparkConversions}
+import ai.chronon.online.serde.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -303,7 +304,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
         val tsVal = row.get(queryTsIndex)
         assert(tsVal != null, "ts column cannot be null in left source or query df")
         val ts = tsVal.asInstanceOf[Long]
-        val partition = row.getString(partitionIndex)
+        val partition = row.get(partitionIndex).toString
         ((queriesKeyGen(row), headStart(ts)), TimeTuple.make(ts, partition))
       }
       .groupByKey()
@@ -367,7 +368,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
 
-    inputDf.rdd
+    tableUtils
+      .preAggRepartition(inputDf.rdd)
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, tsIndex))
       .aggregateByKey(zeroValue = hopsAggregator.init())(

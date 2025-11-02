@@ -20,19 +20,20 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, WindowOps, ThrowableOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, ThrowableOps, WindowOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
+import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
+import ai.chronon.online.serde.AvroConversions
 import com.google.gson.Gson
 
 import java.util
-import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.ScalaJavaConversions.{IteratorOps, JMapOps}
 import scala.util.{Failure, Success, Try}
 
 // Does internal facing fetching
@@ -45,7 +46,8 @@ class FetcherBase(kvStore: KVStore,
                   debug: Boolean = false,
                   flagStore: FlagStore = null,
                   disableErrorThrows: Boolean = false,
-                  executionContextOverride: ExecutionContext = null)
+                  executionContextOverride: ExecutionContext = null,
+                  modelBackend: ModelBackend = null)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis, executionContextOverride)
     with FetcherCache {
   import FetcherBase._
@@ -154,7 +156,7 @@ class FetcherBase(kvStore: KVStore,
                   .map(_.isSet(
                     "disable_streaming_decoding_error_throws",
                     Map(
-                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).asJava))
+                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).toJava))
                 if (groupByFlag.getOrElse(disableErrorThrows)) {
                   Array.empty[TiledIr]
                 } else {
@@ -202,7 +204,7 @@ class FetcherBase(kvStore: KVStore,
                   .map(_.isSet(
                     "disable_streaming_decoding_error_throws",
                     Map(
-                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).asJava))
+                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).toJava))
                 if (groupByFlag.getOrElse(disableErrorThrows)) {
                   Seq.empty[Row]
                 } else {
@@ -329,7 +331,7 @@ class FetcherBase(kvStore: KVStore,
       Option(flagStore)
         .exists(
           _.isSet("enable_fetcher_batch_ir_cache",
-                  Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).asJava))
+                  Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).toJava))
 
     if (debug)
       logger.info(
@@ -341,7 +343,7 @@ class FetcherBase(kvStore: KVStore,
   // If the flag is set, we check whether the entity is in the active entity list saved on k-v store
   def isEntityValidityCheckEnabled: Boolean = {
     Option(flagStore)
-      .exists(_.isSet("enable_entity_validity_check", Map.empty[String, String].asJava))
+      .exists(_.isSet("enable_entity_validity_check", Map.empty[String, String].toJava))
   }
 
   // 1. fetches GroupByServingInfo
@@ -354,6 +356,9 @@ class FetcherBase(kvStore: KVStore,
     val validRequests =
       requests.filter(r => r.keys == null || r.keys.values == null || !r.keys.values.exists(_ == null))
     val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
+      request.context
+        .getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupBy = request.name))
+        .increment("group_by_request.count")
       val groupByServingInfoTry = getGroupByServingInfo(request.name)
         .recover {
           case ex: Throwable =>
@@ -366,7 +371,6 @@ class FetcherBase(kvStore: KVStore,
         .map { groupByServingInfo =>
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
-          context.increment("group_by_request.count")
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {
@@ -573,11 +577,11 @@ class FetcherBase(kvStore: KVStore,
     val tailHops = batchRecord(1)
       .asInstanceOf[util.ArrayList[Any]]
       .iterator()
-      .asScala
+      .toScala
       .map(
         _.asInstanceOf[util.ArrayList[Any]]
           .iterator()
-          .asScala
+          .toScala
           .map(hop => gbInfo.aggregator.baseAggregator.denormalizeInPlace(hop.asInstanceOf[Array[Any]]))
           .toArray)
       .toArray

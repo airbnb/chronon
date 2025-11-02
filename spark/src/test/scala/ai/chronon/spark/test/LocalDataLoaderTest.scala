@@ -30,10 +30,7 @@ object LocalDataLoaderTest {
 
   val tmpDir: File = Files.createTempDir()
 
-  val spark: SparkSession = SparkSessionBuilder.build(
-    "LocalDataLoaderTest",
-    local = true,
-    Some(tmpDir.getPath))
+  val spark: SparkSession = SparkSessionBuilder.build("LocalDataLoaderTest", local = true, Some(tmpDir.getPath))
 
   @AfterClass
   def teardown(): Unit = {
@@ -45,15 +42,16 @@ class LocalDataLoaderTest {
 
   val srcPath = "src/test/resources/local_data_csv/"
 
-  def matchPath(srcPath: String, fileName: Option[String] = None): File = (new File (srcPath).exists (), fileName.isDefined) match {
+  def matchPath(srcPath: String, fileName: Option[String] = None): File =
+    (new File(srcPath).exists(), fileName.isDefined) match {
       // if src/ path exists and a filename is provided
-      case (true, true) => new File (srcPath + fileName.get)
+      case (true, true) => new File(srcPath + fileName.get)
       // if src/ path exists and no filename is provided
-      case (true, false) => new File (srcPath)
+      case (true, false) => new File(srcPath)
       // if src/ path does not exist and a filename is provided try spark/src/
-      case (false, true) => new File ("spark/" + srcPath + fileName.get)
+      case (false, true) => new File("spark/" + srcPath + fileName.get)
       // if src/ path does not exist and no filename is provided try spark/src/
-      case (false, false) => new File ("spark/" + srcPath)
+      case (false, false) => new File("spark/" + srcPath)
     }
 
   @Test

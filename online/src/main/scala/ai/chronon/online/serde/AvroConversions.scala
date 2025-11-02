@@ -14,7 +14,7 @@
  *    limitations under the License.
  */
 
-package ai.chronon.online
+package ai.chronon.online.serde
 
 import ai.chronon.api._
 import org.apache.avro.Schema
@@ -24,10 +24,15 @@ import org.apache.avro.util.Utf8
 
 import java.nio.ByteBuffer
 import java.util
-import scala.collection.JavaConverters._
 import scala.collection.{AbstractIterator, mutable}
+import scala.util.ScalaJavaConversions.{JListOps, ListOps}
+import scala.util.Try
 
 object AvroConversions {
+
+  private val BYTE_TYPE_PROP = "byte" // aka tinyint
+  private val SHORT_TYPE_PROP = "short" // aka smallint
+  private val LOGICAL_TYPE_PROP_KEY = "logicalType"
 
   def toAvroValue(value: AnyRef, schema: Schema): Object =
     schema.getType match {
@@ -39,24 +44,41 @@ object AvroConversions {
       case _                  => value
     }
 
-  def toChrononSchema(schema: Schema): DataType = {
+  def cleanSuffix(name: String): String = {
+    if (name.contains(RepetitionSuffix)) {
+      name.substring(0, name.indexOf(RepetitionSuffix))
+    } else {
+      name
+    }
+  }
+
+  def toChrononSchema(schema: Schema, cleanName: Boolean = false): DataType = {
+    def clean(name: String): String = if (cleanName) cleanSuffix(name) else name
     schema.getType match {
       case Schema.Type.RECORD =>
-        StructType(schema.getName,
-                   schema.getFields.asScala.toArray.map { field =>
-                     StructField(field.name(), toChrononSchema(field.schema()))
+        StructType(clean(schema.getName),
+                   schema.getFields.toScala.toArray.map { field =>
+                     StructField(clean(field.name()), toChrononSchema(field.schema(), cleanName))
                    })
-      case Schema.Type.ARRAY   => ListType(toChrononSchema(schema.getElementType))
-      case Schema.Type.MAP     => MapType(StringType, toChrononSchema(schema.getValueType))
-      case Schema.Type.STRING  => StringType
-      case Schema.Type.INT     => IntType
+      case Schema.Type.ARRAY  => ListType(toChrononSchema(schema.getElementType, cleanName))
+      case Schema.Type.MAP    => MapType(StringType, toChrononSchema(schema.getValueType, cleanName))
+      case Schema.Type.STRING => StringType
+      case Schema.Type.INT =>
+        Option(schema.getProp(LOGICAL_TYPE_PROP_KEY)) match {
+          case Some(BYTE_TYPE_PROP)  => ByteType
+          case Some(SHORT_TYPE_PROP) => ShortType
+          case Some(prop) =>
+            throw new UnsupportedOperationException(s"Unknown logicalType annotation $prop on INT type")
+          case None => IntType
+        }
       case Schema.Type.LONG    => LongType
       case Schema.Type.FLOAT   => FloatType
       case Schema.Type.DOUBLE  => DoubleType
       case Schema.Type.BYTES   => BinaryType
       case Schema.Type.BOOLEAN => BooleanType
-      case Schema.Type.UNION   => toChrononSchema(schema.getTypes.get(1)) // unions are only used to represent nullability
-      case _                   => throw new UnsupportedOperationException(s"Cannot convert avro type ${schema.getType.toString}")
+      case Schema.Type.UNION =>
+        toChrononSchema(schema.getTypes.get(1), cleanName) // unions are only used to represent nullability
+      case _ => throw new UnsupportedOperationException(s"Cannot convert avro type ${schema.getType.toString}")
     }
   }
 
@@ -92,15 +114,25 @@ object AvroConversions {
                 defaultValue)
             }
             .toList
-            .asJava
+            .toJava
         )
       case ListType(elementType) => Schema.createArray(fromChrononSchema(elementType, nameSet))
       case MapType(keyType, valueType) => {
         assert(keyType == StringType, s"Avro only supports string keys for a map")
         Schema.createMap(fromChrononSchema(valueType, nameSet))
       }
-      case StringType  => Schema.create(Schema.Type.STRING)
-      case IntType     => Schema.create(Schema.Type.INT)
+      case StringType => Schema.create(Schema.Type.STRING)
+      case IntType    => Schema.create(Schema.Type.INT)
+      case ByteType => {
+        val schema = Schema.create(Schema.Type.INT)
+        schema.addProp(LOGICAL_TYPE_PROP_KEY, BYTE_TYPE_PROP.asInstanceOf[AnyRef])
+        schema
+      }
+      case ShortType => {
+        val schema = Schema.create(Schema.Type.INT)
+        schema.addProp(LOGICAL_TYPE_PROP_KEY, SHORT_TYPE_PROP.asInstanceOf[AnyRef])
+        schema
+      }
       case LongType    => Schema.create(Schema.Type.LONG)
       case FloatType   => Schema.create(Schema.Type.FLOAT)
       case DoubleType  => Schema.create(Schema.Type.DOUBLE)
@@ -191,6 +223,10 @@ object AvroConversions {
 
 case class AvroSchemaTraverser(currentNode: Schema) extends SchemaTraverser[Schema] {
 
+  private lazy val cleanSchema = currentNode.getFields.toScala.map { f =>
+    AvroConversions.cleanSuffix(f.name()) -> f.schema()
+  }.toMap
+
   // We only use union types for nullable fields, and always
   // unbox them when writing the actual schema out.
   private def unboxUnion(maybeUnion: Schema): Schema =
@@ -200,10 +236,12 @@ case class AvroSchemaTraverser(currentNode: Schema) extends SchemaTraverser[Sche
       maybeUnion
     }
 
-  override def getField(field: StructField): SchemaTraverser[Schema] =
+  override def getField(field: StructField): SchemaTraverser[Schema] = {
     copy(
-      unboxUnion(currentNode.getField(field.name).schema())
+      unboxUnion(
+        Try(currentNode.getField(field.name).schema()).getOrElse(cleanSchema(AvroConversions.cleanSuffix(field.name))))
     )
+  }
 
   override def getCollectionType: SchemaTraverser[Schema] =
     copy(

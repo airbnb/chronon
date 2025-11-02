@@ -203,7 +203,8 @@ class ExtensionsTest {
     val join = Builders.Join(
       left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
-      metaData = metadata)
+      metaData = metadata
+    )
     assertEquals(join.semanticHash(excludeTopic = true), join.semanticHash(excludeTopic = true))
     assertEquals(join.semanticHash(excludeTopic = false), join.semanticHash(excludeTopic = false))
   }
@@ -218,7 +219,8 @@ class ExtensionsTest {
     val join1 = Builders.Join(
       left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
-      metaData = metadata)
+      metaData = metadata
+    )
     val join2 = join1.deepCopy()
     join2.joinParts.get(0).groupBy.setKeyColumns(Seq("b", "c").toJava)
     assertNotEquals(join1.semanticHash(excludeTopic = true), join2.semanticHash(excludeTopic = true))
@@ -236,8 +238,8 @@ class ExtensionsTest {
       left = Builders.Source.events(query = null, table = "db.join_table", topic = "test.join_topic"),
       joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
       metaData = metadata,
-      derivations = Seq(
-        Builders.Derivation(name="*", expression="*", metaData = metadata)))
+      derivations = Seq(Builders.Derivation(name = "*", expression = "*", metaData = metadata))
+    )
     val updatedMetadata = Builders.MetaData(name = "test", description = "other description")
     val join2 = join1.deepCopy()
     join2.setMetaData(updatedMetadata)

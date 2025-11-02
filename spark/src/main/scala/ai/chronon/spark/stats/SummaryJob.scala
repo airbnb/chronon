@@ -17,12 +17,13 @@
 package ai.chronon.spark.stats
 
 import org.slf4j.LoggerFactory
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{PartitionRange, SemanticHashUtils, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{PartitionRange, SemanticHashUtils}
 import org.apache.spark.sql.SparkSession
 
 /**

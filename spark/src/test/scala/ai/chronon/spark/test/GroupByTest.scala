@@ -19,10 +19,24 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.{CStream, Column, NaiveAggregator}
 import ai.chronon.aggregator.windowing.FiveMinuteResolution
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Aggregation, Builders, Constants, Derivation, DoubleType, IntType, LongType, Operation, Source, StringType, TimeUnit, Window}
-import ai.chronon.online.{RowWrapper, SparkConversions}
+import ai.chronon.api.{
+  Aggregation,
+  Builders,
+  Constants,
+  Derivation,
+  DoubleType,
+  IntType,
+  LongType,
+  Operation,
+  Source,
+  StringType,
+  TimeUnit,
+  Window
+}
+import ai.chronon.online.serde.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark._
+import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
@@ -38,8 +52,9 @@ class GroupByTest {
 //  implicit val tableUtils = TableUtils(spark)
   @Test
   def testSnapshotEntities(): Unit = {
-  lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
-  implicit val tableUtils = TableUtils(spark)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
     val schema = List(
       Column("user", StringType, 10),
       Column(Constants.TimeColumn, LongType, 100), // ts = last 100 days
@@ -74,7 +89,8 @@ class GroupByTest {
 
   @Test
   def testSnapshotEvents(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val schema = List(
       Column("user", StringType, 10), // ts = last 10 days
@@ -128,7 +144,8 @@ class GroupByTest {
 
   @Test
   def eventsLastKTest(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val eventSchema = List(
       Column("user", StringType, 10),
@@ -199,7 +216,8 @@ class GroupByTest {
   }
   @Test
   def testTemporalEvents(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val eventSchema = List(
       Column("user", StringType, 10),
@@ -266,7 +284,8 @@ class GroupByTest {
   // Test that the output of Group by with Step Days is the same as the output without Steps (full data range)
   @Test
   def testStepDaysConsistency(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource()
     val tableUtils = TableUtils(spark)
     val testSteps = Option(30)
@@ -286,14 +305,17 @@ class GroupByTest {
 
   @Test
   def testGroupByAnalyzer(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource(30)
     val tableUtils = TableUtils(spark)
     val namespace = "test_analyzer_testGroupByAnalyzer"
     val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val (aggregationsMetadata, _, _) =
-      new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val aggregationsMetadata =
+      new Analyzer(tableUtils, groupByConf, endPartition, today)
+        .analyzeGroupBy(groupByConf, enableHitter = false)
+        .outputMetadata
     val outputTable = backfill(name = "unit_analyze_test_item_views",
                                source = source,
                                endPartition = endPartition,
@@ -315,7 +337,8 @@ class GroupByTest {
 
   @Test
   def testGroupByNoAggregationAnalyzer(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource(30)
     val testName = "unit_analyze_test_item_no_agg"
     val tableUtils = TableUtils(spark)
@@ -329,8 +352,10 @@ class GroupByTest {
                                                          new Window(60, TimeUnit.DAYS))
     )
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val (aggregationsMetadata, _, _) =
-      new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val aggregationsMetadata =
+      new Analyzer(tableUtils, groupByConf, endPartition, today)
+        .analyzeGroupBy(groupByConf, enableHitter = false)
+        .outputMetadata
 
     print(aggregationsMetadata)
     assertTrue(aggregationsMetadata.length == 2)
@@ -345,37 +370,40 @@ class GroupByTest {
 
   @Test
   def testGroupByDerivationAnalyzer(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource(30)
     val tableUtils = TableUtils(spark)
     val namespace = "test_analyzer_testGroupByDerivation"
-    val derivation = Builders.Derivation(name = "*", expression = "*")
-    val groupByConf = getSampleGroupBy("unit_analyze_test_item_views", source, namespace, Seq.empty, derivations = Seq(derivation))
+    val derivation = Builders.Derivation.star()
+    val groupByConf =
+      getSampleGroupBy("unit_analyze_test_item_views", source, namespace, Seq.empty, derivations = Seq(derivation))
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val (aggregationsMetadata, _, _) =
-      new Analyzer(tableUtils, groupByConf, endPartition, today).analyzeGroupBy(groupByConf, enableHitter = false)
+    val aggregationsMetadata =
+      new Analyzer(tableUtils, groupByConf, endPartition, today)
+        .analyzeGroupBy(groupByConf, enableHitter = false)
+        .outputMetadata
     val outputTable = backfill(name = "unit_analyze_test_item_views",
-      source = source,
-      endPartition = endPartition,
-      namespace = namespace,
-      tableUtils = tableUtils)
+                               source = source,
+                               endPartition = endPartition,
+                               namespace = namespace,
+                               tableUtils = tableUtils)
     val df = tableUtils.sql(s"SELECT * FROM  ${outputTable}")
     val expectedSchema = df.schema.fields.map(field => s"${field.name} => ${field.dataType}")
 
     // When the groupBy has derivations, the aggMetadata will only contains the name and type, which will be the same with the schema in output table.
     aggregationsMetadata
-      .foreach(
-        agg => {
-          assertTrue(expectedSchema.contains(s"${agg.name} => ${agg.columnType}"))
-          assertTrue(agg.operation == "Derivation")
-        }
-      )
+      .foreach(agg => {
+        assertTrue(expectedSchema.contains(s"${agg.name} => ${agg.columnType}"))
+        assertTrue(agg.operation == "Derivation")
+      })
   }
 
   // test that OrderByLimit and OrderByLimitTimed serialization works well with Spark's data type
   @Test
   def testFirstKLastKTopKBottomKApproxUniqueCount(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource()
     val tableUtils = TableUtils(spark)
     val namespace = "test_order_by_limit"
@@ -423,8 +451,11 @@ class GroupByTest {
              additionalAgg = aggs)
   }
 
-  private def createTestSource(windowSize: Int = 365, suffix: String = "", partitionColOpt: Option[String] = None): (Source, String) = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+  private def createTestSource(windowSize: Int = 365,
+                               suffix: String = "",
+                               partitionColOpt: Option[String] = None): (Source, String) = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val startPartition = tableUtils.partitionSpec.minus(today, new Window(windowSize, TimeUnit.DAYS))
@@ -439,16 +470,17 @@ class GroupByTest {
     val sourceTable = s"$namespace.test_group_by_steps$suffix"
 
     tableUtils.createDatabase(namespace)
-    val genDf = DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200, partitionColOpt=partitionColOpt)
+    val genDf =
+      DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200, partitionColOpt = partitionColOpt)
     partitionColOpt match {
-      case Some(partitionCol) => genDf.save(sourceTable, partitionColumns=Seq(partitionCol))
-      case None => genDf.save(sourceTable)
+      case Some(partitionCol) => genDf.save(sourceTable, partitionColumns = Seq(partitionCol))
+      case None               => genDf.save(sourceTable)
     }
 
     val source = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("ts", "item", "time_spent_ms", "price"),
                              startPartition = startPartition,
-        partitionColumn=partitionColOpt.orNull),
+                             partitionColumn = partitionColOpt.orNull),
       table = sourceTable
     )
     (source, endPartition)
@@ -478,7 +510,8 @@ class GroupByTest {
                        namespace: String,
                        additionalAgg: Seq[Aggregation] = Seq.empty,
                        derivations: Seq[Derivation] = Seq.empty): ai.chronon.api.GroupBy = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     Builders.GroupBy(
       sources = Seq(source),
@@ -504,7 +537,8 @@ class GroupByTest {
   // Test percentile Impl on Spark.
   @Test
   def testPercentiles(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource(suffix = "_percentile")
     val tableUtils = TableUtils(spark)
     val namespace = "test_percentiles"
@@ -529,7 +563,8 @@ class GroupByTest {
 
   @Test
   def testApproxHistograms(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource(suffix = "_approx_histogram")
     val tableUtils = TableUtils(spark)
     val namespace = "test_approx_histograms"
@@ -584,7 +619,8 @@ class GroupByTest {
 
   @Test
   def testReplaceJoinSource(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val namespace = "replace_join_source_ns"
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
@@ -601,7 +637,8 @@ class GroupByTest {
 
   @Test
   def testGroupByFromChainingGB(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val namespace = "test_chaining_gb"
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
@@ -663,7 +700,8 @@ class GroupByTest {
 
   @Test
   def testDescriptiveStats(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val (source, endPartition) = createTestSource(suffix = "_descriptive_stats")
     val tableUtils = TableUtils(spark)
     val namespace = "test_descriptive_stats"
@@ -694,28 +732,30 @@ class GroupByTest {
       )
     )
     val outputTable = backfill(name = "unit_test_group_by_descriptive_stats",
-             source = source,
-             endPartition = endPartition,
-             namespace = namespace,
-             tableUtils = tableUtils,
-             additionalAgg = aggs)
+                               source = source,
+                               endPartition = endPartition,
+                               namespace = namespace,
+                               tableUtils = tableUtils,
+                               additionalAgg = aggs)
     val expectedInputDf = spark.sql(f"select count(*), ds from $outputTable group by ds")
     expectedInputDf.show()
   }
 
   @Test
   def testGroupByWithQueryPartitionColumn(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val queryPartitionColumn = "new_date_col"
-    val (source, endPartition) = createTestSource(suffix = "_custom_p_cols", partitionColOpt = Some(queryPartitionColumn))
+    val (source, endPartition) =
+      createTestSource(suffix = "_custom_p_cols", partitionColOpt = Some(queryPartitionColumn))
     val tableUtils = TableUtils(spark)
     val namespace = "test_custom_p_cols"
 
     val outputTable = backfill(name = "unit_test_custom_p_cols",
-      source = source,
-      endPartition = endPartition,
-      namespace = namespace,
-      tableUtils = tableUtils)
+                               source = source,
+                               endPartition = endPartition,
+                               namespace = namespace,
+                               tableUtils = tableUtils)
 
     // Resulting table has "ds" column
     val expectedInputDf = spark.sql(f"select count(*) as cnt, ds from $outputTable group by ds")
@@ -723,5 +763,199 @@ class GroupByTest {
     expectedInputDf.select("cnt").as[Long](Encoders.scalaLong).collect().foreach { count =>
       assert(count > 0, s"Found a count value that is not greater than zero: $count")
     }
+  }
+
+  @Test
+  def testBoundedUniqueCounts(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val (source, endPartition) = createTestSource(suffix = "_bounded_counts")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_bounded_counts"
+    val aggs = Seq(
+      Builders.Aggregation(
+        operation = Operation.BOUNDED_UNIQUE_COUNT,
+        inputColumn = "item",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "5")
+      ),
+      Builders.Aggregation(
+        operation = Operation.BOUNDED_UNIQUE_COUNT,
+        inputColumn = "price",
+        windows = Seq(
+          new Window(15, TimeUnit.DAYS),
+          new Window(60, TimeUnit.DAYS)
+        ),
+        argMap = Map("k" -> "5")
+      )
+    )
+    backfill(name = "unit_test_group_by_bounded_counts",
+             source = source,
+             endPartition = endPartition,
+             namespace = namespace,
+             tableUtils = tableUtils,
+             additionalAgg = aggs)
+
+    val result = spark.sql("""
+        |select *
+        |from test_bounded_counts.unit_test_group_by_bounded_counts
+        |where item_bounded_unique_count_60d > 5 or price_bounded_unique_count_60d > 5
+        |""".stripMargin)
+
+    assertTrue(result.isEmpty)
+  }
+
+  @Test
+  def testTemporalEventsWithDateintPartition(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+
+    val eventData = Seq(
+      ("user1", 1640995200000L, 100, 20231201L), // 2021-12-31 + session_length 100 + dateint 20231201
+      ("user1", 1641081600000L, 150, 20231202L), // 2022-01-01 + session_length 150 + dateint 20231202
+      ("user2", 1641168000000L, 200, 20231201L), // 2022-01-02 + session_length 200 + dateint 20231201
+      ("user2", 1641254400000L, 250, 20231202L), // 2022-01-03 + session_length 250 + dateint 20231202
+      ("user1", 1641340800000L, 300, 20231203L) // 2022-01-04 + session_length 300 + dateint 20231203
+    )
+
+    import spark.implicits._
+    val eventDf = eventData.toDF("user", Constants.TimeColumn, "session_length", tableUtils.partitionColumn)
+
+    val queryData = Seq(
+      ("user1", 1641168000000L, 20231202L), // Query at 2022-01-02 with dateint 20231202
+      ("user2", 1641254400000L, 20231202L) // Query at 2022-01-03 with dateint 20231202
+    )
+
+    val queryDf = queryData.toDF("user", Constants.TimeColumn, tableUtils.partitionColumn)
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.AVERAGE,
+                           "session_length",
+                           Seq(new Window(1, TimeUnit.DAYS), new Window(2, TimeUnit.DAYS))))
+
+    val keys = Seq("user").toArray
+    val groupBy = new GroupBy(aggregations, keys, eventDf)
+
+    val resultDf = groupBy.temporalEvents(queryDf)
+
+    val resultCount = resultDf.count()
+    assertTrue("Should have temporal aggregation results", resultCount > 0)
+
+    val expectedColumns = Set("user", Constants.TimeColumn) ++
+      aggregations.flatMap(_.unpack.map(agg => s"session_length_${agg.operation}_${agg.window.millis}"))
+    val actualColumns = resultDf.columns.toSet
+    assertTrue("Result should contain user and timestamp columns",
+               actualColumns.contains("user") && actualColumns.contains(Constants.TimeColumn))
+
+    println("Temporal events result with dateint partition:")
+    resultDf.show()
+  }
+
+  @Test
+  def testStagingQueryViewWithGroupBy(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+
+    val testDatabase = s"staging_query_view_test_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(testDatabase)
+
+    // Create source data table with partitions
+    val sourceSchema = List(
+      Column("user", StringType, 20),
+      Column("item", StringType, 50),
+      Column("time_spent_ms", LongType, 5000),
+      Column("price", DoubleType, 100)
+    )
+
+    val sourceTable = s"$testDatabase.source_events"
+    val sourceDf = DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 10)
+    sourceDf.save(sourceTable)
+
+    // Create staging query configuration that creates a view (no date templates)
+    val stagingQueryConf = Builders.StagingQuery(
+      metaData = Builders.MetaData(name = "test_staging_view", namespace = testDatabase, team = "chronon"),
+      query = s"SELECT user, item, time_spent_ms, price, ts, ds FROM $sourceTable",
+      createView = true
+    )
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val stagingQueryJob = new StagingQuery(stagingQueryConf, today, tableUtils)
+
+    // Create the staging query view using the new createStagingQueryView method
+    stagingQueryJob.createStagingQueryView()
+
+    val viewTable = s"$testDatabase.test_staging_view"
+
+    // Now create a GroupBy that uses the staging query view as its source
+    val source = Builders.Source.events(
+      table = viewTable,
+      query = Builders.Query(selects = Builders.Selects("user", "item", "time_spent_ms", "price", "ts"))
+    )
+
+    val aggregations = Seq(
+      Builders.Aggregation(operation = Operation.COUNT, inputColumn = "time_spent_ms"),
+      Builders.Aggregation(operation = Operation.AVERAGE,
+                           inputColumn = "price",
+                           windows = Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(operation = Operation.MAX,
+                           inputColumn = "time_spent_ms",
+                           windows = Seq(new Window(30, TimeUnit.DAYS)))
+    )
+
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = aggregations,
+      metaData = Builders.MetaData(name = "test_staging_view_groupby", namespace = testDatabase, team = "chronon"),
+      backfillStartDate = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    )
+
+    // Run the GroupBy backfill
+    GroupBy.computeBackfill(groupByConf, endPartition = today, tableUtils = tableUtils)
+
+    val groupByOutputTable = s"$testDatabase.test_staging_view_groupby"
+    val groupByResultFromView = tableUtils.sql(s"SELECT * FROM $groupByOutputTable")
+
+    // Create a second GroupBy that uses the original source table (not the view) for comparison
+    val sourceFromTable = Builders.Source.events(
+      table = sourceTable,
+      query = Builders.Query(selects = Builders.Selects("user", "item", "time_spent_ms", "price", "ts"))
+    )
+
+    val groupByConfFromTable = Builders.GroupBy(
+      sources = Seq(sourceFromTable),
+      keyColumns = Seq("user"),
+      aggregations = aggregations,
+      metaData = Builders.MetaData(name = "test_source_table_groupby", namespace = testDatabase, team = "chronon"),
+      backfillStartDate = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    )
+
+    GroupBy.computeBackfill(groupByConfFromTable, endPartition = today, tableUtils = tableUtils)
+    val groupByOutputTableFromSource = s"$testDatabase.test_source_table_groupby"
+    val groupByResultFromSource = tableUtils.sql(s"SELECT * FROM $groupByOutputTableFromSource")
+
+    // Compare the GroupBy results from view vs source table to ensure they match
+    val diff = Comparison.sideBySide(groupByResultFromView, groupByResultFromSource, List("user", "ds"))
+    if (diff.count() > 0) {
+      val logger = org.slf4j.LoggerFactory.getLogger(getClass)
+      logger.info(s"View result count: ${groupByResultFromView.count()}")
+      logger.info(s"Source result count: ${groupByResultFromSource.count()}")
+      logger.info(s"Diff count: ${diff.count()}")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
+
+    // Verify we can query the results successfully with partition pushdown
+    val filteredResult = tableUtils.sql(s"""
+      SELECT user, time_spent_ms_count 
+      FROM $groupByOutputTable 
+      WHERE ds >= '${tableUtils.partitionSpec.minus(today, new Window(7, TimeUnit.DAYS))}'
+    """)
+    assertTrue("Should be able to filter GroupBy results", filteredResult.count() >= 0)
   }
 }
