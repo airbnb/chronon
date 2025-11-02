@@ -22,7 +22,8 @@ import ai.chronon.api
 import ai.chronon.api.{Accuracy, Constants, DataModel, GroupByServingInfo, QueryUtils, ThriftJsonCodec}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps}
 import ai.chronon.online.Extensions.ChrononStructTypeOps
-import ai.chronon.online.{GroupByServingInfoParsed, Metrics, SparkConversions}
+import ai.chronon.online.{GroupByServingInfoParsed, Metrics}
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.SparkEnv

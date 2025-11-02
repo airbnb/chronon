@@ -19,6 +19,7 @@ package ai.chronon.online
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api.{DataType, HashUtils, StructField, StructType}
 import ai.chronon.online.Fetcher.ResponseWithContext
+import ai.chronon.online.serde.{AvroCodec, AvroConversions}
 import com.google.gson.Gson
 
 import scala.collection.Seq

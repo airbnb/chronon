@@ -121,6 +121,8 @@ struct ExternalSource {
     2: optional TDataType keySchema
     3: optional TDataType valueSchema
     4: optional ExternalSourceFactoryConfig factoryConfig
+    // GroupBy to be used for offline backfill - enables PITC offline computation
+    5: optional GroupBy offlineGroupBy
 }
 
 /**

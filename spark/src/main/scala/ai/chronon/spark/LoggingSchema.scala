@@ -17,7 +17,8 @@
 package ai.chronon.spark
 
 import ai.chronon.api.{HashUtils, StructField, StructType}
-import ai.chronon.online.{AvroCodec, JoinCodec}
+import ai.chronon.online.JoinCodec
+import ai.chronon.online.serde.AvroCodec
 import com.google.gson.Gson
 
 import scala.util.ScalaJavaConversions.MapOps

@@ -18,7 +18,6 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
-import ai.chronon.api.Builders.Query
 import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
@@ -32,6 +31,8 @@ import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{never, spy, verify, when}
 import org.slf4j.LoggerFactory
 
+import java.sql.Timestamp
+import java.time.Instant
 import scala.util.Random
 
 class AnalyzerTest {
@@ -791,63 +792,65 @@ class AnalyzerTest {
     assertEquals(valueSchemaExpected, valueSchema)
   }
 
-  @Test(expected = classOf[RuntimeException])
-  def testAvroSchemaValidationWithUnsupportedTypesOnline(): Unit = {
-    val spark: SparkSession =
-      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
-
-    val tableUtilsWithValidation = TableUtils(spark)
-
+  private def createUnsupportedTypeGroupBy(spark: SparkSession, tableUtils: TableUtils, online: Boolean): GroupBy = {
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
-    tableUtilsWithValidation.createDatabase(namespace)
+    tableUtils.createDatabase(namespace)
 
     // Create test data with ShortType data
     import spark.implicits._
     val currentTime = System.currentTimeMillis()
     val dateString = "2025-09-01"
     val testData = Seq(
-      ("key1", 100.toShort, currentTime, dateString),
-      ("key2", 200.toShort, currentTime, dateString),
-      ("key1", 300.toShort, currentTime, dateString)
-    ).toDF("key", "short_col", "ts", "ds")
+      ("key1", Timestamp.from(Instant.parse("2025-09-01T00:00:00Z")), currentTime, dateString),
+      ("key2", Timestamp.from(Instant.parse("2025-09-01T00:01:00Z")), currentTime, dateString),
+      ("key3", Timestamp.from(Instant.parse("2025-09-01T00:02:00Z")), currentTime, dateString)
+    ).toDF("key", "timestamp_col", "ts", "ds")
 
-    val tableName = "short_types_table"
-    val shortTypesTable = s"$namespace.$tableName"
+    val tableName = "table_with_timestamp_col"
+    val fullTableName = s"$namespace.$tableName"
 
     // Create partitioned table by ds column
     testData.write
       .mode("overwrite")
       .partitionBy("ds")
-      .saveAsTable(shortTypesTable)
+      .saveAsTable(fullTableName)
 
     // Create Source using Builders.Source.events
-    val testSource = Builders.Source.events(
+    val testSource = Builders.Source.entities(
       query = Builders.Query(
-        selects = Builders.Selects("key", "short_col"),
+        selects = Builders.Selects("key", "timestamp_col"),
         startPartition = dateString
       ),
-      table = shortTypesTable
+      snapshotTable = fullTableName
     )
 
     val tableGroupBy = Builders.GroupBy(
       sources = Seq(testSource),
       keyColumns = Seq("key"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "short_col")
-      ),
-      metaData = Builders.MetaData(name = "group_by_analyzer_test_short", namespace = namespace, online = true),
-      accuracy = Accuracy.TEMPORAL
+      metaData = Builders.MetaData(name = "group_by_analyzer_test_timestamp", namespace = namespace, online = online),
+      accuracy = Accuracy.SNAPSHOT
     )
 
-    // Should throw RuntimeException due to ShortType in schema
-    val analyzer = new Analyzer(tableUtilsWithValidation,
-                                tableGroupBy,
+    tableGroupBy
+  }
+
+  @Test(expected = classOf[RuntimeException])
+  def testAvroSchemaValidationWithUnsupportedTypesOnline(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+
+    val tableUtils = TableUtils(spark)
+    val onlineGroupBy = createUnsupportedTypeGroupBy(spark, tableUtils, online = true)
+
+    // Should throw RuntimeException due to TimestampType in schema
+    val analyzer = new Analyzer(tableUtils,
+                                onlineGroupBy,
                                 "2025-09-01",
                                 today,
                                 enableHitter = false,
                                 skipTimestampCheck = true,
                                 validateTablePermission = false)
-    analyzer.analyzeGroupBy(tableGroupBy)
+    analyzer.analyzeGroupBy(onlineGroupBy)
   }
 
   @Test
@@ -855,58 +858,237 @@ class AnalyzerTest {
     val spark: SparkSession =
       SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
 
-    val tableUtilsWithValidation = TableUtils(spark)
+    val tableUtils = TableUtils(spark)
+    val offlineGroupBy = createUnsupportedTypeGroupBy(spark, tableUtils, online = false)
 
-    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
-    tableUtilsWithValidation.createDatabase(namespace)
-
-    // Create test data with ShortType data
-    import spark.implicits._
-    val currentTime = System.currentTimeMillis()
-    val dateString = "2025-09-01"
-    val testData = Seq(
-      ("key1", 100.toShort, currentTime, dateString),
-      ("key2", 200.toShort, currentTime, dateString),
-      ("key1", 300.toShort, currentTime, dateString)
-    ).toDF("key", "short_col", "ts", "ds")
-
-    val tableName = "short_types_table"
-    val shortTypesTable = s"$namespace.$tableName"
-
-    // Create partitioned table by ds column
-    testData.write
-      .mode("overwrite")
-      .partitionBy("ds")
-      .saveAsTable(shortTypesTable)
-
-    // Create Source using Builders.Source.events
-    val testSource = Builders.Source.events(
-      query = Builders.Query(
-        selects = Builders.Selects("key", "short_col"),
-        startPartition = dateString
-      ),
-      table = shortTypesTable
-    )
-
-    val tableGroupBy = Builders.GroupBy(
-      sources = Seq(testSource),
-      keyColumns = Seq("key"),
-      aggregations = Seq(
-        Builders.Aggregation(operation = Operation.UNIQUE_COUNT, inputColumn = "short_col")
-      ),
-      metaData = Builders.MetaData(name = "group_by_analyzer_test_short", namespace = namespace, online = false),
-      accuracy = Accuracy.TEMPORAL
-    )
-
-    // Because online is false, this should pass without exception
-    val analyzer = new Analyzer(tableUtilsWithValidation,
-                                tableGroupBy,
+    // Should NOT throw RuntimeException due to TimestampType in schema
+    val analyzer = new Analyzer(tableUtils,
+                                offlineGroupBy,
                                 "2025-09-01",
                                 today,
                                 enableHitter = false,
                                 skipTimestampCheck = true,
                                 validateTablePermission = false)
-    analyzer.analyzeGroupBy(tableGroupBy)
+    analyzer.analyzeGroupBy(offlineGroupBy)
+  }
+
+  @Test
+  def testExternalSourceValidationWithMatchingSchemas(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left side table
+    val leftSchema = List(Column("user_id", api.StringType, 100))
+    val leftTable = s"$namespace.left_table"
+    DataFrameGen.events(spark, leftSchema, 10, partitions = 5).save(leftTable)
+
+    // Create compatible schemas using the correct DataType objects
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(
+      StructField("feature_value", DoubleType),
+      StructField("list_value",
+        api.ListType(
+          api.StructType("contradiction",
+            Array(
+              StructField("reason", api.StringType),
+              StructField("standardRule", api.StringType),
+              StructField("additionalRule", api.StringType)
+            )
+          )
+        )
+      )
+    ))
+
+    // Create right side table for GroupBy
+    val rightSchema = List(Column("user_id", api.StringType, 100), Column("value", api.DoubleType, 100))
+    val rightTable = s"$namespace.right_table"
+    DataFrameGen.events(spark, rightSchema, 100, partitions = 10).save(rightTable)
+
+    // Create a query and source for the GroupBy
+    val query = Builders.Query(selects = Map("feature_value" -> "value"), startPartition = oneYearAgo)
+    val source = Builders.Source.events(query, rightTable)
+
+    // Create GroupBy with matching key columns, sources, and derivation to match external feature name
+    // The external part will have fullName "ext_test_external_source", so the feature will be "ext_test_external_source_feature_value"
+    val groupBy = Builders.GroupBy(
+      keyColumns = Seq("user_id"),
+      sources = Seq(source),
+      derivations = Seq(
+        Builders.Derivation(name = "feature_value", expression = "feature_value"),
+        Builders.Derivation(name = "list_value",
+          expression = "array(named_struct('reason', 'test_reason', 'standardRule', 'test_standard', 'additionalRule', 'test_additional'))")
+      ),
+      metaData = Builders.MetaData(name = "test_external_gb", namespace = namespace)
+    )
+
+    // Create ExternalSource with compatible schemas
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+
+    // Manually set the offlineGroupBy field since the builder doesn't support it yet
+    externalSource.setOfflineGroupBy(groupBy)
+
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
+    // Create Join with ExternalPart
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = leftTable),
+      externalParts = Seq(externalPart),
+      metaData = Builders.MetaData(name = "test_join_external", namespace = namespace, team = "chronon")
+    )
+
+    // Create analyzer instance and call analyzeJoin
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, skipTimestampCheck = true, validateTablePermission = false)
+    val result = analyzer.analyzeJoin(joinConf)
+    // If no exception is thrown, validation passed
+    assertTrue("Expected successful validation", result != null)
+  }
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testExternalSourceValidationWithMismatchedKeySchemas(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left side table
+    val leftSchema = List(Column("user_id", api.StringType, 100))
+    val leftTable = s"$namespace.left_table"
+    DataFrameGen.events(spark, leftSchema, 10, partitions = 5).save(leftTable)
+
+    // Create key schema with different fields
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    // Create right side table for GroupBy
+    val rightSchema = List(Column("different_key", api.StringType, 100), Column("feature_value", api.DoubleType, 100))
+    val rightTable = s"$namespace.right_table"
+    DataFrameGen.events(spark, rightSchema, 100, partitions = 10).save(rightTable)
+
+    // Create a query and source for the GroupBy
+    val query = Builders.Query(selects = Map("feature_value" -> "feature_value"), startPartition = oneYearAgo)
+    val source = Builders.Source.events(query, rightTable)
+
+    // Create GroupBy with different key columns
+    val groupBy = Builders.GroupBy(
+      keyColumns = Seq("different_key"),  // Mismatched key column
+      sources = Seq(source),
+      metaData = Builders.MetaData(name = "test_external_gb_mismatch", namespace = namespace)
+    )
+
+    // Create ExternalSource with incompatible schemas
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+    externalSource.setOfflineGroupBy(groupBy)
+
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
+    // Create Join with ExternalPart
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = leftTable),
+      externalParts = Seq(externalPart),
+      metaData = Builders.MetaData(name = "test_join_external_key_mismatch", namespace = namespace, team = "chronon")
+    )
+
+    // This should throw AssertionError due to validation errors
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, skipTimestampCheck = true, validateTablePermission = false)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+  }
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testExternalSourceValidationWithMismatchedValueSchemas(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left side table
+    val leftSchema = List(Column("user_id", api.StringType, 100))
+    val leftTable = s"$namespace.left_table"
+    DataFrameGen.events(spark, leftSchema, 10, partitions = 5).save(leftTable)
+
+    // Create compatible key schema but mismatched value schema
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    // Create right side table for GroupBy
+    val rightSchema = List(Column("user_id", api.StringType, 100), Column("different_feature", api.DoubleType, 100))
+    val rightTable = s"$namespace.right_table"
+    DataFrameGen.events(spark, rightSchema, 100, partitions = 10).save(rightTable)
+
+    // Create a source for the GroupBy - this is needed for valueColumns to work
+    val query = Builders.Query(selects = Map("different_feature" -> "different_feature"), startPartition = oneYearAgo)
+    val source = Builders.Source.events(query, rightTable)
+
+    // Create GroupBy with different derived column name that doesn't match external feature name
+    // The external part expects "ext_test_external_source_feature_value" but GroupBy produces "wrong_name"
+    val groupBy = Builders.GroupBy(
+      keyColumns = Seq("user_id"),
+      sources = Seq(source),
+      derivations = Seq(
+        Builders.Derivation(name = "wrong_name", expression = "different_feature")
+      ),
+      metaData = Builders.MetaData(name = "test_external_gb_value_mismatch", namespace = namespace)
+    )
+
+    // Create ExternalSource with incompatible schemas
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+    externalSource.setOfflineGroupBy(groupBy)
+
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
+    // Create Join with ExternalPart
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = leftTable),
+      externalParts = Seq(externalPart),
+      metaData = Builders.MetaData(name = "test_join_external_value_mismatch", namespace = namespace, team = "chronon")
+    )
+
+    // This should throw AssertionError due to validation errors
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, skipTimestampCheck = true, validateTablePermission = false)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+  }
+
+  @Test
+  def testExternalSourceValidationWithNullOfflineGroupBy(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left side table
+    val leftSchema = List(Column("user_id", api.StringType, 100))
+    val leftTable = s"$namespace.left_table"
+    DataFrameGen.events(spark, leftSchema, 10, partitions = 5).save(leftTable)
+
+    // Create ExternalSource without offlineGroupBy
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+    // Don't set offlineGroupBy (it remains null)
+
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
+    // Create Join with ExternalPart
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = leftTable),
+      externalParts = Seq(externalPart),
+      metaData = Builders.MetaData(name = "test_join_external_null_gb", namespace = namespace, team = "chronon")
+    )
+
+    // This should not throw - validation should be skipped when offlineGroupBy is null
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, skipTimestampCheck = true, validateTablePermission = false)
+    val result = analyzer.analyzeJoin(joinConf)
+    assertTrue("Expected successful validation when offlineGroupBy is null", result != null)
   }
 
 }

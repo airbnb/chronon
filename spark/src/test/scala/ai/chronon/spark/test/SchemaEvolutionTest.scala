@@ -21,6 +21,7 @@ import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online._
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.{LogFlattenerJob, LoggingSchema, SparkSessionBuilder}

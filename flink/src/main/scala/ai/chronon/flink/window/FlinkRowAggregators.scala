@@ -3,7 +3,8 @@ package ai.chronon.flink.window
 import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.{Constants, DataType, GroupBy, Row}
-import ai.chronon.online.{ArrayRow, TileCodec}
+import ai.chronon.online.TileCodec
+import ai.chronon.online.serde.ArrayRow
 import org.apache.flink.api.common.functions.AggregateFunction
 import org.apache.flink.configuration.Configuration
 import org.apache.flink.metrics.Counter
