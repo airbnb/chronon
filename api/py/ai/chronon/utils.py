@@ -23,6 +23,7 @@ import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass, fields
 from enum import Enum
+from math import ceil
 from typing import Dict, List, Optional, Union, cast
 
 import ai.chronon.api.ttypes as api
@@ -576,6 +577,7 @@ def get_config_path(join_name: str) -> str:
     assert "." in join_name, f"Invalid join name: {join_name}"
     team_name, config_name = join_name.split(".", 1)
     return f"production/joins/{team_name}/{config_name}"
+
 
 def get_max_window_for_gb_in_days(group_by: api.GroupBy) -> int:
     result: int = 1
