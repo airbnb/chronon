@@ -972,9 +972,10 @@ class GroupByTest {
     val startPartition = tableUtils.partitionSpec.minus(today, new Window(windowSize, TimeUnit.DAYS))
     val endPartition = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val sourceSchema = List(
-      Column("user", StringType, 10), // ts = last 10 days
-      Column("session_length", IntType, 2),
-      Column("rating", DoubleType, 2000)
+      Column("user", StringType, 10000),
+      Column("item", StringType, 100),
+      Column("time_spent_ms", LongType, 5000),
+      Column("price", DoubleType, 100)
     )
     val namespace = "chronon_incremental_test"
     val sourceTable = s"$namespace.test_group_by_steps$suffix"
@@ -988,7 +989,7 @@ class GroupByTest {
     }
 
     val source = Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("ts", "user", "time_spent_ms", "price"),
+      query = Builders.Query(selects = Builders.Selects("ts", "user", "time_spent_ms", "price", "item"),
         startPartition = startPartition,
         partitionColumn = partitionColOpt.orNull),
       table = sourceTable
@@ -1115,10 +1116,12 @@ class GroupByTest {
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(Operation.SUM, "time_spent_ms", Seq(new Window(10, TimeUnit.DAYS), new Window(5, TimeUnit.DAYS))),
-      Builders.Aggregation(Operation.SUM, "price", Seq(new Window(10, TimeUnit.DAYS)))
+      Builders.Aggregation(Operation.SUM, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "user", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.AVERAGE, "price", Seq(new Window(10, TimeUnit.DAYS)))
     )
 
-    val (source, endPartition) = createTestSource(windowSize = 30, suffix = "_snapshot_events", partitionColOpt = Some(tableUtils.partitionColumn))
+    val (source, endPartition) = createTestSourceIncremental(windowSize = 30, suffix = "_snapshot_events", partitionColOpt = Some(tableUtils.partitionColumn))
     val groupByConf = Builders.GroupBy(
       sources = Seq(source),
       keyColumns = Seq("item"),
@@ -1129,6 +1132,7 @@ class GroupByTest {
     )
 
     val df = spark.read.table(source.table)
+
     val groupBy = new GroupBy(aggregations, Seq("item"), df.filter("item is not null"))
     val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
 
@@ -1143,7 +1147,7 @@ class GroupByTest {
     val diff = Comparison.sideBySide(actualDf, incrementalExpectedDf, List("item", tableUtils.partitionColumn))
     if (diff.count() > 0) {
       diff.show()
-      println("diff result rows")
+      println("=== Diff result rows ===")
     }
     assertEquals(0, diff.count())
   }

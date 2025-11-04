@@ -23,7 +23,7 @@ import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro, TimeUnit, Window}
+import ai.chronon.api.{Accuracy, Constants, DataModel, Operation, ParametricMacro, TimeUnit, Window}
 import ai.chronon.online.serde.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
@@ -804,6 +804,10 @@ object GroupBy {
     val incrementalAggregations = aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
       val newAgg = agg.deepCopy()
       newAgg.setInputColumn(part.incrementalOutputColumnName)
+      // Convert COUNT to SUM when reading from incremental IRs
+      if (newAgg.operation == Operation.COUNT) {
+        newAgg.setOperation(Operation.SUM)
+      }
       newAgg
     }
 
