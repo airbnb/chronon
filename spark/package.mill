@@ -1,0 +1,144 @@
+package build.spark
+
+import mill._
+import mill.javalib._
+import mill.javalib.publish._
+import mill.scalalib.SbtModule
+
+// spark_uber: provided dependencies (for shaded/uber jar)
+object `package` extends SbtModule with PublishModule {
+
+  def artifactName = "spark_uber"
+
+  def scalaVersion = "2.12.12"
+
+  def mvnDeps = Seq(
+    mvn"com.fasterxml.jackson.core:jackson-core:2.10.0",
+    mvn"com.fasterxml.jackson.core:jackson-databind:2.10.0",
+    mvn"com.fasterxml.jackson.module::jackson-module-scala:2.10.0"
+  )
+
+  def moduleDeps = super.moduleDeps ++ Seq(build.aggregator, build.online)
+
+  def compileMvnDeps = Seq(
+    mvn"io.delta::delta-core:1.0.1",
+    mvn"org.apache.iceberg::iceberg-spark-runtime-3.2:1.1.0",
+    mvn"org.apache.spark::spark-core:3.1.1",
+    mvn"org.apache.spark::spark-hive:3.1.1",
+    mvn"org.apache.spark::spark-sql-kafka-0-10:3.1.1",
+    mvn"org.apache.spark::spark-sql:3.1.1",
+    mvn"org.apache.spark::spark-streaming:3.1.1"
+  )
+
+  def pomSettings = PomSettings(
+    "Chronon is a feature engineering platform",
+    "ai.chronon",
+    "https://github.com/airbnb/chronon",
+    Seq(License(
+      "Apache 2",
+      "Apache 2",
+      "http://www.apache.org/licenses/LICENSE-2.0.txt",
+      false,
+      false,
+      "repo"
+    )),
+    VersionControl(
+      Some("https://github.com/airbnb/chronon"),
+      Some("scm:git@github.com:airbnb/chronon.git"),
+      None,
+      None
+    ),
+    Seq(Developer(
+      "nikhilsimha",
+      "Nikhil Simha",
+      "http://nikhilsimha.com",
+      None,
+      None
+    ))
+  )
+
+  def publishVersion = "awhittier-mill-0.0.110-SNAPSHOT"
+
+  object test extends SbtTests with TestModule.Junit4 {
+
+    def mvnDeps = Seq(
+      mvn"junit:junit:4.13.2",
+      mvn"com.novocode:junit-interface:0.11",
+      mvn"org.scalatest::scalatest:3.2.15",
+      mvn"org.xerial.snappy:snappy-java:1.1.8.4"
+    )
+
+    def moduleDeps = super.moduleDeps ++ Seq(build.aggregator.test)
+
+    def testSandboxWorkingDir = false
+    def testParallelism = false
+
+  }
+
+  // spark_embedded: embedded dependencies (not provided)
+  object embedded extends SbtModule with PublishModule {
+
+  def artifactName = "spark_embedded"
+
+  def scalaVersion = "2.12.12"
+
+  // Use same source directory as spark_uber (parent directory)
+  def millSourcePath: os.Path = os.pwd / "spark"
+
+  def mvnDeps = Seq(
+    mvn"com.fasterxml.jackson.core:jackson-core:2.10.0",
+    mvn"com.fasterxml.jackson.core:jackson-databind:2.10.0",
+    mvn"com.fasterxml.jackson.module::jackson-module-scala:2.10.0",
+    mvn"io.delta::delta-core:1.0.1",
+    mvn"org.apache.iceberg::iceberg-spark-runtime-3.2:1.1.0",
+    mvn"org.apache.spark::spark-core:3.1.1",
+    mvn"org.apache.spark::spark-hive:3.1.1",
+    mvn"org.apache.spark::spark-sql-kafka-0-10:3.1.1",
+    mvn"org.apache.spark::spark-sql:3.1.1",
+    mvn"org.apache.spark::spark-streaming:3.1.1"
+  )
+
+  def moduleDeps = super.moduleDeps ++ Seq(build.aggregator, build.online)
+
+  def pomSettings = PomSettings(
+    "Chronon is a feature engineering platform",
+    "ai.chronon",
+    "https://github.com/airbnb/chronon",
+    Seq(License(
+      "Apache 2",
+      "Apache 2",
+      "http://www.apache.org/licenses/LICENSE-2.0.txt",
+      false,
+      false,
+      "repo"
+    )),
+    VersionControl(
+      Some("https://github.com/airbnb/chronon"),
+      Some("scm:git@github.com:airbnb/chronon.git"),
+      None,
+      None
+    ),
+    Seq(Developer(
+      "nikhilsimha",
+      "Nikhil Simha",
+      "http://nikhilsimha.com",
+      None,
+      None
+    ))
+  )
+
+  def publishVersion = "awhittier-mill-0.0.110-SNAPSHOT"
+
+  // Tests disabled for embedded variant (matching sbt build)
+  object test extends SbtTests with TestModule.Junit4 {
+    def mvnDeps = Seq(
+      mvn"junit:junit:4.13.2",
+      mvn"com.novocode:junit-interface:0.11",
+      mvn"org.scalatest::scalatest:3.2.15"
+    )
+
+    def testSandboxWorkingDir = false
+    def testParallelism = false
+    }
+  }
+}
