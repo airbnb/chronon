@@ -663,9 +663,11 @@ object GroupBy {
     val selects = Option(source.query.selects)
       .map(_.toScala.map(keyValue => {
         if (keyValue._2.contains(Constants.ChrononRunDs)) {
-          assert(queryRange.isSingleDay,
+          assert(
+            queryRange.isSingleDay,
             s"ChrononRunDs is only supported for single day queries. " +
-              s"Got start: ${queryRange.start}, end: ${queryRange.end} (range spans multiple days)")
+              s"Got start: ${queryRange.start}, end: ${queryRange.end} (range spans multiple days)"
+          )
           val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => s"'${queryRange.start}'")
           (keyValue._1, parametricMacro.replace(keyValue._2))
         } else {
