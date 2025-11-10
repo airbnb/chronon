@@ -823,7 +823,6 @@ object GroupBy {
         val irs = new Array[Any](aggregationParts.length)
         aggregationParts.zipWithIndex.foreach { case (part, idx) =>
           val value = row.get(row.fieldIndex(part.incrementalOutputColumnName))
-          // Convert Spark Row (struct) to Array for complex IRs like AVERAGE
           irs(idx) = value match {
             case r: Row => r.toSeq.toArray
             case other => other

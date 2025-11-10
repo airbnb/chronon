@@ -348,7 +348,6 @@ object ColumnAggregator {
           case ShortType  => simple(new Average, toDouble[Short])
           case DoubleType => simple(new Average)
           case FloatType  => simple(new Average, toDouble[Float])
-          case StructType(name, fields) => simple(new AverageIR, toStructArray)
           case _          => mismatchException
         }
 
