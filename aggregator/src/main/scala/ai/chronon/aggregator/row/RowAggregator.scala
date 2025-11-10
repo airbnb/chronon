@@ -27,7 +27,7 @@ import scala.collection.Seq
 // userAggregationParts is used when incrementalMode = True.
 class RowAggregator(val inputSchema: Seq[(String, DataType)],
                     val aggregationParts: Seq[AggregationPart],
-                    val userInputAggregationParts: Option[Seq[AggregationPart]] = None )
+                    )
     extends Serializable
     with SimpleAggregator[Row, Array[Any], Array[Any]] {
 
@@ -78,19 +78,10 @@ class RowAggregator(val inputSchema: Seq[(String, DataType)],
     .toArray
     .zip(columnAggregators.map(_.irType))
 
-  val aggregationPartsOutputSchema: Array[(String, DataType)] = aggregationParts
+  val outputSchema: Array[(String, DataType)] = aggregationParts
     .map(_.outputColumnName)
     .toArray
     .zip(columnAggregators.map(_.outputType))
-
-  val outputSchema: Array[(String, DataType)] = userInputAggregationParts
-    .map{ parts =>
-      parts
-        .map(_.outputColumnName)
-        .toArray
-        .zip(columnAggregators.map(_.outputType))
-    }.getOrElse(aggregationPartsOutputSchema)
-
 
   val isNotDeletable: Boolean = columnAggregators.forall(!_.isDeletable)
 

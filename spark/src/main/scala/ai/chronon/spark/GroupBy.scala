@@ -45,7 +45,6 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
               val mutationDfFn: () => DataFrame = null,
               skewFilter: Option[String] = None,
               finalize: Boolean = true,
-              val userInputAggregations: Seq[api.Aggregation] = null
              )
     extends Serializable {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -106,13 +105,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
 
   @transient
-  protected[spark] lazy val windowAggregator: RowAggregator = {
-    if (userInputAggregations != null) {
-       new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack), Option(userInputAggregations.flatMap(_.unpack)))
-    } else {
+  protected[spark] lazy val windowAggregator: RowAggregator =
         new RowAggregator(selectedSchema, aggregations.flatMap(_.unpack))
-    }
-  }
 
   def snapshotEntitiesBase: RDD[(Array[Any], Array[Any])] = {
     val keys = (keyColumns :+ tableUtils.partitionColumn).toArray
@@ -518,28 +512,7 @@ object GroupBy {
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
     val sourceQueryWindow: Option[Window]  = if (incrementalMode) Some(new Window(queryRange.daysBetween, TimeUnit.DAYS)) else groupByConf.maxWindow
     val backfillQueryRange: PartitionRange = if (incrementalMode) PartitionRange(queryRange.end, queryRange.end)(tableUtils) else queryRange
-    val inputDf = groupByConf.sources.toScala
-      .map { source =>
-        val partitionColumn = tableUtils.getPartitionColumn(source.query)
-        tableUtils.sqlWithDefaultPartitionColumn(
-          renderDataSourceQuery(
-            groupByConf,
-            source,
-            groupByConf.getKeyColumns.toScala,
-            backfillQueryRange,
-            tableUtils,
-            sourceQueryWindow,
-            groupByConf.inferredAccuracy,
-            partitionColumn = partitionColumn
-          ),
-          existingPartitionColumn = partitionColumn
-        )
-      }
-      .reduce { (df1, df2) =>
-        // align the columns by name - when one source has select * the ordering might not be aligned
-        val columns1 = df1.schema.fields.map(_.name)
-        df1.union(df2.selectExpr(columns1: _*))
-      }
+    val inputDf = buildSourceDataFrame(groupByConf, backfillQueryRange, sourceQueryWindow, tableUtils, schemaOnly = false)
 
     def doesNotNeedTime = !Option(groupByConf.getAggregations).exists(_.toScala.needsTimestamp)
     def hasValidTimeColumn = inputDf.schema.find(_.name == Constants.TimeColumn).exists(_.dataType == LongType)
@@ -742,6 +715,49 @@ object GroupBy {
   }
 
   /**
+    * Builds a unified DataFrame from all sources in the GroupBy configuration.
+    * Used to create input DataFrames with proper schema alignment.
+    *
+    * @param groupByConf the GroupBy configuration
+    * @param range the partition range to query
+    * @param window the window size for querying (None uses maxWindow from config)
+    * @param tableUtils table utilities for partition handling
+    * @param schemaOnly if true, returns empty DataFrame with just schema (uses .limit(0))
+    * @return unified DataFrame from all sources
+    */
+  private def buildSourceDataFrame(
+      groupByConf: api.GroupBy,
+      range: PartitionRange,
+      window: Option[Window],
+      tableUtils: TableUtils,
+      schemaOnly: Boolean = false
+  ): DataFrame = {
+    groupByConf.sources.toScala
+      .map { source =>
+        val partitionColumn = tableUtils.getPartitionColumn(source.query)
+        val df = tableUtils.sqlWithDefaultPartitionColumn(
+          renderDataSourceQuery(
+            groupByConf,
+            source,
+            groupByConf.getKeyColumns.toScala,
+            range,
+            tableUtils,
+            window.orElse(groupByConf.maxWindow),
+            groupByConf.inferredAccuracy,
+            partitionColumn = partitionColumn
+          ),
+          existingPartitionColumn = partitionColumn
+        )
+        if (schemaOnly) df.limit(0) else df
+      }
+      .reduce { (df1, df2) =>
+        // align the columns by name - when one source has select * the ordering might not be aligned
+        val columns1 = df1.schema.fields.map(_.name)
+        df1.union(df2.selectExpr(columns1: _*))
+      }
+  }
+
+  /**
     * Computes and saves the output of hopsAggregation.
     * HopsAggregate computes event level data to daily aggregates and saves the output in IR format
     *
@@ -788,6 +804,43 @@ object GroupBy {
     (incrementalQueryableRange, incrementalGroupByAggParts)
   }
 
+  private def convertIncrementalDfToHops(
+      incrementalDf: DataFrame,
+      aggregationParts: Seq[api.AggregationPart],
+      groupByConf: api.GroupBy,
+      tableUtils: TableUtils) : RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+
+    val keyColumns = groupByConf.getKeyColumns.toScala
+    val keyBuilder: Row => KeyWithHash =
+      FastHashing.generateKeyBuilder(keyColumns.toArray, incrementalDf.schema)
+
+    incrementalDf.rdd
+      .map { row =>
+        //Extract timestamp from partition column
+        val ds = row.getAs[String](tableUtils.partitionColumn)
+        val ts = tableUtils.partitionSpec.epochMillis(ds)
+
+        val irs = new Array[Any](aggregationParts.length)
+        aggregationParts.zipWithIndex.foreach { case (part, idx) =>
+          val value = row.get(row.fieldIndex(part.incrementalOutputColumnName))
+          // Convert Spark Row (struct) to Array for complex IRs like AVERAGE
+          irs(idx) = value match {
+            case r: Row => r.toSeq.toArray
+            case other => other
+          }
+        }
+
+        // Build HopIR : [IR1, IR2, ..., IRn, ts]
+        val hopIr: HopIr = irs :+ ts
+        (keyBuilder(row), hopIr)
+      }
+      .groupByKey()
+      .mapValues{ hopIrs =>
+        //Convert to HopsAggregator.OutputArrayType: Array[Array[HopIr]]
+        val sortedHops = hopIrs.toArray.sortBy(_.last.asInstanceOf[Long])
+        Array(sortedHops)
+      }
+  }
 
   def fromIncrementalDf(
                        groupByConf: api.GroupBy,
@@ -796,29 +849,31 @@ object GroupBy {
                      ): GroupBy = {
 
     val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
+    assert(incrementalOutputTable != null,
+      s"incrementalOutputTable is not set for GroupBy: ${groupByConf.metaData.name}")
 
     val (incrementalQueryableRange, aggregationParts) = computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable)
 
     val (_, incrementalDf: DataFrame) =  incrementalQueryableRange.scanQueryStringAndDf(null, incrementalOutputTable)
 
-    val incrementalAggregations = aggregationParts.zip(groupByConf.getAggregations.toScala).map{ case (part, agg) =>
-      val newAgg = agg.deepCopy()
-      newAgg.setInputColumn(part.incrementalOutputColumnName)
-      // Convert COUNT to SUM when reading from incremental IRs
-      if (newAgg.operation == Operation.COUNT) {
-        newAgg.setOperation(Operation.SUM)
-      }
-      newAgg
-    }
+    val incrementalHops  = convertIncrementalDfToHops(incrementalDf, aggregationParts, groupByConf, tableUtils)
+
+    // Create a DataFrame with the source schema (raw data schema) to match aggregations
+    // We need this because GroupBy class variables expect inputDf schema to match aggregation input columns
+    // We create an empty DataFrame with the correct schema - it won't be used for computation
+    val sourceDf = buildSourceDataFrame(groupByConf, range, None, tableUtils, schemaOnly = true)
 
     new GroupBy(
-      incrementalAggregations,
+      groupByConf.getAggregations.toScala,
       groupByConf.getKeyColumns.toScala,
-      incrementalDf,
+      sourceDf, // Use source schema, not incremental schema
       () => null,
-      finalize = true,
-      userInputAggregations=groupByConf.aggregations.toScala
-    )
+    ) {
+      // Override hopsAggregate to return precomputed hops instead of computing from raw data
+      override def hopsAggregate(minQueryTs: Long, resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+        incrementalHops
+      }
+    }
 
   }
 
