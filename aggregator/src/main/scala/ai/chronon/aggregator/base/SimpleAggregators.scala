@@ -117,7 +117,6 @@ class UniqueCount[T](inputType: DataType) extends SimpleAggregator[T, util.HashS
   }
 }
 
-
 class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def outputType: DataType = DoubleType
 

@@ -893,9 +893,7 @@ case class TableUtils(sparkSession: SparkSession) {
       } else {
         validPartitionRange.partitions.toSet
       }
-
     val outputMissing = fillablePartitions -- outputExisting
-
     val allInputExisting = inputTables
       .map { tables =>
         tables
