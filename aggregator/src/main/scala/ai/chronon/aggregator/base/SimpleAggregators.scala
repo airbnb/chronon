@@ -160,7 +160,6 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def isDeletable: Boolean = true
 }
 
-
 class VectorAverage extends SimpleAggregator[Array[Double], Array[Any], Array[Double]] {
   override def outputType: DataType = ListType(DoubleType)
 
@@ -174,7 +173,10 @@ class VectorAverage extends SimpleAggregator[Array[Double], Array[Any], Array[Do
     Array(input, 1)
   }
 
-  private def computeRunningAverage(leftVectorAverage: Array[Double], leftCount: Int, rightVectorAverage: Array[Double], rightCount: Int): Array[Any] = {
+  private def computeRunningAverage(leftVectorAverage: Array[Double],
+                                    leftCount: Int,
+                                    rightVectorAverage: Array[Double],
+                                    rightCount: Int): Array[Any] = {
 
     if (leftVectorAverage.length != rightVectorAverage.length) {
       throw new IllegalStateException("Vectors must all have same dimension")
@@ -182,11 +184,13 @@ class VectorAverage extends SimpleAggregator[Array[Double], Array[Any], Array[Do
 
     val totalCount = leftCount + rightCount
 
-    val newVectorAverage = leftVectorAverage.zip(rightVectorAverage)
-      .map { case (left, right) =>
-        val leftWeight = left * leftCount.toDouble / totalCount.toDouble
-        val rightWeight = right * rightCount.toDouble / totalCount.toDouble
-        leftWeight + rightWeight
+    val newVectorAverage = leftVectorAverage
+      .zip(rightVectorAverage)
+      .map {
+        case (left, right) =>
+          val leftWeight = left * leftCount.toDouble / totalCount.toDouble
+          val rightWeight = right * rightCount.toDouble / totalCount.toDouble
+          leftWeight + rightWeight
       }
 
     Array(newVectorAverage, totalCount)
