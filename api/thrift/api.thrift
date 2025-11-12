@@ -181,8 +181,7 @@ enum Operation {
 
     HISTOGRAM = 17, // use this only if you know the set of inputs is bounded
     APPROX_HISTOGRAM_K = 18,
-    BOUNDED_UNIQUE_COUNT = 19,
-    VECTOR_AVERAGE = 20
+    BOUNDED_UNIQUE_COUNT = 19
 }
 
 // integers map to milliseconds in the timeunit
@@ -223,9 +222,16 @@ struct Aggregation {
     4: optional list<Window> windows
 
     /**
-    This is an additional layer of aggregation. You can key a group_by by user, and bucket a “item_view” count by “item_category”. This will produce one row per user, with column containing map of “item_category” to “view_count”. You can specify multiple such buckets at once
+    This is an additional layer of aggregation. You can key a group_by by user, and bucket a "item_view" count by "item_category". This will produce one row per user, with column containing map of "item_category" to "view_count". You can specify multiple such buckets at once
     */
     5: optional list<string> buckets
+
+    /**
+    When set to true and inputColumn is an array/list type, applies the operation element-wise across the arrays.
+    For example, AVERAGE with tensorElementWiseOperation=true on [[1,2,3], [4,5,6]] produces [2.5, 3.5, 4.5].
+    This allows any operation (SUM, AVERAGE, MAX, MIN, etc.) to work on tensors.
+    */
+    6: optional bool tensorElementWiseOperation
 }
 
 // used internally not exposed - maps 1:1 with a field in the output
@@ -235,6 +241,7 @@ struct AggregationPart {
     3: optional map<string, string> argMap
     4: optional Window window
     5: optional string bucket
+    6: optional bool tensorElementWiseOperation
 }
 
 enum Accuracy {

@@ -130,6 +130,7 @@ def Aggregation(
     windows: Optional[List[ttypes.Window]] = None,
     buckets: Optional[List[str]] = None,
     tags: Optional[Dict[str, str]] = None,
+    tensor_element_wise_operation: bool = False,
 ) -> ttypes.Aggregation:
     """
     :param input_column:
@@ -149,6 +150,13 @@ def Aggregation(
         Besides the GroupBy.keys, this is another level of keys for use under this aggregation.
         Using this would create an output as a map of string to aggregate.
     :type buckets: List[str]
+    :param tensor_element_wise_operation:
+        When set to True and input_column is an array/list type, applies the operation element-wise across the arrays.
+        For example, AVERAGE with tensor_element_wise_operation=True on [[1,2,3], [4,5,6]] produces [2.5, 3.5, 4.5].
+        This allows any operation (SUM, AVERAGE, MAX, MIN, etc.) to work on tensors.
+        All tensors must have the same length and must not include null values.
+        Defaults to False.
+    :type tensor_element_wise_operation: bool
     :return: An aggregate defined with the specified operation.
     """
     # Default to last
@@ -168,6 +176,7 @@ def Aggregation(
 
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
     agg.tags = tags
+    agg.tensorElementWiseOperation = tensor_element_wise_operation
     return agg
 
 

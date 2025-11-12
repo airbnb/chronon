@@ -51,16 +51,16 @@ object TestRow {
 class RowAggregatorTest extends TestCase {
   def testUpdate(): Unit = {
     val rows = List(
-      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), Map("A" -> 1, "B" -> 2)),
-      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq(), null),
-      TestRow(3L, 5, 7.0f, "D", null, null, Map("A" -> null, "B" -> 1)),
-      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D"), Map("A" -> 5, "B" -> 1, (null, 2))),
-      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"), Map.empty[String, Int])
+      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), Map("A" -> 1, "B" -> 2), Seq(1.0f, 2.0f)),
+      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq(), null, Seq(3.0f, 4.0f)),
+      TestRow(3L, 5, 7.0f, "D", null, null, Map("A" -> null, "B" -> 1), null),
+      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D"), Map("A" -> 5, "B" -> 1, (null, 2)), Seq(5.0f, 6.0f)),
+      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"), Map.empty[String, Int], Seq(7.0f, 8.0f))
     )
 
     val rowsToDelete = List(
-      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H"), Map("B" -> 1, "A" -> 3)),
-      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq(), Map("B" -> 2, "D" -> 3))
+      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H"), Map("B" -> 1, "A" -> 3), Seq(1.0f, 2.0f)),
+      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq(), Map("B" -> 2, "D" -> 3), Seq(3.0f, 4.0f))
     )
 
     val schema = List(
@@ -70,7 +70,8 @@ class RowAggregatorTest extends TestCase {
       "title" -> StringType,
       "session_lengths" -> ListType(IntType),
       "hist_input" -> ListType(StringType),
-      "hist_map" -> MapType(StringType, IntType)
+      "hist_map" -> MapType(StringType, IntType),
+      "embeddings" -> ListType(FloatType)
     )
 
     val sessionLengthAvgByTitle = new java.util.HashMap[String, Double]()
@@ -106,7 +107,9 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths") -> 8.0,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle,
       Builders.AggregationPart(Operation.HISTOGRAM, "hist_input", argMap = Map("k" -> "2")) -> histogram,
-      Builders.AggregationPart(Operation.AVERAGE, "hist_map") -> mapAvg
+      Builders.AggregationPart(Operation.AVERAGE, "hist_map") -> mapAvg,
+      Builders.AggregationPart(Operation.SUM, "embeddings", tensorElementWiseOperation = true) -> List(12.0, 14.0).toJava,
+      Builders.AggregationPart(Operation.AVERAGE, "embeddings", tensorElementWiseOperation = true) -> List(6.0, 7.0).toJava
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip

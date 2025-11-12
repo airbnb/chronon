@@ -50,8 +50,8 @@ object Extensions {
   implicit class OperationOps(operation: Operation) {
     def isSimple: Boolean =
       operation match {
-        case Operation.FIRST | Operation.LAST | Operation.LAST_K | Operation.FIRST_K | Operation.VECTOR_AVERAGE => false
-        case _                                                                                                  => true
+        case Operation.FIRST | Operation.LAST | Operation.LAST_K | Operation.FIRST_K => false
+        case _                                                                       => true
       }
 
     def stringified: String = operation.toString.toLowerCase
@@ -203,7 +203,8 @@ object Extensions {
               _.toScala
             )
             .orNull,
-          bucket
+          bucket,
+          Option(aggregation.tensorElementWiseOperation).getOrElse(false)
         )
       }
     }
@@ -225,7 +226,8 @@ object Extensions {
               _.toScala.toMap
             )
             .orNull,
-          bucket
+          bucket,
+          Option(aggregation.tensorElementWiseOperation).getOrElse(false)
         )
       }
     }
