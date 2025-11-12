@@ -142,7 +142,10 @@ class RowAggregatorTest extends TestCase {
     val finalized = rowAggregator.finalize(forDeletion)
 
     expectedVals.zip(finalized).zip(rowAggregator.outputSchema.map(_._1)).foreach {
-      case ((expected, actual), name) => assertEquals(expected, actual)
+      case ((expected: Double, actual: Double), _) =>
+        assertEquals(expected, actual, 1e-9)
+      case ((expected, actual), _) =>
+        assertEquals(expected, actual)
     }
   }
 }

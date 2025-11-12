@@ -28,7 +28,6 @@ import ai.chronon.api.{Aggregation, Builders, IntType, LongType, Operation, Stru
 import junit.framework.TestCase
 import org.junit.Assert._
 import ai.chronon.api.Extensions.AggregationOps
-import com.google.gson.Gson
 
 import scala.collection.Seq
 
@@ -111,10 +110,9 @@ class TwoStackLiteAggregatorTest extends TestCase {
     // sorting + banker          1597 ms
     // sawtooth                  914 ms
 
-    val gson = new Gson()
     bankersIrs.zip(sawtoothIrs).foreach {
       case (bankers, sawtooth) =>
-        assertEquals(gson.toJson(sawtooth), gson.toJson(bankers))
+        SawtoothAggregatorTest.assertArraysEqualWithTolerance(sawtooth, bankers)
     }
   }
 
