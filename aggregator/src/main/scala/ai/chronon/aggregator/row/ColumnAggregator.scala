@@ -178,7 +178,9 @@ object ColumnAggregator {
                                     isElementWise: Boolean = false): ColumnAggregator = {
 
     assert(!(isVector && isMap), "Input column cannot simultaneously be map or vector")
-    assert(!(isElementWise && !isMap), "Must use elementWise with array/list typed input column")
+    if (isElementWise) {
+      assert(isVector, "Must use elementWise with array/list typed input column")
+    }
     val dispatcher = if (isVector) {
       new VectorDispatcher(agg, columnIndices, toTypedInput)
     } else {
