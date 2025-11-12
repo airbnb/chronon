@@ -108,8 +108,8 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle,
       Builders.AggregationPart(Operation.HISTOGRAM, "hist_input", argMap = Map("k" -> "2")) -> histogram,
       Builders.AggregationPart(Operation.AVERAGE, "hist_map") -> mapAvg,
-      Builders.AggregationPart(Operation.SUM, "embeddings", tensorElementWiseOperation = true) -> List(12.0, 14.0).toJava,
-      Builders.AggregationPart(Operation.AVERAGE, "embeddings", tensorElementWiseOperation = true) -> List(6.0, 7.0).toJava
+      Builders.AggregationPart(Operation.SUM, "embeddings", elementWise = true) -> List(12.0, 14.0).toJava,
+      Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true) -> List(6.0, 7.0).toJava
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip

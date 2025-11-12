@@ -70,7 +70,7 @@ object Builders {
               window: Window = WindowUtils.Unbounded,
               argMap: Map[String, String] = null,
               bucket: String = null,
-              tensorElementWiseOperation: Boolean = false): AggregationPart = {
+              elementWise: Boolean = false): AggregationPart = {
       val result = new AggregationPart()
       result.setOperation(operation)
       result.setInputColumn(inputColumn)
@@ -80,7 +80,7 @@ object Builders {
       if (bucket != null) {
         result.setBucket(bucket)
       }
-      result.setTensorElementWiseOperation(tensorElementWiseOperation)
+      result.setElementWise(elementWise)
       result
     }
   }

@@ -175,11 +175,10 @@ object ColumnAggregator {
                                     bucketIndex: Option[Int] = None,
                                     isVector: Boolean = false,
                                     isMap: Boolean = false,
-                                    isTensorElementWiseOperation: Boolean = false): ColumnAggregator = {
+                                    isElementWise: Boolean = false): ColumnAggregator = {
 
     assert(!(isVector && isMap), "Input column cannot simultaneously be map or vector")
-    assert(!(isTensorElementWiseOperation && !isMap),
-           "Must use tensorElementWiseOperation with tensor typed input column")
+    assert(!(isElementWise && !isMap), "Must use elementWise with array/list typed input column")
     val dispatcher = if (isVector) {
       new VectorDispatcher(agg, columnIndices, toTypedInput)
     } else {
@@ -188,12 +187,12 @@ object ColumnAggregator {
 
     // TODO: remove the below assertion and add support
     assert(!(isMap && bucketIndex.isDefined), "Bucketing over map columns is currently unsupported")
-    assert(!(isTensorElementWiseOperation && bucketIndex.isDefined),
-           "Bucketing over tensor columns is currently unsupported")
+    assert(!(isElementWise && bucketIndex.isDefined),
+           "Bucketing over array columns when doing element wise aggregations is currently unsupported")
     if (isMap) {
       new MapColumnAggregator(agg, columnIndices, toTypedInput)
-    } else if (isTensor) {
-      new isTensorElementWiseOperation(agg, columnIndices, toTypedInput)
+    } else if (isElementWise) {
+      new TensorColumnAggregator(agg, columnIndices, toTypedInput)
     } else if (bucketIndex.isDefined) {
       new BucketedColumnAggregator(agg, columnIndices, bucketIndex.get, dispatcher)
     } else {
@@ -250,7 +249,7 @@ object ColumnAggregator {
       case (true, MapType(StringType, elementType)) => Some(elementType)
       case _                                        => None
     }
-    val inputType = (mapElementType ++ tensorElementType ++ vectorElementType ++ Some(baseInputType)).head
+    val inputType = (mapElementType ++ vectorElementType ++ Some(baseInputType)).head
 
     def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                   toTypedInput: Any => Input = cast[Input] _): ColumnAggregator = {
@@ -261,7 +260,7 @@ object ColumnAggregator {
         bucketIndex,
         isVector = vectorElementType.isDefined,
         isMap = mapElementType.isDefined,
-        isTensorElementWiseOperation = aggregationPart.tensorElementWiseOperation
+        isElementWise = aggregationPart.elementWise
       )
     }
 

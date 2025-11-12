@@ -35,7 +35,7 @@ class TensorColumnAggregatorTest extends TestCase {
   @Test
   def testSingleTensor(): Unit = {
     val schema = List("embeddings" -> ListType(DoubleType))
-    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", tensorElementWiseOperation = true)
+    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true)
     val rowAggregator = new RowAggregator(schema, Seq(aggregationPart))
 
     val tensor = Array(1.5, 2.5, 3.5)
@@ -57,7 +57,7 @@ class TensorColumnAggregatorTest extends TestCase {
   @Test
   def testBasicTensorAverage(): Unit = {
     val schema = List("embeddings" -> ListType(DoubleType))
-    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", tensorElementWiseOperation = true)
+    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true)
     val rowAggregator = new RowAggregator(schema, Seq(aggregationPart))
 
     // Test case from the requirements: [1.0, 2.0, 3.0] and [4.0, 5.0, 6.0] should result in [2.5, 3.5, 4.5]
@@ -81,7 +81,7 @@ class TensorColumnAggregatorTest extends TestCase {
   @Test
   def testDifferentSizedTensors(): Unit = {
     val schema = List("embeddings" -> ListType(DoubleType))
-    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", tensorElementWiseOperation = true)
+    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true)
     val rowAggregator = new RowAggregator(schema, Seq(aggregationPart))
 
     // Test tensors of different sizes
@@ -106,7 +106,7 @@ class TensorColumnAggregatorTest extends TestCase {
   @Test
   def testMergeOperation(): Unit = {
     val schema = List("embeddings" -> ListType(DoubleType))
-    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", tensorElementWiseOperation = true)
+    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true)
     val rowAggregator = new RowAggregator(schema, Seq(aggregationPart))
 
     // Create two separate aggregations
@@ -135,7 +135,7 @@ class TensorColumnAggregatorTest extends TestCase {
   @Test
   def testDeleteOperation(): Unit = {
     val schema = List("embeddings" -> ListType(DoubleType))
-    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", tensorElementWiseOperation = true)
+    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true)
     val rowAggregator = new RowAggregator(schema, Seq(aggregationPart))
 
     // Add three tensors
@@ -161,7 +161,7 @@ class TensorColumnAggregatorTest extends TestCase {
   @Test
   def testTensorSum(): Unit = {
     val schema = List("embeddings" -> ListType(DoubleType))
-    val aggregationPart = Builders.AggregationPart(Operation.SUM, "embeddings", tensorElementWiseOperation = true)
+    val aggregationPart = Builders.AggregationPart(Operation.SUM, "embeddings", elementWise = true)
     val rowAggregator = new RowAggregator(schema, Seq(aggregationPart))
 
     // Test SUM with tensor flag - element-wise sum
@@ -186,7 +186,7 @@ class TensorColumnAggregatorTest extends TestCase {
   @Test
   def testTensorMax(): Unit = {
     val schema = List("embeddings" -> ListType(DoubleType))
-    val aggregationPart = Builders.AggregationPart(Operation.MAX, "embeddings", tensorElementWiseOperation = true)
+    val aggregationPart = Builders.AggregationPart(Operation.MAX, "embeddings", elementWise = true)
     val rowAggregator = new RowAggregator(schema, Seq(aggregationPart))
 
     // Test MAX with tensor flag - element-wise max
@@ -211,7 +211,7 @@ class TensorColumnAggregatorTest extends TestCase {
   @Test
   def testNullWithinTensor(): Unit = {
     val schema = List("embeddings" -> ListType(DoubleType))
-    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", tensorElementWiseOperation = true)
+    val aggregationPart = Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true)
     val rowAggregator = new RowAggregator(schema, Seq(aggregationPart))
 
     // Create a row with a null value inside the tensor

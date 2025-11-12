@@ -228,10 +228,10 @@ struct Aggregation {
 
     /**
     When set to true and inputColumn is an array/list type, applies the operation element-wise across the arrays.
-    For example, AVERAGE with tensorElementWiseOperation=true on [[1,2,3], [4,5,6]] produces [2.5, 3.5, 4.5].
+    For example, AVERAGE with elementWise=true on [[1,2,3], [4,5,6]] produces [2.5, 3.5, 4.5].
     This allows any operation (SUM, AVERAGE, MAX, MIN, etc.) to work on tensors.
     */
-    6: optional bool tensorElementWiseOperation
+    6: optional bool elementWise
 }
 
 // used internally not exposed - maps 1:1 with a field in the output
@@ -241,7 +241,7 @@ struct AggregationPart {
     3: optional map<string, string> argMap
     4: optional Window window
     5: optional string bucket
-    6: optional bool tensorElementWiseOperation
+    6: optional bool elementWise
 }
 
 enum Accuracy {

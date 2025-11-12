@@ -204,7 +204,7 @@ object Extensions {
             )
             .orNull,
           bucket,
-          Option(aggregation.tensorElementWiseOperation).getOrElse(false)
+          Option(aggregation.elementWise).getOrElse(false)
         )
       }
     }
@@ -227,7 +227,7 @@ object Extensions {
             )
             .orNull,
           bucket,
-          Option(aggregation.tensorElementWiseOperation).getOrElse(false)
+          Option(aggregation.elementWise).getOrElse(false)
         )
       }
     }
