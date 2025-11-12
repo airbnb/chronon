@@ -192,7 +192,7 @@ object ColumnAggregator {
     if (isMap) {
       new MapColumnAggregator(agg, columnIndices, toTypedInput)
     } else if (isElementWise) {
-      new TensorColumnAggregator(agg, columnIndices, toTypedInput)
+      new ElementWiseAggregator(agg, columnIndices, toTypedInput)
     } else if (bucketIndex.isDefined) {
       new BucketedColumnAggregator(agg, columnIndices, bucketIndex.get, dispatcher)
     } else {

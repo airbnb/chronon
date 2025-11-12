@@ -21,7 +21,7 @@ import ai.chronon.api.{DataType, ListType}
 
 import java.util
 
-abstract class TensorColumnAggregatorBase[Input, IR, Output](agg: BaseAggregator[Input, IR, Output])
+abstract class ElementWiseAggregatorBase[Input, IR, Output](agg: BaseAggregator[Input, IR, Output])
     extends ColumnAggregator {
   type IrList = util.ArrayList[IR]
   protected def castIr(ir: Any): IrList = ir.asInstanceOf[IrList]

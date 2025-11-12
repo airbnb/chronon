@@ -25,7 +25,7 @@ import org.junit.Test
 
 import scala.jdk.CollectionConverters._
 
-class TensorColumnAggregatorTest extends TestCase {
+class ElementWiseAggregatorTest extends TestCase {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   def createTestRow(embeddings: Array[Double]): Row = {

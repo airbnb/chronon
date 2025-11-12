@@ -22,10 +22,10 @@ import ai.chronon.api.Row
 import java.util
 import scala.util.ScalaJavaConversions.IteratorOps
 
-class TensorColumnAggregator[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
-                                                columnIndices: ColumnIndices,
-                                                toTypedInput: Any => Input)
-    extends TensorColumnAggregatorBase(agg) {
+class ElementWiseAggregator[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
+                                               columnIndices: ColumnIndices,
+                                               toTypedInput: Any => Input)
+    extends ElementWiseAggregatorBase(agg) {
 
   def tensorIterator(inputRow: Row): Iterator[(Int, Input)] = {
     val inputVal = inputRow.get(columnIndices.input)
