@@ -178,7 +178,8 @@ object ColumnAggregator {
                                     isTensorElementWiseOperation: Boolean = false): ColumnAggregator = {
 
     assert(!(isVector && isMap), "Input column cannot simultaneously be map or vector")
-    assert(!(isTensorElementWiseOperation && !isMap), "Must use tensorElementWiseOperation with tensor typed input column")
+    assert(!(isTensorElementWiseOperation && !isMap),
+           "Must use tensorElementWiseOperation with tensor typed input column")
     val dispatcher = if (isVector) {
       new VectorDispatcher(agg, columnIndices, toTypedInput)
     } else {
@@ -187,7 +188,8 @@ object ColumnAggregator {
 
     // TODO: remove the below assertion and add support
     assert(!(isMap && bucketIndex.isDefined), "Bucketing over map columns is currently unsupported")
-    assert(!(isTensorElementWiseOperation && bucketIndex.isDefined), "Bucketing over tensor columns is currently unsupported")
+    assert(!(isTensorElementWiseOperation && bucketIndex.isDefined),
+           "Bucketing over tensor columns is currently unsupported")
     if (isMap) {
       new MapColumnAggregator(agg, columnIndices, toTypedInput)
     } else if (isTensor) {
@@ -252,13 +254,15 @@ object ColumnAggregator {
 
     def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                   toTypedInput: Any => Input = cast[Input] _): ColumnAggregator = {
-      fromSimple(agg,
-                 columnIndices,
-                 toTypedInput,
-                 bucketIndex,
-                 isVector = vectorElementType.isDefined,
-                 isMap = mapElementType.isDefined,
-                 isTensorElementWiseOperation = aggregationPart.tensorElementWiseOperation)
+      fromSimple(
+        agg,
+        columnIndices,
+        toTypedInput,
+        bucketIndex,
+        isVector = vectorElementType.isDefined,
+        isMap = mapElementType.isDefined,
+        isTensorElementWiseOperation = aggregationPart.tensorElementWiseOperation
+      )
     }
 
     def timed[Input, IR, Output](agg: TimedAggregator[Input, IR, Output]): ColumnAggregator = {
