@@ -303,8 +303,7 @@ class Fetcher(val kvStore: KVStore,
   }
 
   private def fetchDerivations(baseValuesFuture: Future[scala.collection.Seq[ResponseWithContext]],
-                               joinConf: Option[api.Join] = None)
-      : Future[scala.collection.Seq[ResponseWithContext]] = {
+                               joinConf: Option[api.Join] = None): Future[scala.collection.Seq[ResponseWithContext]] = {
     baseValuesFuture.map { baseValues =>
       baseValues.map { baseValue =>
         val derivationStartTs = System.currentTimeMillis()
