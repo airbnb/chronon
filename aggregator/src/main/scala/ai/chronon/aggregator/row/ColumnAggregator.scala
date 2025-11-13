@@ -174,9 +174,13 @@ object ColumnAggregator {
                                     toTypedInput: Any => Input,
                                     bucketIndex: Option[Int] = None,
                                     isVector: Boolean = false,
-                                    isMap: Boolean = false): ColumnAggregator = {
+                                    isMap: Boolean = false,
+                                    isElementWise: Boolean = false): ColumnAggregator = {
 
     assert(!(isVector && isMap), "Input column cannot simultaneously be map or vector")
+    if (isElementWise) {
+      assert(isVector, "Must use elementWise with array/list typed input column")
+    }
     val dispatcher = if (isVector) {
       new VectorDispatcher(agg, columnIndices, toTypedInput)
     } else {
@@ -185,8 +189,12 @@ object ColumnAggregator {
 
     // TODO: remove the below assertion and add support
     assert(!(isMap && bucketIndex.isDefined), "Bucketing over map columns is currently unsupported")
+    assert(!(isElementWise && bucketIndex.isDefined),
+           "Bucketing over array columns when doing element wise aggregations is currently unsupported")
     if (isMap) {
       new MapColumnAggregator(agg, columnIndices, toTypedInput)
+    } else if (isElementWise) {
+      new ElementWiseAggregator(agg, columnIndices, toTypedInput)
     } else if (bucketIndex.isDefined) {
       new BucketedColumnAggregator(agg, columnIndices, bucketIndex.get, dispatcher)
     } else {
@@ -247,12 +255,15 @@ object ColumnAggregator {
 
     def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                   toTypedInput: Any => Input = cast[Input] _): ColumnAggregator = {
-      fromSimple(agg,
-                 columnIndices,
-                 toTypedInput,
-                 bucketIndex,
-                 isVector = vectorElementType.isDefined,
-                 isMap = mapElementType.isDefined)
+      fromSimple(
+        agg,
+        columnIndices,
+        toTypedInput,
+        bucketIndex,
+        isVector = vectorElementType.isDefined,
+        isMap = mapElementType.isDefined,
+        isElementWise = aggregationPart.elementWise
+      )
     }
 
     def timed[Input, IR, Output](agg: TimedAggregator[Input, IR, Output]): ColumnAggregator = {
