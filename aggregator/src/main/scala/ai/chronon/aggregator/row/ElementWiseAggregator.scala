@@ -27,44 +27,52 @@ class ElementWiseAggregator[Input, IR, Output](agg: SimpleAggregator[Input, IR, 
                                                toTypedInput: Any => Input)
     extends ElementWiseAggregatorBase(agg) {
 
-  def tensorIterator(inputRow: Row): Iterator[(Int, Input)] = {
+  // Process tensor elements with a consumer function to avoid tuple allocation from zipWithIndex.
+  // This avoids creating tuple objects on each iteration.
+  private def processTensorElements(inputRow: Row, consumer: (Int, Input) => Unit): Boolean = {
     val inputVal = inputRow.get(columnIndices.input)
-    if (inputVal == null) return null
+    if (inputVal == null) return false
+
     inputVal match {
       case inputJList: util.ArrayList[Any] =>
-        inputJList
-          .iterator()
-          .toScala
-          .zipWithIndex
-          .map {
-            case (value, idx) =>
-              if (value == null)
-                throw new IllegalArgumentException("Null values are not allowed within tensors")
-              idx -> toTypedInput(value)
-          }
-      case inputSeq: collection.Seq[Any] =>
-        inputSeq.iterator.zipWithIndex.map {
-          case (value, idx) =>
-            if (value == null)
-              throw new IllegalArgumentException("Null values are not allowed within tensors")
-            idx -> toTypedInput(value)
+        var idx = 0
+        val size = inputJList.size()
+        while (idx < size) {
+          val value = inputJList.get(idx)
+          if (value == null)
+            throw new IllegalArgumentException("Null values are not allowed within tensors")
+          consumer(idx, toTypedInput(value))
+          idx += 1
         }
+        true
+      case inputSeq: collection.Seq[Any] =>
+        var idx = 0
+        val size = inputSeq.size
+        while (idx < size) {
+          val value = inputSeq(idx)
+          if (value == null)
+            throw new IllegalArgumentException("Null values are not allowed within tensors")
+          consumer(idx, toTypedInput(value))
+          idx += 1
+        }
+        true
+      case _ => false
     }
   }
 
   def guardedApply(inputRow: Row, prepare: Input => IR, update: (IR, Input) => IR, irRow: Any = null): Any = {
-    val it = tensorIterator(inputRow)
-    if (it == null) return irRow
+    val inputVal = inputRow.get(columnIndices.input)
+    if (inputVal == null) return irRow
+
     assert(irRow != null, "The IR row cannot be null when it reaches column aggregator")
     val typedRow = irRow.asInstanceOf[Array[Any]]
     val irVal = typedRow(columnIndices.output)
 
     // Determine the size needed for the result list
-    val inputVal = inputRow.get(columnIndices.input)
     val tensorSize = inputVal match {
       case jList: util.ArrayList[_] => jList.size()
       case seq: collection.Seq[_]   => seq.size
-      case _                        => 0
+      case _                        => return irRow
     }
 
     val resultList = if (irVal == null) {
@@ -88,17 +96,19 @@ class ElementWiseAggregator[Input, IR, Output](agg: SimpleAggregator[Input, IR, 
       existing
     }
 
-    while (it.hasNext) {
-      val entry = it.next()
-      val idx = entry._1
-      val value = entry._2
-      val ir = resultList.get(idx)
-      if (ir == null) {
-        resultList.set(idx, prepare(value))
-      } else {
-        resultList.set(idx, update(ir.asInstanceOf[IR], value))
+    // Process elements without tuple allocation
+    processTensorElements(
+      inputRow,
+      (idx: Int, value: Input) => {
+        val ir = resultList.get(idx)
+        if (ir == null) {
+          resultList.set(idx, prepare(value))
+        } else {
+          resultList.set(idx, update(ir.asInstanceOf[IR], value))
+        }
       }
-    }
+    )
+
     resultList
   }
 
