@@ -302,12 +302,18 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  private def fetchDerivations(baseValuesFuture: Future[scala.collection.Seq[ResponseWithContext]])
+  private def fetchDerivations(baseValuesFuture: Future[scala.collection.Seq[ResponseWithContext]],
+                               joinConf: Option[api.Join] = None)
       : Future[scala.collection.Seq[ResponseWithContext]] = {
     baseValuesFuture.map { baseValues =>
       baseValues.map { baseValue =>
         val derivationStartTs = System.currentTimeMillis()
-        val joinCodecTry = getJoinCodecs(baseValue.request.name)
+        // Use locally built codec from joinConf if provided, otherwise fetch from KV store
+        val joinCodecTry = if (joinConf.isDefined) {
+          Try(buildJoinCodec(joinConf.get, refreshOnFail = false))
+        } else {
+          getJoinCodecs(baseValue.request.name)
+        }
         val ctx = baseValue.ctx
         joinCodecTry match {
           case Success((joinCodec, hasPartialFailure)) =>
@@ -405,7 +411,7 @@ class Fetcher(val kvStore: KVStore,
   private def doFetchJoin(requests: scala.collection.Seq[Request],
                           joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val baseValuesF = fetchBaseJoin(requests, joinConf)
-    val derivedValuesF = fetchDerivations(baseValuesF)
+    val derivedValuesF = fetchDerivations(baseValuesF, joinConf)
     val modelTransformsF = fetchModelTransforms(derivedValuesF)
     instrumentAndLog(modelTransformsF)
   }
