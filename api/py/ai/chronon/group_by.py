@@ -129,7 +129,7 @@ def Aggregation(
     windows: Optional[List[ttypes.Window]] = None,
     buckets: Optional[List[str]] = None,
     tags: Optional[Dict[str, str]] = None,
-    element_wise: bool = False,
+    element_wise: Optional[bool] = None,
 ) -> ttypes.Aggregation:
     """
     :param input_column:
@@ -154,7 +154,7 @@ def Aggregation(
         For example, AVERAGE with element_wise=True on [[1,2,3], [4,5,6]] produces [2.5, 3.5, 4.5].
         This allows any operation (SUM, AVERAGE, MAX, MIN, etc.) to work on lists.
         All lists must have the same length and must not include null values.
-        Defaults to False.
+        Defaults to None.
     :type element_wise: bool
     :return: An aggregate defined with the specified operation.
     """

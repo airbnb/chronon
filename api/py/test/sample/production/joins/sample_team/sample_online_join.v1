@@ -81,14 +81,12 @@
                 "length": 7,
                 "timeUnit": 1
               }
-            ],
-            "elementWise": 0
+            ]
           },
           {
             "inputColumn": "event",
             "operation": 7,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           },
           {
             "inputColumn": "event",
@@ -96,8 +94,7 @@
             "argMap": {
               "k": "200",
               "percentiles": "[0.99, 0.95, 0.5]"
-            },
-            "elementWise": 0
+            }
           }
         ]
       },
@@ -147,8 +144,7 @@
           {
             "inputColumn": "entity",
             "operation": 3,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           },
           {
             "inputColumn": "entity",
@@ -159,8 +155,7 @@
                 "length": 7,
                 "timeUnit": 1
               }
-            ],
-            "elementWise": 0
+            ]
           }
         ]
       },
@@ -223,8 +218,7 @@
           {
             "inputColumn": "event",
             "operation": 7,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           },
           {
             "inputColumn": "event",
@@ -232,8 +226,7 @@
             "argMap": {
               "k": "128",
               "percentiles": "[0.5]"
-            },
-            "elementWise": 0
+            }
           },
           {
             "inputColumn": "event",
@@ -244,8 +237,7 @@
                 "length": 7,
                 "timeUnit": 1
               }
-            ],
-            "elementWise": 0
+            ]
           }
         ]
       },

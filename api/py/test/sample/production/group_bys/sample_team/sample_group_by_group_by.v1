@@ -41,8 +41,7 @@
     {
       "inputColumn": "impressed_unique_count_1d_sum",
       "operation": 3,
-      "argMap": {},
-      "elementWise": 0
+      "argMap": {}
     }
   ],
   "backfillStartDate": "2022-01-01"

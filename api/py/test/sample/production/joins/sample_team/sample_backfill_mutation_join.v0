@@ -70,8 +70,7 @@
           {
             "inputColumn": "entity",
             "operation": 3,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           }
         ],
         "accuracy": 0
