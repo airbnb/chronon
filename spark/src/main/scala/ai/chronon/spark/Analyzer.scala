@@ -236,6 +236,7 @@ class Analyzer(tableUtils: TableUtils,
       .mkString("\n")
   }
 
+  // TODO: Add check for element wise operations (e.g. dimensions)
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,

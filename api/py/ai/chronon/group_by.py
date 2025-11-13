@@ -152,8 +152,8 @@ def Aggregation(
     :param element_wise:
         When set to True and input_column is an array/list type, applies the operation element-wise across the arrays.
         For example, AVERAGE with element_wise=True on [[1,2,3], [4,5,6]] produces [2.5, 3.5, 4.5].
-        This allows any operation (SUM, AVERAGE, MAX, MIN, etc.) to work on tensors.
-        All tensors must have the same length and must not include null values.
+        This allows any operation (SUM, AVERAGE, MAX, MIN, etc.) to work on lists.
+        All lists must have the same length and must not include null values.
         Defaults to False.
     :type element_wise: bool
     :return: An aggregate defined with the specified operation.
@@ -165,13 +165,17 @@ def Aggregation(
         operation, arg_map = operation[0], operation[1]
 
     if operation == ttypes.Operation.UNIQUE_COUNT:
-        LOGGER.warning("When using UNIQUE_COUNT operation, please consider using "
-                       "BOUNDED_UNIQUE_COUNT_K or APPROX_UNIQUE_COUNT "
-                       "for better performance and scalability.")
+        LOGGER.warning(
+            "When using UNIQUE_COUNT operation, please consider using "
+            "BOUNDED_UNIQUE_COUNT_K or APPROX_UNIQUE_COUNT "
+            "for better performance and scalability."
+        )
     elif operation == ttypes.Operation.HISTOGRAM:
-        LOGGER.warning("When using HISTOGRAM operation, please consider using "
-                       "APPROX_HISTOGRAM_K for better performance and "
-                       "bounded memory usage.")
+        LOGGER.warning(
+            "When using HISTOGRAM operation, please consider using "
+            "APPROX_HISTOGRAM_K for better performance and "
+            "bounded memory usage."
+        )
 
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
     agg.tags = tags
