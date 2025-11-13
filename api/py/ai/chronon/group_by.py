@@ -179,7 +179,8 @@ def Aggregation(
 
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
     agg.tags = tags
-    agg.elementWise = element_wise
+    if element_wise:
+        agg.elementWise = element_wise
     return agg
 
 

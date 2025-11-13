@@ -40,10 +40,6 @@
           "dependencies": [
             "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
           ],
-          "tableProperties": {
-            "source": "chronon"
-          },
-          "outputNamespace": "chronon_db",
           "team": "sample_team",
           "offlineSchedule": "@daily"
         },
@@ -70,8 +66,7 @@
           {
             "inputColumn": "event",
             "operation": 7,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           }
         ]
       },
