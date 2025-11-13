@@ -76,7 +76,8 @@
           {
             "inputColumn": "some_column",
             "operation": 3,
-            "argMap": {}
+            "argMap": {},
+            "elementWise": 0
           }
         ],
         "accuracy": 1

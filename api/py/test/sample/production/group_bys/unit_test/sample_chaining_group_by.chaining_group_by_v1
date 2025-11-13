@@ -89,7 +89,8 @@
                   {
                     "inputColumn": "event",
                     "operation": 7,
-                    "argMap": {}
+                    "argMap": {},
+                    "elementWise": 0
                   }
                 ]
               },
@@ -119,7 +120,8 @@
     {
       "inputColumn": "event",
       "operation": 3,
-      "argMap": {}
+      "argMap": {},
+      "elementWise": 0
     }
   ]
 }

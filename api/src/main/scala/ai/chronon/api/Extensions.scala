@@ -203,7 +203,8 @@ object Extensions {
               _.toScala
             )
             .orNull,
-          bucket
+          bucket,
+          Option(aggregation.elementWise).getOrElse(false)
         )
       }
     }
@@ -225,7 +226,8 @@ object Extensions {
               _.toScala.toMap
             )
             .orNull,
-          bucket
+          bucket,
+          Option(aggregation.elementWise).getOrElse(false)
         )
       }
     }
