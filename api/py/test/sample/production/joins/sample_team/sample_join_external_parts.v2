@@ -73,14 +73,12 @@
           {
             "inputColumn": "impressed_unique_count_1d",
             "operation": 7,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           },
           {
             "inputColumn": "viewed_unique_count_1d",
             "operation": 7,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           }
         ]
       }

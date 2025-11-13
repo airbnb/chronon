@@ -85,8 +85,7 @@
           {
             "inputColumn": "event",
             "operation": 7,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           },
           {
             "inputColumn": "event",
@@ -97,8 +96,7 @@
                 "length": 7,
                 "timeUnit": 1
               }
-            ],
-            "elementWise": 0
+            ]
           }
         ]
       },
@@ -148,8 +146,7 @@
           {
             "inputColumn": "entity",
             "operation": 3,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           },
           {
             "inputColumn": "entity",
@@ -160,8 +157,7 @@
                 "length": 7,
                 "timeUnit": 1
               }
-            ],
-            "elementWise": 0
+            ]
           }
         ]
       },

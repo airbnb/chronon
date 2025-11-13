@@ -66,8 +66,7 @@
           {
             "inputColumn": "event",
             "operation": 7,
-            "argMap": {},
-            "elementWise": 0
+            "argMap": {}
           }
         ]
       },
