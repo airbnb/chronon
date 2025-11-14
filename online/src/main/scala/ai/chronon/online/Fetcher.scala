@@ -265,7 +265,7 @@ class Fetcher(val kvStore: KVStore,
                     joinConf: Option[api.Join]): Future[scala.collection.Seq[ResponseWithContext]] = {
     val requestStartTs = System.currentTimeMillis()
     val internalResponsesF = super.fetchJoin(requests, joinConf)
-    val externalResponsesF = fetchExternal(requests)
+    val externalResponsesF = fetchExternal(requests, joinConf)
     internalResponsesF.zip(externalResponsesF).map {
       case (internalResponses, externalResponses) =>
         internalResponses.zip(externalResponses).map {
@@ -568,7 +568,8 @@ class Fetcher(val kvStore: KVStore,
   }
 
   // Pulling external features in a batched fashion across services in-parallel
-  def fetchExternal(joinRequests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+  def fetchExternal(joinRequests: scala.collection.Seq[Request],
+                    joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val startTime = System.currentTimeMillis()
     val resultMap = new mutable.LinkedHashMap[Request, Try[mutable.HashMap[String, Any]]]
     var invalidCount = 0
@@ -577,9 +578,14 @@ class Fetcher(val kvStore: KVStore,
     // step-1 handle invalid requests and collect valid ones
     joinRequests.foreach { request =>
       val joinName = request.name
-      val joinConfTry: Try[JoinOps] = getJoinConf(request.name)
+      // Use locally provided joinConf if available, otherwise fetch from KV store
+      val joinConfTry: Try[JoinOps] = if (joinConf.isDefined) {
+        Try(JoinOps(joinConf.get))
+      } else {
+        getJoinConf(request.name)
+      }
       if (joinConfTry.isFailure) {
-        getJoinConf.refresh(request.name)
+        if (joinConf.isEmpty) getJoinConf.refresh(request.name)
         resultMap.update(
           request,
           Failure(
@@ -599,11 +605,16 @@ class Fetcher(val kvStore: KVStore,
     // step-2 dedup external requests across joins
     val externalToJoinRequests: Seq[ExternalToJoinRequest] = validRequests
       .flatMap { joinRequest =>
-        val joinConf = getJoinConf(joinRequest.name)
-        if (joinConf.isFailure) {
-          getJoinConf.refresh(joinRequest.name)
+        // Use locally provided joinConf if available, otherwise fetch from KV store
+        val joinConfOps = if (joinConf.isDefined) {
+          Try(JoinOps(joinConf.get))
+        } else {
+          getJoinConf(joinRequest.name)
         }
-        val parts = joinConf.get.join.onlineExternalParts // cheap since it is cached, valid since step-1
+        if (joinConfOps.isFailure) {
+          if (joinConf.isEmpty) getJoinConf.refresh(joinRequest.name)
+        }
+        val parts = joinConfOps.get.join.onlineExternalParts // cheap since it is cached, valid since step-1
         parts.iterator().toScala.map { part =>
           val externalRequest = Try(part.applyMapping(joinRequest.keys)) match {
             case Success(mappedKeys)                     => Left(Request(part.source.metadata.name, mappedKeys))
