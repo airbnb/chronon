@@ -109,7 +109,12 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.HISTOGRAM, "hist_input", argMap = Map("k" -> "2")) -> histogram,
       Builders.AggregationPart(Operation.AVERAGE, "hist_map") -> mapAvg,
       Builders.AggregationPart(Operation.SUM, "embeddings", elementWise = true) -> List(12.0, 14.0).toJava,
-      Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true) -> List(6.0, 7.0).toJava
+      Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true) -> List(6.0, 7.0).toJava,
+      Builders.AggregationPart(Operation.RUNNING_AVERAGE, "views") -> 19.0 / 3,
+      Builders.AggregationPart(Operation.RUNNING_AVERAGE, "session_lengths") -> 8.0,
+      Builders.AggregationPart(Operation.RUNNING_AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle,
+      Builders.AggregationPart(Operation.RUNNING_AVERAGE, "hist_map") -> mapAvg,
+      Builders.AggregationPart(Operation.RUNNING_AVERAGE, "embeddings", elementWise = true) -> List(6.0, 7.0).toJava
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip
@@ -142,7 +147,10 @@ class RowAggregatorTest extends TestCase {
     val finalized = rowAggregator.finalize(forDeletion)
 
     expectedVals.zip(finalized).zip(rowAggregator.outputSchema.map(_._1)).foreach {
-      case ((expected, actual), name) => assertEquals(expected, actual)
+      case ((expected: Double, actual: Double), _) =>
+        assertEquals(expected, actual, 1e-9)
+      case ((expected, actual), name) =>
+        assertEquals(expected, actual)
     }
   }
 }
