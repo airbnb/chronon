@@ -365,14 +365,14 @@ class Fetcher(val kvStore: KVStore,
                                   baseMap,
                                   Some(finalizedDerivedMap),
                                   joinCodec = Some(joinCodec))
-            // Refresh joinCodec if it has partial failure
-            if (hasPartialFailure) {
+            // Refresh joinCodec if it has partial failure (only when not using local joinConf)
+            if (hasPartialFailure && joinConf.isEmpty) {
               getJoinCodecs.refresh(baseValue.request.name)
             }
             response
           case Failure(exception) =>
             // more validation logic will be covered in compile.py to avoid this case
-            getJoinCodecs.refresh(baseValue.request.name)
+            if (joinConf.isEmpty) getJoinCodecs.refresh(baseValue.request.name)
             ctx.incrementException(exception)
             ResponseWithContext(baseValue.request,
                                 ctx,
