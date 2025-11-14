@@ -123,24 +123,67 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
   override def irType: DataType =
     StructType(
       "AvgIr",
+      Array(StructField("sum", DoubleType), StructField("count", IntType))
+    )
+
+  override def prepare(input: Double): Array[Any] = Array(input, 1)
+
+  // mutating
+  override def update(ir: Array[Any], input: Double): Array[Any] = {
+    ir.update(0, ir(0).asInstanceOf[Double] + input)
+    ir.update(1, ir(1).asInstanceOf[Int] + 1)
+    ir
+  }
+
+  // mutating
+  override def merge(ir1: Array[Any], ir2: Array[Any]): Array[Any] = {
+    ir1.update(0, ir1(0).asInstanceOf[Double] + ir2(0).asInstanceOf[Double])
+    ir1.update(1, ir1(1).asInstanceOf[Int] + ir2(1).asInstanceOf[Int])
+    ir1
+  }
+
+  override def finalize(ir: Array[Any]): Double =
+    ir(0).asInstanceOf[Double] / ir(1).asInstanceOf[Int].toDouble
+
+  override def delete(ir: Array[Any], input: Double): Array[Any] = {
+    ir.update(0, ir(0).asInstanceOf[Double] - input)
+    ir.update(1, ir(1).asInstanceOf[Int] - 1)
+    ir
+  }
+
+  override def clone(ir: Array[Any]): Array[Any] = {
+    val arr = new Array[Any](ir.length)
+    ir.copyToArray(arr)
+    arr
+  }
+
+  override def isDeletable: Boolean = true
+}
+
+class RunningAverage extends SimpleAggregator[Double, Array[Any], Double] {
+  override def outputType: DataType = DoubleType
+
+  override def irType: DataType =
+    StructType(
+      "RunningAvgIr",
       Array(StructField("running_average", DoubleType), StructField("weight", DoubleType))
     )
 
   override def prepare(input: Double): Array[Any] = Array(input, 1.0)
 
   /**
-   * When combining averages, if the counts sizes are too close we should use a different algorithm. This
-   * constant defines how close the ratio of the smaller to the total count can be:
-   */
+    * When combining averages, if the counts sizes are too close we should use a different algorithm. This
+    * constant defines how close the ratio of the smaller to the total count can be:
+    */
   private[this] val STABILITY_CONSTANT = 0.1
 
   /**
-   * Given two streams of doubles (left, leftWeight) and (right, rightWeight) of form (mean, weighted count), calculates
-   * the mean of the combined stream.
-   *
-   * Uses a more stable online algorithm which should be suitable for large numbers of records similar to:
-   * http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
-   */
+    * Given two streams of doubles (left, leftWeight) and (right, rightWeight) of form (mean, weighted count), calculates
+    * the mean of the combined stream.
+    *
+    * Uses a more stable online algorithm which should be suitable for large numbers of records similar to:
+    * http://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Parallel_algorithm
+    */
   private def computeRunningAverage(ir: Array[Any], right: Double, rightWeight: Double): Array[Any] = {
     val left = ir(0).asInstanceOf[Double]
     val leftWeight = ir(1).asInstanceOf[Double]
@@ -149,12 +192,12 @@ class Average extends SimpleAggregator[Double, Array[Any], Double] {
     } else {
       val newCount = leftWeight + rightWeight
       val newAverage = newCount match {
-        case 0.0 => 0.0
+        case 0.0                                => 0.0
         case newCount if newCount == leftWeight => left
         case newCount =>
           val scaling = rightWeight / newCount
           if (scaling < STABILITY_CONSTANT) {
-            right + (left - right) * scaling
+            left + (right - left) * scaling
           } else {
             (leftWeight * left + rightWeight * right) / newCount
           }

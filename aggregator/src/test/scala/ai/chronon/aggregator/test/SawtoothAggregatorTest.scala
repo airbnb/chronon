@@ -22,13 +22,13 @@ import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api.Extensions.AggregationOps
 import ai.chronon.api._
+import com.google.gson.Gson
 import junit.framework.TestCase
 import org.junit.Assert._
 
 import java.util
 import scala.collection.mutable
 import scala.collection.Seq
-import scala.collection.JavaConverters._
 
 class Timer {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -90,7 +90,10 @@ class SawtoothAggregatorTest extends TestCase {
     val rawHops = hopsAggregator.toTimeSortedArray(hopsAll)
     timer.publish("hops/Sort")
 
-    SawtoothAggregatorTest.assertArraysEqualWithTolerance(mergedHops, rawHops)
+    val gson = new Gson
+    val mergedStr = gson.toJson(mergedHops)
+    val rawStr = gson.toJson(rawHops)
+    assertEquals(mergedStr, rawStr)
 
     timer.start()
     val sawtoothIrs = sawtoothAggregator.computeWindows(rawHops, queries)
@@ -109,7 +112,9 @@ class SawtoothAggregatorTest extends TestCase {
     assertEquals(naiveIrs.length, queries.length)
     assertEquals(sawtoothIrs.length, queries.length)
     for (i <- queries.indices) {
-      SawtoothAggregatorTest.assertArraysEqualWithTolerance(naiveIrs(i), sawtoothIrs(i))
+      val naiveStr = gson.toJson(naiveIrs(i))
+      val sawtoothStr = gson.toJson(sawtoothIrs(i))
+      assertEquals(naiveStr, sawtoothStr)
     }
   }
 
@@ -160,10 +165,11 @@ class SawtoothAggregatorTest extends TestCase {
 
     assertEquals(naiveIrs.length, queries.length)
     assertEquals(sawtoothIrs.length, queries.length)
+    val gson = new Gson
     for (i <- queries.indices) {
-      val naiveFinal = rowAgg.finalize(naiveIrs(i))
-      val sawtoothFinal = rowAgg.finalize(sawtoothIrs(i))
-      SawtoothAggregatorTest.assertArraysEqualWithTolerance(naiveFinal, sawtoothFinal)
+      val naiveStr = gson.toJson(rowAgg.finalize(naiveIrs(i)))
+      val sawtoothStr = gson.toJson(rowAgg.finalize(sawtoothIrs(i)))
+      assertEquals(naiveStr, sawtoothStr)
     }
     timer.publish("comparison")
   }
@@ -171,19 +177,6 @@ class SawtoothAggregatorTest extends TestCase {
 }
 
 object SawtoothAggregatorTest {
-  private[aggregator] def assertArraysEqualWithTolerance(expected: Array[_], actual: Array[_], tolerance: Double = 1e-9): Unit = {
-    assertEquals(expected.length, actual.length)
-    expected.zip(actual).foreach {
-      case (expectedArray: Array[_], actualArray: Array[_]) => assertArraysEqualWithTolerance(expectedArray, actualArray)
-      case (expectedDouble: Double, actualDouble: Double) => assertEquals(expectedDouble, actualDouble, tolerance)
-      case (expectedMap: java.util.Map[_, _], actualMap: java.util.Map[_, _]) =>
-        assertEquals(expectedMap.keySet(), actualMap.keySet())
-        val keys = expectedMap.asScala.keys.toSeq
-        assertArraysEqualWithTolerance(keys.map(expectedMap.get).toArray[Any], keys.map(actualMap.get).toArray[Any])
-      case (e, a) => assertEquals(e, a)
-    }
-  }
-
   // the result is irs in sorted order of queries
   // with head real-time accuracy and tail hop accuracy
   // NOTE: This provides a sketch for a distributed topology

@@ -20,6 +20,7 @@ import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
 import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, SawtoothOnlineAggregator, TsUtils}
 import ai.chronon.api.Extensions.{WindowOps, WindowUtils}
 import ai.chronon.api._
+import com.google.gson.Gson
 import junit.framework.TestCase
 import org.junit.Assert.assertEquals
 
@@ -128,10 +129,11 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     val windowHeadEvents = events.filter(_.ts >= batchEndTs)
     val onlineIrs = queries.map(onlineAggregator.lambdaAggregateIr(denormBatchIr, windowHeadEvents.iterator, _))
 
+    val gson = new Gson()
     for (i <- queries.indices) {
-      val onlineFinalized = onlineAggregator.windowedAggregator.finalize(onlineIrs(i))
-      val sawtoothFinalized = onlineAggregator.windowedAggregator.finalize(sawtoothIrs(i))
-      SawtoothAggregatorTest.assertArraysEqualWithTolerance(Array(sawtoothFinalized), Array(onlineFinalized))
+      val onlineStr = gson.toJson(onlineAggregator.windowedAggregator.finalize(onlineIrs(i)))
+      val sawtoothStr = gson.toJson(onlineAggregator.windowedAggregator.finalize(sawtoothIrs(i)))
+      assertEquals(sawtoothStr, onlineStr)
     }
   }
 

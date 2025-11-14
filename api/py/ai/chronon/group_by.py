@@ -69,6 +69,7 @@ class Operation:
     COUNT = ttypes.Operation.COUNT
     SUM = ttypes.Operation.SUM
     AVERAGE = ttypes.Operation.AVERAGE
+    RUNNING_AVERAGE = ttypes.Operation.RUNNING_AVERAGE
     VARIANCE = ttypes.Operation.VARIANCE
     SKEW = ttypes.Operation.SKEW
     KURTOSIS = ttypes.Operation.KURTOSIS
