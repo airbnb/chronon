@@ -135,7 +135,6 @@ object CStream {
       Option(rollFloat(max, 1, nullRate = nullRate)).map(java.lang.Float.valueOf(_)).orNull
   }
 
-
   class ZippedStream(streams: CStream[Any]*)(tsIndex: Int) extends CStream[TestRow] {
     override def next(): TestRow =
       new TestRow(streams.map(_.next()).toArray: _*)(tsIndex)
@@ -163,7 +162,7 @@ case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: I
         }
       case IntType    => new IntStream(cardinality, nullRate)
       case DoubleType => new DoubleStream(cardinality, nullRate)
-      case FloatType => new FloatStream(cardinality, nullRate)
+      case FloatType  => new FloatStream(cardinality, nullRate)
       case LongType =>
         name match {
           case Constants.TimeColumn => new TimeStream(new Window(cardinality, TimeUnit.DAYS))

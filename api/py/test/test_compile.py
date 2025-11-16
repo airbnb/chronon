@@ -19,7 +19,6 @@ Run the flow for materialize.
 import json
 import os
 import re
-
 import pytest
 from ai.chronon.api.ttypes import GroupBy, Join
 from ai.chronon.repo.compile import extract_and_convert
@@ -222,7 +221,7 @@ def test_failed_compile_when_dependent_join_detected():
     runner = CliRunner()
     result = _invoke_cli_with_params(runner, "group_bys/sample_team/event_sample_group_by.py")
     assert result.exit_code != 0
-    error_message_expected = "Detected dependencies are as follows: ['sample_team.sample_chaining_join.parent_join', 'sample_team.sample_join_bootstrap.v1', 'sample_team.sample_join_bootstrap.v2', 'sample_team.sample_join_derivation.v1', 'sample_team.sample_join_with_derivations_on_external_parts.v1', 'sample_team.sample_label_join.v1', 'sample_team.sample_label_join_with_agg.v1', 'sample_team.sample_online_join.v1']"
+    error_message_expected = "Detected dependencies are as follows: ['sample_team.sample_chaining_join.parent_join', 'sample_team.sample_join_bootstrap.v1', 'sample_team.sample_join_bootstrap.v2', 'sample_team.sample_join_derivation.v1', 'sample_team.sample_join_derivation_key_mapping.v1', 'sample_team.sample_join_with_derivations_on_external_parts.v1', 'sample_team.sample_label_join.v1', 'sample_team.sample_label_join_with_agg.v1', 'sample_team.sample_online_join.v1']"
     actual_exception_message = str(result.exception).strip().lower()
     error_message_expected = error_message_expected.strip().lower()
     assert (
@@ -240,7 +239,7 @@ def test_detected_dependent_joins_materialized():
     runner = CliRunner()
     result = _invoke_cli_with_params(runner, "group_bys/sample_team/event_sample_group_by.py", ["--force-overwrite"])
     assert result.exit_code == 0
-    expected_message = "Successfully wrote 8 Join objects to api/py/test/sample/production".strip().lower()
+    expected_message = "Successfully wrote 9 Join objects to api/py/test/sample/production".strip().lower()
     actual_message = str(result.output).strip().lower()
     assert expected_message in actual_message, f"Got a different message than expected {actual_message}"
 
@@ -326,7 +325,8 @@ def test_compile_feature_display():
     expected = map(
         lambda x: x.value.replace("_", " ").title(),
         [
-            FeatureDisplayKeys.SOURCE_KEYS,
+            FeatureDisplayKeys.KEY_COLUMNS,
+            FeatureDisplayKeys.LEFT_COLUMNS,
             FeatureDisplayKeys.INTERNAL_COLUMNS,
             FeatureDisplayKeys.EXTERNAL_COLUMNS,
             FeatureDisplayKeys.DERIVED_COLUMNS,
@@ -399,3 +399,48 @@ def test_compile_inline_group_by():
         join = json2thrift(file.read(), Join)
         assert len(join.joinParts) == 1
         assert join.joinParts[0].groupBy.metaData.team == "unit_test"
+
+
+def test_compile_external_source_with_offline_group_by():
+    """
+    Test that compiling a join with an external source that has an offlineGroupBy
+    correctly materializes the offlineGroupBy in the external source.
+    """
+    runner = CliRunner()
+    input_path = "joins/sample_team/sample_join_with_derivations_on_external_parts.py"
+    result = _invoke_cli_with_params(runner, input_path)
+    assert result.exit_code == 0
+
+    # Verify the compiled join contains the external source with offlineGroupBy
+    path = "sample/production/joins/sample_team/sample_join_with_derivations_on_external_parts.v1"
+    full_file_path = _get_full_file_path(path)
+    _assert_file_exists(full_file_path, f"Expected {os.path.basename(path)} to be materialized, but it was not.")
+
+    with open(full_file_path, "r") as file:
+        join = json2thrift(file.read(), Join)
+
+        # Verify the join has online external parts
+        assert join.onlineExternalParts is not None, "Expected onlineExternalParts to be present"
+        assert len(join.onlineExternalParts) > 0, "Expected at least one external part"
+
+        # Find the external source with offlineGroupBy
+        external_source_with_offline_gb = None
+        for external_part in join.onlineExternalParts:
+            if external_part.source.metadata.name == "test_external_source":
+                external_source_with_offline_gb = external_part.source
+                break
+
+        assert external_source_with_offline_gb is not None, "Expected to find test_external_source"
+
+        # Verify the offlineGroupBy is present and has the expected properties
+        assert external_source_with_offline_gb.offlineGroupBy is not None, (
+            "Expected offlineGroupBy to be present in test_external_source"
+        )
+
+        offline_gb = external_source_with_offline_gb.offlineGroupBy
+        assert offline_gb.keyColumns == ["group_by_subject"], f"Expected key columns to be ['group_by_subject'], got {offline_gb.keyColumns}"
+        assert offline_gb.aggregations is not None, "Expected aggregations to be present"
+        assert len(offline_gb.aggregations) == 3, f"Expected 3 aggregations, got {len(offline_gb.aggregations)}"
+        assert offline_gb.metaData.outputNamespace == "sample_namespace", (
+            f"Expected output namespace to be 'sample_namespace', got {offline_gb.metaData.outputNamespace}"
+        )

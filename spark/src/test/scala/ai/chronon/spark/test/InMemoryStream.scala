@@ -18,9 +18,11 @@ package ai.chronon.spark.test
 
 import org.slf4j.LoggerFactory
 import ai.chronon.api.{Constants, GroupBy, StructType}
-import ai.chronon.online.{AvroConversions, Mutation, SparkConversions, TileCodec}
+import ai.chronon.online.{Mutation, TileCodec}
+import ai.chronon.online.serde.{AvroConversions, SparkConversions}
 import ai.chronon.online.Extensions.StructTypeOps
-import ai.chronon.spark.{GenericRowHandler, TableUtils}
+import ai.chronon.spark.GenericRowHandler
+import ai.chronon.spark.catalog.TableUtils
 import com.esotericsoftware.kryo.Kryo
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.io.{BinaryEncoder, EncoderFactory}
@@ -91,7 +93,9 @@ class InMemoryStream {
     input.addData(inputDf.collect.map { row: Row =>
       val bytes =
         encodeRecord(avroSchema)(
-          AvroConversions.fromChrononRow(row, schema, avroSchema, GenericRowHandler.func).asInstanceOf[GenericData.Record])
+          AvroConversions
+            .fromChrononRow(row, schema, avroSchema, GenericRowHandler.func)
+            .asInstanceOf[GenericData.Record])
       bytes
     })
     input.toDF

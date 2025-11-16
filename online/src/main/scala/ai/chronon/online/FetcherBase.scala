@@ -20,19 +20,20 @@ import ai.chronon.aggregator.row.ColumnAggregator
 import ai.chronon.aggregator.windowing
 import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, TiledIr}
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, WindowOps, ThrowableOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, ThrowableOps, WindowOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
-import ai.chronon.online.OnlineDerivationUtil.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
+import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
+import ai.chronon.online.serde.AvroConversions
 import com.google.gson.Gson
 
 import java.util
-import scala.collection.JavaConverters._
 import scala.collection.Seq
 import scala.concurrent.{ExecutionContext, Future}
+import scala.util.ScalaJavaConversions.{IteratorOps, JMapOps}
 import scala.util.{Failure, Success, Try}
 
 // Does internal facing fetching
@@ -45,7 +46,8 @@ class FetcherBase(kvStore: KVStore,
                   debug: Boolean = false,
                   flagStore: FlagStore = null,
                   disableErrorThrows: Boolean = false,
-                  executionContextOverride: ExecutionContext = null)
+                  executionContextOverride: ExecutionContext = null,
+                  modelBackend: ModelBackend = null)
     extends MetadataStore(kvStore, metaDataSet, timeoutMillis, executionContextOverride)
     with FetcherCache {
   import FetcherBase._
@@ -154,7 +156,7 @@ class FetcherBase(kvStore: KVStore,
                   .map(_.isSet(
                     "disable_streaming_decoding_error_throws",
                     Map(
-                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).asJava))
+                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).toJava))
                 if (groupByFlag.getOrElse(disableErrorThrows)) {
                   Array.empty[TiledIr]
                 } else {
@@ -202,7 +204,7 @@ class FetcherBase(kvStore: KVStore,
                   .map(_.isSet(
                     "disable_streaming_decoding_error_throws",
                     Map(
-                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).asJava))
+                      "groupby_streaming_dataset" -> servingInfo.groupByServingInfo.groupBy.getMetaData.getName).toJava))
                 if (groupByFlag.getOrElse(disableErrorThrows)) {
                   Seq.empty[Row]
                 } else {
@@ -220,7 +222,7 @@ class FetcherBase(kvStore: KVStore,
           logger.info(s"""
                          |batch ir: ${gson.toJson(batchIr)}
                          |streamingRows: ${gson.toJson(streamingRows)}
-                         |streamingRowsCount: ${streamingRows.length}
+                         |streamingRowsCount: ${Try(streamingRows.length).getOrElse(0)}
                          |batchEnd in millis: ${servingInfo.batchEndTsMillis}
                          |queryTime in millis: $queryTimeMs
                          |""".stripMargin)
@@ -309,7 +311,7 @@ class FetcherBase(kvStore: KVStore,
                      |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
                      |Forcing an update of schema.""".stripMargin)
       getGroupByServingInfo
-        .force(name)
+        .refresh(name)
         .recover {
           case ex: Throwable =>
             logger.error(s"Couldn't update GroupByServingInfo of $name. Proceeding with the old one.", ex)
@@ -329,7 +331,7 @@ class FetcherBase(kvStore: KVStore,
       Option(flagStore)
         .exists(
           _.isSet("enable_fetcher_batch_ir_cache",
-                  Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).asJava))
+                  Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).toJava))
 
     if (debug)
       logger.info(
@@ -341,7 +343,7 @@ class FetcherBase(kvStore: KVStore,
   // If the flag is set, we check whether the entity is in the active entity list saved on k-v store
   def isEntityValidityCheckEnabled: Boolean = {
     Option(flagStore)
-      .exists(_.isSet("enable_entity_validity_check", Map.empty[String, String].asJava))
+      .exists(_.isSet("enable_entity_validity_check", Map.empty[String, String].toJava))
   }
 
   // 1. fetches GroupByServingInfo
@@ -350,12 +352,25 @@ class FetcherBase(kvStore: KVStore,
   // 4. Finally converted to outputSchema
   def fetchGroupBys(requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
     // split a groupBy level request into its kvStore level requests
-    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = requests.iterator.map { request =>
-      val groupByRequestMetaTry: Try[GroupByRequestMeta] = getGroupByServingInfo(request.name)
+    // don't send to KV store if ANY of key's value is null
+    val validRequests =
+      requests.filter(r => r.keys == null || r.keys.values == null || !r.keys.values.exists(_ == null))
+    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
+      request.context
+        .getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupBy = request.name))
+        .increment("group_by_request.count")
+      val groupByServingInfoTry = getGroupByServingInfo(request.name)
+        .recover {
+          case ex: Throwable =>
+            getGroupByServingInfo.refresh(request.name)
+            logger.error(s"Couldn't fetch GroupByServingInfo for ${request.name}", ex)
+            request.context.foreach(_.incrementException(ex))
+            throw ex
+        }
+      val groupByRequestMetaTry: Try[GroupByRequestMeta] = groupByServingInfoTry
         .map { groupByServingInfo =>
           val context =
             request.context.getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupByServingInfo.groupBy))
-          context.increment("group_by_request.count")
           var batchKeyBytes: Array[Byte] = null
           var streamingKeyBytes: Array[Byte] = null
           try {
@@ -430,6 +445,15 @@ class FetcherBase(kvStore: KVStore,
       kvStore.multiGet(allRequestsToFetch)
     } else {
       Future(Seq.empty[GetResponse])
+    }.recover {
+      case e: Throwable =>
+        // Capture exceptions from calling KvStore.multiGet
+        // requestMetaTry is a Failure when GBServingInfo failed to load, those are skipped because we don't fetch them.
+        groupByRequestToKvRequest.foreach {
+          case (_, requestMetaTry) =>
+            requestMetaTry.toOption.foreach(_.context.withSuffix("multi_get").incrementException(e))
+        }
+        throw e
     }
 
     kvResponseFuture
@@ -453,6 +477,7 @@ class FetcherBase(kvStore: KVStore,
               context.count("multi_get.batch.size", allRequestsToFetch.length)
               context.distribution("multi_get.bytes", totalResponseValueBytes)
               context.distribution("multi_get.response.length", kvResponses.length)
+              context.distribution("multi_get.response.success.length", kvResponses.count(_.values.isSuccess))
               context.distribution("multi_get.latency.millis", multiGetMillis)
 
               // pick the batch version with highest timestamp
@@ -474,7 +499,7 @@ class FetcherBase(kvStore: KVStore,
               val streamingResponsesOpt =
                 streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
-              val groupByResponse: Map[String, AnyRef] =
+              val groupByResponse: Option[Map[String, AnyRef]] =
                 try {
                   if (debug)
                     logger.info(
@@ -488,7 +513,7 @@ class FetcherBase(kvStore: KVStore,
                                            multiGetMillis,
                                            context,
                                            totalResponseValueBytes,
-                                           request.keys).getOrElse(Map.empty)
+                                           request.keys)
                 } catch {
                   case ex: Exception =>
                     // not all exceptions are due to stale schema, so we want to control how often we hit kv store
@@ -499,7 +524,7 @@ class FetcherBase(kvStore: KVStore,
                 }
               if (groupByServingInfo.groupBy.hasDerivations) {
                 val derivedMapTry: Try[Map[String, AnyRef]] = Try {
-                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, groupByResponse)
+                  applyDeriveFunc(groupByServingInfo.deriveFunc, request, groupByResponse.getOrElse(Map.empty))
                 }
                 val derivedMap = derivedMapTry match {
                   case Success(derivedMap) =>
@@ -512,7 +537,7 @@ class FetcherBase(kvStore: KVStore,
                     val renameOnlyDeriveFunction =
                       buildRenameOnlyDerivationFunction(groupByServingInfo.groupBy.derivationsScala)
                     val renameOnlyDerivedMapTry: Try[Map[String, AnyRef]] = Try {
-                      renameOnlyDeriveFunction(request.keys, groupByResponse)
+                      renameOnlyDeriveFunction(request.keys, groupByResponse.getOrElse(Map.empty))
                         .mapValues(_.asInstanceOf[AnyRef])
                         .toMap
                     }
@@ -529,7 +554,8 @@ class FetcherBase(kvStore: KVStore,
                 }
                 derivedMap
               } else {
-                groupByResponse
+                // When using fetchGroupBys and fetch key doesn't exist it should return Null.
+                groupByResponse.orNull
               }
             }
             Response(request, responseMapTry)
@@ -551,11 +577,11 @@ class FetcherBase(kvStore: KVStore,
     val tailHops = batchRecord(1)
       .asInstanceOf[util.ArrayList[Any]]
       .iterator()
-      .asScala
+      .toScala
       .map(
         _.asInstanceOf[util.ArrayList[Any]]
           .iterator()
-          .asScala
+          .toScala
           .map(hop => gbInfo.aggregator.baseAggregator.denormalizeInPlace(hop.asInstanceOf[Array[Any]]))
           .toArray)
       .toArray
@@ -572,7 +598,11 @@ class FetcherBase(kvStore: KVStore,
       requests.map { request =>
         // get join conf from metadata store if not passed in
         val joinTry: Try[JoinOps] = if (joinConf.isEmpty) {
-          getJoinConf(request.name)
+          val joinConfTry = getJoinConf(request.name)
+          if (joinConfTry.isFailure) {
+            getJoinConf.refresh(request.name)
+          }
+          joinConfTry
         } else {
           logger.debug(s"Using passed in join configuration: ${joinConf.get.metaData.getName}")
           Success(JoinOps(joinConf.get))
@@ -642,28 +672,8 @@ class FetcherBase(kvStore: KVStore,
                   }
                   Map(fetchException.getRequestName + "_exception" -> fetchException.getMessage)
                 }
-                case Left(PrefixedRequest(prefix, groupByRequest)) => {
-                  responseMap
-                    .getOrElse(groupByRequest,
-                               Failure(new IllegalStateException(
-                                 s"Couldn't find a groupBy response for $groupByRequest in response map")))
-                    .map { valueMap =>
-                      if (valueMap != null) {
-                        valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
-                      } else {
-                        Map.empty[String, AnyRef]
-                      }
-                    }
-                    // prefix feature names
-                    .recover { // capture exception as a key
-                      case ex: Throwable =>
-                        if (debug || Math.random() < 0.001) {
-                          logger.error(s"Failed to fetch $groupByRequest", ex)
-                        }
-                        Map(groupByRequest.name + "_exception" -> ex.traceString)
-                    }
-                    .get
-                }
+                case Left(PrefixedRequest(prefix, groupByRequest)) =>
+                  parseGroupByResponse(prefix, groupByRequest, responseMap)
               }.toMap
             }
             joinValuesTry match {
@@ -681,6 +691,41 @@ class FetcherBase(kvStore: KVStore,
         }.toSeq
         responses
       }
+  }
+
+  def parseGroupByResponse(prefix: String,
+                           groupByRequest: Request,
+                           responseMap: Map[Request, Try[Map[String, AnyRef]]]) = {
+
+    // Group bys with ANY null keys won't be requested from the KV store and we don't expect a response.
+    val isRequiredRequest =
+      (groupByRequest.keys.nonEmpty && !groupByRequest.keys.values.exists(_ == null)) || groupByRequest.keys.isEmpty
+
+    val response: Try[Map[String, AnyRef]] = responseMap.get(groupByRequest) match {
+      case Some(value) => value
+      case None =>
+        if (isRequiredRequest)
+          Failure(new IllegalStateException(s"Couldn't find a groupBy response for $groupByRequest in response map"))
+        else Success(null)
+    }
+
+    response
+      .map { valueMap =>
+        if (valueMap != null) {
+          valueMap.map { case (aggName, aggValue) => prefix + "_" + aggName -> aggValue }
+        } else {
+          Map.empty[String, AnyRef]
+        }
+      }
+      // prefix feature names
+      .recover { // capture exception as a key
+        case ex: Throwable =>
+          if (debug || Math.random() < 0.001) {
+            logger.error(s"Failed to fetch $groupByRequest", ex)
+          }
+          Map(prefix + "_exception" -> ex.traceString)
+      }
+      .get
   }
 
   /**

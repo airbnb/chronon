@@ -17,12 +17,13 @@
 package ai.chronon.spark.stats
 
 import org.slf4j.LoggerFactory
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{PartitionRange, SemanticHashUtils, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{PartitionRange, SemanticHashUtils}
 import org.apache.spark.sql.SparkSession
 
 /**
@@ -70,7 +71,7 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           val inputDf = tableUtils.sql(s"""
                |SELECT *
                |FROM $inputTable
-               |WHERE ds BETWEEN '${range.start}' AND '${range.end}'
+               |WHERE ${tableUtils.partitionColumn} BETWEEN '${range.start}' AND '${range.end}'
                |""".stripMargin)
           val stats = new StatsCompute(inputDf, joinConf.leftKeyCols, joinConf.metaData.nameToFilePath)
           val aggregator = StatsGenerator.buildAggregator(

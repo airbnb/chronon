@@ -27,8 +27,9 @@ import ai.chronon.online.Fetcher.{SeriesStatsResponse, StatsRequest}
 import scala.compat.java8.FutureConverters
 import ai.chronon.online.{JavaStatsRequest, MetadataStore}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.ConsistencyJob
-import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder}
 import com.google.gson.GsonBuilder
 import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
@@ -36,8 +37,8 @@ import org.apache.spark.sql.SparkSession
 import java.util.TimeZone
 import java.util.concurrent.Executors
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.collection.JavaConverters._
 import scala.concurrent.{Await, ExecutionContext}
+import scala.util.ScalaJavaConversions.ListOps
 
 /**
   * For testing of the consumption side of Stats end to end.
@@ -106,9 +107,7 @@ class FetchStatsTest extends TestCase {
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(Builders.JoinPart(groupBy = gb, prefix = "user")),
       derivations = Seq(
-        Builders.Derivation(
-          name = "*"
-        ),
+        Builders.Derivation.star(),
         Builders.Derivation(
           name = "last_copy",
           expression = "COALESCE(user_ut_fetch_stats_item_views__fetch_stats_test_value_max, 0)"
@@ -139,7 +138,7 @@ class FetchStatsTest extends TestCase {
     val metrics = consistencyJob.buildConsistencyMetrics()
     OnlineUtils.serveConsistency(tableUtils, inMemoryKvStore, today, joinConf)
     OnlineUtils.serveLogStats(tableUtils, inMemoryKvStore, yesterday, joinConf)
-    joinConf.joinParts.asScala.foreach(jp =>
+    joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, yesterday, jp.groupBy))
 
     // Part 2: Fetch. Build requests, and fetch.

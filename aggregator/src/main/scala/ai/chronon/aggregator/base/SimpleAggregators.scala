@@ -25,10 +25,11 @@ import com.yahoo.sketches.kll.KllFloatsSketch
 import com.yahoo.sketches.{ArrayOfDoublesSerDe, ArrayOfItemsSerDe, ArrayOfLongsSerDe, ArrayOfStringsSerDe}
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
+import java.security.MessageDigest
 import java.util
 import scala.collection.mutable
-import scala.jdk.CollectionConverters._
 import scala.reflect.ClassTag
+import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, ListOps, MapOps}
 
 class Sum[I: Numeric](inputType: DataType) extends SimpleAggregator[I, I, I] {
   private val numericImpl = implicitly[Numeric[I]]
@@ -449,7 +450,7 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
     val sketch = new ItemsSketch[T](sketchSize)
     val sketchType = implicitly[FrequentItemsFriendly[T]].sketchType
 
-    values.asScala.foreach({ case (k, v) => sketch.update(k, v) })
+    values.toScala.foreach({ case (k, v) => sketch.update(k, v) })
 
     ItemsSketchIR(sketch, sketchType)
   }
@@ -567,8 +568,8 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
   private def combine(hist1: util.Map[T, Long], hist2: util.Map[T, Long]): ApproxHistogramIr[T] = {
     val hist = new util.HashMap[T, Long]()
 
-    hist1.asScala.foreach({ case (k, v) => increment(k, v, hist) })
-    hist2.asScala.foreach({ case (k, v) => increment(k, v, hist) })
+    hist1.toScala.foreach({ case (k, v) => increment(k, v, hist) })
+    hist2.toScala.foreach({ case (k, v) => increment(k, v, hist) })
 
     toIr(hist)
   }
@@ -577,7 +578,7 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
     ApproxHistogramIr(isApprox = true, sketch = Some(sketch), histogram = None)
   }
   private def combine(hist: util.Map[T, Long], sketch: ItemsSketchIR[T]): ApproxHistogramIr[T] = {
-    hist.asScala.foreach({ case (k, v) => sketch.sketch.update(k, v) })
+    hist.toScala.foreach({ case (k, v) => sketch.sketch.update(k, v) })
     ApproxHistogramIr(isApprox = true, sketch = Some(sketch), histogram = None)
   }
 
@@ -594,8 +595,115 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
 
   private def toOutputMap(map: util.Map[T, Long]): util.Map[String, Long] = {
     val result = new util.HashMap[String, Long](map.size())
-    map.asScala.foreach({ case (k, v) => result.put(String.valueOf(k), v) })
+    map.toScala.foreach({ case (k, v) => result.put(String.valueOf(k), v) })
     result
+  }
+}
+
+object BoundedUniqueCount {
+  private val SentinelSet: util.Set[Any] = new util.HashSet[Any]()
+  private val SentinelMarker: String = "__SENTINEL__"
+}
+
+class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggregator[T, util.Set[Any], Long] {
+  private def toBytes(input: T): Array[Byte] = {
+    val bos = new ByteArrayOutputStream()
+    val out = new ObjectOutputStream(bos)
+    out.writeObject(input)
+    out.flush()
+    bos.toByteArray
+  }
+
+  private def md5Hex(bytes: Array[Byte]): String =
+    MessageDigest.getInstance("MD5").digest(bytes).map("%02x".format(_)).mkString
+
+  private def processInput(input: T): Any = {
+    inputType match {
+      case IntType | LongType | DoubleType | FloatType | ShortType | BinaryType =>
+        input
+      case _ =>
+        md5Hex(toBytes(input))
+    }
+  }
+
+  override def prepare(input: T): util.Set[Any] = {
+    val result = new util.HashSet[Any](k)
+    result.add(processInput(input))
+    result
+  }
+
+  override def update(ir: util.Set[Any], input: T): util.Set[Any] = {
+    if (ir == BoundedUniqueCount.SentinelSet || ir.size() >= k) {
+      return BoundedUniqueCount.SentinelSet
+    }
+
+    ir.add(processInput(input))
+    ir
+  }
+
+  override def outputType: DataType = LongType
+
+  override def irType: DataType =
+    inputType match {
+      case IntType | LongType | DoubleType | FloatType | ShortType | BinaryType =>
+        ListType(inputType)
+      case _ =>
+        ListType(StringType)
+    }
+
+  override def merge(ir1: util.Set[Any], ir2: util.Set[Any]): util.Set[Any] = {
+    if (ir1 == BoundedUniqueCount.SentinelSet || ir2 == BoundedUniqueCount.SentinelSet) {
+      return BoundedUniqueCount.SentinelSet
+    }
+
+    ir2
+      .iterator()
+      .toScala
+      .foreach(v =>
+        if (ir1.size() < k) {
+          ir1.add(v)
+        })
+
+    if (ir1.size() >= k) {
+      BoundedUniqueCount.SentinelSet
+    } else {
+      ir1
+    }
+  }
+
+  override def finalize(ir: util.Set[Any]): Long = {
+    if (ir == BoundedUniqueCount.SentinelSet) {
+      k
+    } else {
+      ir.size()
+    }
+  }
+
+  override def clone(ir: util.Set[Any]): util.Set[Any] = {
+    if (ir == BoundedUniqueCount.SentinelSet) {
+      BoundedUniqueCount.SentinelSet
+    } else {
+      new util.HashSet[Any](ir)
+    }
+  }
+
+  override def normalize(ir: util.Set[Any]): Any = {
+    if (ir == BoundedUniqueCount.SentinelSet) {
+      val list = new util.ArrayList[Any]()
+      list.add(BoundedUniqueCount.SentinelMarker)
+      list
+    } else {
+      new util.ArrayList[Any](ir)
+    }
+  }
+
+  override def denormalize(ir: Any): util.Set[Any] = {
+    val list = ir.asInstanceOf[util.ArrayList[Any]]
+    if (list.size() == 1 && list.get(0) == BoundedUniqueCount.SentinelMarker) {
+      BoundedUniqueCount.SentinelSet
+    } else {
+      new util.HashSet[Any](list)
+    }
   }
 }
 
@@ -853,11 +961,11 @@ trait MomentAggregator extends SimpleAggregator[Double, MomentsIR, Double] {
 
   override def normalize(ir: MomentsIR): util.ArrayList[Double] = {
     val values = List(ir.n, ir.m1, ir.m2, ir.m3, ir.m4)
-    new util.ArrayList[Double](values.asJava)
+    new util.ArrayList[Double](values.toJava)
   }
 
   override def denormalize(normalized: Any): MomentsIR = {
-    val values = normalized.asInstanceOf[util.ArrayList[Double]].asScala
+    val values = normalized.asInstanceOf[util.ArrayList[Double]].toScala
     MomentsIR(values(0), values(1), values(2), values(3), values(4))
   }
 

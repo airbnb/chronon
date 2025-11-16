@@ -17,7 +17,7 @@
 package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.test.SawtoothAggregatorTest.sawtoothAggregate
-import ai.chronon.aggregator.windowing.{FiveMinuteResolution, SawtoothOnlineAggregator, TsUtils}
+import ai.chronon.aggregator.windowing.{FinalBatchIr, FiveMinuteResolution, SawtoothOnlineAggregator, TsUtils}
 import ai.chronon.api.Extensions.{WindowOps, WindowUtils}
 import ai.chronon.api._
 import com.google.gson.Gson
@@ -48,68 +48,74 @@ class SawtoothOnlineAggregatorTest extends TestCase {
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(
-        operation     = Operation.COUNT,
-        inputColumn   = "num",
-        windows       = Seq(new Window(14, TimeUnit.DAYS), new Window(20, TimeUnit.HOURS), new Window(6, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))
+        operation = Operation.COUNT,
+        inputColumn = "num",
+        windows = Seq(new Window(14, TimeUnit.DAYS),
+                      new Window(20, TimeUnit.HOURS),
+                      new Window(6, TimeUnit.DAYS),
+                      new Window(7, TimeUnit.DAYS))
       ),
       Builders.Aggregation(
-        operation     = Operation.AVERAGE,
-        inputColumn   = "num",
-        windows       = Seq(new Window(14, TimeUnit.DAYS), new Window(20, TimeUnit.HOURS), new Window(6, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))
+        operation = Operation.AVERAGE,
+        inputColumn = "num",
+        windows = Seq(new Window(14, TimeUnit.DAYS),
+                      new Window(20, TimeUnit.HOURS),
+                      new Window(6, TimeUnit.DAYS),
+                      new Window(7, TimeUnit.DAYS))
       ),
       Builders.Aggregation(
-        operation     = Operation.FIRST,
-        inputColumn   = "ts_col",
-        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
-        argMap        = Map("k" -> "4")
+        operation = Operation.FIRST,
+        inputColumn = "ts_col",
+        windows = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
+        argMap = Map("k" -> "4")
       ),
       Builders.Aggregation(
-        operation     = Operation.LAST,
-        inputColumn   = "ts_col",
-        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+        operation = Operation.LAST,
+        inputColumn = "ts_col",
+        windows = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
       ),
       Builders.Aggregation(
-        operation     = Operation.SUM,
-        inputColumn   = "num",
-        windows       = null
+        operation = Operation.SUM,
+        inputColumn = "num",
+        windows = null
       ),
       Builders.Aggregation(
-        operation     = Operation.UNIQUE_COUNT,
-        inputColumn   = "user",
-        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+        operation = Operation.UNIQUE_COUNT,
+        inputColumn = "user",
+        windows = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
       ),
       Builders.Aggregation(
-        operation     = Operation.APPROX_UNIQUE_COUNT,
-        inputColumn   = "user",
-        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+        operation = Operation.APPROX_UNIQUE_COUNT,
+        inputColumn = "user",
+        windows = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
       ),
       Builders.Aggregation(
-        operation     = Operation.LAST_K,
-        inputColumn   = "user",
-        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
-        argMap        = Map("k" -> "4")
+        operation = Operation.LAST_K,
+        inputColumn = "user",
+        windows = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
+        argMap = Map("k" -> "4")
       ),
       Builders.Aggregation(
-        operation     = Operation.FIRST_K,
-        inputColumn   = "user",
-        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
-        argMap        = Map("k" -> "4")
+        operation = Operation.FIRST_K,
+        inputColumn = "user",
+        windows = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
+        argMap = Map("k" -> "4")
       ),
       Builders.Aggregation(
-        operation     = Operation.TOP_K,
-        inputColumn   = "num",
-        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
-        argMap        = Map("k" -> "4")
+        operation = Operation.TOP_K,
+        inputColumn = "num",
+        windows = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS)),
+        argMap = Map("k" -> "4")
       ),
       Builders.Aggregation(
-        operation     = Operation.MIN,
-        inputColumn   = "num",
-        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+        operation = Operation.MIN,
+        inputColumn = "num",
+        windows = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
       ),
       Builders.Aggregation(
-        operation     = Operation.MAX,
-        inputColumn   = "num",
-        windows       = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
+        operation = Operation.MAX,
+        inputColumn = "num",
+        windows = Seq(new Window(23, TimeUnit.HOURS), new Window(14, TimeUnit.DAYS))
       )
     )
 
@@ -131,4 +137,52 @@ class SawtoothOnlineAggregatorTest extends TestCase {
     }
   }
 
+  def testLambdaAggregateDoNotMutateBatchIrAndOverCount(): Unit = {
+    val aggregations = Seq(
+      Builders.Aggregation(
+        operation = Operation.HISTOGRAM,
+        inputColumn = "action",
+        windows = Seq(
+          new Window(3, TimeUnit.DAYS)
+        )
+      )
+    )
+    val inputSchema: Seq[(String, DataType)] = Seq(
+      ("ts", LongType),
+      ("action", StringType)
+    )
+    val batchEndTs = 1746921600000L // 2025-05-11 00:00:00 UTC
+    val onlineAgg = new SawtoothOnlineAggregator(batchEndTs, aggregations, inputSchema)
+
+    def hop(count: Int, ts: Long): Array[Any] = {
+      val m = new java.util.HashMap[String, Int]();
+      m.put("view", count)
+      Array[Any](m, ts)
+    }
+
+    val finalBatchIr = FinalBatchIr(
+      Array[Any](
+        null // collapsed (T-1 -> T)
+      ),
+      Array(
+        Array.empty, // 1‑day hops (not used)
+        Array( // 1-hour hops
+              hop(1, 1746745200000L), // 2025-05-08 23:00:00 UTC
+              hop(1, 1746766800000L) // 2025-05-09 05:00:00 UTC
+        ),
+        Array.empty // 5‑minute hops (not used)
+      )
+    )
+    val queryTs = batchEndTs + 100
+
+    val expectedCount = 2
+    var aggResult: Array[Any] = Array()
+    for (_ <- 0 until 10) {
+      aggResult = onlineAgg.lambdaAggregateFinalizedTiled(finalBatchIr, Seq.empty.toIterator, queryTs)
+      val res3d0 = aggResult(0).asInstanceOf[java.util.Map[String, Int]]
+      assertEquals(expectedCount, res3d0.get("view"))
+      val mutated = finalBatchIr.tailHops(1)(0)(0).asInstanceOf[java.util.Map[String, Int]].get("view")
+      assertEquals(1, mutated)
+    }
+  }
 }

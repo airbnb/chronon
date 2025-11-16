@@ -19,9 +19,10 @@ import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.row.StatsGenerator
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api._
-import ai.chronon.online.SparkConversions.toChrononSchema
+import ai.chronon.online.serde.SparkConversions.toChrononSchema
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.SparkSessionBuilder
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.SparkSession
 import org.junit.Test
 import ai.chronon.spark.stats.StatsCompute

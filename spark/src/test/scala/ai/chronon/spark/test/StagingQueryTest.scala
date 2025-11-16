@@ -16,15 +16,16 @@
 
 package ai.chronon.spark.test
 
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{Comparison, SparkSessionBuilder, StagingQuery, TableUtils}
+import ai.chronon.spark.catalog.{TableUtils, View}
+import ai.chronon.spark.{StagingQuery, _}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
+import org.slf4j.LoggerFactory
 
 import scala.util.Random
 
@@ -89,8 +90,11 @@ class StagingQueryTest {
     val expectedWithOverrideStartPartition =
       tableUtils.sql(s"select * from $viewName where ds = '$today' AND user IS NOT NULL")
 
-    val computedWithOverrideStartPartition = tableUtils.sql(s"select * from ${stagingQueryConf.metaData.outputTable} WHERE user IS NOT NULL")
-    val diffWithOverrideStartPartition = Comparison.sideBySide(expectedWithOverrideStartPartition, computedWithOverrideStartPartition, List("user", "ts", "ds"))
+    val computedWithOverrideStartPartition =
+      tableUtils.sql(s"select * from ${stagingQueryConf.metaData.outputTable} WHERE user IS NOT NULL")
+    val diffWithOverrideStartPartition = Comparison.sideBySide(expectedWithOverrideStartPartition,
+                                                               computedWithOverrideStartPartition,
+                                                               List("user", "ts", "ds"))
     if (diffWithOverrideStartPartition.count() > 0) {
       println(s"Actual count: ${expectedWithOverrideStartPartition.count()}")
       println(expectedWithOverrideStartPartition.show())
@@ -289,5 +293,119 @@ class StagingQueryTest {
       diff.show()
     }
     assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testStagingQueryCreateView(): Unit = {
+    val namespace = "staging_query_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val schema = List(
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 1000)
+    )
+
+    val df = DataFrameGen
+      .events(spark, schema, count = 1000, partitions = 10)
+      .dropDuplicates("ts")
+    val viewName = s"$namespace.test_staging_query_create_view_source"
+    df.save(viewName)
+
+    // Test Case 1: createView = true (should create view)
+    val stagingQueryConfView = Builders.StagingQuery(
+      query = s"SELECT * FROM $viewName",
+      startPartition = ninetyDaysAgo,
+      metaData = Builders.MetaData(name = "test.staging_create_view", namespace = namespace),
+      createView = true
+    )
+
+    val stagingQueryView = new StagingQuery(stagingQueryConfView, today, tableUtils)
+    stagingQueryView.createStagingQueryView()
+
+    val outputView = stagingQueryConfView.metaData.outputTable
+    val isView = tableUtils.tableReadFormat(outputView) match {
+      case View => true
+      case _    => false
+    }
+
+    assert(isView, s"Expected $outputView to be a view when createView=true")
+
+    // Verify virtual partition metadata was written for the view
+    val virtualPartitionExists =
+      try {
+        val metadataCount = tableUtils
+          .sql(
+            s"SELECT COUNT(*) as count FROM ${stagingQueryView.signalPartitionsTable} WHERE table_name = '$outputView'")
+          .collect()(0)
+          .getAs[Long]("count")
+        metadataCount > 0
+      } catch {
+        case _: Exception => false
+      }
+    assert(virtualPartitionExists, s"Expected virtual partition metadata to exist for view $outputView")
+
+    // Verify the structure of virtual partition metadata
+    if (virtualPartitionExists) {
+      val metadataRows = tableUtils
+        .sql(s"SELECT * FROM ${stagingQueryView.signalPartitionsTable} WHERE table_name = '$outputView'")
+        .collect()
+      assert(metadataRows.length > 0, "Should have at least one partition metadata entry")
+
+      val firstRow = metadataRows(0)
+      val tableName = firstRow.getAs[String]("table_name")
+
+      assertEquals(s"Virtual partition metadata should have correct table name", outputView, tableName)
+    }
+
+    // Test Case 2: createView = false (should create table)
+    val stagingQueryConfTable = Builders.StagingQuery(
+      query = s"SELECT * FROM $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+      startPartition = ninetyDaysAgo,
+      metaData = Builders.MetaData(name = "test.staging_create_table", namespace = namespace),
+      createView = false
+    )
+
+    val stagingQueryTable = new StagingQuery(stagingQueryConfTable, today, tableUtils)
+    stagingQueryTable.computeStagingQuery(stepDays = Option(30))
+
+    val outputTable = stagingQueryConfTable.metaData.outputTable
+    val isTable = tableUtils.tableReadFormat(outputTable) match {
+      case View => false
+      case _    => true
+    }
+
+    assert(isTable, s"Expected $outputTable to be a table when createView=false")
+
+    // Verify virtual partition metadata was NOT written for the table
+    val virtualPartitionExistsForTable =
+      try {
+        val metadataCountForTable = tableUtils
+          .sql(
+            s"SELECT COUNT(*) as count FROM ${stagingQueryTable.signalPartitionsTable} WHERE table_name = '$outputTable'")
+          .collect()(0)
+          .getAs[Long]("count")
+        metadataCountForTable > 0
+      } catch {
+        case _: Exception => false
+      }
+    assert(!virtualPartitionExistsForTable,
+           s"Expected NO virtual partition metadata for table $outputTable when createView=false")
+
+    // Test Case 3: createView unset (should default to false and create table)
+    val stagingQueryConfUnset = Builders.StagingQuery(
+      query = s"SELECT * FROM $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+      startPartition = ninetyDaysAgo,
+      metaData = Builders.MetaData(name = "test.staging_create_unset", namespace = namespace)
+    )
+
+    val stagingQueryUnset = new StagingQuery(stagingQueryConfUnset, today, tableUtils)
+    stagingQueryUnset.computeStagingQuery(stepDays = Option(30))
+
+    val outputUnset = stagingQueryConfUnset.metaData.outputTable
+    val isTableUnset = tableUtils.tableReadFormat(outputUnset) match {
+      case View => false
+      case _    => true
+    }
+
+    assert(isTableUnset, s"Expected $outputUnset to be a table when createView is unset")
   }
 }

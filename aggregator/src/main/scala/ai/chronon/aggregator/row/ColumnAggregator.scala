@@ -22,7 +22,6 @@ import ai.chronon.api._
 import com.fasterxml.jackson.databind.ObjectMapper
 
 import java.util
-import scala.collection.JavaConverters.asScalaIteratorConverter
 import scala.util.ScalaJavaConversions.IteratorOps
 
 abstract class ColumnAggregator extends Serializable {
@@ -88,7 +87,7 @@ class VectorDispatcher[Input, IR](agg: SimpleAggregator[Input, IR, _],
     if (inputVal == null) return null
     val anyIterator = inputVal match {
       case inputSeq: collection.Seq[Any]  => inputSeq.iterator
-      case inputList: util.ArrayList[Any] => inputList.iterator().asScala
+      case inputList: util.ArrayList[Any] => inputList.iterator().toScala
     }
     anyIterator.filter { _ != null }.map { toTypedInput }
   }
@@ -175,9 +174,13 @@ object ColumnAggregator {
                                     toTypedInput: Any => Input,
                                     bucketIndex: Option[Int] = None,
                                     isVector: Boolean = false,
-                                    isMap: Boolean = false): ColumnAggregator = {
+                                    isMap: Boolean = false,
+                                    isElementWise: Boolean = false): ColumnAggregator = {
 
     assert(!(isVector && isMap), "Input column cannot simultaneously be map or vector")
+    if (isElementWise) {
+      assert(isVector, "Must use elementWise with array/list typed input column")
+    }
     val dispatcher = if (isVector) {
       new VectorDispatcher(agg, columnIndices, toTypedInput)
     } else {
@@ -186,8 +189,12 @@ object ColumnAggregator {
 
     // TODO: remove the below assertion and add support
     assert(!(isMap && bucketIndex.isDefined), "Bucketing over map columns is currently unsupported")
+    assert(!(isElementWise && bucketIndex.isDefined),
+           "Bucketing over array columns when doing element wise aggregations is currently unsupported")
     if (isMap) {
       new MapColumnAggregator(agg, columnIndices, toTypedInput)
+    } else if (isElementWise) {
+      new ElementWiseAggregator(agg, columnIndices, toTypedInput)
     } else if (bucketIndex.isDefined) {
       new BucketedColumnAggregator(agg, columnIndices, bucketIndex.get, dispatcher)
     } else {
@@ -248,12 +255,15 @@ object ColumnAggregator {
 
     def simple[Input, IR, Output](agg: SimpleAggregator[Input, IR, Output],
                                   toTypedInput: Any => Input = cast[Input] _): ColumnAggregator = {
-      fromSimple(agg,
-                 columnIndices,
-                 toTypedInput,
-                 bucketIndex,
-                 isVector = vectorElementType.isDefined,
-                 isMap = mapElementType.isDefined)
+      fromSimple(
+        agg,
+        columnIndices,
+        toTypedInput,
+        bucketIndex,
+        isVector = vectorElementType.isDefined,
+        isMap = mapElementType.isDefined,
+        isElementWise = aggregationPart.elementWise
+      )
     }
 
     def timed[Input, IR, Output](agg: TimedAggregator[Input, IR, Output]): ColumnAggregator = {
@@ -307,7 +317,19 @@ object ColumnAggregator {
           case BinaryType => simple(new ApproxDistinctCount[Array[Byte]](aggregationPart.getInt("k", Some(8))))
           case _          => mismatchException
         }
+      case Operation.BOUNDED_UNIQUE_COUNT =>
+        val k = aggregationPart.getInt("k", Some(8))
 
+        inputType match {
+          case IntType    => simple(new BoundedUniqueCount[Int](inputType, k))
+          case LongType   => simple(new BoundedUniqueCount[Long](inputType, k))
+          case ShortType  => simple(new BoundedUniqueCount[Short](inputType, k))
+          case DoubleType => simple(new BoundedUniqueCount[Double](inputType, k))
+          case FloatType  => simple(new BoundedUniqueCount[Float](inputType, k))
+          case StringType => simple(new BoundedUniqueCount[String](inputType, k))
+          case BinaryType => simple(new BoundedUniqueCount[Array[Byte]](inputType, k))
+          case _          => mismatchException
+        }
       case Operation.APPROX_PERCENTILE =>
         val k = aggregationPart.getInt("k", Some(128))
         val mapper = new ObjectMapper()

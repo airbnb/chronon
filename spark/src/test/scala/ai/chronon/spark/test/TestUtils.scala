@@ -19,9 +19,9 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api._
-import ai.chronon.online.SparkConversions
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 
@@ -60,11 +60,11 @@ object TestUtils {
           "m_views" -> "m_views"
         ),
         timeColumn = "UNIX_TIMESTAMP(ts) * 1000",
-        partitionColumn = partitionColOpt.orNull,
+        partitionColumn = partitionColOpt.orNull
       ),
       table = s"${namespace}.${tableName}",
       topic = null,
-      isCumulative = false,
+      isCumulative = false
     )
     val conf = Builders.GroupBy(
       sources = Seq(source),
@@ -117,7 +117,7 @@ object TestUtils {
           "listing" -> "listing_id",
           "dim_room_type" -> "dim_room_type"
         ),
-        partitionColumn=partitionColOpt.orNull
+        partitionColumn = partitionColOpt.orNull
       ),
       snapshotTable = s"${namespace}.${tableName}"
     )
@@ -461,7 +461,7 @@ object TestUtils {
   def saveOnPartitionOpt(df: DataFrame, outputTable: String, partitionColOpt: Option[String]): Unit = {
     partitionColOpt match {
       case Some(pCol) => df.save(outputTable, partitionColumns = Seq(pCol))
-      case None => df.save(outputTable)
+      case None       => df.save(outputTable)
     }
   }
 }

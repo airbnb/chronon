@@ -21,6 +21,7 @@ import ai.chronon.api.Constants
 import ai.chronon.api.DataModel.Events
 import ai.chronon.api.Extensions.{JoinOps, _}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.DataFrame
 import org.apache.spark.sql.expressions.UserDefinedFunction
 import org.apache.spark.sql.functions.{coalesce, col, udf}
@@ -28,7 +29,7 @@ import org.slf4j.LoggerFactory
 
 import java.util
 import scala.collection.compat._
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.ListOps
 
 object JoinUtils {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -296,11 +297,11 @@ object JoinUtils {
     // make a copy of the original joinPart to avoid accumulating the key filters into the same object
     val joinPart = originalJoinPart.deepCopy()
     // Modifies the joinPart to inject the key filter into the where Clause of GroupBys by hardcoding the keyset
-    val groupByKeyNames = joinPart.groupBy.getKeyColumns.asScala
+    val groupByKeyNames = joinPart.groupBy.getKeyColumns.toScala
 
     val collectedLeft = leftDf.collect()
 
-    joinPart.groupBy.sources.asScala.foreach { source =>
+    joinPart.groupBy.sources.toScala.foreach { source =>
       val selectMap = Option(source.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
       val groupByKeyExpressions = groupByKeyNames.map { key =>
         key -> selectMap.getOrElse(key, key)

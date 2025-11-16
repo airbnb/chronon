@@ -46,6 +46,11 @@ struct StagingQuery {
     * Spark SQL setup statements. Used typically to register UDFs.
     **/
     4: optional list<string> setups
+    /**
+    * If true, creates a view in the warehouse (for intermediate tables).
+    * If false, creates a table in the warehouse (for final tables).
+    **/
+    5: optional bool createView
 }
 
 struct EventSource {
@@ -100,10 +105,24 @@ struct EntitySource {
     4: optional Query query
 }
 
+/**
+ * Configuration for external source factory-based handler creation.
+ * Used to dynamically create external source handlers at runtime using registered factories.
+ */
+struct ExternalSourceFactoryConfig {
+    // Name of the registered factory to use for creating the external source handler
+    1: optional string factoryName
+    // Parameters to pass to the factory when creating the handler
+    2: optional map<string, string> factoryParams
+}
+
 struct ExternalSource {
     1: optional MetaData metadata
     2: optional TDataType keySchema
     3: optional TDataType valueSchema
+    4: optional ExternalSourceFactoryConfig factoryConfig
+    // GroupBy to be used for offline backfill - enables PITC offline computation
+    5: optional GroupBy offlineGroupBy
 }
 
 /**
@@ -161,7 +180,8 @@ enum Operation {
     BOTTOM_K = 16
 
     HISTOGRAM = 17, // use this only if you know the set of inputs is bounded
-    APPROX_HISTOGRAM_K = 18
+    APPROX_HISTOGRAM_K = 18,
+    BOUNDED_UNIQUE_COUNT = 19
 }
 
 // integers map to milliseconds in the timeunit
@@ -202,9 +222,16 @@ struct Aggregation {
     4: optional list<Window> windows
 
     /**
-    This is an additional layer of aggregation. You can key a group_by by user, and bucket a “item_view” count by “item_category”. This will produce one row per user, with column containing map of “item_category” to “view_count”. You can specify multiple such buckets at once
+    This is an additional layer of aggregation. You can key a group_by by user, and bucket a "item_view" count by "item_category". This will produce one row per user, with column containing map of "item_category" to "view_count". You can specify multiple such buckets at once
     */
     5: optional list<string> buckets
+
+    /**
+    When set to true and inputColumn is an array/list type, applies the operation element-wise across the arrays.
+    For example, AVERAGE with elementWise=true on [[1,2,3], [4,5,6]] produces [2.5, 3.5, 4.5].
+    This allows any operation (SUM, AVERAGE, MAX, MIN, etc.) to work on list.
+    */
+    6: optional bool elementWise
 }
 
 // used internally not exposed - maps 1:1 with a field in the output
@@ -214,6 +241,7 @@ struct AggregationPart {
     3: optional map<string, string> argMap
     4: optional Window window
     5: optional string bucket
+    6: optional bool elementWise
 }
 
 enum Accuracy {
@@ -260,6 +288,8 @@ struct MetaData {
     14: optional bool historicalBackfill
     // Optional expected deprecation date
     15: optional string deprecationDate
+    // Description for the object holding this metadata
+    16: optional string description
 }
 
 // Equivalent to a FeatureSet in chronon terms
@@ -298,6 +328,7 @@ struct ExternalPart {
 struct Derivation {
     1: optional string name
     2: optional string expression
+    3: optional MetaData metaData
 }
 
 // A Temporal join - with a root source, with multiple groupby's.
@@ -333,6 +364,11 @@ struct Join {
     * columns.
     **/
     9: optional list<Derivation> derivations
+    /**
+     * (CHIP-9) A list of model_trnsforms that will convert derivations (raw data) into model outputs for each
+     * of the models in the list. The union of the model outputs will become the final output of the join.
+     **/
+    10: optional ModelTransforms modelTransforms
 }
 
 struct BootstrapPart {
@@ -416,4 +452,35 @@ struct TDataType {
     1: DataKind kind
     2: optional list<DataField> params
     3: optional string name // required only for struct types
+}
+
+/* Model API */
+
+// Inference spec used to describe how a Model is inferenced.
+// modelBackendParams can be passed to modelBackend to identify and serve the model.
+struct InferenceSpec {
+    1: optional string modelBackend
+    2: optional map<string, string> modelBackendParams
+}
+
+// A Model definition that can be used for inference, with its input/output schema documented.
+// In the future, we can extend it to include model training spec
+struct Model {
+    1: optional MetaData metaData
+    2: optional InferenceSpec inferenceSpec
+    3: optional TDataType inputSchema
+    4: optional TDataType outputSchema
+}
+
+// A ModelTransform is used in the context of a Join to transform raw data into model outputs.
+struct ModelTransform {
+    1: optional Model model
+    2: optional map<string, string> inputMappings
+    3: optional map<string, string> outputMappings
+    4: optional string prefix
+}
+
+struct ModelTransforms {
+    1: optional list<ModelTransform> transforms
+    2: optional list<string> passthroughFields
 }

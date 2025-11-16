@@ -10,7 +10,8 @@ import ai.chronon.flink.window.{
   KeySelector,
   TimestampedTile
 }
-import ai.chronon.online.{GroupByServingInfoParsed, SparkConversions}
+import ai.chronon.online.GroupByServingInfoParsed
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.streaming.api.scala.{DataStream, OutputTag, StreamExecutionEnvironment}
 import org.apache.spark.sql.Encoder
@@ -18,6 +19,7 @@ import org.apache.flink.api.scala._
 import org.apache.flink.streaming.api.functions.async.RichAsyncFunction
 import org.apache.flink.streaming.api.windowing.assigners.{TumblingEventTimeWindows, WindowAssigner}
 import org.apache.flink.streaming.api.windowing.time.Time
+import org.apache.flink.streaming.api.windowing.triggers.Trigger
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 import org.slf4j.LoggerFactory
 
@@ -112,8 +114,13 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     *  5. KV store writer - Writes the PutRequest objects to the KV store using the AsyncDataStream API
     *
     *  The window causes a split in the Flink DAG, so there are two nodes, (1+2) and (3+4+5).
+    *
+    * @param trigger - trigger used for window emission. Defaulted to AlwaysFireOnElementTrigger which fires on every element
+    *                An alternative is BufferedProcessingTimeTrigger which buffer writes so they happen at most every X milliseconds per GroupBy & key
     */
-  def runTiledGroupByJob(env: StreamExecutionEnvironment): DataStream[WriteResponse] = {
+  def runTiledGroupByJob(
+      env: StreamExecutionEnvironment,
+      trigger: Trigger[Map[String, Any], TimeWindow] = new AlwaysFireOnElementTrigger()): DataStream[WriteResponse] = {
     logger.info(
       f"Running Flink job for featureGroupName=${featureGroupName}, kafkaTopic=${kafkaTopic}. " +
         f"Tiling is enabled.")
@@ -139,10 +146,6 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     val window = TumblingEventTimeWindows
       .of(Time.milliseconds(tilingWindowSizeInMillis.get))
       .asInstanceOf[WindowAssigner[Map[String, Any], TimeWindow]]
-
-    // An alternative to AlwaysFireOnElementTrigger can be used: BufferedProcessingTimeTrigger.
-    // The latter will buffer writes so they happen at most every X milliseconds per GroupBy & key.
-    val trigger = new AlwaysFireOnElementTrigger()
 
     // We use Flink "Side Outputs" to track any late events that aren't computed.
     val tilingLateEventsTag = OutputTag[Map[String, Any]]("tiling-late-events")

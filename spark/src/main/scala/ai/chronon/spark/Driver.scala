@@ -19,7 +19,8 @@ package ai.chronon.spark
 import ai.chronon.api
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps, SourceOps, StringOps}
 import ai.chronon.api.ThriftJsonCodec
-import ai.chronon.online.{Api, Fetcher, MetadataDirWalker, MetadataEndPoint, MetadataStore}
+import ai.chronon.online._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.{CompareBaseJob, CompareJob, ConsistencyJob, SummaryJob}
 import ai.chronon.spark.streaming.{JoinSourceRunner, TopicChecker}
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -42,13 +43,13 @@ import org.slf4j.LoggerFactory
 import java.io.{File, IOException}
 import java.net.URI
 import java.nio.file.{Files, Paths}
-import scala.collection.JavaConverters._
 import scala.collection.mutable
-import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
+import scala.concurrent.{Await, Future}
 import scala.io.Source
 import scala.reflect.ClassTag
 import scala.reflect.internal.util.ScalaClassLoader
+import scala.util.ScalaJavaConversions.{ListOps, MapOps}
 import scala.util.{Failure, Success, Try}
 
 // useful to override spark.sql.extensions args - there is no good way to unset that conf apparently
@@ -194,6 +195,11 @@ object Driver {
         descr = "Directory to write locally loaded warehouse data into. This will contain unreadable parquet files"
       )
 
+    val disableKryoSerializer: ScallopOption[Boolean] =
+      opt[Boolean](required = false,
+                   default = Some(false),
+                   descr = "Disable Kryo to use JavaSerializer by default instead.")
+
     lazy val sparkSession: SparkSession = buildSparkSession()
 
     def endDate(): String = endDateInternal.toOption.getOrElse(buildTableUtils().partitionSpec.now)
@@ -218,7 +224,8 @@ object Driver {
         val localSession = SparkSessionBuilder.build(subcommandName(),
                                                      local = true,
                                                      localWarehouseLocation.toOption,
-                                                     additionalConfig = extraDeltaConfigs)
+                                                     additionalConfig = extraDeltaConfigs,
+                                                     enforceKryoSerializer = !disableKryoSerializer.apply())
         localTableMapping.foreach {
           case (table, filePath) =>
             val file = new File(filePath)
@@ -229,18 +236,22 @@ object Driver {
         val dir = new File(localDataPath())
         assert(dir.exists, s"Provided local data path: ${localDataPath()} doesn't exist")
         val localSession =
-          SparkSessionBuilder.build(subcommandName(),
-                                    local = true,
-                                    localWarehouseLocation = localWarehouseLocation.toOption,
-                                    additionalConfig = extraDeltaConfigs)
+          SparkSessionBuilder.build(
+            subcommandName(),
+            local = true,
+            localWarehouseLocation = localWarehouseLocation.toOption,
+            additionalConfig = extraDeltaConfigs,
+            enforceKryoSerializer = !disableKryoSerializer.apply()
+          )
         LocalDataLoader.loadDataRecursively(dir, localSession)
         localSession
       } else {
         // We use the KryoSerializer for group bys and joins since we serialize the IRs.
         // But since staging query is fairly freeform, it's better to stick to the java serializer.
-        SparkSessionBuilder.build(subcommandName(),
-                                  enforceKryoSerializer = !subcommandName().contains("staging_query"),
-                                  additionalConfig = extraDeltaConfigs)
+        SparkSessionBuilder.build(
+          subcommandName(),
+          enforceKryoSerializer = !subcommandName().contains("staging_query") && !disableKryoSerializer.apply(),
+          additionalConfig = extraDeltaConfigs)
       }
     }
 
@@ -342,7 +353,13 @@ object Driver {
           default = Some(false),
           descr = "Whether or not to use the cached bootstrap table as the source - used in parallelized join flow.")
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
-      override def subcommandName() = s"join_${joinConf.metaData.name}"
+      override def subcommandName() =
+        if (selectedJoinParts.isDefined) {
+          val parts = selectedJoinParts().mkString(",")
+          s"join_${joinConf.metaData.name}_jp_${parts}"
+        } else {
+          s"join_${joinConf.metaData.name}"
+        }
     }
 
     def run(args: Args): Unit = {
@@ -392,7 +409,7 @@ object Driver {
         with LocalExportTableAbility
         with ResultValidationAbility {
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
-      override def subcommandName() = s"join_left_${joinConf.metaData.name}"
+      override def subcommandName() = s"join_${joinConf.metaData.name}_left"
     }
 
     def run(args: Args): Unit = {
@@ -416,7 +433,7 @@ object Driver {
         with LocalExportTableAbility
         with ResultValidationAbility {
       lazy val joinConf: api.Join = parseConf[api.Join](confPath())
-      override def subcommandName() = s"join_final_${joinConf.metaData.name}"
+      override def subcommandName() = s"join_${joinConf.metaData.name}_final"
     }
 
     def run(args: Args): Unit = {
@@ -515,6 +532,18 @@ object Driver {
           descr = "skip sampling and timestamp checks - setting to true will result in timestamp checks being skipped",
           default = Some(false)
         )
+      val skipTablePermissionCheck: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          descr = "skip table permission check - setting to true will skip the table permission check",
+          default = Some(false)
+        )
+      val exportSchema: ScallopOption[Boolean] =
+        opt[Boolean](
+          required = false,
+          descr = "export schema from analyzer result into a schema table, default is false",
+          default = Some(false)
+        )
 
       override def subcommandName() = "analyzer_util"
     }
@@ -529,7 +558,8 @@ object Driver {
                    args.sample(),
                    args.enableHitter(),
                    silenceMode = false,
-                   skipTimestampCheck = args.skipTimestampCheck()).run
+                   skipTimestampCheck = args.skipTimestampCheck(),
+                   validateTablePermission = !args.skipTablePermissionCheck()).run(args.exportSchema())
     }
   }
 
@@ -538,12 +568,21 @@ object Driver {
       val inputRootPath: ScallopOption[String] =
         opt[String](required = true, descr = "Base path of config repo to export from")
       val outputRootPath: ScallopOption[String] =
-        opt[String](required = true, descr = "Base path to write output metadata files to")
+        opt[String](required = false, descr = "Base path to write output metadata files to")
+      val outputTableName: ScallopOption[String] =
+        opt[String](required = false, descr = "Hive table to write output metadata to")
+      val outputTablePropertiesJson: ScallopOption[String] =
+        opt[String](required = false, descr = "Optional output table properties in JSON format")
       override def subcommandName() = "metadata-export"
     }
 
     def run(args: Args): Unit = {
-      MetadataExporter.run(args.inputRootPath(), args.outputRootPath())
+      val dsOpt: Option[String] = if (args.endDate().isEmpty) None else Some(args.endDate())
+      MetadataExporter.run(args.inputRootPath(),
+                           args.outputRootPath.toOption,
+                           args.outputTableName.toOption,
+                           dsOpt,
+                           args.outputTablePropertiesJson.toOption)
     }
   }
 
@@ -565,10 +604,16 @@ object Driver {
         args.endDate(),
         tableUtils
       )
-      stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
-                                          args.enableAutoExpand.toOption,
-                                          args.startPartitionOverride.toOption,
-                                          !args.runFirstHole())
+
+      // Check if we should use createStagingQueryView instead of computeStagingQuery
+      if (Option(args.stagingQueryConf.createView).getOrElse(false)) {
+        stagingQueryJob.createStagingQueryView()
+      } else {
+        stagingQueryJob.computeStagingQuery(args.stepDays.toOption,
+                                            args.enableAutoExpand.toOption,
+                                            args.startPartitionOverride.toOption,
+                                            !args.runFirstHole())
+      }
 
       if (args.shouldExport()) {
         args.exportTableToLocal(args.stagingQueryConf.metaData.outputTable, tableUtils)
@@ -755,13 +800,13 @@ object Driver {
       require(!args.confPath.isEmpty || !args.name.isEmpty, "--conf-path or --name should be specified!")
       val objectMapper = new ObjectMapper().registerModule(DefaultScalaModule)
       def readMap: String => Map[String, AnyRef] = { json =>
-        objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).asScala.toMap
+        objectMapper.readValue(json, classOf[java.util.Map[String, AnyRef]]).toScala.toMap
       }
       def readMapList: String => Seq[Map[String, AnyRef]] = { jsonList =>
         objectMapper
           .readValue(jsonList, classOf[java.util.List[java.util.Map[String, AnyRef]]])
-          .asScala
-          .map(_.asScala.toMap)
+          .toScala
+          .map(_.toScala.toMap)
           .toSeq
       }
       val keyMapList =
@@ -828,6 +873,7 @@ object Driver {
         logger.info("loop is set to true, start next iteration. will only exit if manually killed.")
         iterate()
       }
+      System.exit(0) // Terminate once completion to shutdown execution context
     }
   }
 
@@ -850,7 +896,6 @@ object Driver {
       }
       val dirWalker = new MetadataDirWalker(args.confPath(), acceptedEndPoints)
       val kvMap: Map[String, Map[String, List[String]]] = dirWalker.run
-      implicit val ec: ExecutionContext = ExecutionContext.global
       val putRequestsSeq: Seq[Future[scala.collection.Seq[Boolean]]] = kvMap.toSeq.map {
         case (endPoint, kvMap) =>
           if (args.batchSize.isDefined) {
@@ -866,6 +911,7 @@ object Driver {
       val res = putRequestsSeq.flatMap(putRequests => Await.result(putRequests, 1.hour))
       logger.info(
         s"Uploaded Chronon Configs to the KV store, success count = ${res.count(v => v)}, failure count = ${res.count(!_)}")
+      System.exit(0) // Terminate once completion to shutdown execution context
     }
   }
 
@@ -996,6 +1042,41 @@ object Driver {
     }
   }
 
+  object ModelTransformBatch {
+    class Args extends Subcommand("model-transform-batch") with OfflineSubcommand with OnlineSubcommand {
+      override def subcommandName() = "model-transform-batch"
+      lazy val joinConf: api.Join = parseConf[api.Join](confPath())
+      val modelTransformOverride: ScallopOption[String] =
+        opt[String](required = false, descr = "Name of the specific model transforms to run")
+      val jobContextJson: ScallopOption[String] =
+        opt[String](required = false, descr = "JSON string of the job context to use for model transform")
+    }
+    def run(args: Args): Unit = {
+      val apiImpl = args.impl(args.serializableProps)
+      val modelBackend = apiImpl.genModelBackend
+
+      val modelTransformJob = ModelTransformBatchJob(
+        args.sparkSession,
+        modelBackend,
+        args.joinConf,
+        args.endDate(),
+        args.startPartitionOverride.toOption,
+        args.stepDays(),
+        args.modelTransformOverride.toOption,
+        args.jobContextJson.toOption
+      )
+      try {
+        modelTransformJob.run()
+      } catch {
+        case e: Throwable =>
+          e.printStackTrace()
+          logger.error("Model Transform Batch Job failed", e)
+          System.exit(-1)
+      }
+      System.exit(0) // Terminate once completion to shutdown execution context
+    }
+  }
+
   class Args(args: Array[String]) extends ScallopConf(args) {
     object JoinBackFillArgs extends JoinBackfill.Args
     addSubcommand(JoinBackFillArgs)
@@ -1031,6 +1112,9 @@ object Driver {
     addSubcommand(JoinBackfillFinalArgs)
     object LabelJoinArgs extends LabelJoin.Args
     addSubcommand(LabelJoinArgs)
+    object ModelTransformBatchArgs extends ModelTransformBatch.Args
+    addSubcommand(ModelTransformBatchArgs)
+
     requireSubcommand()
     verify()
   }
@@ -1046,7 +1130,6 @@ object Driver {
 
   def main(baseArgs: Array[String]): Unit = {
     val args = new Args(baseArgs)
-    var shouldExit = true
     args.subcommand match {
       case Some(x) =>
         x match {
@@ -1054,28 +1137,23 @@ object Driver {
           case args.GroupByBackfillArgs      => GroupByBackfill.run(args.GroupByBackfillArgs)
           case args.StagingQueryBackfillArgs => StagingQueryBackfill.run(args.StagingQueryBackfillArgs)
           case args.GroupByUploadArgs        => GroupByUploader.run(args.GroupByUploadArgs)
-          case args.GroupByStreamingArgs =>
-            shouldExit = false
-            GroupByStreaming.run(args.GroupByStreamingArgs)
-
-          case args.MetadataUploaderArgs   => MetadataUploader.run(args.MetadataUploaderArgs)
-          case args.FetcherCliArgs         => FetcherCli.run(args.FetcherCliArgs)
-          case args.LogFlattenerArgs       => LogFlattener.run(args.LogFlattenerArgs)
-          case args.ConsistencyMetricsArgs => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
-          case args.CompareJoinQueryArgs   => CompareJoinQuery.run(args.CompareJoinQueryArgs)
-          case args.AnalyzerArgs           => Analyzer.run(args.AnalyzerArgs)
-          case args.DailyStatsArgs         => DailyStats.run(args.DailyStatsArgs)
-          case args.LogStatsArgs           => LogStats.run(args.LogStatsArgs)
-          case args.MetadataExportArgs     => MetadataExport.run(args.MetadataExportArgs)
-          case args.LabelJoinArgs          => LabelJoin.run(args.LabelJoinArgs)
-          case args.JoinBackfillLeftArgs   => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
-          case args.JoinBackfillFinalArgs  => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
-          case _                           => logger.info(s"Unknown subcommand: $x")
+          case args.GroupByStreamingArgs     => GroupByStreaming.run(args.GroupByStreamingArgs)
+          case args.MetadataUploaderArgs     => MetadataUploader.run(args.MetadataUploaderArgs)
+          case args.FetcherCliArgs           => FetcherCli.run(args.FetcherCliArgs)
+          case args.LogFlattenerArgs         => LogFlattener.run(args.LogFlattenerArgs)
+          case args.ConsistencyMetricsArgs   => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
+          case args.CompareJoinQueryArgs     => CompareJoinQuery.run(args.CompareJoinQueryArgs)
+          case args.AnalyzerArgs             => Analyzer.run(args.AnalyzerArgs)
+          case args.DailyStatsArgs           => DailyStats.run(args.DailyStatsArgs)
+          case args.LogStatsArgs             => LogStats.run(args.LogStatsArgs)
+          case args.MetadataExportArgs       => MetadataExport.run(args.MetadataExportArgs)
+          case args.LabelJoinArgs            => LabelJoin.run(args.LabelJoinArgs)
+          case args.JoinBackfillLeftArgs     => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
+          case args.JoinBackfillFinalArgs    => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
+          case args.ModelTransformBatchArgs  => ModelTransformBatch.run(args.ModelTransformBatchArgs)
+          case _                             => logger.info(s"Unknown subcommand: $x")
         }
       case None => logger.info(s"specify a subcommand please")
-    }
-    if (shouldExit) {
-      System.exit(0)
     }
   }
 }

@@ -10,6 +10,11 @@
 *.logs
 *.iml
 .idea/
+*.jvmopts
+.bloop*
+.metals*
+.venv*
+*metals.sbt*
 .eclipse
 **/.vscode/
 **/__pycache__/
@@ -21,7 +26,9 @@ api/py/.coverage
 api/py/htmlcov/
 **/derby.log
 cs
-
+*.bloop
+*.metals
+*.venv
 # Documentation builds
 docs/build/
 
@@ -33,7 +40,7 @@ api/py/build/
 api/py/ai/chronon/thrift/
 api/py/*.egg-info/
 *.egg
-.coverge
+.coverage
 
 # spark test scratch area
 **/spark-warehouse/

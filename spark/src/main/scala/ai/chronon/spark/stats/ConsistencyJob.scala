@@ -22,13 +22,14 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api._
 import ai.chronon.online._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{PartitionRange, TableUtils}
+import ai.chronon.spark.{PartitionRange}
 import org.apache.spark.sql.SparkSession
 import java.util
 
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
 
-import ai.chronon.online.OnlineDerivationUtil.timeFields
+import ai.chronon.online.DerivationUtils.timeFields
+import ai.chronon.spark.catalog.TableUtils
 
 class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) extends Serializable {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
@@ -75,7 +76,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
   private def buildComparisonTable(): Unit = {
     val unfilledRanges = tableUtils
       .unfilledRanges(joinConf.metaData.comparisonTable,
-                      PartitionRange(null, endDate),
+                      PartitionRange(null, endDate)(tableUtils),
                       Some(Seq(joinConf.metaData.loggedTable)))
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) return
@@ -102,7 +103,7 @@ class ConsistencyJob(session: SparkSession, joinConf: Join, endDate: String) ext
     logger.info("Determining Range between consistency table and comparison table")
     val unfilledRanges = tableUtils
       .unfilledRanges(joinConf.metaData.consistencyTable,
-                      PartitionRange(null, endDate),
+                      PartitionRange(null, endDate)(tableUtils),
                       Some(Seq(joinConf.metaData.comparisonTable)))
       .getOrElse(Seq.empty)
     if (unfilledRanges.isEmpty) return null

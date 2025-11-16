@@ -14,33 +14,29 @@
  *    limitations under the License.
  */
 
-package ai.chronon.spark
+package ai.chronon.spark.catalog
 
-import java.io.{PrintWriter, Serializable, StringWriter}
-import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
-import ai.chronon.api.{Constants, PartitionSpec, Query}
 import ai.chronon.api.Extensions._
-import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
-import ai.chronon.spark.Extensions.{DfStats, DfWithStats}
-import io.delta.tables.DeltaTable
-import jnr.ffi.annotations.Synchronized
+import ai.chronon.api.{Constants, PartitionSpec, Query}
+import ai.chronon.spark.Extensions.DfStats
+import ai.chronon.spark.{PartitionRange, SparkConstants}
 import org.apache.hadoop.hive.metastore.api.AlreadyExistsException
 import org.apache.spark.SparkException
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.catalyst.analysis.TableAlreadyExistsException
 import org.apache.spark.sql.catalyst.plans.logical.{Filter, Project}
 import org.apache.spark.sql.delta.DeltaLog
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
-import org.apache.spark.sql.{AnalysisException, DataFrame, Row, SaveMode, SparkSession}
+import org.apache.spark.sql._
 import org.apache.spark.storage.StorageLevel
+import org.slf4j.LoggerFactory
 
+import java.io.{PrintWriter, Serializable, StringWriter}
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
-import java.util.concurrent.{ExecutorService, Executors}
-import scala.collection.{Seq, mutable}
-import scala.collection.immutable
-import scala.concurrent.{ExecutionContext, ExecutionContextExecutor}
+import scala.collection.{Seq, immutable, mutable}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -58,7 +54,7 @@ trait Format {
       throw new NotImplementedError(s"subPartitionsFilter is not supported on this format")
     }
 
-    val partitionSeq = partitions(tableName)(sparkSession)
+    val partitionSeq = partitions(tableName, partitionColumn +: subPartitionsFilter.keys.toSeq)(sparkSession)
     partitionSeq.flatMap { partitionMap =>
       if (
         subPartitionsFilter.forall {
@@ -73,7 +69,8 @@ trait Format {
   }
 
   // Return a sequence for partitions where each partition entry consists of a Map of partition keys to values
-  def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]]
+  def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]]
 
   // Help specify the appropriate table type to use in the Spark create table DDL query
   def createTableTypeString: String
@@ -109,6 +106,8 @@ case class DefaultFormatProvider(sparkSession: SparkSession) extends FormatProvi
       Iceberg
     } else if (isDeltaTable(tableName)) {
       DeltaLake
+    } else if (isView(tableName)) {
+      View
     } else {
       Hive
     }
@@ -137,6 +136,25 @@ case class DefaultFormatProvider(sparkSession: SparkSession) extends FormatProvi
       case _ =>
         // the describe detail calls fails for Delta Lake tables
         logger.info(s"Delta check: Unable to read the format of the table $tableName using DESCRIBE DETAIL")
+        false
+    }
+  }
+
+  private def isView(tableName: String): Boolean = {
+    Try {
+      val describeResult = sparkSession.sql(s"DESCRIBE TABLE EXTENDED $tableName")
+      describeResult
+        .filter(lower(col("col_name")) === "type")
+        .select("data_type")
+        .collect()
+        .headOption
+        .exists(row => row.getString(0).toLowerCase.contains("view"))
+    } match {
+      case Success(isView) =>
+        logger.info(s"View check: Table: $tableName is view: $isView")
+        isView
+      case _ =>
+        logger.info(s"View check: Unable to check if the table $tableName is a view using DESCRIBE TABLE EXTENDED")
         false
     }
   }
@@ -184,7 +202,8 @@ case object Hive extends Format {
       .toMap
   }
 
-  override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
+  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]] = {
     // data is structured as a Df with single composite partition key column. Every row is a partition with the
     // column values filled out as a formatted key=value pair
     // Eg. df schema = (partitions: String)
@@ -202,49 +221,67 @@ case object Hive extends Format {
 }
 
 case object Iceberg extends Format {
+
   override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(
       implicit sparkSession: SparkSession): Seq[String] = {
     if (!supportSubPartitionsFilter && subPartitionsFilter.nonEmpty) {
       throw new NotImplementedError(s"subPartitionsFilter is not supported on this format")
     }
 
-    getIcebergPartitions(tableName, partitionColumn)
+    getIcebergPartitions(tableName, partitionColumn, subPartitionsFilter)
   }
 
-  override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
-    throw new NotImplementedError(
-      "Multi-partitions retrieval is not supported on Iceberg tables yet." +
-        "For single partition retrieval, please use 'partition' method.")
+  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]] = {
+    sparkSession.read
+      .format("iceberg")
+      .load(s"$tableName.partitions")
+      .select("partition")
+      .collect()
+      .map { row =>
+        val partitionStruct = row.getStruct(0)
+        partitionStruct.schema.fieldNames.zipWithIndex.map {
+          case (fieldName, idx) =>
+            fieldName -> partitionStruct.get(idx).toString
+        }.toMap
+      }
   }
 
-  private def getIcebergPartitions(tableName: String, partitionColumn: String)(implicit
+  private def getIcebergPartitions(tableName: String,
+                                   partitionColumn: String,
+                                   subPartitionsFilter: Map[String, String])(implicit
       sparkSession: SparkSession): Seq[String] = {
-    val partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions")
+    var partitionsDf = sparkSession.read.format("iceberg").load(s"$tableName.partitions").select("partition")
+
     val index = partitionsDf.schema.fieldIndex("partition")
-    if (partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames.contains("hr")) {
-      // Hour filter is currently buggy in iceberg. https://github.com/apache/iceberg/issues/4718
-      // so we collect and then filter.
-      partitionsDf
-        .select(s"partition.$partitionColumn", "partition.hr")
-        .collect()
-        .filter(_.get(1) == null)
-        .map(_.getString(0))
-        .toSeq
-    } else {
-      partitionsDf
-        .select(s"partition.$partitionColumn")
-        .collect()
-        .map(_.getString(0))
-        .toSeq
+    val partitionFields = partitionsDf.schema(index).dataType.asInstanceOf[StructType].fieldNames
+    val hasHrPartition = partitionFields.contains("hr")
+
+    if (hasHrPartition && subPartitionsFilter.isEmpty) {
+      // For tables with hr partition but no sub-partition filter, only retain records where hr=null
+      partitionsDf = partitionsDf.filter(col("partition.hr").isNull)
     }
+
+    // Apply sub-partition filters at DataFrame level
+    // push down to Spark SQL optimizer to optimize the query for multiple partitions
+    subPartitionsFilter.foreach {
+      case (filterKey, filterValue) =>
+        partitionsDf = partitionsDf.filter(col(s"partition.$filterKey") === filterValue)
+    }
+
+    // Select primary partition column and collect
+    partitionsDf
+      .select(col(s"partition.$partitionColumn"))
+      .collect()
+      .map(row => String.valueOf(row.get(0)))
+      .toSeq
   }
 
   def createTableTypeString: String = "USING iceberg"
   def fileFormatString(format: String): String = ""
 
-  override def supportSubPartitionsFilter: Boolean = false
+  override def supportSubPartitionsFilter: Boolean = true
 }
-
 // The Delta Lake format is compatible with the Delta lake and Spark versions currently supported by the project.
 // Attempting to use newer Delta lake library versions (e.g. 3.2 which works with Spark 3.5) results in errors:
 // java.lang.NoSuchMethodError: 'org.apache.spark.sql.delta.Snapshot org.apache.spark.sql.delta.DeltaLog.update(boolean)'
@@ -255,7 +292,8 @@ case object DeltaLake extends Format {
       implicit sparkSession: SparkSession): Seq[String] =
     super.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)
 
-  override def partitions(tableName: String)(implicit sparkSession: SparkSession): Seq[Map[String, String]] = {
+  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]] = {
     // delta lake doesn't support the `SHOW PARTITIONS <tableName>` syntax - https://github.com/delta-io/delta/issues/996
     // there's alternative ways to retrieve partitions using the DeltaLog abstraction which is what we have to lean into
     // below
@@ -270,6 +308,26 @@ case object DeltaLake extends Format {
   }
 
   def createTableTypeString: String = "USING DELTA"
+  def fileFormatString(format: String): String = ""
+
+  override def supportSubPartitionsFilter: Boolean = true
+}
+
+case object View extends Format {
+  override def primaryPartitions(tableName: String, partitionColumn: String, subPartitionsFilter: Map[String, String])(
+      implicit sparkSession: SparkSession): Seq[String] =
+    super.primaryPartitions(tableName, partitionColumn, subPartitionsFilter)
+
+  override def partitions(tableName: String, partitionColumns: Seq[String])(implicit
+      sparkSession: SparkSession): Seq[Map[String, String]] = {
+    val partitionColumnsStr = partitionColumns.mkString("`,`")
+    sparkSession.sqlContext
+      .sql(s"SELECT DISTINCT `$partitionColumnsStr` FROM $tableName")
+      .collect()
+      .map(row => row.schema.fieldNames.zip(row.toSeq.map(_.toString)).toMap)
+  }
+
+  def createTableTypeString: String = ""
   def fileFormatString(format: String): String = ""
 
   override def supportSubPartitionsFilter: Boolean = true
@@ -303,6 +361,10 @@ case class TableUtils(sparkSession: SparkSession) {
   val blockingCacheEviction: Boolean =
     sparkSession.conf.get("spark.chronon.table_write.cache.blocking", "false").toBoolean
 
+  // whether or not to enable avro schema validation check in BootstrapInfo and Analyzer, default is true. Avro schema is needed for online serving, if you only have offline use case, feel free to set it to false
+  val chrononAvroSchemaValidation: Boolean =
+    sparkSession.conf.get("spark.chronon.avroSchemaValidation", "true").toBoolean
+
   private lazy val tableFormatProvider: FormatProvider = {
     sparkSession.conf.getOption("spark.chronon.table.format_provider") match {
       case Some(clazzName) =>
@@ -328,7 +390,6 @@ case class TableUtils(sparkSession: SparkSession) {
 
   val minWriteShuffleParallelism = 200
 
-  sparkSession.sparkContext.setLogLevel("ERROR")
   // converts String-s like "a=b/c=d" to Map("a" -> "b", "c" -> "d")
 
   def preAggRepartition(df: DataFrame): DataFrame =
@@ -344,7 +405,14 @@ case class TableUtils(sparkSession: SparkSession) {
       rdd
     }
 
-  def tableExists(tableName: String): Boolean = sparkSession.catalog.tableExists(tableName)
+  def tableExists(tableName: String): Boolean = {
+    try {
+      sparkSession.sql(s"DESCRIBE TABLE $tableName")
+      true
+    } catch {
+      case _: AnalysisException => false
+    }
+  }
 
   def loadEntireTable(tableName: String): DataFrame = sparkSession.table(tableName)
 
@@ -375,7 +443,7 @@ case class TableUtils(sparkSession: SparkSession) {
   def allPartitions(tableName: String, partitionColumnsFilter: Seq[String] = Seq.empty): Seq[Map[String, String]] = {
     if (!tableExists(tableName)) return Seq.empty[Map[String, String]]
     val format = tableReadFormat(tableName)
-    val partitionSeq = format.partitions(tableName)(sparkSession)
+    val partitionSeq = format.partitions(tableName, partitionColumnsFilter)(sparkSession)
     if (partitionColumnsFilter.isEmpty) {
       partitionSeq
     } else {
@@ -441,7 +509,8 @@ case class TableUtils(sparkSession: SparkSession) {
       // retrieve one row from the table
       val partitionFilter = lastAvailablePartition(tableName).getOrElse(fallbackPartition)
       sparkSession
-        .sql(s"SELECT * FROM $tableName where ${getPartitionColumn(partitionColOpt)}='$partitionFilter' LIMIT 1")
+        .sql(
+          s"SELECT ${getPartitionColumn(partitionColOpt)} FROM $tableName where ${getPartitionColumn(partitionColOpt)}='$partitionFilter' LIMIT 1")
         .collect()
       true
     } catch {
@@ -852,8 +921,18 @@ case class TableUtils(sparkSession: SparkSession) {
 
   def getTableProperties(tableName: String): Option[Map[String, String]] = {
     try {
-      val tableId = sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
-      Some(sparkSession.sessionState.catalog.getTempViewOrPermanentTableMetadata(tableId).properties)
+      tableFormatProvider.readFormat(tableName) match {
+        case Iceberg =>
+          val props = sparkSession
+            .sql(s"SHOW TBLPROPERTIES $tableName")
+            .collect()
+            .map(row => row.getString(0) -> row.getString(1))
+            .toMap
+          Some(props)
+        case _ =>
+          val tableId = sparkSession.sessionState.sqlParser.parseTableIdentifier(tableName)
+          Some(sparkSession.sessionState.catalog.getTempViewOrPermanentTableMetadata(tableId).properties)
+      }
     } catch {
       case _: Exception => None
     }
@@ -921,17 +1000,39 @@ case class TableUtils(sparkSession: SparkSession) {
                      partitions: Seq[String],
                      partitionColumn: String = partitionColumn,
                      subPartitionFilters: Map[String, String] = Map.empty): Unit = {
+    // TODO this is using datasource v1 semantics, which won't be compatible with non-hive catalogs
+    // notably, the unit test iceberg integration uses hadoop because of
+    // https://github.com/apache/iceberg/issues/7847
     if (partitions.nonEmpty && tableExists(tableName)) {
-      val partitionSpecs = partitions
-        .map { partition =>
-          val mainSpec = s"$partitionColumn='$partition'"
-          val specs = mainSpec +: subPartitionFilters.map {
-            case (key, value) => s"${key}='${value}'"
-          }.toSeq
-          specs.mkString("PARTITION (", ",", ")")
-        }
-        .mkString(",")
-      val dropSql = s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
+      val dropSql = tableFormatProvider.readFormat(tableName) match {
+        // really this is Dsv1 vs Dsv2, not hive vs iceberg,
+        // but we break this way since only Iceberg is migrated to Dsv2
+        case Iceberg =>
+          // Build WHERE clause:  (ds='2024-05-01' OR ds='2024-05-02') [AND k='v' AND …]
+          val mainPred = partitions
+            .map(p => s"$partitionColumn='${p}'")
+            .mkString("(", " OR ", ")")
+
+          val extraPred = subPartitionFilters
+            .map { case (k, v) => s"$k='${v}'" }
+            .mkString(" AND ")
+
+          val where = Seq(mainPred, extraPred).filter(_.nonEmpty).mkString(" AND ")
+
+          s"DELETE FROM $tableName WHERE $where"
+        case _ =>
+          // default case is for Hive
+          val partitionSpecs = partitions
+            .map { partition =>
+              val mainSpec = s"$partitionColumn='$partition'"
+              val specs = mainSpec +: subPartitionFilters.map {
+                case (key, value) => s"${key}='${value}'"
+              }.toSeq
+              specs.mkString("PARTITION (", ",", ")")
+            }
+            .mkString(",")
+          s"ALTER TABLE $tableName DROP IF EXISTS $partitionSpecs"
+      }
       sql(dropSql)
     } else {
       logger.info(s"$tableName doesn't exist, please double check before drop partitions")
