@@ -284,7 +284,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       .map { queriesUnfilteredDf.filter }
       .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
 
-    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
+    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.calculateTimeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
