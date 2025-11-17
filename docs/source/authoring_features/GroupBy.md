@@ -113,10 +113,17 @@ Chronon can extract values nested in containers and perform aggregations - over 
 
 ## Lists as inputs 
 
-Aggregations can also accept list columns as input. For example if we want `average` `item_price` from a `user_purchase`
+Aggregations can also accept list columns as input. The list can either be flattened as part of the aggregation, or for
+lists of equivalent size (e.g. tensors) you can use element-wise aggregations over the lists. Simply put, 
+`GroupBy.aggregations[i].input_column` can refer to a column name which contains lists as values.
+
+For example if we want `average` `item_price` from a `user_purchase`
 source, which contains `item_prices` as a `list` of values in each row - represented by a single credit card transaction.
-Simply put, `GroupBy.aggregations[i].input_column` can refer to a column name which contains lists as values. In
-traditional SQL this would require an expensive `explode` command and is supported natively in `Chronon`.
+In traditional SQL this would require an expensive `explode` command and is supported natively in `Chronon`.
+
+If we would want the `average` `song_embedding` for every play by a single `user_id`. You can set the `element_wise` flag
+on your aggregation in order to perform an element wise average across each `song_embedding`. Note that when using
+`element_wise` aggregations the input lists must all have the same length and not contain nulls.
 
 ## Maps as inputs 
 
