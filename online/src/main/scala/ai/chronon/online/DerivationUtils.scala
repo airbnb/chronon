@@ -110,7 +110,7 @@ object DerivationUtils {
       }
       val expressions: Seq[StructField] = baseExpressions ++ derivationsScala.derivationsWithoutStar.map { d =>
         {
-          val allSchema = StructType("all", (keySchema ++ baseValueSchema).toArray)
+          val allSchema = StructType("all", (keySchema ++ baseValueSchema).toArray ++ timeFields)
           if (allSchema.typeOf(d.expression).isEmpty) {
             throw new IllegalArgumentException(
               s"Failed to run expression ${d.expression} for ${d.name}. Please ensure the derivation is " +
