@@ -83,14 +83,14 @@ class FetcherBase(kvStore: KVStore,
     val responseMap: Map[String, AnyRef] = if (servingInfo.groupBy.aggregations == null) { // no-agg
       getMapResponseFromBatchResponse(batchResponses,
                                       batchBytes,
-                                      servingInfo.selectedCodec.decodeMap,
+                                      servingInfo.selectedCodec.decodeMapClean,
                                       servingInfo,
                                       keys)
     } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
       val batchResponseDecodeStartTime = System.currentTimeMillis()
       val response = getMapResponseFromBatchResponse(batchResponses,
                                                      batchBytes,
-                                                     servingInfo.outputCodec.decodeMap,
+                                                     servingInfo.outputCodec.decodeMapClean,
                                                      servingInfo,
                                                      keys)
       context.distribution("group_by.batchir_decode.latency.millis",

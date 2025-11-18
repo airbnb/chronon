@@ -319,17 +319,17 @@ class FetcherCacheTest extends MockitoHelper {
     val outputCodec = mock[AvroCodec]
     val kvStoreBatchResponses = BatchResponses(Success(Seq(TimedValue(batchBytes, 1000L))))
     when(servingInfo.outputCodec).thenReturn(outputCodec)
-    when(outputCodec.decodeMap(any())).thenReturn(mapResponse)
+    when(outputCodec.decodeMapClean(any())).thenReturn(mapResponse)
 
     val spiedFetcherCache = Mockito.spy(new TestableFetcherCache(None))
 
     // When getMapResponseFromBatchResponse is called, it decodes the bytes and doesn't hit the cache
     val decodedMapResponse = spiedFetcherCache.getMapResponseFromBatchResponse(kvStoreBatchResponses,
                                                                                batchBytes,
-                                                                               servingInfo.outputCodec.decodeMap,
+                                                                               servingInfo.outputCodec.decodeMapClean,
                                                                                servingInfo,
                                                                                keys)
-    verify(servingInfo.outputCodec.decodeMap(any()), times(1)) // decoding did happen
+    verify(servingInfo.outputCodec.decodeMapClean(any()), times(1)) // decoding did happen
     assertEquals(mapResponse, decodedMapResponse)
   }
 }

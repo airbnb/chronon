@@ -39,6 +39,7 @@ class AvroCodec(val schemaStr: String) extends Serializable {
   @transient private lazy val outputStream = new ByteArrayOutputStream()
   @transient private var jsonEncoder: JsonEncoder = null
   val fieldNames: Array[String] = schema.getFields.toScala.map(_.name()).toArray
+  val fieldNamesClean: Array[String] = schema.getFields.toScala.map(f => AvroConversions.cleanSuffix(f.name())).toArray
   @transient lazy val chrononSchema: DataType = AvroConversions.toChrononSchema(schema)
   @transient lazy val chrononSchemaClean: DataType = AvroConversions.toChrononSchema(schema, cleanName = true)
 
@@ -108,6 +109,14 @@ class AvroCodec(val schemaStr: String) extends Serializable {
       .toChrononRow(decode(bytes), chrononSchema)
       .asInstanceOf[Array[Any]]
     fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
+  }
+
+  def decodeMapClean(bytes: Array[Byte]): Map[String, AnyRef] = {
+    if (bytes == null) return null
+    val output = AvroConversions
+      .toChrononRow(decode(bytes), chrononSchemaClean)
+      .asInstanceOf[Array[Any]]
+    fieldNamesClean.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
   }
 }
 
