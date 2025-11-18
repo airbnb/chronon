@@ -65,6 +65,8 @@ object Extensions {
     val partitionRange: PartitionRange = PartitionRange(minPartition, maxPartition)
     val count: Long = partitionCounts.values.sum
 
+    lazy val timeRange: TimeRange = df.calculateTimeRange
+
     def prunePartitions(range: PartitionRange): Option[DfWithStats] = {
       println(
         s"Pruning down to new range $range, original range: $partitionRange." +
@@ -96,7 +98,7 @@ object Extensions {
 
     // This is safe to call on dataframes that are un-shuffled from their disk sources -
     // like tables read without shuffling with row level projections or filters.
-    def timeRange: TimeRange = {
+    def calculateTimeRange: TimeRange = {
       assert(
         df.schema(Constants.TimeColumn).dataType == LongType,
         s"Timestamp must be a Long type in milliseconds but found ${df.schema(Constants.TimeColumn).dataType}, if you are using a ts string, consider casting it with the UNIX_TIMESTAMP(ts)*1000 function."
