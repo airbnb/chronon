@@ -25,6 +25,7 @@ import com.yahoo.sketches.ArrayOfItemsSerDe
 import com.yahoo.sketches.cpc.CpcSketch
 import com.yahoo.sketches.frequencies.ItemsSketch
 import org.apache.spark.serializer.KryoRegistrator
+import java.util.regex.Pattern
 
 class CpcSketchKryoSerializer extends Serializer[CpcSketch] {
   override def write(kryo: Kryo, output: Output, sketch: CpcSketch): Unit = {
@@ -64,6 +65,25 @@ class ItemsSketchKryoSerializer[T] extends Serializer[ItemsSketchIR[T]] {
     val serializer = getSerializer(sketchType)
     val sketch = ItemsSketch.getInstance[T](Memory.wrap(bytes), serializer)
     ItemsSketchIR(sketch, sketchType)
+  }
+}
+
+/**
+ * Custom Kryo serializer for java.util.regex.Pattern.
+ *
+ * Required for serializing Join configurations (JoinOps.identifierRegex) when Spark broadcasts metadata.
+ * Kryo's default FieldSerializer fails due to Java 9+ module restrictions on java.util.regex reflection.
+ */
+class PatternKryoSerializer extends Serializer[Pattern] {
+  override def write(kryo: Kryo, output: Output, pattern: Pattern): Unit = {
+    output.writeString(pattern.pattern())
+    output.writeInt(pattern.flags())
+  }
+
+  override def read(kryo: Kryo, input: Input, `type`: Class[Pattern]): Pattern = {
+    val patternString = input.readString()
+    val flags = input.readInt()
+    Pattern.compile(patternString, flags)
   }
 }
 
@@ -156,6 +176,7 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
     kryo.register(classOf[Array[ItemSketchSerializable]])
     kryo.register(classOf[ItemsSketchIR[AnyRef]], new ItemsSketchKryoSerializer[AnyRef])
+    kryo.register(classOf[Pattern], new PatternKryoSerializer)
   }
 
   def doRegister(name: String, kryo: Kryo): Unit = {

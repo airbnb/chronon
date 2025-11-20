@@ -51,9 +51,18 @@ sealed trait BaseKvRdd {
   val baseFlatSchema: StructType = StructType(keySchema ++ valueSchema)
   def flatSchema: StructType = if (withTime) StructType(baseFlatSchema :+ timeField) else baseFlatSchema
   def flatZSchema: api.StructType = flatSchema.toChrononSchema("Flat")
-  lazy val keyToBytes: Any => Array[Byte] = AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
+  // For global aggregations, use plain UTF-8 bytes for a dummy key (no need for an avro schema)
+  lazy val keyToBytes: Any => Array[Byte] = if (keySchema.fields.isEmpty) {
+    _ => api.Constants.GlobalAggregationKVStoreKey.getBytes(api.Constants.UTF8)
+  } else {
+    AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
+  }
+  lazy val keyToJson: Any => String = if (keySchema.fields.isEmpty) {
+    _ => api.Constants.GlobalAggregationKVStoreKey
+  } else {
+    AvroConversions.encodeJson(keyZSchema, GenericRowHandler.func)
+  }
   lazy val valueToBytes: Any => Array[Byte] = AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
-  lazy val keyToJson: Any => String = AvroConversions.encodeJson(keyZSchema, GenericRowHandler.func)
   lazy val valueToJson: Any => String = AvroConversions.encodeJson(valueZSchema, GenericRowHandler.func)
   private val baseRowSchema = StructType(
     Seq(
@@ -75,17 +84,25 @@ case class KvRdd(data: RDD[(Array[Any], Array[Any])], keySchema: StructType, val
   val withTime = false
 
   def toAvroDf(jsonPercent: Int = 1): DataFrame = {
-    val avroRdd: RDD[Row] = data.map {
-      case (keys: Array[Any], values: Array[Any]) =>
-        // json encoding is very expensive (50% of entire job).
-        // We only do it for a specified fraction to retain debuggability.
-        val (keyJson, valueJson) = if (math.random < jsonPercent.toDouble / 100) {
-          (keyToJson(keys), valueToJson(values))
-        } else {
-          (null, null)
-        }
-        val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyJson, valueJson)
-        new GenericRow(result)
+    val avroRdd: RDD[Row] = data.mapPartitions { iterator =>
+      // Create reusable objects ONCE per partition to reduce allocations
+      val jsonThreshold = jsonPercent.toDouble / 100
+      var isFirstRow = true
+
+      iterator.map {
+        case (keys: Array[Any], values: Array[Any]) =>
+          // json encoding is very expensive (50% of entire job).
+          // We only do it for a specified fraction to retain debuggability.
+          // We also always encode the first row of each partition to enable better debugging for small datasets
+          val (keyJson, valueJson) = if (isFirstRow || math.random < jsonPercent.toDouble / 100) {
+            isFirstRow = false
+            (keyToJson(keys), valueToJson(values))
+          } else {
+            (null, null)
+          }
+          val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyJson, valueJson)
+          new GenericRow(result)
+      }
     }
     logger.info(s"""
           |key schema:
@@ -118,15 +135,22 @@ case class TimedKvRdd(data: RDD[(Array[Any], Array[Any], Long)],
 
   // TODO make json percent configurable
   def toAvroDf: DataFrame = {
-    val avroRdd: RDD[Row] = data.map {
-      case (keys, values, ts) =>
-        val (keyJson, valueJson) = if (math.random < 0.01) {
-          (keyToJson(keys), valueToJson(values))
-        } else {
-          (null, null)
-        }
-        val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyJson, valueJson, ts)
-        new GenericRow(result)
+    val avroRdd: RDD[Row] = data.mapPartitions { iterator =>
+      // Create reusable objects ONCE per partition to reduce allocations
+      val jsonThreshold = 0.01
+      var isFirstRow = true
+
+      iterator.map {
+        case (keys, values, ts) =>
+          val (keyJson, valueJson) = if (isFirstRow || math.random < jsonThreshold) {
+            isFirstRow = false
+            (keyToJson(keys), valueToJson(values))
+          } else {
+            (null, null)
+          }
+          val result: Array[Any] = Array(keyToBytes(keys), valueToBytes(values), keyJson, valueJson, ts)
+          new GenericRow(result)
+      }
     }
 
     val schemasStr = Seq(keyZSchema, valueZSchema).map(AvroConversions.fromChrononSchema(_).toString(true))

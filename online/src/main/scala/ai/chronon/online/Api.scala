@@ -98,7 +98,12 @@ trait KVStore {
   def createKeyBytes(keys: Map[String, AnyRef],
                      groupByServingInfo: GroupByServingInfoParsed,
                      dataset: String): Array[Byte] = {
-    groupByServingInfo.keyCodec.encode(keys)
+    // For global aggregations (empty key schema), use plain UTF-8 bytes for dummy key
+    if (groupByServingInfo.keyChrononSchema.fields.isEmpty) {
+      Constants.GlobalAggregationKVStoreKey.getBytes(Constants.UTF8)
+    } else {
+      groupByServingInfo.keyCodec.encode(keys)
+    }
   }
 }
 

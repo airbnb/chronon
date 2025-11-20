@@ -952,10 +952,77 @@ class GroupByTest {
 
     // Verify we can query the results successfully with partition pushdown
     val filteredResult = tableUtils.sql(s"""
-      SELECT user, time_spent_ms_count 
-      FROM $groupByOutputTable 
+      SELECT user, time_spent_ms_count
+      FROM $groupByOutputTable
       WHERE ds >= '${tableUtils.partitionSpec.minus(today, new Window(7, TimeUnit.DAYS))}'
     """)
     assertTrue("Should be able to filter GroupBy results", filteredResult.count() >= 0)
+  }
+
+  @Test
+  def testGlobalAggregationSnapshot(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+
+    val schema = List(
+      Column("event_type", StringType, 5),
+      Column("value", IntType, 10000)
+    )
+
+    val df = DataFrameGen.events(spark, schema, 10000, 10)
+    val viewName = "test_global_aggregation"
+    df.createOrReplaceTempView(viewName)
+
+    // Global aggregation: no keys, compute aggregates across all data
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.COUNT, "value", Seq(WindowUtils.Unbounded)),
+      Builders.Aggregation(Operation.SUM, "value", Seq(WindowUtils.Unbounded))
+    )
+
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val monthAgo = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
+
+    // Empty keys array = global aggregation
+    val groupBy = new GroupBy(aggregations, Seq(), df)
+    val actualDf = groupBy.snapshotEvents(PartitionRange(monthAgo, today))
+
+    // Expected: one row per partition with global aggregates
+    val expectedDf = df.sqlContext.sql(s"""
+                                          |WITH
+                                          |  counts AS (
+                                          |    SELECT ds,
+                                          |      COUNT(value) AS value_count,
+                                          |      SUM(value) AS value_sum
+                                          |    FROM $viewName
+                                          |    GROUP BY ds)
+                                          |
+                                          |SELECT counts.ds,
+                                          |       SUM(counts.value_count) OVER (ORDER BY counts.ds ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS value_count,
+                                          |       SUM(counts.value_sum) OVER (ORDER BY counts.ds ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS value_sum
+                                          |FROM counts
+                                          |ORDER BY counts.ds
+                                          |""".stripMargin)
+
+    val diff = Comparison.sideBySide(actualDf, expectedDf, List(tableUtils.partitionColumn))
+    if (diff.count() > 0) {
+      println("Global aggregation test failed - showing differences:")
+      diff.show()
+    }
+    assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testGlobalAggregationDummyKeyInjection(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GlobalAggDummyKeyTest", local = true)
+    val emptyKeySchema = StructType(Seq.empty)
+    val valueSchema = StructType(Seq(StructField("count", SparkLongType)))
+    val data = spark.sparkContext.parallelize(Seq((Array.empty[Any], Array[Any](100L))))
+    val kvRdd = KvRdd(data, emptyKeySchema, valueSchema)(spark)
+    val df = kvRdd.toAvroDf()
+
+    val keyBytes = df.select("key_bytes").head().getAs[Array[Byte]](0)
+    assertEquals(Constants.GlobalAggregationKVStoreKey, new String(keyBytes, Constants.UTF8))
   }
 }

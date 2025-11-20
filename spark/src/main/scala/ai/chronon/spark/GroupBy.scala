@@ -510,8 +510,13 @@ object GroupBy {
     val processedInputDf = bloomMapOpt.map { skewFilteredDf.filterBloom }.getOrElse { skewFilteredDf }
 
     // at-least one of the keys should be present in the row.
-    val nullFilterClause = groupByConf.keyColumns.toScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
-    val nullFiltered = processedInputDf.filter(nullFilterClause)
+    // For global aggregations (empty keys), skip null filtering
+    val nullFiltered = if (groupByConf.keyColumns.isEmpty) {
+      processedInputDf
+    } else {
+      val nullFilterClause = groupByConf.keyColumns.toScala.map(key => s"($key IS NOT NULL)").mkString(" OR ")
+      processedInputDf.filter(nullFilterClause)
+    }
     if (showDf) {
       logger.info(s"printing input date for groupBy: ${groupByConf.metaData.name}")
       nullFiltered.prettyPrint()

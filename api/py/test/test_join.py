@@ -163,3 +163,52 @@ def test_derivation_with_description():
     )
 
     assert derivation == expected_derivation
+
+
+def test_join_with_global_aggregation():
+    """
+    Test that joins work with global aggregations (GroupBys with empty keys).
+    Global aggregations should join on system keys (partition/timestamp) only.
+    """
+    # Create a global aggregation GroupBy (no keys)
+    global_gb = GroupBy(
+        sources=[event_source("global_stats_table")],
+        keys=[],  # Empty keys = global aggregation
+        aggregations=[
+            api.Aggregation(inputColumn="event_id", operation=api.Operation.COUNT),
+            api.Aggregation(inputColumn="event_id", operation=api.Operation.SUM),
+        ],
+        name="global_stats",
+    )
+
+    # Create a normal GroupBy with keys for comparison
+    regular_gb = GroupBy(
+        sources=[event_source("user_stats_table")],
+        keys=["subject"],
+        aggregations=[
+            api.Aggregation(inputColumn="event_id", operation=api.Operation.LAST),
+        ],
+        name="user_stats",
+    )
+
+    # Create a join with both global and regular aggregations
+    join = Join(
+        left=event_source("events_table"),
+        right_parts=[
+            api.JoinPart(groupBy=global_gb, prefix="global"),
+            api.JoinPart(groupBy=regular_gb),  # Uses default key mapping
+        ],
+        name="events_with_global_and_user_stats",
+    )
+
+    # Verify the join was created successfully
+    assert join is not None
+    assert len(join.joinParts) == 2
+
+    # Verify global aggregation has empty keyColumns
+    assert join.joinParts[0].groupBy.keyColumns == []
+    assert len(join.joinParts[0].groupBy.aggregations) == 2
+
+    # Verify regular aggregation has keys
+    assert join.joinParts[1].groupBy.keyColumns == ["subject"]
+    assert len(join.joinParts[1].groupBy.aggregations) == 1

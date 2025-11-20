@@ -257,6 +257,14 @@ Mismatched columns among sources [1, {i+2}], Difference: {column_diff}
 Keys {unselected_keys}, are unselected in source
 """
 
+    # For global aggregations (empty keys), aggregations must be specified
+    if not keys:
+        assert aggregations is not None and len(aggregations) > 0, (
+            "Global aggregations (empty keys) require at least one aggregation to be specified. "
+            "To compute global aggregates, provide aggregations like "
+            "[Aggregation(input_column='col', operation=Operation.SUM)]."
+        )
+
     # Aggregations=None is only valid if group_by is Entities
     if aggregations is None:
         is_events = any([s.events for s in sources])
@@ -359,7 +367,7 @@ def get_output_col_names(aggregation):
 
 def GroupBy(
     sources: Union[List[_ANY_SOURCE_TYPE], _ANY_SOURCE_TYPE],
-    keys: List[str],
+    keys: Optional[List[str]],
     aggregations: Optional[List[ttypes.Aggregation]],
     online: Optional[bool] = DEFAULT_ONLINE,
     production: Optional[bool] = DEFAULT_PRODUCTION,
@@ -408,8 +416,9 @@ def GroupBy(
     :type sources: List[ai.chronon.api.ttypes.Events|ai.chronon.api.ttypes.Entities]
     :param keys:
         List of primary keys that defines the data that needs to be collected in the result table. Similar to the
-        GroupBy in the SQL context.
-    :type keys: List[String]
+        GroupBy in the SQL context. For global aggregations (computing a single aggregate value across all data),
+        pass either None or an empty list. In this case, aggregations will be computed without grouping by any keys.
+    :type keys: Optional[List[String]]
     :param aggregations:
         List of aggregations that needs to be computed for the data following the grouping defined by the keys::
 
@@ -500,11 +509,12 @@ def GroupBy(
     """
     assert sources, "Sources are not specified"
 
+    key_columns = keys or []
     agg_inputs = []
     if aggregations is not None:
         agg_inputs = [agg.inputColumn for agg in aggregations]
 
-    required_columns = keys + agg_inputs
+    required_columns = key_columns + agg_inputs
 
     def _sanitize_columns(source: ttypes.Source):
         query = (
@@ -577,7 +587,7 @@ def GroupBy(
 
     group_by = ttypes.GroupBy(
         sources=sources,
-        keyColumns=keys,
+        keyColumns=key_columns,
         aggregations=aggregations,
         metaData=metadata,
         backfillStartDate=backfill_start_date,

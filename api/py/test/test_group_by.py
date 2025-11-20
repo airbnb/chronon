@@ -1,4 +1,3 @@
-
 #     Copyright (C) 2023 The Chronon Authors.
 #
 #     Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,12 +12,12 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-import pytest, json
+import json
 
+import pytest
 from ai.chronon import group_by, query
-from ai.chronon.group_by import GroupBy, Derivation, TimeUnit, Window, Aggregation, Accuracy
 from ai.chronon.api import ttypes
-from ai.chronon.api.ttypes import EventSource, EntitySource, Operation
+from ai.chronon.group_by import Accuracy, Derivation
 
 
 @pytest.fixture
@@ -50,11 +49,7 @@ def event_source(table, topic=None):
         topic=topic,
         query=ttypes.Query(
             startPartition="2020-04-09",
-            selects={
-                "subject": "subject_sql",
-                "event_id": "event_sql",
-                "cnt": 1
-            },
+            selects={"subject": "subject_sql", "event_id": "event_sql", "cnt": 1},
             timeColumn="CAST(ts AS DOUBLE)",
         ),
     )
@@ -69,30 +64,21 @@ def entity_source(snapshotTable, mutationTable):
         mutationTable=mutationTable,
         query=ttypes.Query(
             startPartition="2020-04-09",
-            selects={
-                "subject": "subject_sql",
-                "event_id": "event_sql",
-                "cnt": 1
-            },
+            selects={"subject": "subject_sql", "event_id": "event_sql", "cnt": 1},
             timeColumn="CAST(ts AS DOUBLE)",
             mutationTimeColumn="__mutationTs",
             reversalColumn="is_reverse",
         ),
     )
 
+
 def test_pretty_window_str(days_unit, hours_unit):
     """
     Test pretty window utils.
     """
-    window = ttypes.Window(
-        length=7,
-        timeUnit=days_unit
-    )
+    window = ttypes.Window(length=7, timeUnit=days_unit)
     assert group_by.window_to_str_pretty(window) == "7 days"
-    window = ttypes.Window(
-        length=2,
-        timeUnit=hours_unit
-    )
+    window = ttypes.Window(length=2, timeUnit=hours_unit)
     assert group_by.window_to_str_pretty(window) == "2 hours"
 
 
@@ -108,7 +94,7 @@ def test_select():
     """
     Test select builder
     """
-    assert query.select('subject', event="event_expr") == {"subject": "subject", "event": "event_expr"}
+    assert query.select("subject", event="event_expr") == {"subject": "subject", "event": "event_expr"}
 
 
 def test_contains_windowed_aggregation(sum_op, min_op, days_unit):
@@ -117,16 +103,12 @@ def test_contains_windowed_aggregation(sum_op, min_op, days_unit):
     """
     assert not group_by.contains_windowed_aggregation([])
     aggregations = [
-        ttypes.Aggregation(inputColumn='event', operation=sum_op),
-        ttypes.Aggregation(inputColumn='event', operation=min_op),
+        ttypes.Aggregation(inputColumn="event", operation=sum_op),
+        ttypes.Aggregation(inputColumn="event", operation=min_op),
     ]
     assert not group_by.contains_windowed_aggregation(aggregations)
     aggregations.append(
-        ttypes.Aggregation(
-            inputColumn='event',
-            operation=sum_op,
-            windows=[ttypes.Window(length=7, timeUnit=days_unit)]
-        )
+        ttypes.Aggregation(inputColumn="event", operation=sum_op, windows=[ttypes.Window(length=7, timeUnit=days_unit)])
     )
     assert group_by.contains_windowed_aggregation(aggregations)
 
@@ -174,6 +156,7 @@ def test_validator_ok():
         aggregations=None,
     )
 
+
 def test_validator_accuracy():
     with pytest.raises(AssertionError, match="SNAPSHOT accuracy should not be specified for streaming sources"):
         gb = group_by.GroupBy(
@@ -192,9 +175,9 @@ def test_validator_accuracy():
         assert all([agg.inputColumn for agg in gb.aggregations if agg.operation != ttypes.Operation.COUNT])
         group_by.validate_group_by(gb)
 
+
 def test_generic_collector():
-    aggregation = group_by.Aggregation(
-        input_column="test", operation=group_by.Operation.APPROX_PERCENTILE([0.4, 0.2]))
+    aggregation = group_by.Aggregation(input_column="test", operation=group_by.Operation.APPROX_PERCENTILE([0.4, 0.2]))
     assert aggregation.argMap == {"k": "128", "percentiles": "[0.4, 0.2]"}
 
 
@@ -202,21 +185,11 @@ def test_select_sanitization():
     gb = group_by.GroupBy(
         sources=[
             ttypes.EventSource(  # No selects are spcified
-                table="event_table1",
-                query=query.Query(
-                    selects=None,
-                    time_column="ts"
-                )
+                table="event_table1", query=query.Query(selects=None, time_column="ts")
             ),
             ttypes.EntitySource(  # Some selects are specified
-                snapshotTable="entity_table1",
-                query=query.Query(
-                    selects={
-                        "key1": "key1_sql",
-                        "event_id": "event_sql"
-                    }
-                )
-            )
+                snapshotTable="entity_table1", query=query.Query(selects={"key1": "key1_sql", "event_id": "event_sql"})
+            ),
         ],
         keys=["key1", "key2"],
         aggregations=group_by.Aggregations(
@@ -239,19 +212,20 @@ def test_snapshot_with_hour_aggregation():
                 ttypes.EntitySource(  # Some selects are specified
                     snapshotTable="entity_table1",
                     query=query.Query(
-                        selects={
-                            "key1": "key1_sql",
-                            "event_id": "event_sql"
-                        },
+                        selects={"key1": "key1_sql", "event_id": "event_sql"},
                         time_column="ts",
-                    )
+                    ),
                 )
             ],
             keys=["key1"],
             aggregations=group_by.Aggregations(
-                random=ttypes.Aggregation(inputColumn="event_id", operation=ttypes.Operation.SUM, windows=[
-                    ttypes.Window(1, ttypes.TimeUnit.HOURS),
-                ]),
+                random=ttypes.Aggregation(
+                    inputColumn="event_id",
+                    operation=ttypes.Operation.SUM,
+                    windows=[
+                        ttypes.Window(1, ttypes.TimeUnit.HOURS),
+                    ],
+                ),
             ),
             backfill_start_date="2021-01-04",
         )
@@ -259,56 +233,79 @@ def test_snapshot_with_hour_aggregation():
 
 def test_additional_metadata():
     gb = group_by.GroupBy(
-        sources=[
-            ttypes.EventSource(
-                table="event_table1",
-                query=query.Query(
-                    selects=None,
-                    time_column="ts"
-                )
-            )
-        ],
+        sources=[ttypes.EventSource(table="event_table1", query=query.Query(selects=None, time_column="ts"))],
         keys=["key1", "key2"],
         aggregations=[group_by.Aggregation(input_column="event_id", operation=ttypes.Operation.SUM)],
-        tags={"to_deprecate": True}
+        tags={"to_deprecate": True},
     )
-    assert json.loads(gb.metaData.customJson)['groupby_tags']['to_deprecate']
-
+    assert json.loads(gb.metaData.customJson)["groupby_tags"]["to_deprecate"]
 
 
 def test_group_by_with_description():
     gb = group_by.GroupBy(
-        sources=[
-            ttypes.EventSource(
-                table="event_table1",
-                query=query.Query(
-                    selects=None,
-                    time_column="ts"
-                )
-            )
-        ],
+        sources=[ttypes.EventSource(table="event_table1", query=query.Query(selects=None, time_column="ts"))],
         keys=["key1", "key2"],
         aggregations=[group_by.Aggregation(input_column="event_id", operation=ttypes.Operation.SUM)],
         name="test.additional_metadata_gb",
-        description="GroupBy description"
+        description="GroupBy description",
     )
     assert gb.metaData.description == "GroupBy description"
 
 
 def test_derivation():
     derivation = Derivation(name="derivation_name", expression="derivation_expression")
-    expected_derivation = ttypes.Derivation(
-        name="derivation_name",
-        expression="derivation_expression")
+    expected_derivation = ttypes.Derivation(name="derivation_name", expression="derivation_expression")
 
     assert derivation == expected_derivation
 
 
 def test_derivation_with_description():
-    derivation = Derivation(name="derivation_name", expression="derivation_expression", description="Derivation description")
+    derivation = Derivation(
+        name="derivation_name", expression="derivation_expression", description="Derivation description"
+    )
     expected_derivation = ttypes.Derivation(
         name="derivation_name",
         expression="derivation_expression",
-        metaData=ttypes.MetaData(description="Derivation description"))
+        metaData=ttypes.MetaData(description="Derivation description"),
+    )
 
     assert derivation == expected_derivation
+
+
+def test_global_aggregation():
+    """
+    Test global aggregations with empty keys
+    """
+    # Test with keys=[]
+    gb = group_by.GroupBy(
+        sources=event_source("table"),
+        keys=[],
+        aggregations=group_by.Aggregations(
+            total_count=ttypes.Aggregation(inputColumn="cnt", operation=ttypes.Operation.COUNT),
+            total_sum=ttypes.Aggregation(inputColumn="cnt", operation=ttypes.Operation.SUM),
+        ),
+    )
+    assert gb.keyColumns == []
+    assert len(gb.aggregations) == 2
+    group_by.validate_group_by(gb)
+
+    # Test with keys=None
+    gb = group_by.GroupBy(
+        sources=event_source("table"),
+        keys=None,
+        aggregations=group_by.Aggregations(
+            total_count=ttypes.Aggregation(inputColumn="cnt", operation=ttypes.Operation.COUNT),
+            total_sum=ttypes.Aggregation(inputColumn="cnt", operation=ttypes.Operation.SUM),
+        ),
+    )
+    assert gb.keyColumns == []
+    assert len(gb.aggregations) == 2
+    group_by.validate_group_by(gb)
+
+    # Test that global aggregations require aggregations
+    with pytest.raises(AssertionError, match="Global aggregations"):
+        fail_gb = group_by.GroupBy(
+            sources=event_source("table"),
+            keys=[],
+            aggregations=None,
+        )
