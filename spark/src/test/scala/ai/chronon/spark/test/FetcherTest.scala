@@ -539,7 +539,7 @@ class FetcherTest extends TestCase {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     val spark: SparkSession = createSparkSession()
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore(s"FetcherTest#$namespace")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
 
@@ -743,7 +743,7 @@ class FetcherTest extends TestCase {
     val joinConf = generateMutationData(namespace, Some(spark))
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testTemporalFetchGroupByNonExistKey")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher(debug = false)
@@ -798,7 +798,7 @@ class FetcherTest extends TestCase {
     val groupByConf = joinConf.joinParts.toScala.head.groupBy
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testGroupByServingInfoTtlCacheRefresh")
     OnlineUtils.serve(tableUtils, kvStoreFunc(), kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
 
     val spyKvStore = spy(kvStoreFunc())
@@ -833,7 +833,7 @@ class FetcherTest extends TestCase {
     val joinConf = generateMutationData(namespace, Some(spark))
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testJoinConfTtlCacheRefresh")
     val inMemoryKvStore = kvStoreFunc()
     joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy, dropDsOnWrite = true))
