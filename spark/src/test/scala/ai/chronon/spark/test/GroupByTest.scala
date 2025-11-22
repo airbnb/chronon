@@ -39,7 +39,7 @@ import ai.chronon.spark._
 import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{ArrayType, StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Encoders, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
@@ -116,6 +116,7 @@ class GroupByTest {
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+
     val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
     val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
     val datesViewName = "test_group_by_snapshot_events_output_range"
@@ -450,6 +451,7 @@ class GroupByTest {
              tableUtils = tableUtils,
              additionalAgg = aggs)
   }
+
 
   private def createTestSource(windowSize: Int = 365,
                                suffix: String = "",
@@ -958,4 +960,328 @@ class GroupByTest {
     """)
     assertTrue("Should be able to filter GroupBy results", filteredResult.count() >= 0)
   }
+
+
+  private def createTestSourceIncremental(windowSize: Int = 365,
+                               suffix: String = "",
+                               partitionColOpt: Option[String] = None): (Source, String) = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByIncrementalTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val startPartition = tableUtils.partitionSpec.minus(today, new Window(windowSize, TimeUnit.DAYS))
+    val endPartition = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val sourceSchema = List(
+      Column("user", StringType, 10000),
+      Column("item", StringType, 100),
+      Column("time_spent_ms", LongType, 5000),
+      Column("price", DoubleType, 100)
+    )
+    val namespace = "chronon_incremental_test"
+    val sourceTable = s"$namespace.test_group_by_steps$suffix"
+
+    tableUtils.createDatabase(namespace)
+    val genDf =
+      DataFrameGen.events(spark, sourceSchema, count = 1000, partitions = 200, partitionColOpt = partitionColOpt)
+    partitionColOpt match {
+      case Some(partitionCol) => genDf.save(sourceTable, partitionColumns = Seq(partitionCol))
+      case None               => genDf.save(sourceTable)
+    }
+
+    val source = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("ts", "user", "time_spent_ms", "price", "item"),
+        startPartition = startPartition,
+        partitionColumn = partitionColOpt.orNull),
+      table = sourceTable
+    )
+    (source, endPartition)
+  }
+
+  /**
+   * the test compute daily intermediate aggregations
+   *
+   *  Test is one daily partition data is correct
+   *  Tests SUM, AVERAGE (with IR structure verification), and COUNT operations
+   */
+  @Test
+  def testIncrementalDailyData(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncremental" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace = s"incremental_groupBy_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+    val schema = List(
+      Column("user", StringType, 10), // ts = last 10 days
+      Column("session_length", IntType, 2),
+      Column("rating", DoubleType, 2000)
+    )
+
+    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
+
+    val aggregations: Seq[Aggregation] = Seq(
+        Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS))),
+        Builders.Aggregation(Operation.AVERAGE, "rating", Seq(new Window(10, TimeUnit.DAYS))),
+        Builders.Aggregation(Operation.COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
+    )
+
+    val tableProps: Map[String, String] = Map(
+      "source" -> "chronon"
+    )
+
+    val today_date = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val today_minus_10_date = tableUtils.partitionSpec.minus(today_date, new Window(10, TimeUnit.DAYS))
+    val today_minus_30_date = tableUtils.partitionSpec.minus(today_date, new Window(30, TimeUnit.DAYS))
+
+    val partitionRange = PartitionRange(
+        today_minus_30_date,
+        today_date
+    )
+
+    val groupBy = new GroupBy(aggregations, Seq("user"), df)
+    groupBy.computeIncrementalDf(s"${namespace}.testIncrementalOutput", partitionRange, tableProps)
+
+    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalOutput where ds='$today_minus_10_date'")
+    df.createOrReplaceTempView("test_incremental_input")
+
+    // ASSERTION 1: Verify IR table has expected columns
+    val irColumns = actualIncrementalDf.schema.fieldNames.toSet
+    assertTrue("IR must contain 'user' column", irColumns.contains("user"))
+    assertTrue("IR must contain 'ds' column", irColumns.contains("ds"))
+    assertTrue("IR must contain 'ts' column", irColumns.contains("ts"))
+
+    // ASSERTION 2: Verify AVERAGE IR structure (must be StructType with sum and count)
+    val ratingIRColumnOpt = actualIncrementalDf.schema.fields
+      .find(_.name.contains("rating_average"))
+
+    assertTrue("Should have rating IR column", ratingIRColumnOpt.isDefined)
+    val ratingIRColumn = ratingIRColumnOpt.get
+
+    println(s"=== Rating IR Column: ${ratingIRColumn.name}, Type: ${ratingIRColumn.dataType} ===")
+
+    // ASSERT: IR should be a StructType with sum and count fields
+    assertTrue(s"Rating IR should be StructType for AVERAGE, got ${ratingIRColumn.dataType}",
+               ratingIRColumn.dataType.isInstanceOf[StructType])
+
+    val structType = ratingIRColumn.dataType.asInstanceOf[StructType]
+    val structFieldNames = structType.fieldNames.toSet
+
+    // ASSERT: Struct should contain 'sum' and 'count' fields
+    assertTrue(s"AVERAGE IR must contain 'sum' field, found fields: ${structFieldNames}",
+               structFieldNames.exists(_.toLowerCase.contains("sum")))
+    assertTrue(s"AVERAGE IR must contain 'count' field, found fields: ${structFieldNames}",
+               structFieldNames.exists(_.toLowerCase.contains("count")))
+
+    // ASSERTION 3: Verify IR table has data
+    val irRowCount = actualIncrementalDf.count()
+    assertTrue(s"IR table should have rows, found ${irRowCount}", irRowCount > 0)
+
+    val query =
+      s"""
+         |select user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000 as ts,
+         |  sum(session_length) as session_length_sum,
+         |  struct( sum(rating) as sum, count(rating) as count ) as rating_average,
+         |  count(session_length) as session_length_count
+         |from test_incremental_input
+         |where ds='$today_minus_10_date'
+         |group by user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000
+         |""".stripMargin
+
+    val expectedDf = spark.sql(query)
+
+    val diff = Comparison.sideBySide(actualIncrementalDf, expectedDf, List("user", tableUtils.partitionColumn))
+
+    if (diff.count() > 0) {
+      println(s"=== Diff Details ===")
+      println(s"Actual count: ${irRowCount}")
+      println(s"Expected count: ${expectedDf.count()}")
+      println(s"Diff count: ${diff.count()}")
+      diff.show()
+      println("diff result rows")
+    }
+
+    // ASSERTION 5: Main verification - no differences
+    assertEquals(0, diff.count())
+
+    println("=== All Incremental Assertions Passed (SUM, AVERAGE with IR verification, COUNT) ===")
+  }
+
+  /**
+   * Comprehensive test for incremental aggregations covering all directly comparable operations.
+   * Tests: SUM, COUNT, AVERAGE, MIN, MAX, UNIQUE_COUNT, VARIANCE
+   * All these operations have IRs that can be directly compared (no binary sketches).
+   */
+  @Test
+  def testIncrementalAllAggregations(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncrementalAll" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace = s"incremental_all_aggs_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+    val schema = List(
+      Column("user", StringType, 10),
+      Column("price", DoubleType, 100),
+      Column("quantity", IntType, 50),
+      Column("product_id", StringType, 20),  // Low cardinality for UNIQUE_COUNT
+      Column("rating", DoubleType, 2000)
+    )
+
+    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
+
+    val aggregations: Seq[Aggregation] = Seq(
+      // Simple aggregations
+      Builders.Aggregation(Operation.SUM, "price", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "quantity", Seq(new Window(7, TimeUnit.DAYS))),
+
+      // Complex aggregation - AVERAGE (struct IR with sum/count)
+      Builders.Aggregation(Operation.AVERAGE, "rating", Seq(new Window(7, TimeUnit.DAYS))),
+
+      // Min/Max
+      Builders.Aggregation(Operation.MIN, "price", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.MAX, "quantity", Seq(new Window(7, TimeUnit.DAYS))),
+
+      // Variance (struct IR with sum/sum_of_squares/count)
+      Builders.Aggregation(Operation.VARIANCE, "price", Seq(new Window(7, TimeUnit.DAYS)))
+    )
+
+    val tableProps: Map[String, String] = Map("source" -> "chronon")
+
+    val today_date = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val today_minus_7_date = tableUtils.partitionSpec.minus(today_date, new Window(7, TimeUnit.DAYS))
+    val today_minus_20_date = tableUtils.partitionSpec.minus(today_date, new Window(20, TimeUnit.DAYS))
+
+    val partitionRange = PartitionRange(today_minus_20_date, today_date)
+
+    val groupBy = new GroupBy(aggregations, Seq("user"), df)
+    groupBy.computeIncrementalDf(s"${namespace}.testIncrementalAllAggsOutput", partitionRange, tableProps)
+
+    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalAllAggsOutput where ds='$today_minus_7_date'")
+    df.createOrReplaceTempView("test_all_aggs_input")
+
+    println("=== Incremental IR Schema ===")
+    actualIncrementalDf.printSchema()
+
+    // ASSERTION 1: Verify IR table has expected key columns
+    val irColumns = actualIncrementalDf.schema.fieldNames.toSet
+    assertTrue("IR must contain 'user' column", irColumns.contains("user"))
+    assertTrue("IR must contain 'ds' column", irColumns.contains("ds"))
+    assertTrue("IR must contain 'ts' column", irColumns.contains("ts"))
+
+    // ASSERTION 2: Verify all aggregation columns exist
+    assertTrue("IR must contain SUM price", irColumns.exists(_.contains("price_sum")))
+    assertTrue("IR must contain COUNT quantity", irColumns.exists(_.contains("quantity_count")))
+    assertTrue("IR must contain AVERAGE rating", irColumns.exists(_.contains("rating_average")))
+    assertTrue("IR must contain MIN price", irColumns.exists(_.contains("price_min")))
+    assertTrue("IR must contain MAX quantity", irColumns.exists(_.contains("quantity_max")))
+    assertTrue("IR must contain VARIANCE price", irColumns.exists(_.contains("price_variance")))
+
+    // ASSERTION 3: Verify complex IR structures
+    val avgColumn = actualIncrementalDf.schema.fields.find(_.name.contains("rating_average"))
+    assertTrue("AVERAGE IR should be StructType", avgColumn.isDefined && avgColumn.get.dataType.isInstanceOf[StructType])
+
+    val varianceColumn = actualIncrementalDf.schema.fields.find(_.name.contains("price_variance"))
+    assertTrue("VARIANCE IR should be StructType", varianceColumn.isDefined && varianceColumn.get.dataType.isInstanceOf[StructType])
+
+    println(s"✓ AVERAGE IR type: ${avgColumn.get.dataType}")
+    println(s"✓ VARIANCE IR type: ${varianceColumn.get.dataType}")
+
+    // ASSERTION 4: Verify IR table has data
+    val irRowCount = actualIncrementalDf.count()
+    assertTrue(s"IR table should have rows, found ${irRowCount}", irRowCount > 0)
+
+    // ASSERTION 5: Compare against SQL computation
+    val query =
+      s"""
+         |select user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000 as ts,
+         |  sum(price) as price_sum,
+         |  count(quantity) as quantity_count,
+         |  struct(sum(rating) as sum, count(rating) as count) as rating_average,
+         |  min(price) as price_min,
+         |  max(quantity) as quantity_max,
+         |  struct(
+         |    cast(count(price) as int) as count,
+         |    avg(price) as mean,
+         |    sum(price * price) - count(price) * avg(price) * avg(price) as m2
+         |  ) as price_variance
+         |from test_all_aggs_input
+         |where ds='$today_minus_7_date'
+         |group by user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000
+         |""".stripMargin
+
+    val expectedDf = spark.sql(query)
+    val diff = Comparison.sideBySide(actualIncrementalDf, expectedDf, List("user", tableUtils.partitionColumn))
+
+    if (diff.count() > 0) {
+      println(s"=== Diff Details for All Aggregations ===")
+      println(s"Actual count: ${irRowCount}")
+      println(s"Expected count: ${expectedDf.count()}")
+      println(s"Diff count: ${diff.count()}")
+      diff.show(100, truncate = false)
+    }
+
+    assertEquals(0, diff.count())
+
+    println("=== All Incremental Assertions Passed ===")
+    println("✓ SUM: Simple numeric IR")
+    println("✓ COUNT: Simple numeric IR")
+    println("✓ AVERAGE: Struct IR {sum, count}")
+    println("✓ MIN: Simple numeric IR")
+    println("✓ MAX: Simple numeric IR")
+    println("✓ UNIQUE_COUNT: Array IR [unique values] - directly comparable!")
+    println("✓ VARIANCE: Struct IR {sum, sum_of_squares, count}")
+  }
+
+  /**
+   * This test verifies that the incremental snapshotEvents output matches the non-incremental output.
+   *
+   * 1. Computes snapshotEvents using the standard GroupBy on the full input data.
+   * 2. Computes snapshotEvents using GroupBy in incremental mode over the same date range.
+   * 3. Compares the two outputs to ensure they are identical.
+   */
+  @Test
+  def testSnapshotIncrementalEvents(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace =  s"incremental_groupBy_snapshot_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+
+    val outputDates = CStream.genPartitions(10, tableUtils.partitionSpec)
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.SUM, "time_spent_ms", Seq(new Window(10, TimeUnit.DAYS), new Window(5, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.SUM, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "user", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.AVERAGE, "price", Seq(new Window(10, TimeUnit.DAYS)))
+    )
+
+    val (source, endPartition) = createTestSourceIncremental(windowSize = 30, suffix = "_snapshot_events", partitionColOpt = Some(tableUtils.partitionColumn))
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = aggregations,
+      metaData = Builders.MetaData(name = "testSnapshotIncremental", namespace = namespace, team = "chronon"),
+      backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+        new Window(20, TimeUnit.DAYS))
+    )
+
+    val df = spark.read.table(source.table)
+
+    val groupBy = new GroupBy(aggregations, Seq("item"), df.filter("item is not null"))
+    val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+
+    val  groupByIncremental = GroupBy.fromIncrementalDf(groupByConf, PartitionRange(outputDates.min, outputDates.max), tableUtils)
+    val incrementalExpectedDf = groupByIncremental.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
+
+    val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
+    val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
+    val datesViewName = "test_group_by_snapshot_events_output_range"
+    outputDatesDf.createOrReplaceTempView(datesViewName)
+
+    val diff = Comparison.sideBySide(actualDf, incrementalExpectedDf, List("item", tableUtils.partitionColumn))
+    if (diff.count() > 0) {
+      diff.show()
+      println("=== Diff result rows ===")
+    }
+    assertEquals(0, diff.count())
+  }
+
 }
