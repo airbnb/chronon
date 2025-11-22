@@ -1412,15 +1412,24 @@ class JoinTest {
 
     val resultColumns = result.columns.toSet
 
-    // Verify join output has expected columns
-    assertTrue("Join output should contain left key 'user'", resultColumns.contains("user"))
-    assertTrue("Join output should contain left key 'item'", resultColumns.contains("item"))
+    // Create expected schema: left keys + infrastructure + BOTH derived and original columns from join part (no wildcard)
+    val expectedSchema = Set(
+      "user",                              // Left key
+      "item",                              // Left key
+      "ts",                                // Timestamp
+      "ds",                                // Partition column
+      "test_join_part_gb_total_value",     // Derived column from join part
+      "test_join_part_gb_event_count",     // Derived column from join part
+      "test_join_part_gb_value_sum",       // Original aggregation (should be present without wildcard)
+      "test_join_part_gb_value_count"      // Original aggregation (should be present without wildcard)
+    )
 
-    // Verify derived columns from join part are present
-    val expectedDerivedCols = Set("test_join_part_gb_total_value", "test_join_part_gb_event_count")
-    expectedDerivedCols.foreach { col =>
-      assertTrue(s"Join output should contain derived column '$col'", resultColumns.contains(col))
-    }
+    // Verify schema matches exactly (Set comparison ensures exact match)
+    assertEquals(s"Join output schema should match expected schema exactly. " +
+                 s"Expected: ${expectedSchema.mkString(", ")}, " +
+                 s"Actual: ${resultColumns.mkString(", ")}",
+                 expectedSchema,
+                 resultColumns)
 
     println(s"✅ Join part derivations correctly preserved infrastructure columns:")
     println(s"   Columns: ${result.columns.mkString(", ")}")

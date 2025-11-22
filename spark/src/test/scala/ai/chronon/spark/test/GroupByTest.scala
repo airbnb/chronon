@@ -1019,21 +1019,22 @@ class GroupByTest {
     val result = tableUtils.sql(s"SELECT * FROM $outputTable LIMIT 10")
     val resultColumns = result.columns.toSet
 
-    // Infrastructure columns that MUST be preserved:
-    // 1. Key column
-    assertTrue(s"Output should contain key column 'user'", resultColumns.contains("user"))
+    // Create expected schema: infrastructure columns + BOTH derived and original columns (no wildcard)
+    val expectedSchema = Set(
+      "user",                      // Key column
+      tableUtils.partitionColumn,  // Partition column (ds)
+      "total",                     // Derived column
+      "avg",                       // Derived column
+      "value_sum",                 // Original aggregation (should be present without wildcard)
+      "value_average"              // Original aggregation (should be present without wildcard)
+    )
 
-    // 2. Partition column
-    assertTrue(s"Output should contain partition column '${tableUtils.partitionColumn}'",
-               resultColumns.contains(tableUtils.partitionColumn))
-
-    // 3. Derived columns
-    assertTrue(s"Output should contain derived column 'total'", resultColumns.contains("total"))
-    assertTrue(s"Output should contain derived column 'avg'", resultColumns.contains("avg"))
-
-    // 4. Original aggregation columns should NOT be present (only derived ones)
-    assertFalse(s"Output should NOT contain original 'value_sum' column", resultColumns.contains("value_sum"))
-    assertFalse(s"Output should NOT contain original 'value_average' column", resultColumns.contains("value_average"))
+    // Verify schema matches exactly (Set comparison ensures exact match)
+    assertEquals(s"Output schema should match expected schema exactly. " +
+                 s"Expected: ${expectedSchema.mkString(", ")}, " +
+                 s"Actual: ${resultColumns.mkString(", ")}",
+                 expectedSchema,
+                 resultColumns)
 
     println(s"✅ GroupBy derivations correctly preserved infrastructure columns:")
     println(s"   Columns: ${result.columns.mkString(", ")}")

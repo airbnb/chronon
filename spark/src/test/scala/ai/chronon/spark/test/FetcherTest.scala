@@ -34,7 +34,7 @@ import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.{avg, col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.mockito.ArgumentMatchers.{any, anyString}
 import org.mockito.Mockito.{reset, spy, when}
 import org.slf4j.LoggerFactory
@@ -694,6 +694,99 @@ class FetcherTest extends TestCase {
     joinConf.setDerivations(derivations.toJava)
 
     compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+  }
+
+  def testFetcherDerivationsNoWildcard(): Unit = {
+    val spark: SparkSession = createSparkSession()
+    val namespace = "derivation_fetch_no_wildcard"
+    val tableUtils = TableUtils(spark)
+    tableUtils.createDatabase(namespace)
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+
+    // Create test data table
+    val eventData = List(
+      Column("user", StringType, 50),
+      Column("value", LongType, 1000)
+    )
+    val eventTable = s"$namespace.events"
+    DataFrameGen.events(spark, eventData, 100, partitions = 20).save(eventTable)
+
+    // Create GroupBy with derivations WITHOUT wildcard
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.events(
+          table = eventTable,
+          query = Builders.Query(
+            selects = Builders.Selects("value"),
+            startPartition = "2021-01-01"
+          )
+        )
+      ),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "value"),
+        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "value")
+      ),
+      derivations = Seq(
+        // NO WILDCARD! Only derived columns should be present in fetch response
+        Builders.Derivation(name = "total_value", expression = "value_sum"),
+        Builders.Derivation(name = "event_count", expression = "value_count")
+      ),
+      accuracy = Accuracy.TEMPORAL,
+      metaData = Builders.MetaData(name = "unit_test/fetcher_no_wildcard_gb", namespace = namespace, team = "chronon")
+    )
+
+    // Create Join configuration
+    val leftTable = s"$namespace.left_queries"
+    val leftData = List(Column("user", StringType, 50))
+    DataFrameGen.events(spark, leftData, 50, partitions = 10).save(leftTable)
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(
+        table = leftTable,
+        query = Builders.Query(startPartition = "2021-01-01")
+      ),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupByConf)),
+      metaData = Builders.MetaData(name = "unit_test/fetcher_no_wildcard_join", namespace = namespace, team = "chronon")
+    )
+
+    val endDs = "2021-04-10"
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#no_wildcard")
+    val inMemoryKvStore = kvStoreFunc()
+    val mockApi = new MockApi(kvStoreFunc, namespace)
+
+    // Serve the GroupBy to online KV store
+    OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
+
+    // Store join metadata
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
+    inMemoryKvStore.create(ChrononMetadataKey)
+    metadataStore.putJoinConf(joinConf)
+
+    // Fetch a request
+    @transient lazy val fetcher = mockApi.buildFetcher(debug = false)
+    val request = Request(joinConf.metaData.nameToFilePath, Map("user" -> "user_1".asInstanceOf[AnyRef]))
+    val response = fetcher.fetchJoin(Seq(request))
+    val result = Await.result(response, Duration(10, SECONDS)).head
+
+    val responseKeys = result.values.get.keySet
+
+    // Create expected schema: BOTH derived columns AND original aggregations (no wildcard means both appear)
+    val expectedSchema = Set(
+      "total_value",   // Derived column
+      "event_count",   // Derived column
+      "value_sum",     // Original aggregation (should still be present without wildcard)
+      "value_count"    // Original aggregation (should still be present without wildcard)
+    )
+
+    // Verify schema matches exactly (Set comparison ensures exact match)
+    assertEquals(s"Fetcher response should contain BOTH derived AND original columns (no wildcard). " +
+                 s"Expected: ${expectedSchema.mkString(", ")}, " +
+                 s"Actual: ${responseKeys.mkString(", ")}",
+                 expectedSchema,
+                 responseKeys)
+
+    logger.info(s"✅ Fetcher correctly returns BOTH derived and original columns (no wildcard): ${responseKeys.mkString(", ")}")
   }
 
   def testTemporalFetchJoinGenerated(): Unit = {
