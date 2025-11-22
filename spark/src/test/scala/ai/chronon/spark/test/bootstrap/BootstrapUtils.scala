@@ -34,7 +34,7 @@ object BootstrapUtils {
     val transactionsTable = s"$namespace.transactions"
     spark.sql(s"DROP TABLE IF EXISTS $transactionsTable")
     DataFrameGen
-      .events(spark, transactions, 4500, partitions = 45)
+      .events(spark, transactions, 4500, partitions = 5)
       .where(col("user").isNotNull)
       .save(transactionsTable)
     val groupBySource = Builders.Source.events(
