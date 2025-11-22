@@ -44,8 +44,9 @@ jobs:
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
 
-                      # Split tests across parallel containers
+                      # Split tests across parallel containers, excluding Fetcher tests
                       TESTFILES=$(find spark/src/test/scala aggregator/src/test/scala -name "*Test.scala" | \
+                        grep -v "FetcherTest" | \
                         sort | \
                         circleci tests split --split-by=timings --timings-type=filename)
 
@@ -93,8 +94,9 @@ jobs:
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=8G -Xmx8G -Xms4G"
 
-                      # Split tests across parallel containers
+                      # Split tests across parallel containers, excluding Fetcher tests
                       TESTFILES=$(find spark/src/test/scala aggregator/src/test/scala -name "*Test.scala" | \
+                        grep -v "FetcherTest" | \
                         sort | \
                         circleci tests split --split-by=timings --timings-type=filename)
 
@@ -141,6 +143,20 @@ jobs:
               # Increase if we see OOM.
               export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
               sbt "++ 2.11.12 compile"
+
+    "Fetcher Tests":
+        executor: docker_baseimg_executor
+        steps:
+            - checkout
+            - run:
+                  name: Run Fetcher tests
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                      conda activate chronon_py
+                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
+                      sbt "++ 2.12.12; spark_uber/testOnly ai.chronon.spark.test.FetcherTest ai.chronon.spark.test.ChainingFetcherTest ai.chronon.spark.test.JavaFetcherTest"
+            - store_test_results:
+                  path: /chronon/spark/target/test-reports
 
     "Chronon Python Lint":
         executor: docker_baseimg_executor
@@ -248,6 +264,9 @@ workflows:
             - "Scala 11 -- Compile":
                 requires:
                   - "Pull Docker Image"
+            - "Fetcher Tests":
+                  requires:
+                      - "Pull Docker Image"
             - "Scala 12 -- Spark 3 Tests":
                   requires:
                       - "Pull Docker Image"
