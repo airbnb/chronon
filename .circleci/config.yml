@@ -36,6 +36,11 @@ jobs:
         parallelism: 8
         steps:
             - checkout
+            - restore_cache:
+                keys:
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}
+                  - sbt-cache-v1-
             - run:
                   name: Run Spark 3.1.1 tests (parallelized)
                   shell: /bin/bash -leuxo pipefail
@@ -80,12 +85,23 @@ jobs:
                   path: /tmp/spark-warehouse.tar.gz
                   destination: spark_warehouse.tar.gz
                   when: on_fail
+            - save_cache:
+                key: sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                paths:
+                  - ~/.cache/coursier
+                  - ~/.ivy2/cache
+                  - ~/.sbt
 
     "Scala 13 -- Tests":
         executor: docker_baseimg_executor
         parallelism: 8
         steps:
             - checkout
+            - restore_cache:
+                keys:
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}
+                  - sbt-cache-v1-
             - run:
                   name: Run Scala 13 tests (parallelized)
                   shell: /bin/bash -leuxo pipefail
@@ -130,11 +146,22 @@ jobs:
                   path: /tmp/spark-warehouse.tar.gz
                   destination: spark_warehouse.tar.gz
                   when: on_fail
+            - save_cache:
+                key: sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                paths:
+                  - ~/.cache/coursier
+                  - ~/.ivy2/cache
+                  - ~/.sbt
 
     "Scala 11 -- Compile":
       executor: docker_baseimg_executor
       steps:
         - checkout
+        - restore_cache:
+            keys:
+              - sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+              - sbt-cache-v1-{{ checksum "build.sbt" }}
+              - sbt-cache-v1-
         - run:
             name: Compile Scala 11
             shell: /bin/bash -leuxo pipefail
@@ -143,11 +170,22 @@ jobs:
               # Increase if we see OOM.
               export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:MaxPermSize=4G -Xmx4G -Xms2G"
               sbt "++ 2.11.12 compile"
+        - save_cache:
+            key: sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+            paths:
+              - ~/.cache/coursier
+              - ~/.ivy2/cache
+              - ~/.sbt
 
     "Fetcher Tests":
         executor: docker_baseimg_executor
         steps:
             - checkout
+            - restore_cache:
+                keys:
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}
+                  - sbt-cache-v1-
             - run:
                   name: Run Fetcher tests
                   shell: /bin/bash -leuxo pipefail
@@ -157,6 +195,12 @@ jobs:
                       sbt "++ 2.12.12; spark_uber/testOnly ai.chronon.spark.test.FetcherTest ai.chronon.spark.test.ChainingFetcherTest ai.chronon.spark.test.JavaFetcherTest"
             - store_test_results:
                   path: /chronon/spark/target/test-reports
+            - save_cache:
+                key: sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                paths:
+                  - ~/.cache/coursier
+                  - ~/.ivy2/cache
+                  - ~/.sbt
 
     "Chronon Python Lint":
         executor: docker_baseimg_executor
@@ -194,18 +238,34 @@ jobs:
         executor: docker_baseimg_executor
         steps:
             - checkout
+            - restore_cache:
+                keys:
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}
+                  - sbt-cache-v1-
             - run:
                   name: Run ScalafmtCheck
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       conda activate chronon_py
                       sbt +scalafmtCheck
+            - save_cache:
+                key: sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                paths:
+                  - ~/.cache/coursier
+                  - ~/.ivy2/cache
+                  - ~/.sbt
     # run these separately as we need a isolated JVM to not have Spark session settings interfere with other runs
     # long term goal is to refactor the current testing spark session builder and avoid adding new single test to CI
     "Scala 13 -- Iceberg Format Tests":
       executor: docker_baseimg_executor
       steps:
         - checkout
+        - restore_cache:
+            keys:
+              - sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+              - sbt-cache-v1-{{ checksum "build.sbt" }}
+              - sbt-cache-v1-
         - run:
             name: Run Scala 13 tests for Iceberg format
             environment:
@@ -229,10 +289,21 @@ jobs:
             path: /tmp/spark-warehouse.tar.gz
             destination: spark_warehouse.tar.gz
             when: on_fail
+        - save_cache:
+            key: sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+            paths:
+              - ~/.cache/coursier
+              - ~/.ivy2/cache
+              - ~/.sbt
     "Scala 13 -- Iceberg Table Utils Tests":
       executor: docker_baseimg_executor
       steps:
         - checkout
+        - restore_cache:
+            keys:
+              - sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+              - sbt-cache-v1-{{ checksum "build.sbt" }}
+              - sbt-cache-v1-
         - run:
             name: Run Scala 13 tests for Iceberg Table Utils
             environment:
@@ -256,6 +327,12 @@ jobs:
             path: /tmp/spark-warehouse.tar.gz
             destination: spark_warehouse.tar.gz
             when: on_fail
+        - save_cache:
+            key: sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+            paths:
+              - ~/.cache/coursier
+              - ~/.ivy2/cache
+              - ~/.sbt
 
 workflows:
     build_test_deploy:
