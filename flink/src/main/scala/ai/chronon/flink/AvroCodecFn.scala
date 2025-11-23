@@ -4,7 +4,8 @@ import org.slf4j.LoggerFactory
 import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.{Constants, DataModel, Query, StructType => ChrononStructType}
 import ai.chronon.flink.window.TimestampedTile
-import ai.chronon.online.{AvroConversions, GroupByServingInfoParsed}
+import ai.chronon.online.GroupByServingInfoParsed
+import ai.chronon.online.serde.AvroConversions
 import ai.chronon.online.KVStore.PutRequest
 import org.apache.flink.api.common.functions.RichFlatMapFunction
 import org.apache.flink.configuration.Configuration

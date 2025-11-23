@@ -8,6 +8,7 @@ import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.FetcherCache.{BatchIrCache, BatchResponses, CachedMapBatchResponse}
 import ai.chronon.online.KVStore.TimedValue
 import ai.chronon.online.Metrics.Context
+import ai.chronon.online.serde.AvroCodec
 import org.junit.Assert.{assertArrayEquals, assertEquals, assertNull, fail}
 import org.junit.Test
 import org.mockito.Mockito._

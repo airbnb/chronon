@@ -23,7 +23,7 @@ import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
-import ai.chronon.online.{RowWrapper, SparkConversions}
+import ai.chronon.online.serde.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.rdd.RDD
@@ -284,7 +284,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       .map { queriesUnfilteredDf.filter }
       .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
 
-    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
+    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.calculateTimeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
@@ -663,9 +663,12 @@ object GroupBy {
     val selects = Option(source.query.selects)
       .map(_.toScala.map(keyValue => {
         if (keyValue._2.contains(Constants.ChrononRunDs)) {
-          assert(intersectedRange.isDefined && intersectedRange.get.isSingleDay,
-                 s"ChrononRunDs is only supported for single day queries")
-          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => queryRange.start)
+          assert(
+            queryRange.isSingleDay,
+            s"ChrononRunDs is only supported for single day queries. " +
+              s"Got start: ${queryRange.start}, end: ${queryRange.end} (date range include multiple days)"
+          )
+          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => s"'${queryRange.start}'")
           (keyValue._1, parametricMacro.replace(keyValue._2))
         } else {
           keyValue

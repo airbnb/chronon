@@ -52,14 +52,15 @@ v1 = Join(
                 name="test_external_source",
                 team="chronon",
                 key_fields=[
-                    ("key", DataType.LONG)
+                    ("group_by_subject", DataType.STRING)
                 ],
                 value_fields=[
                     ("value_str", DataType.STRING),
                     ("value_long", DataType.LONG),
                     ("value_bool", DataType.BOOLEAN)
-                ]
-            )
+                ],
+                offline_group_by=event_sample_group_by.v1,
+            ),
         ),
         ExternalPart(
             ContextualSource(

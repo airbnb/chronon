@@ -33,6 +33,7 @@ import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildDerivedFields}
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
+import ai.chronon.online.serde.{AvroCodec, AvroConversions}
 import com.google.gson.Gson
 import com.timgroup.statsd.Event
 import com.timgroup.statsd.Event.AlertType
@@ -264,7 +265,7 @@ class Fetcher(val kvStore: KVStore,
                     joinConf: Option[api.Join]): Future[scala.collection.Seq[ResponseWithContext]] = {
     val requestStartTs = System.currentTimeMillis()
     val internalResponsesF = super.fetchJoin(requests, joinConf)
-    val externalResponsesF = fetchExternal(requests)
+    val externalResponsesF = fetchExternal(requests, joinConf)
     internalResponsesF.zip(externalResponsesF).map {
       case (internalResponses, externalResponses) =>
         internalResponses.zip(externalResponses).map {
@@ -301,12 +302,17 @@ class Fetcher(val kvStore: KVStore,
     }
   }
 
-  private def fetchDerivations(baseValuesFuture: Future[scala.collection.Seq[ResponseWithContext]])
-      : Future[scala.collection.Seq[ResponseWithContext]] = {
+  private def fetchDerivations(baseValuesFuture: Future[scala.collection.Seq[ResponseWithContext]],
+                               joinConf: Option[api.Join] = None): Future[scala.collection.Seq[ResponseWithContext]] = {
     baseValuesFuture.map { baseValues =>
       baseValues.map { baseValue =>
         val derivationStartTs = System.currentTimeMillis()
-        val joinCodecTry = getJoinCodecs(baseValue.request.name)
+        // Use locally built codec from joinConf if provided, otherwise fetch from KV store
+        val joinCodecTry = if (joinConf.isDefined) {
+          Try(buildJoinCodec(joinConf.get, refreshOnFail = false))
+        } else {
+          getJoinCodecs(baseValue.request.name)
+        }
         val ctx = baseValue.ctx
         joinCodecTry match {
           case Success((joinCodec, hasPartialFailure)) =>
@@ -359,14 +365,14 @@ class Fetcher(val kvStore: KVStore,
                                   baseMap,
                                   Some(finalizedDerivedMap),
                                   joinCodec = Some(joinCodec))
-            // Refresh joinCodec if it has partial failure
-            if (hasPartialFailure) {
+            // Refresh joinCodec if it has partial failure (only when not using local joinConf)
+            if (hasPartialFailure && joinConf.isEmpty) {
               getJoinCodecs.refresh(baseValue.request.name)
             }
             response
           case Failure(exception) =>
             // more validation logic will be covered in compile.py to avoid this case
-            getJoinCodecs.refresh(baseValue.request.name)
+            if (joinConf.isEmpty) getJoinCodecs.refresh(baseValue.request.name)
             ctx.incrementException(exception)
             ResponseWithContext(baseValue.request,
                                 ctx,
@@ -404,7 +410,7 @@ class Fetcher(val kvStore: KVStore,
   private def doFetchJoin(requests: scala.collection.Seq[Request],
                           joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val baseValuesF = fetchBaseJoin(requests, joinConf)
-    val derivedValuesF = fetchDerivations(baseValuesF)
+    val derivedValuesF = fetchDerivations(baseValuesF, joinConf)
     val modelTransformsF = fetchModelTransforms(derivedValuesF)
     instrumentAndLog(modelTransformsF)
   }
@@ -562,7 +568,8 @@ class Fetcher(val kvStore: KVStore,
   }
 
   // Pulling external features in a batched fashion across services in-parallel
-  def fetchExternal(joinRequests: scala.collection.Seq[Request]): Future[scala.collection.Seq[Response]] = {
+  def fetchExternal(joinRequests: scala.collection.Seq[Request],
+                    joinConf: Option[api.Join] = None): Future[scala.collection.Seq[Response]] = {
     val startTime = System.currentTimeMillis()
     val resultMap = new mutable.LinkedHashMap[Request, Try[mutable.HashMap[String, Any]]]
     var invalidCount = 0
@@ -571,9 +578,14 @@ class Fetcher(val kvStore: KVStore,
     // step-1 handle invalid requests and collect valid ones
     joinRequests.foreach { request =>
       val joinName = request.name
-      val joinConfTry: Try[JoinOps] = getJoinConf(request.name)
+      // Use locally provided joinConf if available, otherwise fetch from KV store
+      val joinConfTry: Try[JoinOps] = if (joinConf.isDefined) {
+        Try(JoinOps(joinConf.get))
+      } else {
+        getJoinConf(request.name)
+      }
       if (joinConfTry.isFailure) {
-        getJoinConf.refresh(request.name)
+        if (joinConf.isEmpty) getJoinConf.refresh(request.name)
         resultMap.update(
           request,
           Failure(
@@ -593,11 +605,16 @@ class Fetcher(val kvStore: KVStore,
     // step-2 dedup external requests across joins
     val externalToJoinRequests: Seq[ExternalToJoinRequest] = validRequests
       .flatMap { joinRequest =>
-        val joinConf = getJoinConf(joinRequest.name)
-        if (joinConf.isFailure) {
-          getJoinConf.refresh(joinRequest.name)
+        // Use locally provided joinConf if available, otherwise fetch from KV store
+        val joinConfOps = if (joinConf.isDefined) {
+          Try(JoinOps(joinConf.get))
+        } else {
+          getJoinConf(joinRequest.name)
         }
-        val parts = joinConf.get.join.onlineExternalParts // cheap since it is cached, valid since step-1
+        if (joinConfOps.isFailure) {
+          if (joinConf.isEmpty) getJoinConf.refresh(joinRequest.name)
+        }
+        val parts = joinConfOps.get.join.onlineExternalParts // cheap since it is cached, valid since step-1
         parts.iterator().toScala.map { part =>
           val externalRequest = Try(part.applyMapping(joinRequest.keys)) match {
             case Success(mappedKeys)                     => Left(Request(part.source.metadata.name, mappedKeys))
