@@ -64,7 +64,7 @@ class JoinBasicTests {
     val namePartitionColumn = "name_date"
     val namesTable = s"$namespace.names"
     DataFrameGen
-      .entities(spark, namesSchema, 1000, partitions = 5, partitionColOpt = Some(namePartitionColumn))
+      .entities(spark, namesSchema, 1000, partitions = 200, partitionColOpt = Some(namePartitionColumn))
       .save(namesTable, partitionColumns = Seq(namePartitionColumn))
 
     val namesSource = Builders.Source.entities(
@@ -83,7 +83,7 @@ class JoinBasicTests {
     )
 
     DataFrameGen
-      .entities(spark, namesSchema, 1000, partitions = 5, partitionColOpt = Some(namePartitionColumn))
+      .entities(spark, namesSchema, 1000, partitions = 200, partitionColOpt = Some(namePartitionColumn))
       .groupBy("user", namePartitionColumn)
       .agg(Map("name" -> "max"))
       .save(namesTable, partitionColumns = Seq(namePartitionColumn))
@@ -93,7 +93,7 @@ class JoinBasicTests {
     val userSchema = List(Column("user", api.StringType, 100))
     val usersTable = s"$namespace.users"
     DataFrameGen
-      .entities(spark, userSchema, 1000, partitions = 5, partitionColOpt = Some(userPartitionColumn))
+      .entities(spark, userSchema, 1000, partitions = 200, partitionColOpt = Some(userPartitionColumn))
       .dropDuplicates()
       .save(usersTable, partitionColumns = Seq(userPartitionColumn))
 
@@ -162,7 +162,7 @@ class JoinBasicTests {
       Column("weight", api.DoubleType, 500)
     )
     val weightTable = s"$namespace.weights"
-    DataFrameGen.entities(spark, weightSchema, 1000, partitions = 5).save(weightTable)
+    DataFrameGen.entities(spark, weightSchema, 1000, partitions = 200).save(weightTable)
 
     val weightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("weight"),
@@ -184,7 +184,7 @@ class JoinBasicTests {
       Column("height", api.LongType, 200)
     )
     val heightTable = s"$namespace.heights"
-    DataFrameGen.entities(spark, heightSchema, 1000, partitions = 5).save(heightTable)
+    DataFrameGen.entities(spark, heightSchema, 1000, partitions = 200).save(heightTable)
     val heightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("height"), startPartition = monthAgo),
       snapshotTable = heightTable
@@ -200,7 +200,7 @@ class JoinBasicTests {
     // left side
     val countrySchema = List(Column("country", api.StringType, 100))
     val countryTable = s"$namespace.countries"
-    DataFrameGen.entities(spark, countrySchema, 1000, partitions = 5).save(countryTable)
+    DataFrameGen.entities(spark, countrySchema, 1000, partitions = 200).save(countryTable)
 
     val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
     val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
@@ -295,7 +295,7 @@ class JoinBasicTests {
     val itemQueriesTable = s"$namespace.item_queries_selected_join_parts"
     spark.sql(s"DROP TABLE IF EXISTS $itemQueriesTable")
     spark.sql(s"DROP TABLE IF EXISTS ${itemQueriesTable}_tmp")
-    DataFrameGen.events(spark, itemQueries, 10000, partitions = 10).save(s"${itemQueriesTable}_tmp")
+    DataFrameGen.events(spark, itemQueries, 10000, partitions = 30).save(s"${itemQueriesTable}_tmp")
     val leftDf = tableUtils.sql(s"SELECT item, value, ts, ds FROM ${itemQueriesTable}_tmp")
     leftDf.save(itemQueriesTable)
     val start = monthAgo
@@ -308,7 +308,7 @@ class JoinBasicTests {
     )
     val viewsTable = s"$namespace.view_selected_join_parts"
     spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
-    DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 10).save(viewsTable)
+    DataFrameGen.events(spark, viewsSchema, count = 10000, partitions = 30).save(viewsTable)
 
     // Group By
     val gb1 = Builders.GroupBy(
@@ -417,7 +417,7 @@ class JoinBasicTests {
       Column("weight", api.DoubleType, 500)
     )
     val weightTable = s"$namespace.weights_no_historical_backfill"
-    DataFrameGen.entities(spark, weightSchema, 1000, partitions = 5).save(weightTable)
+    DataFrameGen.entities(spark, weightSchema, 1000, partitions = 200).save(weightTable)
 
     val weightSource = Builders.Source.entities(
       query = Builders.Query(selects = Builders.Selects("weight"), startPartition = yearAgo, endPartition = today),
@@ -434,7 +434,7 @@ class JoinBasicTests {
     // left side
     val countrySchema = List(Column("country", api.StringType, 100))
     val countryTable = s"$namespace.countries_no_historical_backfill"
-    DataFrameGen.entities(spark, countrySchema, 1000, partitions = 5).save(countryTable)
+    DataFrameGen.entities(spark, countrySchema, 1000, partitions = 30).save(countryTable)
 
     val start = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
     val end = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
@@ -476,7 +476,7 @@ class JoinBasicTests {
       Column("name", api.StringType, 500)
     )
     val namesTable = s"$namespace.names"
-    DataFrameGen.entities(spark, namesSchema, 1000, partitions = 5).save(namesTable)
+    DataFrameGen.entities(spark, namesSchema, 1000, partitions = 200).save(namesTable)
 
     val namesSource = Builders.Source.entities(
       query =
@@ -492,7 +492,7 @@ class JoinBasicTests {
     )
 
     DataFrameGen
-      .entities(spark, namesSchema, 1000, partitions = 5)
+      .entities(spark, namesSchema, 1000, partitions = 200)
       .groupBy("user", "ds")
       .agg(Map("name" -> "max"))
       .save(namesTable)
@@ -500,7 +500,7 @@ class JoinBasicTests {
     // left side
     val userSchema = List(Column("user", api.StringType, 100))
     val usersTable = s"$namespace.users"
-    DataFrameGen.entities(spark, userSchema, 1000, partitions = 5).dropDuplicates().save(usersTable)
+    DataFrameGen.entities(spark, userSchema, 1000, partitions = 200).dropDuplicates().save(usersTable)
 
     val start = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
     val end = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
