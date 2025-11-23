@@ -773,8 +773,8 @@ class FetcherTest extends TestCase {
 
     // Create expected schema: ONLY derived columns (no wildcard means no original aggregations in online)
     val expectedSchema = Set(
-      "total_value",   // Derived column
-      "event_count"    // Derived column
+      "unit_test_fetcher_no_wildcard_gb_total_value",   // Derived column with prefix
+      "unit_test_fetcher_no_wildcard_gb_event_count"    // Derived column with prefix
     )
 
     // Verify schema matches exactly (Set comparison ensures exact match)
