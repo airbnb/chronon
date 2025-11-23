@@ -412,7 +412,7 @@ abstract class JoinBase(joinConf: api.Join,
     } else {
       // Register UDFs. `setups` from entire joinConf are run due to BootstrapInfo computation
       joinConf.setups.foreach(tableUtils.sql)
-      val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
+      val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, allowEmpty = true, limit = Some(0)).map(df => df.schema)
       val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
       logger.info(s"Running ranges: $unfilledRanges")
       unfilledRanges.foreach { unfilledRange =>
@@ -448,7 +448,7 @@ abstract class JoinBase(joinConf: api.Join,
     } else {
       // Register UDFs. `setups` from entire joinConf are run due to BootstrapInfo computation
       joinConf.setups.foreach(tableUtils.sql)
-      val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, limit = Some(1)).map(df => df.schema)
+      val leftSchema = leftDf(joinConf, unfilledRanges.head, tableUtils, allowEmpty = true, limit = Some(0)).map(df => df.schema)
       val bootstrapInfo = BootstrapInfo.from(joinConf, rangeToFill, tableUtils, leftSchema)
       logger.info(s"Running ranges: $unfilledRanges")
       unfilledRanges.foreach { unfilledRange =>
@@ -500,7 +500,7 @@ abstract class JoinBase(joinConf: api.Join,
 
     // Save left schema before overwriting left side
     val leftSchema =
-      leftDf(joinConf, PartitionRange(endPartition, endPartition)(tableUtils), tableUtils, limit = Some(1)).map(df =>
+      leftDf(joinConf, PartitionRange(endPartition, endPartition)(tableUtils), tableUtils, allowEmpty = true, limit = Some(0)).map(df =>
         df.schema)
 
     // Run command to archive ALL tables that have changed semantically since the last run
