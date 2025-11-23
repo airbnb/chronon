@@ -33,7 +33,7 @@ jobs:
 
     "Scala 12 -- Spark 3 Tests":
         executor: docker_baseimg_executor_xxlarge
-        parallelism: 8
+        parallelism: 10
         steps:
             - checkout
             - restore_cache:
