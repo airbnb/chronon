@@ -799,15 +799,24 @@ class FetcherTest extends TestCase {
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testGroupByServingInfoTtlCacheRefresh")
-    OnlineUtils.serve(tableUtils, kvStoreFunc(), kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
+    val inMemoryKvStore = kvStoreFunc()
+    OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
 
-    val spyKvStore = spy(kvStoreFunc())
+    val spyKvStore = spy(inMemoryKvStore)
     val mockApi = new MockApi(() => spyKvStore, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher()
 
     /* 1st request: kv store failure */
-    when(spyKvStore.getString(anyString(), anyString(), any()))
-      .thenReturn(Failure(new Exception("kvstore error")))
+    when(spyKvStore.multiGet(any()))
+      .thenAnswer((invocation: org.mockito.invocation.InvocationOnMock) => {
+        import scala.concurrent.Future
+        val requests = invocation.getArgument[Seq[KVStore.GetRequest]](0)
+        Future.successful(
+          requests.map { req =>
+            KVStore.GetResponse(req, Failure(new Exception("kvstore error")))
+          }
+        )
+      })
     val request = Seq(Request(groupByConf.metaData.name, Map("listing_id" -> 1L.asInstanceOf[AnyRef])))
     def fetch(): Response = Await.result(fetcher.fetchGroupBys(request), Duration(10, SECONDS)).head
     val response1 = fetch()
