@@ -44,7 +44,7 @@ import java.util.concurrent.Executors
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.ScalaJavaConversions._
 import scala.util.{Failure, Random, Try}
 
@@ -802,8 +802,23 @@ class FetcherTest extends TestCase {
     val inMemoryKvStore = kvStoreFunc()
     OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
 
+    // Create spy for intercepting calls
     val spyKvStore = spy(inMemoryKvStore)
-    val mockApi = new MockApi(() => spyKvStore, namespace)
+
+    // Wrap spy in a serializable wrapper
+    @transient var spyRef = spyKvStore
+    val kvStoreWrapper = new KVStore with Serializable {
+      override def multiGet(requests: collection.Seq[KVStore.GetRequest]): Future[collection.Seq[KVStore.GetResponse]] =
+        spyRef.multiGet(requests)
+      override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] =
+        spyRef.multiPut(putRequests)
+      override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit =
+        spyRef.bulkPut(sourceOfflineTable, destinationOnlineDataSet, partition)
+      override def create(dataset: String): Unit =
+        spyRef.create(dataset)
+    }
+
+    val mockApi = new MockApi(() => kvStoreWrapper, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher()
 
     /* 1st request: kv store failure */
@@ -845,17 +860,30 @@ class FetcherTest extends TestCase {
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testJoinConfTtlCacheRefresh")
     val inMemoryKvStore = kvStoreFunc()
 
-    // Load data with the real store (spy is not serializable for Spark streaming)
+    // Load data with the real store
     joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy, dropDsOnWrite = true))
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
     inMemoryKvStore.create(ChrononMetadataKey)
     metadataStore.putJoinConf(joinConf)
 
-    // NOW create spy after data is loaded, for intercepting fetcher calls
+    // Create spy for intercepting calls
     val spyKvStore = spy(inMemoryKvStore)
 
-    val mockApi = new MockApi(() => spyKvStore, namespace)
+    // Wrap spy in a serializable wrapper
+    @transient var spyRef = spyKvStore
+    val kvStoreWrapper = new KVStore with Serializable {
+      override def multiGet(requests: collection.Seq[KVStore.GetRequest]): Future[collection.Seq[KVStore.GetResponse]] =
+        spyRef.multiGet(requests)
+      override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] =
+        spyRef.multiPut(putRequests)
+      override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit =
+        spyRef.bulkPut(sourceOfflineTable, destinationOnlineDataSet, partition)
+      override def create(dataset: String): Unit =
+        spyRef.create(dataset)
+    }
+
+    val mockApi = new MockApi(() => kvStoreWrapper, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher()
 
     /* 1st request: kv store failure. */

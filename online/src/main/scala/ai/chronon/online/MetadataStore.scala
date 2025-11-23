@@ -227,16 +227,15 @@ class MetadataStore(kvStore: KVStore,
               throw e
           }
         logger.info(s"Fetched ${Constants.GroupByServingInfoKey} from : $batchDataset")
-        // Throw exception after metrics. No group by metadata is bound to be a critical failure.
-        // This will ensure that a Failure is never cached in the getGroupByServingInfo TTLCache
         if (metaData.isFailure) {
           Metrics
             .Context(Metrics.Environment.MetaDataFetching, groupBy = name)
             .withSuffix("group_by")
             .incrementException(metaData.failed.get)
-          throw new RuntimeException(s"Couldn't fetch group by serving info for $batchDataset, " +
-                                       s"please make sure a batch upload was successful",
-                                     metaData.failed.get)
+          Failure(
+            new RuntimeException(s"Couldn't fetch group by serving info for $batchDataset, " +
+                                   s"please make sure a batch upload was successful",
+                                 metaData.failed.get))
         } else {
           val groupByServingInfo = ThriftJsonCodec
             .fromJsonStr[GroupByServingInfo](metaData.get, check = true, classOf[GroupByServingInfo])
