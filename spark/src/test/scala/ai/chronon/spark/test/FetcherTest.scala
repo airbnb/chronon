@@ -23,7 +23,7 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.online.{JavaRequest, KVStore, LoggableResponseBase64, MetadataStore, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.ConsistencyJob
@@ -835,19 +835,39 @@ class FetcherTest extends TestCase {
     val tableUtils = TableUtils(spark)
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testJoinConfTtlCacheRefresh")
     val inMemoryKvStore = kvStoreFunc()
+
+    // Create spy early, before loading data
+    val spyKvStore = spy(inMemoryKvStore)
+
+    // Load data through the spy so it sees everything
     joinConf.joinParts.toScala.foreach(jp =>
-      OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy, dropDsOnWrite = true))
-    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
-    inMemoryKvStore.create(ChrononMetadataKey)
+      OnlineUtils.serve(tableUtils, spyKvStore, () => spyKvStore, namespace, endDs, jp.groupBy, dropDsOnWrite = true))
+    val metadataStore = new MetadataStore(spyKvStore, timeoutMillis = 10000)
+    spyKvStore.create(ChrononMetadataKey)
     metadataStore.putJoinConf(joinConf)
 
-    val spyKvStore = spy(inMemoryKvStore)
     val mockApi = new MockApi(() => spyKvStore, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher()
 
-    /* 1st request: kv store failure. */
-    when(spyKvStore.getString(anyString(), anyString(), any()))
-      .thenReturn(Failure(new Exception("kvstore error")))
+    /* 1st request: kv store failure for metadata requests only. */
+    when(spyKvStore.multiGet(any()))
+      .thenAnswer((invocation: org.mockito.invocation.InvocationOnMock) => {
+        import scala.concurrent.Future
+        val requests = invocation.getArgument[Seq[KVStore.GetRequest]](0)
+        Future.successful(
+          requests.map { req =>
+            if (req.dataset == ChrononMetadataKey) {
+              // Fail metadata requests to simulate transient KV store error
+              KVStore.GetResponse(req, Failure(new Exception("kvstore error")))
+            } else {
+              // Let other requests (batch data) succeed by calling real method
+              val realFuture = invocation.callRealMethod().asInstanceOf[Future[Seq[KVStore.GetResponse]]]
+              Await.result(realFuture, Duration(10, SECONDS)).find(_.request == req).get
+            }
+          }
+        )
+      })
+
     val request = Seq(Request(joinConf.metaData.name, Map("listing_id" -> 1L.asInstanceOf[AnyRef])))
     def fetch(): Try[Response] = Try(Await.result(fetcher.fetchJoin(request), Duration(10, SECONDS)).head)
     val response1 = fetch()
