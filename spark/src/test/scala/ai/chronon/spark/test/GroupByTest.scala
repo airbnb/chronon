@@ -1019,14 +1019,12 @@ class GroupByTest {
     val result = tableUtils.sql(s"SELECT * FROM $outputTable LIMIT 10")
     val resultColumns = result.columns.toSet
 
-    // Create expected schema: infrastructure columns + BOTH derived and original columns (no wildcard)
+    // Create expected schema: infrastructure columns + derived columns ONLY (no original aggregations without wildcard)
     val expectedSchema = Set(
       "user",                      // Key column
       tableUtils.partitionColumn,  // Partition column (ds)
       "total",                     // Derived column
-      "avg",                       // Derived column
-      "value_sum",                 // Original aggregation (should be present without wildcard)
-      "value_average"              // Original aggregation (should be present without wildcard)
+      "avg"                        // Derived column
     )
 
     // Verify schema matches exactly (Set comparison ensures exact match)

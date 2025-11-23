@@ -1412,16 +1412,14 @@ class JoinTest {
 
     val resultColumns = result.columns.toSet
 
-    // Create expected schema: left keys + infrastructure + BOTH derived and original columns from join part (no wildcard)
+    // Create expected schema: left keys + infrastructure + derived columns ONLY (no original aggregations without wildcard)
     val expectedSchema = Set(
       "user",                              // Left key
       "item",                              // Left key
       "ts",                                // Timestamp
       "ds",                                // Partition column
       "test_join_part_gb_total_value",     // Derived column from join part
-      "test_join_part_gb_event_count",     // Derived column from join part
-      "test_join_part_gb_value_sum",       // Original aggregation (should be present without wildcard)
-      "test_join_part_gb_value_count"      // Original aggregation (should be present without wildcard)
+      "test_join_part_gb_event_count"      // Derived column from join part
     )
 
     // Verify schema matches exactly (Set comparison ensures exact match)

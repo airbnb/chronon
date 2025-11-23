@@ -771,22 +771,20 @@ class FetcherTest extends TestCase {
 
     val responseKeys = result.values.get.keySet
 
-    // Create expected schema: BOTH derived columns AND original aggregations (no wildcard means both appear)
+    // Create expected schema: ONLY derived columns (no wildcard means no original aggregations in online)
     val expectedSchema = Set(
       "total_value",   // Derived column
-      "event_count",   // Derived column
-      "value_sum",     // Original aggregation (should still be present without wildcard)
-      "value_count"    // Original aggregation (should still be present without wildcard)
+      "event_count"    // Derived column
     )
 
     // Verify schema matches exactly (Set comparison ensures exact match)
-    assertEquals(s"Fetcher response should contain BOTH derived AND original columns (no wildcard). " +
+    assertEquals(s"Fetcher response should contain ONLY derived columns (no wildcard). " +
                  s"Expected: ${expectedSchema.mkString(", ")}, " +
                  s"Actual: ${responseKeys.mkString(", ")}",
                  expectedSchema,
                  responseKeys)
 
-    logger.info(s"✅ Fetcher correctly returns BOTH derived and original columns (no wildcard): ${responseKeys.mkString(", ")}")
+    logger.info(s"✅ Fetcher correctly returns ONLY derived columns (no wildcard): ${responseKeys.mkString(", ")}")
   }
 
   def testTemporalFetchJoinGenerated(): Unit = {
