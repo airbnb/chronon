@@ -836,34 +836,27 @@ class FetcherTest extends TestCase {
     val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testJoinConfTtlCacheRefresh")
     val inMemoryKvStore = kvStoreFunc()
 
-    // Create spy early, before loading data
-    val spyKvStore = spy(inMemoryKvStore)
-
-    // Load data through the spy so it sees everything
+    // Load data with the real store (spy is not serializable for Spark streaming)
     joinConf.joinParts.toScala.foreach(jp =>
-      OnlineUtils.serve(tableUtils, spyKvStore, () => spyKvStore, namespace, endDs, jp.groupBy, dropDsOnWrite = true))
-    val metadataStore = new MetadataStore(spyKvStore, timeoutMillis = 10000)
-    spyKvStore.create(ChrononMetadataKey)
+      OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy, dropDsOnWrite = true))
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
+    inMemoryKvStore.create(ChrononMetadataKey)
     metadataStore.putJoinConf(joinConf)
+
+    // NOW create spy after data is loaded, for intercepting fetcher calls
+    val spyKvStore = spy(inMemoryKvStore)
 
     val mockApi = new MockApi(() => spyKvStore, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher()
 
-    /* 1st request: kv store failure for metadata requests only. */
+    /* 1st request: kv store failure. */
     when(spyKvStore.multiGet(any()))
       .thenAnswer((invocation: org.mockito.invocation.InvocationOnMock) => {
         import scala.concurrent.Future
         val requests = invocation.getArgument[Seq[KVStore.GetRequest]](0)
         Future.successful(
           requests.map { req =>
-            if (req.dataset == ChrononMetadataKey) {
-              // Fail metadata requests to simulate transient KV store error
-              KVStore.GetResponse(req, Failure(new Exception("kvstore error")))
-            } else {
-              // Let other requests (batch data) succeed by calling real method
-              val realFuture = invocation.callRealMethod().asInstanceOf[Future[Seq[KVStore.GetResponse]]]
-              Await.result(realFuture, Duration(10, SECONDS)).find(_.request == req).get
-            }
+            KVStore.GetResponse(req, Failure(new Exception("kvstore error")))
           }
         )
       })
