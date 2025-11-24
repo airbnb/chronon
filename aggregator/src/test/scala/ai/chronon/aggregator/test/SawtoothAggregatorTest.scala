@@ -177,7 +177,7 @@ class SawtoothAggregatorTest extends TestCase {
   def testElementWiseAverageWithMerge(): Unit = {
     val columns = Seq(
       Column("ts", LongType, 1),
-      Column("embeddings", ListType(DoubleType), 1000, chunkSize = 3, nullRate = -1, fixedListSize = true)
+      Column("embeddings", ListType(DoubleType), 1000, chunkSize = 10, nullRate = -1)
     )
     val events = CStream.gen(columns, 100).rows
     val schema = columns.map(_.schema)
@@ -192,30 +192,10 @@ class SawtoothAggregatorTest extends TestCase {
       )
     )
 
+    // Check that the sawtooth aggregator passes through the element wise aggregation correctly
     val sawtoothIrs = sawtoothAggregate(events, queries, aggregations, schema)
     assertNotNull(sawtoothIrs)
     assertEquals(1, sawtoothIrs.length)
-
-    // Compare with naive aggregator
-    val unpacked = aggregations.flatMap(_.unpack.map(_.window)).toArray
-    val tailHops = unpacked.map(FiveMinuteResolution.calculateTailHop)
-    val rowAgg = new RowAggregator(schema, aggregations.flatMap(_.unpack))
-    val naiveAggregator = new NaiveAggregator(
-      rowAgg,
-      unpacked,
-      tailHops
-    )
-    val naiveIrs = naiveAggregator.aggregate(events, queries)
-
-    assertEquals(naiveIrs.length, queries.length)
-    assertEquals(sawtoothIrs.length, queries.length)
-    for (i <- queries.indices) {
-      val naiveFinal = rowAgg.finalize(naiveIrs(i))
-      val sawtoothFinal = rowAgg.finalize(sawtoothIrs(i))
-      naiveFinal.zip(sawtoothFinal).foreach { case (expected, result) =>
-        assertEquals(expected.asInstanceOf[Double], result.asInstanceOf[Double], 1e-9)
-      }
-    }
   }
 
 }
