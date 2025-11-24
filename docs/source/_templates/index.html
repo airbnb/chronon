@@ -4,12 +4,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Chronon - The End-to-End Feature Platform for ML</title>
+    <title>Chronon - Open-Source Feature Platform for Machine Learning | Apache 2.0</title>
+    <meta name="description"
+        content="Open-source ML feature platform ensuring online-offline consistency. Build production-ready features with point-in-time correctness, streaming aggregations, and sub-10ms serving latency.">
     <link rel="stylesheet" href="_static/landing_page.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500&family=Montserrat:wght@400;700;900&family=Oxanium:wght@400;500;600;700;800&family=Space+Mono:wght@400;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=Inter:wght@400;500;600;800&family=JetBrains+Mono:wght@400;500&family=Saira:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap"
         rel="stylesheet">
 </head>
 
@@ -19,11 +22,13 @@
 
     <!-- Hero Section -->
     <header class="hero">
-        <img src="_static/logo.png" alt="Chronon Logo" class="logo" style="height: 90px; margin-bottom: 2rem;">
+        <div class="hero-title-container">
+            <img src="_static/logo.png" alt="Chronon Logo" class="logo-inline">
+        </div>
         <h2 class="hero-sub">End-to-End Feature Platform for Machine Learning</h2>
         <p class="hero-tagline">
-            Chronon is an open-source feature platform that enables data teams to build, deploy, and maintain
-            consistent ML features across offline training and online serving environments.
+            Chronon is an open-source feature platform that enables ML teams to rapidly build
+            consistent ML features across offline training and online serving environments at scale.
         </p>
         <div class="cta-group">
             <button class="btn btn-secondary" onclick="window.location.href='contents.html'">
@@ -40,7 +45,7 @@
                         d="M5.042 15.165a2.528 2.528 0 0 1-2.52 2.523A2.528 2.528 0 0 1 0 15.165a2.527 2.527 0 0 1 2.522-2.52h2.52v2.52zM6.313 15.165a2.527 2.527 0 0 1 2.521-2.52 2.527 2.527 0 0 1 2.521 2.52v6.313A2.528 2.528 0 0 1 8.834 24a2.528 2.528 0 0 1-2.521-2.522v-6.313zM8.834 5.042a2.528 2.528 0 0 1-2.521-2.52A2.528 2.528 0 0 1 8.834 0a2.528 2.528 0 0 1 2.521 2.522v2.52H8.834zM8.834 6.313a2.528 2.528 0 0 1 2.521 2.521 2.528 2.528 0 0 1-2.521 2.521H2.522A2.528 2.528 0 0 1 0 8.834a2.528 2.528 0 0 1 2.522-2.521h6.312zM18.956 8.834a2.528 2.528 0 0 1 2.522-2.521A2.528 2.528 0 0 1 24 8.834a2.528 2.528 0 0 1-2.522 2.521h-2.522V8.834zM17.688 8.834a2.528 2.528 0 0 1-2.522 2.521 2.527 2.527 0 0 1-2.522-2.521V2.522A2.527 2.527 0 0 1 15.165 0a2.528 2.528 0 0 1 2.523 2.522v6.312zM15.165 18.956a2.528 2.528 0 0 1 2.523 2.522A2.528 2.528 0 0 1 15.165 24a2.527 2.527 0 0 1-2.522-2.522v-2.522h2.522zM15.165 17.688a2.527 2.527 0 0 1-2.522-2.522 2.527 2.527 0 0 1 2.522-2.522h6.312A2.527 2.527 0 0 1 24 15.165a2.528 2.528 0 0 1-2.522 2.521h-6.312z"
                         fill="currentColor" />
                 </svg>
-                Join Us
+                Join our Slack
             </button>
             <button class="btn btn-secondary" onclick="window.location.href='https://github.com/airbnb/chronon'">
                 <svg class="btn-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -55,18 +60,17 @@
 
     <!-- Social Proof -->
     <section class="social-proof">
-        <h2>Trusted by ML teams at leading companies</h2>
+        <h2>Proven in Production at Industry-Leading ML Teams</h2>
         <div class="logo-grid">
-            <span class="company-logo">Airbnb</span>
-            <span class="company-logo">Stripe</span>
-            <span class="company-logo">OpenAI</span>
-            <span class="company-logo">Roku</span>
-            <span class="company-logo">Netflix</span>
-        </div>
-        <div class="logo-grid">
-            <span class="company-logo">Airwallex</span>
-            <span class="company-logo">Sardine-AI</span>
-            <span class="company-logo">Plaid</span>
+            <img src="_static/logos/netflix.svg" alt="Netflix" class="company-logo">
+            <img src="_static/logos/stripe.svg" alt="Stripe" class="company-logo">
+            <img src="_static/logos/airbnb.svg" alt="Airbnb" class="company-logo">
+            <img src="_static/logos/openai.svg" alt="OpenAI" class="company-logo">
+            <img src="_static/logos/uber.svg" alt="Uber" class="company-logo">
+            <img src="_static/logos/sardine.svg" alt="Sardine AI" class="company-logo">
+            <img src="_static/logos/roku.svg" alt="Roku" class="company-logo">
+            <img src="_static/logos/plaid.svg" alt="Plaid" class="company-logo">
+            <img src="_static/logos/airwallex.png" alt="Airwallex" class="company-logo">
         </div>
     </section>
 
@@ -74,24 +78,30 @@
     <section class="features">
         <div class="feature-grid">
             <div class="feature-card">
-                <div class="feature-icon">🚀</div>
-                <h3>Point-in-Time Correct Backfilling</h3>
-                <p>Generate historically accurate training datasets using temporal consistency algorithms.
-                    Ensures training data reflects the exact feature values available at inference time,
-                    eliminating training-serving skew.</p>
+                <h3><i class="fa-solid fa-clock feature-icon"></i> Point-in-Time Correctness</h3>
+                <p>Eliminate data leakage with guaranteed point-in-time correctness. Generate accurate training datasets
+                    using state-of-the-art aggregation algorithms—no more expensive log-and-wait pipelines or costly
+                    retraining cycles.</p>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">⚡</div>
-                <h3>Low-Latency Feature Serving</h3>
-                <p>Optimized serving infrastructure built on Vert.x delivers sub-10ms p99 latency for
-                    feature retrieval. Supports both embedded and standalone deployment modes.</p>
+                <h3><i class="fas fa-bolt feature-icon"></i> Production-Grade Performance</h3>
+                <p>Serve features with <strong>sub-10ms p99 latency</strong> using battle-tested Vert.x infrastructure.
+                    Deploy in embedded mode for minimal overhead or standalone for independent scaling—your choice, zero
+                    code changes.</p>
             </div>
             <div class="feature-card">
-                <div class="feature-icon">🔄</div>
-                <h3>Online-Offline Consistency Guarantees</h3>
-                <p>Define features once using a unified API. The same feature definitions automatically
-                    generate both batch training datasets and low-latency serving endpoints, ensuring
-                    consistency across environments.</p>
+                <h3><i class="fa-solid fa-not-equal feature-icon"></i> Guaranteed Consistency</h3>
+                <p>Write features <strong>once</strong>. The same declarative definitions automatically power both batch
+                    training
+                    datasets and real-time serving endpoints—eliminating training-serving skew and the bugs that come
+                    with maintaining
+                    duplicate implementations.</p>
+            </div>
+            <div class="feature-card">
+                <h3><i class="fa-solid fa-code feature-icon"></i> Developer-Friendly API</h3>
+                <p>Express complex temporal aggregations in simple, declarative Python. One unified API works across
+                    batch (Spark), streaming (Flink), and serving contexts—no need to learn multiple frameworks or
+                    translate logic between execution engines.</p>
             </div>
         </div>
     </section>
@@ -99,35 +109,35 @@
     <!-- Infrastructure -->
     <section class="infrastructure">
         <div class="infra-container">
-            <h2>Built on Production-Grade Infrastructure</h2>
+            <h2>Enterprise-Ready Technology Stack</h2>
             <div class="infra-grid">
                 <div class="infra-item">
                     <div class="infra-box">
                         <img src="_static/spark-logo.png" alt="Apache Spark" class="infra-logo">
                     </div>
                     <h4>Apache Spark</h4>
-                    <p>Batch feature computation</p>
+                    <p>Scalable batch processing for historical features</p>
                 </div>
                 <div class="infra-item">
                     <div class="infra-box">
                         <img src="_static/flink-logo.png" alt="Apache Flink" class="infra-logo">
                     </div>
                     <h4>Apache Flink</h4>
-                    <p>Real-time streaming aggregations</p>
+                    <p>Streaming aggregations for real-time feature updates</p>
                 </div>
                 <div class="infra-item">
                     <div class="infra-box">
                         <img src="_static/database-logo.png" alt="Pluggable Database" class="infra-logo">
                     </div>
                     <h4>Flexible Storage</h4>
-                    <p>Pluggable key-value store backends</p>
+                    <p>Bring your own KV store (Redis, DynamoDB, etc.)</p>
                 </div>
                 <div class="infra-item">
                     <div class="infra-box">
                         <img src="_static/vertx-logo.svg" alt="Vert.x" class="infra-logo">
                     </div>
                     <h4>Vert.x Serving Layer</h4>
-                    <p>Embedded or standalone deployment</p>
+                    <p>High-throughput serving with flexible deployment</p>
                 </div>
             </div>
         </div>
@@ -135,7 +145,7 @@
 
     <!-- Code Showcase -->
     <section class="code-showcase">
-        <h2>Declarative Feature Definitions</h2>
+        <h2>Features Defined in Code, Not Configuration</h2>
         <div class="tabs">
             <button class="tab-btn active" onclick="openTab(event, 'source')">Data Sources</button>
             <button class="tab-btn" onclick="openTab(event, 'aggregations')">Aggregations</button>
@@ -143,8 +153,8 @@
         </div>
 
         <div id="source" class="code-panel active">
-            <div class="code-context">Connect to event streams, database tables, or external services as feature
-                sources.
+            <div class="code-context">Connect any data source—event streams, database tables, or external APIs—with
+                a simple, type-safe configuration.
             </div>
             <pre><code>
 <span class="kw">source</span> = <span class="cls">Source</span>(
@@ -161,9 +171,11 @@
         </div>
 
         <div id="aggregations" class="code-panel">
-            <div class="code-context">Define time-windowed aggregations with automatic schema generation.</div>
+            <div class="code-context">Define time-windowed aggregations that automatically compute both training data
+                and
+                serve real-time results—schema inference included.</div>
             <pre><code>
-<span class="kw">v1</span> = <span class="cls">GroupBy</span>(
+<span class="kw">feature_group</span> = <span class="cls">GroupBy</span>(
     sources=[source],
     keys=[<span class="str">"user_id"</span>],
     aggregations=[
@@ -183,7 +195,9 @@
         </div>
 
         <div id="joins" class="code-panel">
-            <div class="code-context">Combine aggregations to create training sets with point-in-time correctness.</div>
+            <div class="code-context">Join multiple feature groups into training sets with guaranteed point-in-time
+                correctness—
+                preventing data leakage automatically.</div>
             <pre><code>
 <span class="kw">training_set</span> = <span class="cls">Join</span>(
     left=<span class="cls">EventSource</span>(table=<span class="str">"data.checkouts"</span>, ...),
@@ -234,9 +248,10 @@
     <!-- Footer -->
     <footer>
         <div class="footer-links">
-            <a href="https://chronon.ai/">Documentation</a>
+            <a href="contents.html">Documentation</a>
             <a href="https://github.com/airbnb/chronon">GitHub</a>
-            <a href="#">Slack</a>
+            <a
+                href="https://join.slack.com/t/chrononworkspace/shared_invite/zt-1no5t3lxd-mFUo644T6tPJOeTeZRTggw">Slack</a>
         </div>
         <p>Copyright © 2025 Chronon AI. All rights reserved.</p>
     </footer>
