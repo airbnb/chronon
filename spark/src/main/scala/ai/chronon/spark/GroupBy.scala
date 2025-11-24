@@ -747,7 +747,12 @@ object GroupBy {
               if (!groupByConf.hasDerivations) {
                 outputDf.save(outputTable, tableProps)
               } else {
-                val finalOutputColumns = groupByConf.derivationsScala.finalOutputColumn(outputDf.columns).toSeq
+                val finalOutputColumns = groupByConf.derivationsScala
+                  .finalOutputColumn(
+                    outputDf.columns,
+                    ensureKeys = groupByConf.keys(tableUtils.partitionColumn)
+                  )
+                  .toSeq
                 val result = outputDf.select(finalOutputColumns: _*)
                 result.save(outputTable, tableProps)
               }
