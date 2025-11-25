@@ -312,3 +312,34 @@ def test_derivation_with_description():
         metaData=ttypes.MetaData(description="Derivation description"))
 
     assert derivation == expected_derivation
+
+
+def test_join_source_topic_validation():
+    """Test that GroupBy with JoinSource validates parent join has a topic"""
+    def make_join(left_source):
+        return ttypes.Join(left=left_source, joinParts=[], metaData=ttypes.MetaData(name='t'))
+
+    def make_gb(join, has_v=False):
+        selects = {'k': 'k', 'v': 'v'} if has_v else {'k': 'k'}
+        return ttypes.GroupBy(
+            sources=[ttypes.Source(joinSource=ttypes.JoinSource(
+                join=join, query=ttypes.Query(selects=selects, timeColumn='ts')))],
+            keyColumns=['k'],
+            aggregations=[ttypes.Aggregation(inputColumn='v', operation=ttypes.Operation.LAST)],
+            metaData=ttypes.MetaData(name='t'))
+
+    # Test 1: Join without topic should fail
+    join_no_topic = make_join(ttypes.Source(events=ttypes.EventSource(
+        table='t', topic=None, query=ttypes.Query(selects={'k': 'k'}, timeColumn='ts'))))
+    with pytest.raises(AssertionError, match="parent join must have a topic"):
+        group_by.validate_group_by(make_gb(join_no_topic))
+
+    # Test 2: Join with EventSource topic should pass
+    join_event = make_join(ttypes.Source(events=ttypes.EventSource(
+        table='t', topic='topic', query=ttypes.Query(selects={'k': 'k'}, timeColumn='ts'))))
+    group_by.validate_group_by(make_gb(join_event, has_v=True))
+
+    # Test 3: Join with EntitySource mutationTopic should pass
+    join_entity = make_join(ttypes.Source(entities=ttypes.EntitySource(
+        snapshotTable='t', mutationTopic='topic', query=ttypes.Query(selects={'k': 'k'}, timeColumn='ts'))))
+    group_by.validate_group_by(make_gb(join_entity, has_v=True))
