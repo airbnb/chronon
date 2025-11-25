@@ -360,7 +360,8 @@ def get_output_col_names(aggregation):
     if aggregation.buckets:
         for bucket in aggregation.buckets:
             bucketed_names.extend([f"{name}_by_{bucket}" for name in windowed_names])
-    else: bucketed_names = windowed_names
+    else:
+        bucketed_names = windowed_names
 
     return bucketed_names
 
