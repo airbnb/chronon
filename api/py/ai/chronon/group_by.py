@@ -242,13 +242,7 @@ def validate_group_by(group_by: ttypes.GroupBy):
             # When using a join as a source, the parent join must have a topic for streaming
             parent_join = src.joinSource.join
             parent_left = parent_join.left if parent_join else None
-            has_topic = False
-            if parent_left:
-                if parent_left.events and parent_left.events.topic:
-                    has_topic = True
-                elif parent_left.entities and parent_left.entities.mutationTopic:
-                    has_topic = True
-            assert has_topic, (
+            assert parent_left and utils.is_streaming(parent_left), (
                 "When using a JoinSource as the source for a GroupBy, the parent join must have a topic. "
                 "Please specify either events.topic for EventSource or entities.mutationTopic for EntitySource "
                 "in the parent join's left source. Otherwise, use a regular EventSource or EntitySource."
@@ -366,8 +360,7 @@ def get_output_col_names(aggregation):
     if aggregation.buckets:
         for bucket in aggregation.buckets:
             bucketed_names.extend([f"{name}_by_{bucket}" for name in windowed_names])
-    else:
-        bucketed_names = windowed_names
+    else: bucketed_names = windowed_names
 
     return bucketed_names
 
