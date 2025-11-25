@@ -345,8 +345,11 @@ abstract class JoinBase(joinConf: api.Join,
       rightDfWithDerivations.prettyPrint()
     }
 
-    // Uniqueness check on key columns - throw error if violated
-    val keyColumns = joinPart.groupBy.keyColumns.toScala :+ tableUtils.partitionColumn
+    // Uniqueness check on key columns (+ ts for temporal cases) - throw error if violated
+    val hasTimeColumn = rightDfWithDerivations.columns.contains(Constants.TimeColumn)
+    val keyColumns = joinPart.groupBy.keyColumns.toScala ++
+      (if (hasTimeColumn) Seq(Constants.TimeColumn) else Seq.empty) :+
+      tableUtils.partitionColumn
     val totalCount = rightDfWithDerivations.count()
     val distinctCount = rightDfWithDerivations.select(keyColumns.map(col): _*).distinct().count()
 
