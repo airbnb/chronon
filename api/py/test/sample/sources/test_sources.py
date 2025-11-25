@@ -52,6 +52,20 @@ event_source = ttypes.Source(events=ttypes.EventSource(
     ),
 ))
 
+# Sample Event Source with topic for real-time/JoinSource streaming
+real_time_event_source = ttypes.Source(events=ttypes.EventSource(
+    table="sample_namespace.sample_table_group_by",
+    topic="sample_topic",
+    query=Query(
+        selects=select(
+            event="event_expr",
+            group_by_subject="group_by_expr",
+        ),
+        start_partition="2021-04-09",
+        time_column="ts",
+    ),
+))
+
 # Sample Entity Source
 entity_source = ttypes.Source(entities=ttypes.EntitySource(
     snapshotTable="sample_table.sample_entity_snapshot",

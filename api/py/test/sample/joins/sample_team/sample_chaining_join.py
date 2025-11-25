@@ -37,7 +37,7 @@ from ai.chronon.query import (
 )
 
 parent_join = Join(
-    left=test_sources.event_source,
+    left=test_sources.real_time_event_source,
     right_parts=[
         JoinPart(
             group_by=event_sample_group_by.v1,

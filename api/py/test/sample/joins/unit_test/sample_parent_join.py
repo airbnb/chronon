@@ -17,7 +17,7 @@ from group_bys.unit_test import sample_group_by
 from sources import test_sources
 
 parent_join = Join(
-    left=test_sources.event_source,
+    left=test_sources.real_time_event_source,
     right_parts=[
         JoinPart(
             group_by=sample_group_by.v1,
