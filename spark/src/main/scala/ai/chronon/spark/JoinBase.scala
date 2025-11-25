@@ -344,6 +344,20 @@ abstract class JoinBase(joinConf: api.Join,
       logger.info(s"printing results for joinPart: ${joinConf.metaData.name}::${joinPart.groupBy.metaData.name}")
       rightDfWithDerivations.prettyPrint()
     }
+
+    // Uniqueness check on key columns - throw error if violated
+    val keyColumns = joinPart.groupBy.keyColumns.toScala :+ tableUtils.partitionColumn
+    val totalCount = rightDfWithDerivations.count()
+    val distinctCount = rightDfWithDerivations.select(keyColumns.map(col): _*).distinct().count()
+
+    if (totalCount != distinctCount) {
+      throw new IllegalStateException(
+        s"Uniqueness check failed for join part ${joinPart.groupBy.metaData.name}: " +
+          s"total rows = $totalCount, distinct keys = $distinctCount. " +
+          s"Key columns: ${keyColumns.mkString(", ")}"
+      )
+    }
+
     Some(rightDfWithDerivations)
   }
 
