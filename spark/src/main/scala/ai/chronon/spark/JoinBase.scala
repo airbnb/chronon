@@ -344,6 +344,25 @@ abstract class JoinBase(joinConf: api.Join,
       logger.info(s"printing results for joinPart: ${joinConf.metaData.name}::${joinPart.groupBy.metaData.name}")
       rightDfWithDerivations.prettyPrint()
     }
+
+    if (tableUtils.joinPartUniquenessCheck) {
+      // Uniqueness check on key columns (+ ts for temporal cases) - throw error if violated
+      val hasTimeColumn = rightDfWithDerivations.columns.contains(Constants.TimeColumn)
+      val keyColumns = joinPart.groupBy.keyColumns.toScala ++
+        (if (hasTimeColumn) Seq(Constants.TimeColumn) else Seq.empty) :+
+        tableUtils.partitionColumn
+      val totalCount = rightDfWithDerivations.count()
+      val distinctCount = rightDfWithDerivations.select(keyColumns.map(col): _*).distinct().count()
+
+      if (totalCount != distinctCount) {
+        throw new IllegalStateException(
+          s"Uniqueness check failed for join part ${joinPart.groupBy.metaData.name}: " +
+            s"total rows = $totalCount, distinct keys = $distinctCount. " +
+            s"Key columns: ${keyColumns.mkString(", ")}"
+        )
+      }
+    }
+
     Some(rightDfWithDerivations)
   }
 
