@@ -120,13 +120,25 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
 
     _print_debug_info(results.keys(), f"Extracted Entities Of Type {obj_class.__name__}", log_level)
 
+    # Phase 1: Collect all files to write
+    files_to_write = []
+    objs_to_process = []  # Track objects that pass validation for post-write processing
+
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
         _set_templated_values(obj, obj_class, teams_path, team_name)
-        if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite):
-            num_written_objs += 1
+        result = _prepare_obj_for_write(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite)
+        if result:
+            files_to_write.append(result)
+            objs_to_process.append((name, obj))
 
+    # Phase 2: Confirm and write all files at once
+    num_written_objs = _confirm_and_write_all(files_to_write)
+
+    # Phase 3: Post-write processing (only if files were written)
+    if num_written_objs > 0:
+        for name, obj in objs_to_process:
             if feature_display:
                 _print_features(obj, obj_class)
 
