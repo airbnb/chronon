@@ -128,7 +128,9 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
         _set_templated_values(obj, obj_class, teams_path, team_name)
-        result = _prepare_obj_for_write(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite)
+        result = _prepare_obj_for_write(
+            full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite
+        )
         if result:
             files_to_write.append(result)
             objs_to_process.append((name, obj))
@@ -392,34 +394,6 @@ def _print_tables(obj: utils.ChrononJobTypes, obj_class: Type[utils.ChrononJobTy
         _print_modes_tables("Output StagingQuery Tables", tables)
 
 
-def _handle_extra_conf_objects_to_materialize(
-    conf_objs,
-    force_overwrite: bool,
-    full_output_root: str,
-    teams_path: str,
-    validator: ChrononRepoValidator,
-    log_level=logging.INFO,
-    is_gb=True,
-) -> None:
-    num_written_objs = 0
-    # load materialized joins to validate the additional conf objects against.
-    validator.load_objs()
-    for name, obj in conf_objs.items():
-        team_name = name.split(".")[0]
-        _set_team_level_metadata(obj, teams_path, team_name)
-        if _write_obj(
-            full_output_root,
-            validator,
-            name,
-            obj,
-            log_level,
-            force_compile=True,
-            force_overwrite=force_overwrite,
-        ):
-            num_written_objs += 1
-    print(f"Successfully wrote {num_written_objs} {'GroupBy' if is_gb else 'Join'} objects to {full_output_root}")
-
-
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     namespace = teams.get_team_conf(teams_path, team_name, "namespace")
     table_properties = teams.get_team_conf(teams_path, team_name, "table_properties")
@@ -458,27 +432,27 @@ def _set_templated_values(obj, cls, teams_path, team_name):
 
 
 def _find_all_mode_to_env_maps(obj: dict, path: str = "") -> dict:
-      """
-      Recursively find all modeToEnvMap fields in a nested dict.
-      Returns a dict mapping paths to their values,
-      e.g. {"metaData.modeToEnvMap": {...}, "joinParts.0.groupBy.metaData.modeToEnvMap": {...}}
-      """
-      results = {}
-      if not isinstance(obj, dict):
-          return results
+    """
+    Recursively find all modeToEnvMap fields in a nested dict.
+    Returns a dict mapping paths to their values,
+    e.g. {"metaData.modeToEnvMap": {...}, "joinParts.0.groupBy.metaData.modeToEnvMap": {...}}
+    """
+    results = {}
+    if not isinstance(obj, dict):
+        return results
 
-      for key, value in obj.items():
-          current_path = f"{path}.{key}" if path else key
-          if key == "modeToEnvMap":
-              results[current_path] = value
-          elif isinstance(value, dict):
-              results.update(_find_all_mode_to_env_maps(value, current_path))
-          elif isinstance(value, list):
-              for i, item in enumerate(value):
-                  if isinstance(item, dict):
-                      results.update(_find_all_mode_to_env_maps(item, f"{current_path}.{i}"))
+    for key, value in obj.items():
+        current_path = f"{path}.{key}" if path else key
+        if key == "modeToEnvMap":
+            results[current_path] = value
+        elif isinstance(value, dict):
+            results.update(_find_all_mode_to_env_maps(value, current_path))
+        elif isinstance(value, list):
+            for i, item in enumerate(value):
+                if isinstance(item, dict):
+                    results.update(_find_all_mode_to_env_maps(item, f"{current_path}.{i}"))
 
-      return results
+    return results
 
 
 def _check_mode_to_env_map_changes(output_file: str, new_obj: object, obj_class: type) -> bool:
@@ -704,43 +678,6 @@ def _handle_extra_conf_objects_to_materialize(
 
     num_written_objs = _confirm_and_write_all(files_to_write)
     print(f"Successfully wrote {num_written_objs} {'GroupBy' if is_gb else 'Join'} objects to {full_output_root}")
-
-
-def _write_obj(
-    full_output_root: str,
-    validator: ChrononRepoValidator,
-    name: str,
-    obj: object,
-    log_level: int,
-    force_compile: bool = False,
-    force_overwrite: bool = False,
-) -> bool:
-    """
-    Returns True if the object is successfully written.
-    """
-    file_name, obj_class, output_file = _construct_output_file_name(full_output_root, name, obj)
-    class_name = obj_class.__name__
-    team_name = name.split(".")[0]
-    _print_highlighted(f"{class_name} Team", team_name)
-    _print_highlighted(f"{class_name} Name", file_name)
-    skip_reasons = validator.can_skip_materialize(obj)
-    if not force_compile and skip_reasons:
-        reasons = ", ".join(skip_reasons)
-        _print_warning(f"Skipping {class_name} {file_name}: {reasons}")
-        if os.path.exists(output_file):
-            _print_warning(f"old file exists for skipped config: {output_file}")
-        return False
-    validation_errors = validator.validate_obj(obj)
-    if validation_errors:
-        _print_error(f"Could not write {class_name} {file_name}", ", ".join(validation_errors))
-        return False
-    if force_overwrite:
-        _print_warning(f"Force overwrite {class_name} {file_name}")
-    elif not validator.safe_to_overwrite(obj):
-        _print_warning(f"Cannot overwrite {class_name} {file_name} with existing online conf")
-        return False
-    _write_obj_as_json(file_name, obj, output_file, obj_class)
-    return True
 
 
 def _construct_output_file_name(full_output_root: str, name: str, obj: object) -> Tuple[str, Type, str]:
