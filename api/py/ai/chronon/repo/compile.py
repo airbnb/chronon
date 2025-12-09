@@ -128,8 +128,11 @@ def extract_and_convert(
 
     _print_debug_info(results.keys(), f"Extracted Entities Of Type {obj_class.__name__}", log_level)
 
+    # User presses Enter (no input): Defaults to Yes, modeToEnvMap will be overwritten
+    # User types n/no, modeToEnvMap will be preserved
+    # User types y/yes, modeToEnvMap will be overwritten
     respect_existing_env_vars = False
-    if not yes and not click.confirm("Do you want to update existing env variables in these files?"):
+    if not yes and not click.confirm("Do you want to update existing env variables in these files?", default=True):
         respect_existing_env_vars = True
 
     for name, obj in results.items():
@@ -137,7 +140,14 @@ def extract_and_convert(
         _set_team_level_metadata(obj, teams_path, team_name)
         _set_templated_values(obj, obj_class, teams_path, team_name)
         if _write_obj(
-            full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite, respect_existing_env_vars
+            full_output_root,
+            validator,
+            name,
+            obj,
+            log_level,
+            force_overwrite,
+            force_overwrite,
+            respect_existing_env_vars
         ):
             num_written_objs += 1
 
