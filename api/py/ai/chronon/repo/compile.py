@@ -522,12 +522,10 @@ def _preserve_mode_to_env_map(output_file: str, new_obj: object, obj_class: type
     Returns the JSON string with all modeToEnvMap fields preserved from the existing file.
     """
     new_content = json.loads(thrift_simple_json_protected(new_obj, obj_class))
-
     if os.path.exists(output_file):
         try:
             with open(output_file, "r") as f:
                 existing_content = json.load(f)
-
             old_mode_to_env_maps = _find_all_mode_to_env_maps(existing_content)
 
             # Preserve all existing modeToEnvMap values
@@ -621,10 +619,12 @@ def _write_obj_as_json_preserve_mode_to_env_map(name: str, obj: object, output_f
     assert hasattr(obj, "name") or hasattr(
         obj, "metaData"
     ), f"Can't serialize objects without the name attribute for object {name}"
+    # Generate content BEFORE opening file for write (which truncates the file)
+    content = _preserve_mode_to_env_map(output_file, obj, obj_class)
     with open(output_file, "w") as f:
         _print_highlighted(f"Writing {class_name} to", output_file)
         _print_warning("(preserving existing modeToEnvMap)")
-        f.write(_preserve_mode_to_env_map(output_file, obj, obj_class))
+        f.write(content)
 
 
 def _print_highlighted(left, right):
