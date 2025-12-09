@@ -41,6 +41,7 @@ def _invoke_cli_with_params(runner, input_path, flags=None):
         "--chronon_root=api/py/test/sample",
         f"--input_path={input_path}",
         "--debug",
+        "-y",  # Skip confirmation prompts in tests
     ]
     if flags:
         command.extend(flags)

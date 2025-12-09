@@ -87,9 +87,7 @@ def get_folder_name_from_class_name(class_name):
     is_flag=True,
     help="Skip confirmation prompts (for non-interactive use).",
 )
-def extract_and_convert(
-    chronon_root, input_path, output_root, debug, force_overwrite, feature_display, table_display, yes
-):
+def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite, feature_display, table_display, yes):
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
     The materialized objects are what will be submitted to spark jobs - driven by airflow, or by manual user testing.
@@ -128,27 +126,17 @@ def extract_and_convert(
 
     _print_debug_info(results.keys(), f"Extracted Entities Of Type {obj_class.__name__}", log_level)
 
-    # Phase 1: Collect all files to write
-    files_to_write = []
-    objs_to_process = []  # Track objects that pass validation for post-write processing
+    respect_existing_env_vars = False
+    if not yes and not click.confirm("Do you want to update existing env variables in these files?"):
+        respect_existing_env_vars = True
 
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
         _set_templated_values(obj, obj_class, teams_path, team_name)
-        result = _prepare_obj_for_write(
-            full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite
-        )
-        if result:
-            files_to_write.append(result)
-            objs_to_process.append((name, obj))
+        if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite, respect_existing_env_vars):
+            num_written_objs += 1
 
-    # Phase 2: Confirm and write all files at once
-    num_written_objs = _confirm_and_write_all(files_to_write, skip_confirm=yes)
-
-    # Phase 3: Post-write processing (only if files were written)
-    if num_written_objs > 0:
-        for name, obj in objs_to_process:
             if feature_display:
                 _print_features(obj, obj_class)
 
@@ -214,7 +202,7 @@ def extract_and_convert(
             teams_path=teams_path,
             validator=validator,
             log_level=log_level,
-            skip_confirm=yes,
+            respect_existing_env_vars=respect_existing_env_vars,
         )
     if extra_dependent_joins_to_materialize:
         _handle_extra_conf_objects_to_materialize(
@@ -225,7 +213,7 @@ def extract_and_convert(
             validator=validator,
             log_level=log_level,
             is_gb=False,
-            skip_confirm=yes,
+            respect_existing_env_vars=respect_existing_env_vars,
         )
     if num_written_objs > 0:
         print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
@@ -404,6 +392,36 @@ def _print_tables(obj: utils.ChrononJobTypes, obj_class: Type[utils.ChrononJobTy
         _print_modes_tables("Output StagingQuery Tables", tables)
 
 
+def _handle_extra_conf_objects_to_materialize(
+    conf_objs,
+    force_overwrite: bool,
+    full_output_root: str,
+    teams_path: str,
+    validator: ChrononRepoValidator,
+    log_level=logging.INFO,
+    is_gb=True,
+    respect_existing_env_vars=False,
+) -> None:
+    num_written_objs = 0
+    # load materialized joins to validate the additional conf objects against.
+    validator.load_objs()
+    for name, obj in conf_objs.items():
+        team_name = name.split(".")[0]
+        _set_team_level_metadata(obj, teams_path, team_name)
+        if _write_obj(
+            full_output_root,
+            validator,
+            name,
+            obj,
+            log_level,
+            force_compile=True,
+            force_overwrite=force_overwrite,
+            respect_existing_env_vars=respect_existing_env_vars,
+        ):
+            num_written_objs += 1
+    print(f"Successfully wrote {num_written_objs} {'GroupBy' if is_gb else 'Join'} objects to {full_output_root}")
+
+
 def _set_team_level_metadata(obj: object, teams_path: str, team_name: str):
     namespace = teams.get_team_conf(teams_path, team_name, "namespace")
     table_properties = teams.get_team_conf(teams_path, team_name, "table_properties")
@@ -440,7 +458,6 @@ def _set_templated_values(obj, cls, teams_path, team_name):
     if cls == api.GroupBy and obj.metaData.dependencies:
         obj.metaData.dependencies = [__fill_template(dep, obj, namespace) for dep in obj.metaData.dependencies]
 
-
 def _find_all_mode_to_env_maps(obj: dict, path: str = "") -> dict:
     """
     Recursively find all modeToEnvMap fields in a nested dict.
@@ -463,34 +480,6 @@ def _find_all_mode_to_env_maps(obj: dict, path: str = "") -> dict:
                     results.update(_find_all_mode_to_env_maps(item, f"{current_path}.{i}"))
 
     return results
-
-
-def _check_mode_to_env_map_changes(output_file: str, new_obj: object, obj_class: type) -> bool:
-    """
-    Check if any modeToEnvMap field (at any level) would be changed by this write.
-    Returns True if any modeToEnvMap exists in the old file and differs from new_obj.
-    """
-    if not os.path.exists(output_file):
-        return False
-
-    try:
-        with open(output_file, "r") as f:
-            existing_content = json.load(f)
-
-        new_content = json.loads(thrift_simple_json_protected(new_obj, obj_class))
-
-        old_mode_to_env_maps = _find_all_mode_to_env_maps(existing_content)
-        new_mode_to_env_maps = _find_all_mode_to_env_maps(new_content)
-
-        # Check if any existing modeToEnvMap differs from the new one
-        for path, old_value in old_mode_to_env_maps.items():
-            new_value = new_mode_to_env_maps.get(path)
-            if old_value != new_value:
-                return True
-
-        return False
-    except (json.JSONDecodeError, IOError):
-        return False
 
 
 def _set_nested_value(obj: dict, path: str, value) -> None:
@@ -539,7 +528,7 @@ def _preserve_mode_to_env_map(output_file: str, new_obj: object, obj_class: type
     return json.dumps(new_content, indent=2)
 
 
-def _prepare_obj_for_write(
+def _write_obj(
     full_output_root: str,
     validator: ChrononRepoValidator,
     name: str,
@@ -547,10 +536,10 @@ def _prepare_obj_for_write(
     log_level: int,
     force_compile: bool = False,
     force_overwrite: bool = False,
-) -> Optional[Tuple[str, object, str, type]]:
+    respect_existing_env_vars: bool = False,
+) -> bool:
     """
-    Validates and prepares an object for writing.
-    Returns (file_name, obj, output_file, obj_class) if valid, None otherwise.
+    Returns True if the object is successfully written.
     """
     file_name, obj_class, output_file = _construct_output_file_name(full_output_root, name, obj)
     class_name = obj_class.__name__
@@ -563,134 +552,21 @@ def _prepare_obj_for_write(
         _print_warning(f"Skipping {class_name} {file_name}: {reasons}")
         if os.path.exists(output_file):
             _print_warning(f"old file exists for skipped config: {output_file}")
-        return None
+        return False
     validation_errors = validator.validate_obj(obj)
     if validation_errors:
         _print_error(f"Could not write {class_name} {file_name}", ", ".join(validation_errors))
-        return None
+        return False
     if force_overwrite:
         _print_warning(f"Force overwrite {class_name} {file_name}")
     elif not validator.safe_to_overwrite(obj):
         _print_warning(f"Cannot overwrite {class_name} {file_name} with existing online conf")
-        return None
-    return (file_name, obj, output_file, obj_class)
-
-
-def _confirm_and_write_all(
-    files_to_write: List[Tuple[str, object, str, type]], skip_confirm: bool = False
-) -> int:
-    """
-    Shows all files to write, checks for modeToEnvMap changes, prompts for confirmation, then writes all.
-    Returns the number of files written.
-    """
-    if not files_to_write:
-        return 0
-
-    # Check which files have modeToEnvMap changes
-    files_with_mode_to_env_map_changes = []
-    for file_name, obj, output_file, obj_class in files_to_write:
-        if _check_mode_to_env_map_changes(output_file, obj, obj_class):
-            files_with_mode_to_env_map_changes.append(output_file)
-
-    print("\nThe following files will be written:")
-    for file_name, obj, output_file, obj_class in files_to_write:
-        print(f"  - {output_file}")
-
-    if not skip_confirm and not click.confirm(f"\nProceed with writing {len(files_to_write)} file(s)?"):
-        print("Aborted. No files were written.")
-        return 0
-
-    # If there are modeToEnvMap changes, ask user whether to update them
-    preserve_mode_to_env_map = False
-    if files_with_mode_to_env_map_changes:
-        print("\nThe following files have modeToEnvMap changes:")
-        for f in files_with_mode_to_env_map_changes:
-            print(f"  - {f}")
-        if not skip_confirm and not click.confirm("\nDo you want to update modeToEnvMap in these files?"):
-            preserve_mode_to_env_map = True
-            print("modeToEnvMap will be preserved from existing files.")
-
-    # Write all files
-    for file_name, obj, output_file, obj_class in files_to_write:
-        if preserve_mode_to_env_map and output_file in files_with_mode_to_env_map_changes:
-            _write_obj_as_json_preserve_mode_to_env_map(file_name, obj, output_file, obj_class)
-        else:
-            _write_obj_as_json(file_name, obj, output_file, obj_class)
-
-    return len(files_to_write)
-
-
-def _write_obj_as_json_preserve_mode_to_env_map(name: str, obj: object, output_file: str, obj_class: type):
-    """
-    Write object to JSON file, preserving all existing modeToEnvMap fields.
-    """
-    class_name = obj_class.__name__
-    output_folder = os.path.dirname(output_file)
-    if not os.path.exists(output_folder):
-        os.makedirs(output_folder)
-    assert os.path.isdir(output_folder), f"{output_folder} isn't a folder."
-    assert hasattr(obj, "name") or hasattr(
-        obj, "metaData"
-    ), f"Can't serialize objects without the name attribute for object {name}"
-    with open(output_file, "w") as f:
-        _print_highlighted(f"Writing {class_name} to", output_file)
-        _print_warning("(preserving existing modeToEnvMap)")
-        f.write(_preserve_mode_to_env_map(output_file, obj, obj_class))
-
-
-def _write_obj(
-    full_output_root: str,
-    validator: ChrononRepoValidator,
-    name: str,
-    obj: object,
-    log_level: int,
-    force_compile: bool = False,
-    force_overwrite: bool = False,
-) -> bool:
-    """
-    Returns True if the object is successfully written.
-    """
-    result = _prepare_obj_for_write(
-        full_output_root, validator, name, obj, log_level, force_compile, force_overwrite
-    )
-    if result is None:
         return False
-    file_name, obj, output_file, obj_class = result
-    _write_obj_as_json(file_name, obj, output_file, obj_class)
+    if respect_existing_env_vars:
+        _write_obj_as_json_preserve_mode_to_env_map(file_name, obj, output_file, obj_class)
+    else:
+        _write_obj_as_json(file_name, obj, output_file, obj_class)
     return True
-
-
-def _handle_extra_conf_objects_to_materialize(
-    conf_objs,
-    force_overwrite: bool,
-    full_output_root: str,
-    teams_path: str,
-    validator: ChrononRepoValidator,
-    log_level=logging.INFO,
-    is_gb=True,
-    skip_confirm=False,
-) -> None:
-    # load materialized joins to validate the additional conf objects against.
-    validator.load_objs()
-
-    files_to_write = []
-    for name, obj in conf_objs.items():
-        team_name = name.split(".")[0]
-        _set_team_level_metadata(obj, teams_path, team_name)
-        result = _prepare_obj_for_write(
-            full_output_root,
-            validator,
-            name,
-            obj,
-            log_level,
-            force_compile=True,
-            force_overwrite=force_overwrite,
-        )
-        if result:
-            files_to_write.append(result)
-
-    num_written_objs = _confirm_and_write_all(files_to_write, skip_confirm=skip_confirm)
-    print(f"Successfully wrote {num_written_objs} {'GroupBy' if is_gb else 'Join'} objects to {full_output_root}")
 
 
 def _construct_output_file_name(full_output_root: str, name: str, obj: object) -> Tuple[str, Type, str]:
@@ -716,6 +592,24 @@ def _write_obj_as_json(name: str, obj: object, output_file: str, obj_class: type
     with open(output_file, "w") as f:
         _print_highlighted(f"Writing {class_name} to", output_file)
         f.write(thrift_simple_json_protected(obj, obj_class))
+
+
+def _write_obj_as_json_preserve_mode_to_env_map(name: str, obj: object, output_file: str, obj_class: type):
+    """
+    Write object to JSON file, preserving all existing modeToEnvMap fields.
+    """
+    class_name = obj_class.__name__
+    output_folder = os.path.dirname(output_file)
+    if not os.path.exists(output_folder):
+        os.makedirs(output_folder)
+    assert os.path.isdir(output_folder), f"{output_folder} isn't a folder."
+    assert hasattr(obj, "name") or hasattr(
+        obj, "metaData"
+    ), f"Can't serialize objects without the name attribute for object {name}"
+    with open(output_file, "w") as f:
+        _print_highlighted(f"Writing {class_name} to", output_file)
+        _print_warning("(preserving existing modeToEnvMap)")
+        f.write(_preserve_mode_to_env_map(output_file, obj, obj_class))
 
 
 def _print_highlighted(left, right):
