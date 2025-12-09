@@ -87,7 +87,9 @@ def get_folder_name_from_class_name(class_name):
     is_flag=True,
     help="Skip confirmation prompts (for non-interactive use).",
 )
-def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite, feature_display, table_display, yes):
+def extract_and_convert(
+    chronon_root, input_path, output_root, debug, force_overwrite, feature_display, table_display, yes
+):
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
     The materialized objects are what will be submitted to spark jobs - driven by airflow, or by manual user testing.
@@ -134,7 +136,9 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
         _set_templated_values(obj, obj_class, teams_path, team_name)
-        if _write_obj(full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite, respect_existing_env_vars):
+        if _write_obj(
+            full_output_root, validator, name, obj, log_level, force_overwrite, force_overwrite, respect_existing_env_vars
+        ):
             num_written_objs += 1
 
             if feature_display:
@@ -457,6 +461,7 @@ def _set_templated_values(obj, cls, teams_path, team_name):
         ]
     if cls == api.GroupBy and obj.metaData.dependencies:
         obj.metaData.dependencies = [__fill_template(dep, obj, namespace) for dep in obj.metaData.dependencies]
+
 
 def _find_all_mode_to_env_maps(obj: dict, path: str = "") -> dict:
     """
