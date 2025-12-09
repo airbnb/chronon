@@ -81,7 +81,15 @@ def get_folder_name_from_class_name(class_name):
     help="Print out the list of tables that are materialized per job modes in this conf.",
     is_flag=True,
 )
-def extract_and_convert(chronon_root, input_path, output_root, debug, force_overwrite, feature_display, table_display):
+@click.option(
+    "--yes",
+    "-y",
+    is_flag=True,
+    help="Skip confirmation prompts (for non-interactive use).",
+)
+def extract_and_convert(
+    chronon_root, input_path, output_root, debug, force_overwrite, feature_display, table_display, yes
+):
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
     The materialized objects are what will be submitted to spark jobs - driven by airflow, or by manual user testing.
@@ -136,7 +144,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
             objs_to_process.append((name, obj))
 
     # Phase 2: Confirm and write all files at once
-    num_written_objs = _confirm_and_write_all(files_to_write)
+    num_written_objs = _confirm_and_write_all(files_to_write, skip_confirm=yes)
 
     # Phase 3: Post-write processing (only if files were written)
     if num_written_objs > 0:
@@ -206,6 +214,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
             teams_path=teams_path,
             validator=validator,
             log_level=log_level,
+            skip_confirm=yes,
         )
     if extra_dependent_joins_to_materialize:
         _handle_extra_conf_objects_to_materialize(
@@ -216,6 +225,7 @@ def extract_and_convert(chronon_root, input_path, output_root, debug, force_over
             validator=validator,
             log_level=log_level,
             is_gb=False,
+            skip_confirm=yes,
         )
     if num_written_objs > 0:
         print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
@@ -566,7 +576,9 @@ def _prepare_obj_for_write(
     return (file_name, obj, output_file, obj_class)
 
 
-def _confirm_and_write_all(files_to_write: List[Tuple[str, object, str, type]]) -> int:
+def _confirm_and_write_all(
+    files_to_write: List[Tuple[str, object, str, type]], skip_confirm: bool = False
+) -> int:
     """
     Shows all files to write, checks for modeToEnvMap changes, prompts for confirmation, then writes all.
     Returns the number of files written.
@@ -584,7 +596,7 @@ def _confirm_and_write_all(files_to_write: List[Tuple[str, object, str, type]]) 
     for file_name, obj, output_file, obj_class in files_to_write:
         print(f"  - {output_file}")
 
-    if not click.confirm(f"\nProceed with writing {len(files_to_write)} file(s)?"):
+    if not skip_confirm and not click.confirm(f"\nProceed with writing {len(files_to_write)} file(s)?"):
         print("Aborted. No files were written.")
         return 0
 
@@ -594,7 +606,7 @@ def _confirm_and_write_all(files_to_write: List[Tuple[str, object, str, type]]) 
         print("\nThe following files have modeToEnvMap changes:")
         for f in files_with_mode_to_env_map_changes:
             print(f"  - {f}")
-        if not click.confirm("\nDo you want to update modeToEnvMap in these files?"):
+        if not skip_confirm and not click.confirm("\nDo you want to update modeToEnvMap in these files?"):
             preserve_mode_to_env_map = True
             print("modeToEnvMap will be preserved from existing files.")
 
@@ -656,6 +668,7 @@ def _handle_extra_conf_objects_to_materialize(
     validator: ChrononRepoValidator,
     log_level=logging.INFO,
     is_gb=True,
+    skip_confirm=False,
 ) -> None:
     # load materialized joins to validate the additional conf objects against.
     validator.load_objs()
@@ -676,7 +689,7 @@ def _handle_extra_conf_objects_to_materialize(
         if result:
             files_to_write.append(result)
 
-    num_written_objs = _confirm_and_write_all(files_to_write)
+    num_written_objs = _confirm_and_write_all(files_to_write, skip_confirm=skip_confirm)
     print(f"Successfully wrote {num_written_objs} {'GroupBy' if is_gb else 'Join'} objects to {full_output_root}")
 
 
