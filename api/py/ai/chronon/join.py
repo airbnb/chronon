@@ -57,33 +57,14 @@ def JoinPart(
         JoinPart specifies how the left side of a join, or the query in online setting, would join with the right side
         components like GroupBys.
     """
-    # used for reset for next run
-    import_copy = __builtins__["__import__"]
-    # get group_by's module info from garbage collector
-    gc.collect()
-    group_by_module_name = None
-    for ref in gc.get_referrers(group_by):
-        if "__name__" in ref and ref["__name__"].startswith("group_bys"):
-            group_by_module_name = ref["__name__"]
-            break
-    if group_by_module_name:
-        logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
-        group_by_module = importlib.import_module(group_by_module_name)
-        __builtins__["__import__"] = eo.import_module_set_name(group_by_module, api.GroupBy)
-    else:
-        if not group_by.metaData.name:
-            logging.error("No group_by file or custom group_by name found")
-            raise ValueError(
-                "[GroupBy] Must specify a group_by name if group_by is not defined in separate file. "
-                "You may pass it in via GroupBy.name. \n"
-            )
+    # Automatically set the GroupBy name if not already set
+    _auto_set_group_by_name(group_by)
+
     if key_mapping:
         utils.check_contains(key_mapping.values(), group_by.keyColumns, "key", group_by.metaData.name)
 
     join_part = api.JoinPart(groupBy=group_by, keyMapping=key_mapping, prefix=prefix)
     join_part.tags = tags
-    # reset before next run
-    __builtins__["__import__"] = import_copy
     return join_part
 
 
@@ -138,6 +119,9 @@ def ExternalSource(
     key_fields: FieldsType,
     value_fields: FieldsType,
     custom_json: Optional[str] = None,
+    factory_name: Optional[str] = None,
+    factory_params: Optional[Dict[str, str]] = None,
+    offline_group_by: Optional[api.GroupBy] = None,
 ) -> api.ExternalSource:
     """
     External sources are online only data sources. During fetching, using
@@ -174,13 +158,31 @@ def ExternalSource(
                     ('field2', DataType.DOUBLE)
                 ))
             ]
+    :param factory_name: Optional name of the registered factory to use for
+        creating the external source handler.
+    :param factory_params: Optional parameters to pass to the factory when
+        creating the handler.
+    :param offline_group_by: Optional GroupBy configuration to be used for
+        offline backfill computation consuming from a mutation table for the service data.
+        When provided, enables point-in-time correct (PITC) offline computation for the external source.
 
     """
     assert name != "contextual", "Please use `ContextualSource`"
+
+    # Automatically set the name for offline_group_by if not already set
+    if offline_group_by is not None:
+        _auto_set_group_by_name(offline_group_by)
+
+    factory_config = None
+    if factory_name is not None or factory_params is not None:
+        factory_config = api.ExternalSourceFactoryConfig(factoryName=factory_name, factoryParams=factory_params)
+
     return api.ExternalSource(
         metadata=api.MetaData(name=name, team=team, customJson=custom_json),
         keySchema=DataType.STRUCT(f"ext_{name}_keys", *key_fields),
         valueSchema=DataType.STRUCT(f"ext_{name}_values", *value_fields),
+        factoryConfig=factory_config,
+        offlineGroupBy=offline_group_by,
     )
 
 
@@ -298,7 +300,7 @@ def LabelPart(
     )
 
 
-def Derivation(name: str, expression: str) -> api.Derivation:
+def Derivation(name: str, expression: str, description: Optional[str] = None) -> api.Derivation:
     """
     Derivation allows arbitrary SQL select clauses to be computed using columns from joinPart and externalParts,
     and saves the result as derived columns. The results will be available both in online fetching response map,
@@ -322,7 +324,10 @@ def Derivation(name: str, expression: str) -> api.Derivation:
     :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
     :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
     """
-    return api.Derivation(name=name, expression=expression)
+    metadata = None
+    if description:
+        metadata = api.MetaData(description=description)
+    return api.Derivation(name=name, expression=expression, metaData=metadata)
 
 
 def BootstrapPart(
@@ -365,6 +370,25 @@ def BootstrapPart(
     return api.BootstrapPart(table=table, query=query, keyColumns=key_columns)
 
 
+def validate_left_source(source: api.Source) -> None:
+    """
+    Validate the left source of a Join, preventing user to create configs for a few unsupported scenarios.
+    """
+    # Validate left source is NOT an EventSource with isCumulative = True
+    if source.events:
+        if source.events.isCumulative:
+            raise ValueError(
+                "Using EventSource with isCumulative=True as Left source in Joins is NOT supported by Chronon now. "
+                "You can use either EntitySource or EventSource with isCumulative=False."
+            )
+    # Validate left source is NOT a JoinSource
+    if source.joinSource:
+        raise ValueError(
+            "Using JoinSource as Left source in Joins is NOT supported by Chronon now. "
+            "For offline-only use case, you can directly depend on the Join's output table."
+        )
+
+
 def Join(
     left: api.Source,
     right_parts: List[api.JoinPart],
@@ -391,6 +415,8 @@ def Join(
     derivations: Optional[List[api.Derivation]] = None,
     deprecation_date: Optional[str] = None,
     tags: Optional[Dict[str, str]] = None,
+    description: Optional[str] = None,
+    model_transforms: Optional[api.ModelTransforms] = None,
     **kwargs,
 ) -> api.Join:
     """
@@ -490,9 +516,14 @@ def Join(
     :param deprecation_date:
         Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
     :type deprecation_date: str
+    :param description: optional description of this Join
+    :param model_transforms:
+        A list of model transforms to convert derivation outputs to model outputs using model-based transformations
     :return:
         A join object that can be used to backfill or serve data. For ML use-cases this should map 1:1 to model.
     """
+    validate_left_source(left)
+
     # create a deep copy for case: multiple LeftOuterJoin use the same left,
     # validation will fail after the first iteration
     updated_left = copy.deepcopy(left)
@@ -598,6 +629,7 @@ def Join(
         consistencySamplePercent=consistency_sample_percent,
         historicalBackfill=historical_backfill,
         deprecationDate=deprecation_date,
+        description=description,
     )
 
     return api.Join(
@@ -610,4 +642,40 @@ def Join(
         rowIds=row_ids,
         labelPart=label_part,
         derivations=derivations,
+        modelTransforms=model_transforms,
     )
+
+
+def _auto_set_group_by_name(group_by: api.GroupBy) -> None:
+    """
+    Automatically set the GroupBy name by finding its source module using garbage collection.
+    This is used by both JoinPart and ExternalSource to automatically name GroupBys.
+
+    :param group_by: The GroupBy object to set the name for
+    """
+    # Save and restore __import__ to preserve original behavior
+    import_copy = __builtins__["__import__"]
+
+    try:
+        # Use garbage collector to find the module where this GroupBy was defined
+        gc.collect()
+        group_by_module_name = None
+        for ref in gc.get_referrers(group_by):
+            if "__name__" in ref and ref["__name__"].startswith("group_bys"):
+                group_by_module_name = ref["__name__"]
+                break
+
+        if group_by_module_name:
+            logging.debug("group_by's module info from garbage collector {}".format(group_by_module_name))
+            group_by_module = importlib.import_module(group_by_module_name)
+            __builtins__["__import__"] = eo.import_module_set_name(group_by_module, api.GroupBy)
+        else:
+            if not group_by.metaData.name:
+                logging.error("No group_by file or custom group_by name found")
+                raise ValueError(
+                    "[GroupBy] Must specify a group_by name if group_by is not defined in separate file. "
+                    "You may pass it in via GroupBy.name. \n"
+                )
+    finally:
+        # Reset before next run
+        __builtins__["__import__"] = import_copy

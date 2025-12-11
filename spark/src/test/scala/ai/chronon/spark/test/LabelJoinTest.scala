@@ -19,6 +19,7 @@ package ai.chronon.spark.test
 import org.slf4j.LoggerFactory
 import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.spark._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.{Row, SparkSession}
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -34,7 +35,7 @@ class LabelJoinTest {
   private val tableUtils = TableUtils(spark)
 
   def createViewsGroupBy(namespace: String, partitionColOpt: Option[String] = None): GroupByTestSuite = {
-    TestUtils.createViewsGroupBy(namespace, spark, partitionColOpt=partitionColOpt)
+    TestUtils.createViewsGroupBy(namespace, spark, partitionColOpt = partitionColOpt)
   }
   @Test
   def testLabelJoin(): Unit = {
@@ -143,9 +144,11 @@ class LabelJoinTest {
     val left = viewsGroupBy.groupByConf.sources.get(0)
 
     val roomTypePartitionCol = "room_date"
-    val labelGroupBy1 = TestUtils.createRoomTypeGroupBy(namespace, spark, partitionColOpt=Some(roomTypePartitionCol)).groupByConf
+    val labelGroupBy1 =
+      TestUtils.createRoomTypeGroupBy(namespace, spark, partitionColOpt = Some(roomTypePartitionCol)).groupByConf
     val resTypePartitionCol = "res_date"
-    val labelGroupBy2 = TestUtils.createReservationGroupBy(namespace, spark, partitionColOpt = Some(resTypePartitionCol)).groupByConf
+    val labelGroupBy2 =
+      TestUtils.createReservationGroupBy(namespace, spark, partitionColOpt = Some(resTypePartitionCol)).groupByConf
     val labelJoinConf = createTestLabelJoin(30, 20, Seq(labelGroupBy1, labelGroupBy2))
     val joinConf = Builders.Join(
       Builders.MetaData(name = tableName, namespace = namespace, team = "chronon"),
@@ -427,7 +430,7 @@ class LabelJoinTest {
       .get(0)
 
     // 5 day window
-    val labelJoinConf = createTestLabelJoinWithAgg(5, namespace=namespace)
+    val labelJoinConf = createTestLabelJoinWithAgg(5, namespace = namespace)
     val joinConf = Builders.Join(
       Builders.MetaData(name = "test_label_agg", namespace = namespace, team = "chronon"),
       leftSource,

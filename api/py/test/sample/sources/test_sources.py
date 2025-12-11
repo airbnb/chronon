@@ -19,8 +19,10 @@ from ai.chronon.query import (
 )
 from ai.chronon.utils import get_staging_query_output_table_name
 from ai.chronon.api import ttypes
+from ai.chronon.staging_query import StagingQueryEventSource
 
 from staging_queries.sample_team import sample_staging_query
+from staging_queries.sample_team.sample_staging_query_view import v1 as staging_query_view
 
 
 def basic_event_source(table):
@@ -40,6 +42,20 @@ def basic_event_source(table):
 # Sample Event Source used in tests.
 event_source = ttypes.Source(events=ttypes.EventSource(
     table="sample_namespace.sample_table_group_by",
+    query=Query(
+        selects=select(
+            event="event_expr",
+            group_by_subject="group_by_expr",
+        ),
+        start_partition="2021-04-09",
+        time_column="ts",
+    ),
+))
+
+# Sample Event Source with topic for real-time/JoinSource streaming
+real_time_event_source = ttypes.Source(events=ttypes.EventSource(
+    table="sample_namespace.sample_table_group_by",
+    topic="sample_topic",
     query=Query(
         selects=select(
             event="event_expr",
@@ -120,3 +136,13 @@ events_after_20210409 = ttypes.Source(events=ttypes.EventSource(
         time_column="__timestamp"
     ),
 ))
+
+# Sample Staging Query Event Source  
+staging_query_event_source = StagingQueryEventSource(
+    staging_query=staging_query_view,
+    query=Query(
+        selects=select("user_id", "session_length", "page_views"),
+        time_column="ts"  # Assuming there's a ts column in the view
+    ),
+    is_cumulative=False
+)

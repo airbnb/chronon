@@ -20,8 +20,9 @@ import ai.chronon.api.Extensions.{GroupByOps, SourceOps}
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.Fetcher.Response
 import ai.chronon.online._
+import ai.chronon.online.serde.{AvroConversions, SparkConversions}
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.TableUtils
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.avro.Schema
 import org.apache.avro.generic.GenericRecord
 import org.apache.avro.io.{BinaryDecoder, DecoderFactory}
@@ -76,7 +77,7 @@ class MockStreamBuilder extends StreamBuilder {
   }
 }
 
-class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
+class MockApi(kvStore: () => KVStore, val namespace: String, val modelBackend: ModelBackend = null) extends Api(null) {
   class PlusOneExternalHandler extends ExternalSourceHandler {
     override def fetch(requests: collection.Seq[Fetcher.Request]): Future[collection.Seq[Fetcher.Response]] = {
       Future(
@@ -166,7 +167,7 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
     df.withTimeBasedColumn("ds", "tsMillis").camelToSnake
   }
 
-  override def externalRegistry: ExternalSourceRegistry = {
+  override lazy val externalRegistry: ExternalSourceRegistry = {
     val registry = new ExternalSourceRegistry
     registry.add("plus_one", new PlusOneExternalHandler)
     registry.add("always_fails", new AlwaysFailsHandler)
@@ -176,4 +177,6 @@ class MockApi(kvStore: () => KVStore, val namespace: String) extends Api(null) {
   override def generateStreamBuilder(streamType: String): StreamBuilder = {
     new MockStreamBuilder()
   }
+
+  override def genModelBackend: ModelBackend = modelBackend
 }

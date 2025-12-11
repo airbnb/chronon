@@ -19,7 +19,8 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{Join, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{Join, SparkSessionBuilder}
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.types.DecimalType
@@ -65,7 +66,7 @@ class AvroTest {
       query = Builders.Query(
         selects = Map(
           "user" -> "user",
-          "amount_dollars" -> "amount_dollars"
+          "amount_dollars" -> "CAST(amount_dollars AS DOUBLE)" // cast to double as decimal not supported in Avro
         ),
         startPartition = monthAgo,
         timeColumn = "UNIX_TIMESTAMP(CONCAT(ds, ' 23:59:59.999')) * 1000"

@@ -30,14 +30,15 @@ import ai.chronon.api.{
   TimeUnit,
   Window
 }
+import ai.chronon.online.serde.ArrayRow
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.{JListOps, JMapOps}
 
 class TileCodecTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
-  private val histogram = Map[String, Int]("A" -> 3, "B" -> 2).asJava
+  private val histogram = Map[String, Int]("A" -> 3, "B" -> 2).toJava
 
   private val aggregationsAndExpected: Array[(Aggregation, Seq[Any])] = Array(
     Builders.Aggregation(Operation.AVERAGE, "views", Seq(new Window(1, TimeUnit.DAYS))) -> Seq(16.0),
@@ -54,11 +55,11 @@ class TileCodecTest {
     Builders.Aggregation(Operation.LAST_K,
                          "title",
                          Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)),
-                         argMap = Map("k" -> "2")) -> Seq(List("C", "B").asJava, List("C", "B").asJava),
+                         argMap = Map("k" -> "2")) -> Seq(List("C", "B").toJava, List("C", "B").toJava),
     Builders.Aggregation(Operation.TOP_K,
                          "title",
                          Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS)),
-                         argMap = Map("k" -> "1")) -> Seq(List("C").asJava, List("C").asJava),
+                         argMap = Map("k" -> "1")) -> Seq(List("C").toJava, List("C").toJava),
     Builders.Aggregation(Operation.MIN,
                          "title",
                          Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))) -> Seq("A", "A"),
@@ -79,7 +80,7 @@ class TileCodecTest {
       windows = Seq(new Window(1, TimeUnit.DAYS), new Window(7, TimeUnit.DAYS))
     )
   )
-  private val expectedBucketResult = Map("A" -> 4.0, "B" -> 40.0, "C" -> 4.0).asJava
+  private val expectedBucketResult = Map("A" -> 4.0, "B" -> 40.0, "C" -> 4.0).toJava
   private val expectedBucketedResults = Seq(expectedBucketResult, expectedBucketResult)
 
   private val schema = List(

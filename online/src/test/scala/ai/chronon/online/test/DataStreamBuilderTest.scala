@@ -18,7 +18,8 @@ package ai.chronon.online.test
 
 import org.slf4j.LoggerFactory
 import ai.chronon.api.{Builders, DataModel, LongType, StringType, StructField, StructType}
-import ai.chronon.online.{DataStream, SparkConversions, TopicInfo}
+import ai.chronon.online.{DataStream, TopicInfo}
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.online.TopicInfo.parse
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.assertTrue

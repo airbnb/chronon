@@ -19,7 +19,7 @@ from ai.chronon import group_by
 from ai.chronon.api import ttypes
 from ai.chronon.api import ttypes as api
 from ai.chronon.group_by import Derivation
-from ai.chronon.join import Join
+from ai.chronon.join import DataType, ExternalPart, ExternalSource, Join
 from ai.chronon.lineage.lineage_metadata import ConfigType, TableType
 from ai.chronon.lineage.lineage_parser import LineageParser
 from helper import compare_lineages
@@ -299,3 +299,82 @@ class TestParseJoin(unittest.TestCase):
         with open(expected_sql_path, "r") as infile:
             expected_sql = infile.read()
             self.assertEqual(expected_sql, actual_sql)
+
+    def test_join_with_external_part_and_derivations(self):
+        """Test that joins with external parts and derivations on external features work correctly.
+
+        This test verifies the bug fix where:
+        1. External features should not have lineage tracked
+        2. Derivations that reference external features should also be treated as external (no lineage)
+        3. Derivations that reference internal features should have lineage tracked
+        """
+        # Create a join with external parts and derivations on external features
+        join_with_external = Join(
+            left=api.Source(
+                events=api.EventSource(
+                    table="join_event_table",
+                    query=api.Query(
+                        startPartition="2020-04-09",
+                        selects={
+                            "subject": "subject",
+                            "event_id": "event",
+                        },
+                        timeColumn="CAST(ts AS DOUBLE)",
+                    ),
+                ),
+            ),
+            output_namespace="test_db",
+            right_parts=[api.JoinPart(self.gb)],
+            online_external_parts=[
+                ExternalPart(
+                    ExternalSource(
+                        name="test_external_source",
+                        team="test_team",
+                        key_fields=[("key", DataType.LONG)],
+                        value_fields=[
+                            ("value_str", DataType.STRING),
+                            ("value_long", DataType.LONG),
+                        ],
+                    )
+                )
+            ],
+            derivations=[
+                Derivation(name="*", expression="*"),
+                # Derivation referencing an external feature (simple rename)
+                Derivation(name="external_value_renamed", expression="ext_test_external_source_value_str"),
+                # Derivation with complex expression on external feature only
+                Derivation(name="external_derived", expression="ext_test_external_source_value_long + 100"),
+                # Derivation referencing an internal feature
+                Derivation(
+                    name="internal_derived",
+                    expression="test_group_by_event_id_sum + 10",
+                ),
+            ],
+        )
+        join_with_external.metaData.name = "test_join_external"
+
+        parser = LineageParser()
+        parser.parse_join(join_with_external)
+
+        join_table_name = "test_db.test_join_external"
+
+        # Verify the table exists
+        self.assertTrue(join_table_name in parser.metadata.tables)
+        self.assertEqual(TableType.JOIN, parser.metadata.tables[join_table_name].table_type)
+
+        # Get all features stored
+        join_features = {k: v for k, v in parser.metadata.features.items() if k.startswith("test_join_external.")}
+
+        # Verify pre-derived external features are NOT in the features list if it is renamed
+        self.assertNotIn("test_join_external.ext_test_external_source_value_str", join_features)
+        # Verify pre-derived external features are in the features list if it is not renamed
+        self.assertIn("test_join_external.ext_test_external_source_value_long", join_features)
+
+        # Verify derived external features are in the features list
+        self.assertIn("test_join_external.external_value_renamed", join_features)
+        self.assertIn("test_join_external.external_derived", join_features)
+
+        # Verify internal features ARE in the features list (lineage tracked)
+        self.assertIn("test_join_external.test_group_by_event_id_sum", join_features)
+        self.assertIn("test_join_external.test_group_by_cnt_count", join_features)
+        self.assertIn("test_join_external.internal_derived", join_features)

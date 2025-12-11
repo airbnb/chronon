@@ -8,6 +8,7 @@ import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.FetcherCache.{BatchIrCache, BatchResponses, CachedMapBatchResponse}
 import ai.chronon.online.KVStore.TimedValue
 import ai.chronon.online.Metrics.Context
+import ai.chronon.online.serde.AvroCodec
 import org.junit.Assert.{assertArrayEquals, assertEquals, assertNull, fail}
 import org.junit.Test
 import org.mockito.Mockito._
@@ -16,7 +17,7 @@ import org.mockito.Mockito
 import org.mockito.stubbing.Stubber
 import org.scalatestplus.mockito.MockitoSugar
 
-import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.JMapOps
 import scala.util.{Failure, Success, Try}
 
 trait MockitoHelper extends MockitoSugar {
@@ -47,7 +48,7 @@ class FetcherCacheTest extends MockitoHelper {
     // Create a bunch of test batchIrs and store them in cache
     val batchIrs: Map[BatchIrCache.Key, BatchIrCache.Value] =
       (0 until batchIrCacheMaximumSize).map(i => createCacheKey(i) -> createBatchir(i)).toMap
-    batchIrCache.cache.putAll(batchIrs.asJava)
+    batchIrCache.cache.putAll(batchIrs.toJava)
 
     // Check that the cache contains all the batchIrs we created
     batchIrs.foreach(entry => {
@@ -70,7 +71,7 @@ class FetcherCacheTest extends MockitoHelper {
     // Create a bunch of test mapResponses and store them in cache
     val mapResponses: Map[BatchIrCache.Key, BatchIrCache.Value] =
       (0 until batchIrCacheMaximumSize).map(i => createCacheKey(i) -> createMapResponse(i)).toMap
-    batchIrCache.cache.putAll(mapResponses.asJava)
+    batchIrCache.cache.putAll(mapResponses.toJava)
 
     // Check that the cache contains all the mapResponses we created
     mapResponses.foreach(entry => {

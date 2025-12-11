@@ -32,12 +32,7 @@ ONLINE_ARGS = "--online-jar={online_jar} --online-class={online_class} "
 OFFLINE_ARGS = "--conf-path={conf_path} --end-date={ds} "
 ONLINE_WRITE_ARGS = "--conf-path={conf_path} " + ONLINE_ARGS
 ONLINE_OFFLINE_WRITE_ARGS = OFFLINE_ARGS + ONLINE_ARGS
-ONLINE_MODES = [
-    "streaming",
-    "metadata-upload",
-    "fetch",
-    "local-streaming",
-]
+ONLINE_MODES = ["streaming", "metadata-upload", "fetch", "local-streaming", "model-transform-batch"]
 SPARK_MODES = [
     "backfill",
     "backfill-left",
@@ -52,6 +47,7 @@ SPARK_MODES = [
     "log-flattener",
     "metadata-export",
     "label-join",
+    "model-transform-batch",
 ]
 MODES_USING_EMBEDDED = ["metadata-upload", "fetch", "local-streaming"]
 
@@ -76,6 +72,7 @@ MODE_ARGS = {
     "log-flattener": OFFLINE_ARGS,
     "metadata-export": OFFLINE_ARGS,
     "label-join": OFFLINE_ARGS,
+    "model-transform-batch": ONLINE_OFFLINE_WRITE_ARGS,
     "info": "",
 }
 
@@ -104,6 +101,7 @@ ROUTES = {
         "log-flattener": "log-flattener",
         "metadata-export": "metadata-export",
         "label-join": "label-join",
+        "model-transform-batch": "model-transform-batch",
     },
     "staging_queries": {
         "backfill": "staging-query-backfill",
@@ -185,6 +183,25 @@ def download_only_once(url, path, skip_download=False):
         check_call("curl {} -o {} --connect-timeout 10".format(url, path))
 
 
+def construct_version(version, base_url, release_tag, suffix=None):
+    if version == "latest":
+        version = None
+    if version:
+        return version if not suffix else f"{version}-{suffix}"
+    metadata_content = check_output("curl -s {}/maven-metadata.xml".format(base_url))
+    meta_tree = ET.fromstring(metadata_content)
+    versions = [
+        node.text
+        for node in meta_tree.findall("./versioning/versions/")
+        if re.search(
+            r"^\d+\.\d+\.\d+{}$".format("\_{}\d*".format(release_tag) if release_tag else ""),
+            node.text,
+        )
+    ]
+    version = versions[-1]
+    return version if not suffix else f"{version}-{suffix}"
+
+
 @retry_decorator(retries=3, backoff=50)
 def download_jar(
     version,
@@ -192,40 +209,30 @@ def download_jar(
     release_tag=None,
     spark_version="3.1.1",
     skip_download=False,
+    jar_url=None,
 ):
     assert (
         spark_version in SUPPORTED_SPARK
     ), f"Received unsupported spark version {spark_version}. Supported spark versions are {SUPPORTED_SPARK}"
     scala_version = SCALA_VERSION_FOR_SPARK[spark_version]
-    maven_url_prefix = os.environ.get("CHRONON_MAVEN_MIRROR_PREFIX", None)
-    default_url_prefix = "https://s01.oss.sonatype.org/service/local/repositories/public/content"
-    url_prefix = maven_url_prefix if maven_url_prefix else default_url_prefix
-    base_url = "{}/ai/chronon/spark_{}_{}".format(url_prefix, jar_type, scala_version)
-    print("Downloading jar from url: " + base_url)
-    jar_path = os.environ.get("CHRONON_DRIVER_JAR", None)
-    if jar_path is None:
-        if version == "latest":
-            version = None
-        if version is None:
-            metadata_content = check_output("curl -s {}/maven-metadata.xml".format(base_url))
-            meta_tree = ET.fromstring(metadata_content)
-            versions = [
-                node.text
-                for node in meta_tree.findall("./versioning/versions/")
-                if re.search(
-                    r"^\d+\.\d+\.\d+{}$".format("\_{}\d*".format(release_tag) if release_tag else ""),
-                    node.text,
-                )
-            ]
-            version = versions[-1]
-        jar_url = "{base_url}/{version}/spark_{jar_type}_{scala_version}-{version}-assembly.jar".format(
-            base_url=base_url,
-            version=version,
-            scala_version=scala_version,
-            jar_type=jar_type,
-        )
-        jar_path = os.path.join("/tmp", jar_url.split("/")[-1])
-        download_only_once(jar_url, jar_path, skip_download)
+
+    if not jar_url:
+        maven_url_prefix = os.environ.get("CHRONON_MAVEN_MIRROR_PREFIX", None)
+        default_url_prefix = "https://s01.oss.sonatype.org/service/local/repositories/public/content"
+        url_prefix = maven_url_prefix if maven_url_prefix else default_url_prefix
+        base_url = "{}/ai/chronon/spark_{}_{}".format(url_prefix, jar_type, scala_version)
+        print("Downloading jar from url: " + base_url)
+        jar_path = os.environ.get("CHRONON_DRIVER_JAR", None)
+        if jar_path is None:
+            version = construct_version(version, base_url, release_tag)
+            jar_url = "{base_url}/{version}/spark_{jar_type}_{scala_version}-{version}-assembly.jar".format(
+                base_url=base_url,
+                version=version,
+                scala_version=scala_version,
+                jar_type=jar_type,
+            )
+    jar_path = os.path.join("/tmp", jar_url.split("/")[-1])
+    download_only_once(jar_url, jar_path, skip_download)
     return jar_path
 
 
@@ -290,7 +297,11 @@ def set_runtime_env(args):
                     environment["conf_env"] = conf_json.get("metaData").get("modeToEnvMap", {}).get(effective_mode, {})
                     # Load additional args used on backfill.
                     if custom_json(conf_json) and effective_mode in {
-                      "backfill", "backfill-left", "backfill-final", "upload"
+                        "backfill",
+                        "backfill-left",
+                        "backfill-final",
+                        "upload",
+                        "model-transform-batch",
                     }:
                         environment["conf_env"]["CHRONON_CONFIG_ADDITIONAL_ARGS"] = " ".join(
                             custom_json(conf_json).get("additional_args", [])

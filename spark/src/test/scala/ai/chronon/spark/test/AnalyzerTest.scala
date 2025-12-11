@@ -18,17 +18,21 @@ package ai.chronon.spark.test
 
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
+import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api._
 import ai.chronon.spark.Extensions._
-import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.catalog.TableUtils
+import ai.chronon.spark.{Analyzer, Join, SparkSessionBuilder}
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.functions.{col, lit}
+import org.apache.spark.sql.functions.{col, lit, to_json}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 import org.mockito.ArgumentMatchers.any
 import org.mockito.Mockito.{never, spy, verify, when}
 import org.slf4j.LoggerFactory
 
+import java.sql.Timestamp
+import java.time.Instant
 import scala.util.Random
 
 class AnalyzerTest {
@@ -46,8 +50,14 @@ class AnalyzerTest {
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
-    val viewsGroupBy = getViewsGroupBy("join_analyzer_test.item_gb", Operation.AVERAGE, source = getTestEventSource(namespace), namespace = namespace)
-    val anotherViewsGroupBy = getViewsGroupBy("join_analyzer_test.another_item_gb", Operation.SUM,source = getTestEventSource(namespace), namespace = namespace)
+    val viewsGroupBy = getViewsGroupBy("join_analyzer_test.item_gb",
+                                       Operation.AVERAGE,
+                                       source = getTestEventSource(namespace),
+                                       namespace = namespace)
+    val anotherViewsGroupBy = getViewsGroupBy("join_analyzer_test.another_item_gb",
+                                              Operation.SUM,
+                                              source = getTestEventSource(namespace),
+                                              namespace = namespace)
 
     // left side
     val itemQueries = List(Column("item", api.StringType, 100))
@@ -81,7 +91,11 @@ class AnalyzerTest {
 
     //run analyzer and validate output schema
     val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, enableHitter = true)
-    val analyzerSchema = analyzer.analyzeJoin(joinConf)._1.map { case (k, v) => s"${k} => ${v}" }.toList.sorted
+    val analyzerResult = analyzer.analyzeJoin(joinConf)
+    val analyzerSchema = (analyzerResult.leftSchema ++ analyzerResult.finalOutputSchema)
+      .map { case (k, v) => s"${k} => ${v}" }
+      .toList
+      .sorted
     val join = new Join(joinConf = joinConf, endPartition = oneMonthAgo, tableUtils)
     val computed = join.computeJoin()
     val expectedSchema = computed.schema.fields.map(field => s"${field.name} => ${field.dataType}").sorted
@@ -93,12 +107,19 @@ class AnalyzerTest {
 
   @Test(expected = classOf[java.lang.AssertionError])
   def testJoinAnalyzerValidationFailure(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
-    val viewsGroupBy = getViewsGroupBy("join_analyzer_test.item_gb", Operation.AVERAGE, source = getTestGBSource(namespace), namespace = namespace)
-    val usersGroupBy = getUsersGroupBy("join_analyzer_test.user_gb", Operation.AVERAGE, source = getTestGBSource(namespace), namespace = namespace)
+    val viewsGroupBy = getViewsGroupBy("join_analyzer_test.item_gb",
+                                       Operation.AVERAGE,
+                                       source = getTestGBSource(namespace),
+                                       namespace = namespace)
+    val usersGroupBy = getUsersGroupBy("join_analyzer_test.user_gb",
+                                       Operation.AVERAGE,
+                                       source = getTestGBSource(namespace),
+                                       namespace = namespace)
 
     // left side
     val itemQueries = List(Column("item", api.StringType, 100), Column("guest", api.StringType, 100))
@@ -125,7 +146,8 @@ class AnalyzerTest {
   }
 
   def joinValidationDataAvailability(hasSufficientDateRange: Boolean) = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
@@ -138,17 +160,19 @@ class AnalyzerTest {
 
     val start = tableUtils.partitionSpec.minus(today, new Window(90, TimeUnit.DAYS))
 
-    val windowDays = if(hasSufficientDateRange) 3 else 365
+    val windowDays = if (hasSufficientDateRange) 3 else 365
     def buildGroupBy(partitionOpt: Option[String]): GroupBy = {
       Builders.GroupBy(
         sources = Seq(getTestEventSource(namespace, partitionColOpt = partitionOpt)),
         keyColumns = Seq("item_id"),
         aggregations = Seq(
           Builders.Aggregation(windows = Seq(new Window(windowDays, TimeUnit.DAYS)),
-            operation = Operation.AVERAGE,
-            inputColumn = "time_spent_ms")
+                               operation = Operation.AVERAGE,
+                               inputColumn = "time_spent_ms")
         ),
-        metaData = Builders.MetaData(name = "join_analyzer_test.item_data_avail_gb" + partitionOpt.map(s => s"_$s").getOrElse(""), namespace = namespace),
+        metaData = Builders.MetaData(
+          name = "join_analyzer_test.item_data_avail_gb" + partitionOpt.map(s => s"_$s").getOrElse(""),
+          namespace = namespace),
         accuracy = Accuracy.SNAPSHOT
       )
     }
@@ -157,7 +181,9 @@ class AnalyzerTest {
       left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
       joinParts = Seq(
         Builders.JoinPart(groupBy = buildGroupBy(None), prefix = "validation", keyMapping = Map("item" -> "item_id")),
-        Builders.JoinPart(groupBy = buildGroupBy(Some("datestr")), prefix = "validation", keyMapping = Map("item" -> "item_id"))
+        Builders.JoinPart(groupBy = buildGroupBy(Some("datestr")),
+                          prefix = "validation",
+                          keyMapping = Map("item" -> "item_id"))
       ),
       metaData = Builders.MetaData(name = "test_join_analyzer.item_validation", namespace = namespace, team = "chronon")
     )
@@ -179,7 +205,8 @@ class AnalyzerTest {
 
   @Test
   def testJoinAnalyzerValidationDataAvailabilityMultipleSources(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
@@ -250,17 +277,18 @@ class AnalyzerTest {
 
   @Test
   def testJoinAnalyzerCheckTimestampHasValues(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     // left side
     // create the event source with values
-    getTestGBSourceWithTs(namespace=namespace)
+    getTestGBSourceWithTs(namespace = namespace)
 
     // join parts
     val joinPart = Builders.GroupBy(
-      sources = Seq(getTestGBSourceWithTs(namespace=namespace)),
+      sources = Seq(getTestGBSourceWithTs(namespace = namespace)),
       keyColumns = Seq("key"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
@@ -285,17 +313,18 @@ class AnalyzerTest {
 
   @Test(expected = classOf[java.lang.AssertionError])
   def testJoinAnalyzerCheckTimestampOutOfRange(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     // left side
     // create the event source with values out of range
-    getTestGBSourceWithTs("out_of_range",namespace=namespace)
+    getTestGBSourceWithTs("out_of_range", namespace = namespace)
 
     // join parts
     val joinPart = Builders.GroupBy(
-      sources = Seq(getTestGBSourceWithTs("out_of_range",namespace=namespace)),
+      sources = Seq(getTestGBSourceWithTs("out_of_range", namespace = namespace)),
       keyColumns = Seq("key"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
@@ -320,17 +349,18 @@ class AnalyzerTest {
 
   @Test(expected = classOf[java.lang.AssertionError])
   def testJoinAnalyzerCheckTimestampAllNulls(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     // left side
     // create the event source with nulls
-    getTestGBSourceWithTs("nulls",namespace=namespace)
+    getTestGBSourceWithTs("nulls", namespace = namespace)
 
     // join parts
     val joinPart = Builders.GroupBy(
-      sources = Seq(getTestGBSourceWithTs("nulls",namespace=namespace)),
+      sources = Seq(getTestGBSourceWithTs("nulls", namespace = namespace)),
       keyColumns = Seq("key"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
@@ -353,10 +383,10 @@ class AnalyzerTest {
 
   }
 
-
   @Test(expected = classOf[java.lang.AssertionError])
   def testJoinAnalyzerInvalidTablePermissions(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = spy(TableUtils(spark))
     when(tableUtils.checkTablePermission(any(), any(), any())).thenReturn(false)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
@@ -391,18 +421,19 @@ class AnalyzerTest {
     } catch {
       case e: AssertionError =>
         logger.error("Caught unexpected AssertionError: " + e.getMessage)
-      assertTrue("Timestamp checks should not be called with table permission errors", false)
+        assertTrue("Timestamp checks should not be called with table permission errors", false)
     }
     analyzer.analyzeJoin(joinConf, validationAssert = true)
   }
   @Test
   def testGroupByAnalyzerCheckTimestampHasValues(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     val tableGroupBy = Builders.GroupBy(
-      sources = Seq(getTestGBSourceWithTs(namespace=namespace)),
+      sources = Seq(getTestGBSourceWithTs(namespace = namespace)),
       keyColumns = Seq("key"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
@@ -419,12 +450,13 @@ class AnalyzerTest {
 
   @Test(expected = classOf[java.lang.AssertionError])
   def testGroupByAnalyzerCheckTimestampAllNulls(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     val tableGroupBy = Builders.GroupBy(
-      sources = Seq(getTestGBSourceWithTs("nulls",namespace=namespace)),
+      sources = Seq(getTestGBSourceWithTs("nulls", namespace = namespace)),
       keyColumns = Seq("key"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM, inputColumn = "col2")
@@ -440,13 +472,14 @@ class AnalyzerTest {
 
   @Test
   def testGroupByAnalyzerInvalidTablePermissions(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = spy(TableUtils(spark))
     when(tableUtils.checkTablePermission(any(), any(), any())).thenReturn(false)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     val tableGroupBy = Builders.GroupBy(
-      sources = Seq(getTestGBSourceWithTs(namespace=namespace)),
+      sources = Seq(getTestGBSourceWithTs(namespace = namespace)),
       keyColumns = Seq("key"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM, inputColumn = "col1")
@@ -456,18 +489,19 @@ class AnalyzerTest {
     )
 
     val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
-    val (_, _, noAccessTables) = analyzer.analyzeGroupBy(tableGroupBy, validateTablePermission = true)
-    assertEquals(1, noAccessTables.size)
+    val analyzerResult = analyzer.analyzeGroupBy(tableGroupBy)
+    assertEquals(1, analyzerResult.noAccessTables.size)
   }
 
   @Test(expected = classOf[java.lang.AssertionError])
   def testGroupByAnalyzerCheckTimestampOutOfRange(): Unit = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val tableUtils = TableUtils(spark)
     val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
     tableUtils.createDatabase(namespace)
     val tableGroupBy = Builders.GroupBy(
-      sources = Seq(getTestGBSourceWithTs("out_of_range",namespace=namespace)),
+      sources = Seq(getTestGBSourceWithTs("out_of_range", namespace = namespace)),
       keyColumns = Seq("key"),
       aggregations = Seq(
         Builders.Aggregation(operation = Operation.SUM, inputColumn = "col2")
@@ -483,7 +517,8 @@ class AnalyzerTest {
   }
 
   def getTestGBSourceWithTs(option: String = "default", namespace: String): api.Source = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val testSchema = List(
       Column("key", api.StringType, 10),
       Column("col1", api.IntType, 10),
@@ -493,17 +528,20 @@ class AnalyzerTest {
     val viewsTable = s"$namespace.test_table"
     option match {
       case "default" => {
-        DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+        DataFrameGen
+          .events(spark, testSchema, count = 100, partitions = 20)
           .save(viewsTable)
       }
       case "nulls" => {
-        DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
+        DataFrameGen
+          .events(spark, testSchema, count = 100, partitions = 20)
           .withColumn("ts", lit(null).cast("bigint")) // set ts to null to test analyzer
           .save(viewsTable)
       }
       case "out_of_range" => {
-        DataFrameGen.events(spark, testSchema, count = 100, partitions = 20)
-          .withColumn("ts", col("ts")*lit(1000)) // convert to nanoseconds to test analyzer
+        DataFrameGen
+          .events(spark, testSchema, count = 100, partitions = 20)
+          .withColumn("ts", col("ts") * lit(1000)) // convert to nanoseconds to test analyzer
           .save(viewsTable)
       }
       case _ => {
@@ -512,16 +550,17 @@ class AnalyzerTest {
     }
 
     val out = Builders.Source.events(
-        query = Builders.Query(selects = Builders.Selects("col1", "col2"), startPartition = oneYearAgo),
-        table = viewsTable
-      )
+      query = Builders.Query(selects = Builders.Selects("col1", "col2"), startPartition = oneYearAgo),
+      table = viewsTable
+    )
 
     out
 
   }
 
   def getTestGBSource(namespace: String): api.Source = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item_id", api.IntType, 100), // type mismatch
@@ -538,9 +577,11 @@ class AnalyzerTest {
     )
   }
 
-
-  def getTestEventSource(namespace: String, partitionColOpt: Option[String] = None): api.Source = {
-    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+  def getTestEventSource(namespace: String,
+                         partitionColOpt: Option[String] = None,
+                         selects: Option[Map[String, String]] = None): api.Source = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     val viewsSchema = List(
       Column("user", api.StringType, 10000),
       Column("item_id", api.StringType, 100),
@@ -548,15 +589,17 @@ class AnalyzerTest {
     )
 
     val viewsTable = s"$namespace.view_events_gb_table" + partitionColOpt.map(s => s"_$s").getOrElse("")
-    val df = DataFrameGen.events(spark, viewsSchema, count = 1000, partitions = 200, partitionColOpt = partitionColOpt).drop("ts")
-    partitionColOpt  match {
+    val df = DataFrameGen
+      .events(spark, viewsSchema, count = 1000, partitions = 200, partitionColOpt = partitionColOpt)
+      .drop("ts")
+    partitionColOpt match {
       case Some(partition) => df.save(viewsTable, partitionColumns = Seq(partition))
-      case None => df.save(viewsTable)
+      case None            => df.save(viewsTable)
     }
-
-
     Builders.Source.events(
-      query = Builders.Query(selects = Builders.Selects("time_spent_ms"), startPartition = oneYearAgo, partitionColumn = partitionColOpt.orNull),
+      query = Builders.Query(selects = selects.getOrElse(Builders.Selects("time_spent_ms")),
+                             startPartition = oneYearAgo,
+                             partitionColumn = partitionColOpt.orNull),
       table = viewsTable
     )
   }
@@ -583,6 +626,469 @@ class AnalyzerTest {
       metaData = Builders.MetaData(name = name, namespace = namespace),
       accuracy = Accuracy.SNAPSHOT
     )
+  }
+
+  def getComplexGroupBy(name: String, namespace: String): api.GroupBy = {
+    // Create a GroupBy that generate features with complex data type for schema testing
+    // Should cover STRUCT, LIST, MAP scenarios
+    val source = getTestEventSource(
+      namespace,
+      selects = Some(
+        Builders.Selects.exprs(
+          "time_spent_ms" -> "time_spent_ms",
+          "view_struct" -> "NAMED_STRUCT('item_id', item_id, 'time_spent_ms', time_spent_ms)",
+          "view_map" -> "MAP(item_id, time_spent_ms)"
+        ))
+    )
+    Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.AVERAGE,
+                             inputColumn = "time_spent_ms",
+                             windows = Seq(new Window(7, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.SUM,
+                             inputColumn = "time_spent_ms",
+                             windows = Seq(new Window(7, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.LAST,
+                             inputColumn = "time_spent_ms",
+                             windows = Seq(new Window(7, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "100"), inputColumn = "view_struct"),
+        Builders.Aggregation(operation = Operation.LAST_K, argMap = Map("k" -> "100"), inputColumn = "view_map")
+      ),
+      derivations = Seq(
+        Builders.Derivation.star(),
+        Builders.Derivation(
+          name = "time_spent_ms_avg_last_7d_diff",
+          expression = "time_spent_ms_last_7d - time_spent_ms_average_7d"
+        )
+      ),
+      metaData = Builders.MetaData(name = name, namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+  }
+
+  @Test
+  def testJoinAnalyzerSchemaExport(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // GroupBy
+    val complexGroupBy = getComplexGroupBy("analyzer_test.complex_gb", namespace)
+
+    // Left side
+    val itemQueries = List(Column("item", api.StringType, 100), Column("user_id", api.StringType, 100))
+    val itemQueriesTable = s"$namespace.item_queries_table"
+    DataFrameGen
+      .events(spark, itemQueries, 1000, partitions = 100)
+      .save(itemQueriesTable)
+    val start = tableUtils.partitionSpec.minus(today, new Window(100, TimeUnit.DAYS))
+
+    // externalParts
+    val externalPart = Builders.ExternalPart(
+      externalSource = Builders.ContextualSource(
+        fields = Array(
+          StructField("user_tenure", LongType)
+        )
+      )
+    )
+
+    // join
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+      joinParts = Seq(
+        Builders.JoinPart(groupBy = complexGroupBy, prefix = "prefix", keyMapping = Map("user_id" -> "user"))
+      ),
+      externalParts = Seq(externalPart),
+      derivations = Seq(
+        Builders.Derivation.star(),
+        Builders
+          .Derivation(
+            expression = "prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff / ext_contextual_user_tenure",
+            name = "analyzer_test_time_spent_ms_sum_7d_diff_per_tenure"
+          )
+      ),
+      metaData = Builders.MetaData(name = "analyzer_test.complex_join", namespace = namespace, team = "chronon")
+    )
+
+    // run analyzer and validate output schema
+    val analyzer = new Analyzer(tableUtils,
+                                joinConf,
+                                oneMonthAgo,
+                                today,
+                                enableHitter = false,
+                                skipTimestampCheck = true,
+                                validateTablePermission = false)
+    val analyzerResult = analyzer.runAnalyzeJoin(joinConf, exportSchema = true)
+
+    // expected schema
+    val expectedLeftSchema = Seq(
+      ("item", api.StringType),
+      ("user_id", api.StringType),
+      ("ts", api.LongType),
+      ("ds", api.StringType)
+    )
+    val structTypeName = "View_struct_last100ElementStruct"
+    val expectedRightSchema = Seq(
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_average_7d", api.DoubleType),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_sum_7d", api.LongType),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_last_7d", api.LongType),
+      ("prefix_analyzer_test_complex_gb_view_struct_last100",
+       api.ListType(
+         api.StructType(structTypeName,
+                        Array(StructField("item_id", api.StringType), StructField("time_spent_ms", api.LongType))))),
+      ("prefix_analyzer_test_complex_gb_view_map_last100", api.ListType(api.MapType(api.StringType, api.LongType))),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff", api.DoubleType),
+      ("ext_contextual_user_tenure", api.LongType)
+    )
+
+    val expectedKeySchema = Seq(
+      ("user_id", api.StringType)
+    )
+    val expectedOutputSchema = Seq(
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_average_7d", api.DoubleType),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_sum_7d", api.LongType),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_last_7d", api.LongType),
+      ("prefix_analyzer_test_complex_gb_view_struct_last100",
+       api.ListType(
+         api.StructType(structTypeName,
+                        Array(StructField("item_id", api.StringType), StructField("time_spent_ms", api.LongType))))),
+      ("prefix_analyzer_test_complex_gb_view_map_last100", api.ListType(api.MapType(api.StringType, api.LongType))),
+      ("prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff", api.DoubleType),
+      ("ext_contextual_user_tenure", api.LongType),
+      ("analyzer_test_time_spent_ms_sum_7d_diff_per_tenure", api.DoubleType)
+    )
+
+    // Assertions on analyzer result
+    assertEquals(expectedLeftSchema, analyzerResult.leftSchema)
+    assertEquals(expectedRightSchema, analyzerResult.rightSchema)
+    assertEquals(expectedKeySchema, analyzerResult.keySchema)
+    assertEquals(expectedOutputSchema, analyzerResult.finalOutputSchema)
+
+    // Validate exported schema
+    val schema = tableUtils.sparkSession
+      .table(joinConf.metaData.schemaTable)
+      .select(to_json(col("key_schema")).as("key_schema"), to_json(col("value_schema")).as("value_schema"))
+      .head
+    val keySchema = schema.getString(0)
+    val valueSchema = schema.getString(1)
+
+    val keySchemaExpected = """[{"name":"user_id","data_type":"string"}]"""
+    val valueSchemaExpected =
+      """[
+        |{"name":"prefix_analyzer_test_complex_gb_time_spent_ms_average_7d","data_type":"double"},
+        |{"name":"prefix_analyzer_test_complex_gb_time_spent_ms_sum_7d","data_type":"bigint"},
+        |{"name":"prefix_analyzer_test_complex_gb_time_spent_ms_last_7d","data_type":"bigint"},
+        |{"name":"prefix_analyzer_test_complex_gb_view_struct_last100","data_type":"array<struct<item_id:string,time_spent_ms:bigint>>"},
+        |{"name":"prefix_analyzer_test_complex_gb_view_map_last100","data_type":"array<map<string,bigint>>"},
+        |{"name":"prefix_analyzer_test_complex_gb_time_spent_ms_avg_last_7d_diff","data_type":"double"},
+        |{"name":"ext_contextual_user_tenure","data_type":"bigint"},
+        |{"name":"analyzer_test_time_spent_ms_sum_7d_diff_per_tenure","data_type":"double"}
+        |]""".stripMargin.replaceAll("\\s+", "")
+
+    assertEquals(keySchemaExpected, keySchema)
+    assertEquals(valueSchemaExpected, valueSchema)
+  }
+
+  private def createUnsupportedTypeGroupBy(spark: SparkSession, tableUtils: TableUtils, online: Boolean): GroupBy = {
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create test data with ShortType data
+    import spark.implicits._
+    val currentTime = System.currentTimeMillis()
+    val dateString = "2025-09-01"
+    val testData = Seq(
+      ("key1", Timestamp.from(Instant.parse("2025-09-01T00:00:00Z")), currentTime, dateString),
+      ("key2", Timestamp.from(Instant.parse("2025-09-01T00:01:00Z")), currentTime, dateString),
+      ("key3", Timestamp.from(Instant.parse("2025-09-01T00:02:00Z")), currentTime, dateString)
+    ).toDF("key", "timestamp_col", "ts", "ds")
+
+    val tableName = "table_with_timestamp_col"
+    val fullTableName = s"$namespace.$tableName"
+
+    // Create partitioned table by ds column
+    testData.write
+      .mode("overwrite")
+      .partitionBy("ds")
+      .saveAsTable(fullTableName)
+
+    // Create Source using Builders.Source.events
+    val testSource = Builders.Source.entities(
+      query = Builders.Query(
+        selects = Builders.Selects("key", "timestamp_col"),
+        startPartition = dateString
+      ),
+      snapshotTable = fullTableName
+    )
+
+    val tableGroupBy = Builders.GroupBy(
+      sources = Seq(testSource),
+      keyColumns = Seq("key"),
+      metaData = Builders.MetaData(name = "group_by_analyzer_test_timestamp", namespace = namespace, online = online),
+      accuracy = Accuracy.SNAPSHOT
+    )
+
+    tableGroupBy
+  }
+
+  @Test(expected = classOf[RuntimeException])
+  def testAvroSchemaValidationWithUnsupportedTypesOnline(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+
+    val tableUtils = TableUtils(spark)
+    val onlineGroupBy = createUnsupportedTypeGroupBy(spark, tableUtils, online = true)
+
+    // Should throw RuntimeException due to TimestampType in schema
+    val analyzer = new Analyzer(tableUtils,
+                                onlineGroupBy,
+                                "2025-09-01",
+                                today,
+                                enableHitter = false,
+                                skipTimestampCheck = true,
+                                validateTablePermission = false)
+    analyzer.analyzeGroupBy(onlineGroupBy)
+  }
+
+  @Test
+  def testAvroSchemaValidationWithUnsupportedTypesOffline(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+
+    val tableUtils = TableUtils(spark)
+    val offlineGroupBy = createUnsupportedTypeGroupBy(spark, tableUtils, online = false)
+
+    // Should NOT throw RuntimeException due to TimestampType in schema
+    val analyzer = new Analyzer(tableUtils,
+                                offlineGroupBy,
+                                "2025-09-01",
+                                today,
+                                enableHitter = false,
+                                skipTimestampCheck = true,
+                                validateTablePermission = false)
+    analyzer.analyzeGroupBy(offlineGroupBy)
+  }
+
+  @Test
+  def testExternalSourceValidationWithMatchingSchemas(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left side table
+    val leftSchema = List(Column("user_id", api.StringType, 100))
+    val leftTable = s"$namespace.left_table"
+    DataFrameGen.events(spark, leftSchema, 10, partitions = 5).save(leftTable)
+
+    // Create compatible schemas using the correct DataType objects
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(
+      StructField("feature_value", DoubleType),
+      StructField("list_value",
+        api.ListType(
+          api.StructType("contradiction",
+            Array(
+              StructField("reason", api.StringType),
+              StructField("standardRule", api.StringType),
+              StructField("additionalRule", api.StringType)
+            )
+          )
+        )
+      )
+    ))
+
+    // Create right side table for GroupBy
+    val rightSchema = List(Column("user_id", api.StringType, 100), Column("value", api.DoubleType, 100))
+    val rightTable = s"$namespace.right_table"
+    DataFrameGen.events(spark, rightSchema, 100, partitions = 10).save(rightTable)
+
+    // Create a query and source for the GroupBy
+    val query = Builders.Query(selects = Map("feature_value" -> "value"), startPartition = oneYearAgo)
+    val source = Builders.Source.events(query, rightTable)
+
+    // Create GroupBy with matching key columns, sources, and derivation to match external feature name
+    // The external part will have fullName "ext_test_external_source", so the feature will be "ext_test_external_source_feature_value"
+    val groupBy = Builders.GroupBy(
+      keyColumns = Seq("user_id"),
+      sources = Seq(source),
+      derivations = Seq(
+        Builders.Derivation(name = "feature_value", expression = "feature_value"),
+        Builders.Derivation(name = "list_value",
+          expression = "array(named_struct('reason', 'test_reason', 'standardRule', 'test_standard', 'additionalRule', 'test_additional'))")
+      ),
+      metaData = Builders.MetaData(name = "test_external_gb", namespace = namespace)
+    )
+
+    // Create ExternalSource with compatible schemas
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+
+    // Manually set the offlineGroupBy field since the builder doesn't support it yet
+    externalSource.setOfflineGroupBy(groupBy)
+
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
+    // Create Join with ExternalPart
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = leftTable),
+      externalParts = Seq(externalPart),
+      metaData = Builders.MetaData(name = "test_join_external", namespace = namespace, team = "chronon")
+    )
+
+    // Create analyzer instance and call analyzeJoin
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, skipTimestampCheck = true, validateTablePermission = false)
+    val result = analyzer.analyzeJoin(joinConf)
+    // If no exception is thrown, validation passed
+    assertTrue("Expected successful validation", result != null)
+  }
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testExternalSourceValidationWithMismatchedKeySchemas(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left side table
+    val leftSchema = List(Column("user_id", api.StringType, 100))
+    val leftTable = s"$namespace.left_table"
+    DataFrameGen.events(spark, leftSchema, 10, partitions = 5).save(leftTable)
+
+    // Create key schema with different fields
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    // Create right side table for GroupBy
+    val rightSchema = List(Column("different_key", api.StringType, 100), Column("feature_value", api.DoubleType, 100))
+    val rightTable = s"$namespace.right_table"
+    DataFrameGen.events(spark, rightSchema, 100, partitions = 10).save(rightTable)
+
+    // Create a query and source for the GroupBy
+    val query = Builders.Query(selects = Map("feature_value" -> "feature_value"), startPartition = oneYearAgo)
+    val source = Builders.Source.events(query, rightTable)
+
+    // Create GroupBy with different key columns
+    val groupBy = Builders.GroupBy(
+      keyColumns = Seq("different_key"),  // Mismatched key column
+      sources = Seq(source),
+      metaData = Builders.MetaData(name = "test_external_gb_mismatch", namespace = namespace)
+    )
+
+    // Create ExternalSource with incompatible schemas
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+    externalSource.setOfflineGroupBy(groupBy)
+
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
+    // Create Join with ExternalPart
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = leftTable),
+      externalParts = Seq(externalPart),
+      metaData = Builders.MetaData(name = "test_join_external_key_mismatch", namespace = namespace, team = "chronon")
+    )
+
+    // This should throw AssertionError due to validation errors
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, skipTimestampCheck = true, validateTablePermission = false)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+  }
+
+  @Test(expected = classOf[java.lang.AssertionError])
+  def testExternalSourceValidationWithMismatchedValueSchemas(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left side table
+    val leftSchema = List(Column("user_id", api.StringType, 100))
+    val leftTable = s"$namespace.left_table"
+    DataFrameGen.events(spark, leftSchema, 10, partitions = 5).save(leftTable)
+
+    // Create compatible key schema but mismatched value schema
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    // Create right side table for GroupBy
+    val rightSchema = List(Column("user_id", api.StringType, 100), Column("different_feature", api.DoubleType, 100))
+    val rightTable = s"$namespace.right_table"
+    DataFrameGen.events(spark, rightSchema, 100, partitions = 10).save(rightTable)
+
+    // Create a source for the GroupBy - this is needed for valueColumns to work
+    val query = Builders.Query(selects = Map("different_feature" -> "different_feature"), startPartition = oneYearAgo)
+    val source = Builders.Source.events(query, rightTable)
+
+    // Create GroupBy with different derived column name that doesn't match external feature name
+    // The external part expects "ext_test_external_source_feature_value" but GroupBy produces "wrong_name"
+    val groupBy = Builders.GroupBy(
+      keyColumns = Seq("user_id"),
+      sources = Seq(source),
+      derivations = Seq(
+        Builders.Derivation(name = "wrong_name", expression = "different_feature")
+      ),
+      metaData = Builders.MetaData(name = "test_external_gb_value_mismatch", namespace = namespace)
+    )
+
+    // Create ExternalSource with incompatible schemas
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+    externalSource.setOfflineGroupBy(groupBy)
+
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
+    // Create Join with ExternalPart
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = leftTable),
+      externalParts = Seq(externalPart),
+      metaData = Builders.MetaData(name = "test_join_external_value_mismatch", namespace = namespace, team = "chronon")
+    )
+
+    // This should throw AssertionError due to validation errors
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, skipTimestampCheck = true, validateTablePermission = false)
+    analyzer.analyzeJoin(joinConf, validationAssert = true)
+  }
+
+  @Test
+  def testExternalSourceValidationWithNullOfflineGroupBy(): Unit = {
+    val spark: SparkSession = SparkSessionBuilder.build("AnalyzerTest", local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    // Create left side table
+    val leftSchema = List(Column("user_id", api.StringType, 100))
+    val leftTable = s"$namespace.left_table"
+    DataFrameGen.events(spark, leftSchema, 10, partitions = 5).save(leftTable)
+
+    // Create ExternalSource without offlineGroupBy
+    val keySchema = StructType("key", Array(StructField("user_id", StringType)))
+    val valueSchema = StructType("value", Array(StructField("feature_value", DoubleType)))
+
+    val metadata = Builders.MetaData(name = "test_external_source")
+    val externalSource = Builders.ExternalSource(metadata, keySchema, valueSchema)
+    // Don't set offlineGroupBy (it remains null)
+
+    // Wrap in ExternalPart
+    val externalPart = Builders.ExternalPart(externalSource = externalSource)
+
+    // Create Join with ExternalPart
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = oneMonthAgo), table = leftTable),
+      externalParts = Seq(externalPart),
+      metaData = Builders.MetaData(name = "test_join_external_null_gb", namespace = namespace, team = "chronon")
+    )
+
+    // This should not throw - validation should be skipped when offlineGroupBy is null
+    val analyzer = new Analyzer(tableUtils, joinConf, oneMonthAgo, today, skipTimestampCheck = true, validateTablePermission = false)
+    val result = analyzer.analyzeJoin(joinConf)
+    assertTrue("Expected successful validation when offlineGroupBy is null", result != null)
   }
 
 }

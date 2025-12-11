@@ -31,17 +31,18 @@ class DataTypeConversionTest {
     val dType = StructType(
       "root",
       Array(
-        StructField("map", MapType(
-          StructType("key", Array(
-            StructField("a", IntType),
-            StructField("b", FloatType)
-          )),
-          StructType("value", Array(
-            StructField("c", StructType("inner",
-              Array(StructField("d", IntType)))))
-            )
+        StructField(
+          "map",
+          MapType(
+            StructType("key",
+                       Array(
+                         StructField("a", IntType),
+                         StructField("b", FloatType)
+                       )),
+            StructType("value", Array(StructField("c", StructType("inner", Array(StructField("d", IntType))))))
           )
-        )))
+        ))
+    )
     val thriftType = DataType.toTDataType(dType)
 
     // serialize with TSimpleJson - this is what python code will do

@@ -66,6 +66,7 @@ class Operation:
     # https://github.com/apache/incubator-datasketches-java/blob/master/src/main/java/org/apache/datasketches/cpc/CpcSketch.java#L180
     APPROX_UNIQUE_COUNT_LGK = collector(ttypes.Operation.APPROX_UNIQUE_COUNT)
     UNIQUE_COUNT = ttypes.Operation.UNIQUE_COUNT
+    BOUNDED_UNIQUE_COUNT_K = collector(ttypes.Operation.BOUNDED_UNIQUE_COUNT)
     COUNT = ttypes.Operation.COUNT
     SUM = ttypes.Operation.SUM
     AVERAGE = ttypes.Operation.AVERAGE
@@ -129,6 +130,7 @@ def Aggregation(
     windows: Optional[List[ttypes.Window]] = None,
     buckets: Optional[List[str]] = None,
     tags: Optional[Dict[str, str]] = None,
+    element_wise: Optional[bool] = None,
 ) -> ttypes.Aggregation:
     """
     :param input_column:
@@ -148,6 +150,13 @@ def Aggregation(
         Besides the GroupBy.keys, this is another level of keys for use under this aggregation.
         Using this would create an output as a map of string to aggregate.
     :type buckets: List[str]
+    :param element_wise:
+        When set to True and input_column is an array/list type, applies the operation element-wise across the arrays.
+        For example, AVERAGE with element_wise=True on [[1,2,3], [4,5,6]] produces [2.5, 3.5, 4.5].
+        This allows any operation (SUM, AVERAGE, MAX, MIN, etc.) to work on lists.
+        All lists must have the same length and must not include null values.
+        Defaults to None.
+    :type element_wise: bool
     :return: An aggregate defined with the specified operation.
     """
     # Default to last
@@ -155,8 +164,23 @@ def Aggregation(
     arg_map = {}
     if isinstance(operation, tuple):
         operation, arg_map = operation[0], operation[1]
+
+    if operation == ttypes.Operation.UNIQUE_COUNT:
+        LOGGER.warning(
+            "When using UNIQUE_COUNT operation, please consider using "
+            "BOUNDED_UNIQUE_COUNT_K or APPROX_UNIQUE_COUNT "
+            "for better performance and scalability."
+        )
+    elif operation == ttypes.Operation.HISTOGRAM:
+        LOGGER.warning(
+            "When using HISTOGRAM operation, please consider using "
+            "APPROX_HISTOGRAM_K for better performance and "
+            "bounded memory usage."
+        )
+
     agg = ttypes.Aggregation(input_column, operation, arg_map, windows, buckets)
     agg.tags = tags
+    agg.elementWise = element_wise
     return agg
 
 
@@ -164,18 +188,20 @@ def Window(length: int, timeUnit: ttypes.TimeUnit) -> ttypes.Window:
     return ttypes.Window(length, timeUnit)
 
 
-def Derivation(name: str, expression: str) -> ttypes.Derivation:
+def Derivation(name: str, expression: str, description: Optional[str] = None) -> ttypes.Derivation:
     """
     Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
     output schema. It is supported for offline computations for now.
-
     If both name and expression are set to "*", then every raw column will be included along with the derived columns.
-
     :param name: output column name of the SQL expression
     :param expression: any valid Spark SQL select clause based on joinPart or externalPart columns
+    :param description: optional description of this derivation
     :return: a Derivation object representing a single derived column or a wildcard ("*") selection.
     """
-    return ttypes.Derivation(name=name, expression=expression)
+    metadata = None
+    if description:
+        metadata = ttypes.MetaData(description=description)
+    return ttypes.Derivation(name=name, expression=expression, metaData=metadata)
 
 
 def contains_windowed_aggregation(aggregations: Optional[List[ttypes.Aggregation]]):
@@ -213,6 +239,19 @@ def validate_group_by(group_by: ttypes.GroupBy):
                 )
             else:
                 assert not utils.is_streaming(src), "SNAPSHOT accuracy should not be specified for streaming sources"
+        elif src.joinSource:
+            # When using a join as a source, the parent join must have a topic for streaming
+            # If you want to chain batch only joins, use regular EventSource/EntitySource instead
+            parent_join = src.joinSource.join
+            parent_left = parent_join.left if parent_join else None
+            assert parent_left and utils.is_streaming(parent_left), (
+                "When using a JoinSource as the source for a GroupBy, the parent join must have a topic. "
+                "Please specify either events.topic for EventSource or entities.mutationTopic for EntitySource "
+                "in the parent join's left source. Otherwise, use a regular EventSource or EntitySource."
+                "If you want to chain batch only joins, use regular EventSource/EntitySource instead"
+                "There are helper methods like get_join_output_table_name, get_staging_query_output_table_name"
+                "and group_by_output_table_name."
+            )
         else:
             if contains_windowed_aggregation(aggregations):
                 assert query.timeColumn, "Please specify timeColumn for entity source with windowed aggregations"
@@ -350,6 +389,7 @@ def GroupBy(
     tags: Optional[Dict[str, str]] = None,
     derivations: Optional[List[ttypes.Derivation]] = None,
     deprecation_date: Optional[str] = None,
+    description: Optional[str] = None,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
@@ -467,6 +507,7 @@ def GroupBy(
     :param kwargs:
         Additional properties that would be passed to run.py if specified under additional_args property.
         And provides an option to pass custom values to the processing logic.
+    :param description: optional description of this GroupBy
     :type kwargs: Dict[str, str]
     :return:
         A GroupBy object containing specified aggregations.
@@ -512,7 +553,7 @@ def GroupBy(
         elif isinstance(source, ttypes.Source):
             return source
         else:
-            print("unrecognized " + str(source))
+            LOGGER.warning("unrecognized " + str(source))
 
     if not isinstance(sources, list):
         sources = [sources]
@@ -545,6 +586,7 @@ def GroupBy(
         team=team,
         offlineSchedule=offline_schedule,
         deprecationDate=deprecation_date,
+        description=description,
     )
 
     group_by = ttypes.GroupBy(

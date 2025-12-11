@@ -226,7 +226,7 @@ class LineageParser:
         pre_derived_columns.extend(get_pre_derived_source_keys(join.left))
         output_columns = get_join_output_columns(join)
         output_columns = (
-            output_columns[FeatureDisplayKeys.SOURCE_KEYS] + output_columns[FeatureDisplayKeys.DERIVED_COLUMNS]
+            output_columns[FeatureDisplayKeys.LEFT_COLUMNS] + output_columns[FeatureDisplayKeys.DERIVED_COLUMNS]
         )
 
         derivation_columns = set(d.name for d in join.derivations)
@@ -476,16 +476,27 @@ class LineageParser:
 
         sql = join_sql.sql(dialect="spark", pretty=True)
         sources["join_table"] = sql
+        pre_derived_internal_features = get_pre_derived_join_internal_features(join)
+        pre_derived_external_features = get_pre_derived_external_features(join)
 
-        features = get_pre_derived_join_internal_features(join)
-
-        # Build derivation SQL if derivations exist.
-        if join.derivations:
+        if not join.derivations:
+            # If no derivations, internal feature and external features are pre-derived features.
+            internal_features = pre_derived_internal_features
+            external_features = pre_derived_external_features
+        else:
+            # if there are derivations, apply derivations to get the final features.
             derived_features = [derivation.name for derivation in join.derivations]
+
+            # initialize derived external features set
+            derived_external_features = set()
+
             # If "*" is defined then append derived features, otherwise only derived features are used.
             if "*" in derived_features:
                 derived_features.remove("*")
+                features = pre_derived_internal_features + pre_derived_external_features
                 features.extend(derived_features)
+                derived_external_features.update(pre_derived_external_features)
+
                 # If it is a rename only derivation, then remove the original feature name
                 removed_features = [
                     derivation.expression for derivation in join.derivations if is_identifier(derivation.expression)
@@ -493,18 +504,48 @@ class LineageParser:
                 for removed_feature in removed_features:
                     if removed_feature in features:
                         features.remove(removed_feature)
+                    if removed_feature in derived_external_features:
+                        derived_external_features.remove(removed_feature)
+            # if wildcard is not defined, only derived features are used
             else:
                 features = derived_features
+
+            # Identify which derived features originated from external features
+            # by checking if the derivation expression references an external feature
+            for derivation in join.derivations:
+                if derivation.name != "*":
+                    # Check if the derivation expression is an external feature (simple rename case)
+                    if derivation.expression in pre_derived_external_features:
+                        derived_external_features.add(derivation.name)
+                    # Also check if the expression references only external features in complex expressions
+                    # Parse the expression to find all column references
+                    else:
+                        try:
+                            parsed_expr = maybe_parse(derivation.expression)
+                            if parsed_expr:
+                                # Find all column references in the expression
+                                column_refs = {col.name for col in parsed_expr.find_all(exp.Column)}
+                                # If all column references are external features, mark as external
+                                if column_refs and column_refs.issubset(set(pre_derived_external_features)):
+                                    derived_external_features.add(derivation.name)
+                        except Exception:
+                            # If parsing fails, assume it might reference internal features
+                            pass
 
             derive_sql = self.build_join_derive_sql("join_table", join)
             sql = derive_sql.sql(dialect="spark", pretty=True)
             sources["derive_table"] = sql
 
-        # store feature
-        for feature in features:
+            # Split features into internal (with lineage) and external (without lineage)
+            # A feature is external if it is in derived_external_features
+            internal_features = [f for f in features if f not in derived_external_features]
+            external_features = [f for f in features if f in derived_external_features]
+
+        # store feature with lineage for internal features only
+        for feature in internal_features:
             self.metadata.store_feature(join.metaData.name, ConfigType.JOIN, feature, output_table)
-        # no column lineage for external features
-        external_features = get_pre_derived_external_features(join)
+
+        # no column lineage for external features (both pre-derived and derived)
         for feature in external_features:
             self.metadata.store_feature(join.metaData.name, ConfigType.JOIN, feature)
 

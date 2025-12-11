@@ -16,17 +16,18 @@
 
 package ai.chronon.online
 
-import org.slf4j.LoggerFactory
 import ai.chronon.api.{Constants, StructType}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, PutRequest}
 import org.apache.spark.sql.SparkSession
-import java.util.Base64
-import java.nio.charset.StandardCharsets
+import org.slf4j.LoggerFactory
 
+import java.nio.charset.StandardCharsets
+import java.util.Base64
 import java.util.function.Consumer
 import scala.collection.Seq
 import scala.concurrent.duration.{Duration, MILLISECONDS}
 import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.ScalaJavaConversions.ListOps
 import scala.util.{Failure, Success, Try}
 
 object KVStore {
@@ -182,6 +183,7 @@ object ExternalSourceHandler {
 abstract class ExternalSourceHandler extends Serializable {
   implicit lazy val executionContext: ExecutionContext = ExternalSourceHandler.executor
   def fetch(requests: Seq[Fetcher.Request]): Future[Seq[Fetcher.Response]]
+
 }
 
 // the implementer of this class should take a single argument, a scala map of string to string
@@ -199,6 +201,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
   def genKvStore: KVStore
 
   def externalRegistry: ExternalSourceRegistry
+
+  def genModelBackend: ModelBackend = null
 
   private var timeoutMillis: Long = 10000
 
@@ -237,7 +241,8 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
                 timeoutMillis = timeoutMillis,
                 callerName = callerName,
                 flagStore = flagStore,
-                disableErrorThrows = disableErrorThrows)
+                disableErrorThrows = disableErrorThrows,
+                modelBackend = genModelBackend)
 
   final def buildJavaFetcher(callerName: String = null, disableErrorThrows: Boolean = false): JavaFetcher = {
     new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
@@ -245,12 +250,14 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
       .flagStore(flagStore)
       .disableErrorThrows(disableErrorThrows)
       .debug(false)
+      .modelBackend(genModelBackend)
       .build()
   }
 
   final def javaFetcherBuilder(): JavaFetcher.Builder = {
     new JavaFetcher.Builder(genKvStore, Constants.ChrononMetadataKey, timeoutMillis, responseConsumer, externalRegistry)
       .flagStore(flagStore)
+      .modelBackend(genModelBackend)
   }
 
   final def buildJavaFetcher(): JavaFetcher = buildJavaFetcher(callerName = null)
@@ -259,4 +266,25 @@ abstract class Api(userConf: Map[String, String]) extends Serializable {
     new Consumer[LoggableResponse] {
       override def accept(t: LoggableResponse): Unit = logResponse(t)
     }
+
+  /**
+    * Register external sources from join configurations.
+    * This function reads configurations for each join, extracts FactoryConfig information
+    * from external sources, and stores this information in the ExternalSourceRegistry.
+    *
+    * @param joins Sequence of join names to process
+    */
+  def registerJoinExternalSources(joins: Seq[String]): Unit = {
+    val joinOps = joins.map { joinName =>
+      val joinConfTry = fetcher.getJoinConf(joinName)
+      joinConfTry match {
+        case Success(joinOps) => joinOps
+        case Failure(exception) =>
+          throw new RuntimeException(s"Failed to load join configuration for '$joinName'", exception)
+      }
+    }
+    joinOps
+      .map(_.join)
+      .foreach(join => externalRegistry.addHandlersByFactory(Option(join.getOnlineExternalParts).map(_.toScala.toSeq)))
+  }
 }

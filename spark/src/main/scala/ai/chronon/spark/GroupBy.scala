@@ -23,8 +23,9 @@ import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
 import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
-import ai.chronon.online.{RowWrapper, SparkConversions}
+import ai.chronon.online.serde.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._
@@ -283,7 +284,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       .map { queriesUnfilteredDf.filter }
       .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
 
-    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
+    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.calculateTimeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
@@ -303,7 +304,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
         val tsVal = row.get(queryTsIndex)
         assert(tsVal != null, "ts column cannot be null in left source or query df")
         val ts = tsVal.asInstanceOf[Long]
-        val partition = row.getString(partitionIndex)
+        val partition = row.get(partitionIndex).toString
         ((queriesKeyGen(row), headStart(ts)), TimeTuple.make(ts, partition))
       }
       .groupByKey()
@@ -367,7 +368,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, inputDf.schema)
 
-    inputDf.rdd
+    tableUtils
+      .preAggRepartition(inputDf.rdd)
       .keyBy(keyBuilder)
       .mapValues(SparkConversions.toChrononRow(_, tsIndex))
       .aggregateByKey(zeroValue = hopsAggregator.init())(
@@ -661,9 +663,12 @@ object GroupBy {
     val selects = Option(source.query.selects)
       .map(_.toScala.map(keyValue => {
         if (keyValue._2.contains(Constants.ChrononRunDs)) {
-          assert(intersectedRange.isDefined && intersectedRange.get.isSingleDay,
-                 s"ChrononRunDs is only supported for single day queries")
-          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => queryRange.start)
+          assert(
+            queryRange.isSingleDay,
+            s"ChrononRunDs is only supported for single day queries. " +
+              s"Got start: ${queryRange.start}, end: ${queryRange.end} (date range include multiple days)"
+          )
+          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => s"'${queryRange.start}'")
           (keyValue._1, parametricMacro.replace(keyValue._2))
         } else {
           keyValue
@@ -742,7 +747,12 @@ object GroupBy {
               if (!groupByConf.hasDerivations) {
                 outputDf.save(outputTable, tableProps)
               } else {
-                val finalOutputColumns = groupByConf.derivationsScala.finalOutputColumn(outputDf.columns).toSeq
+                val finalOutputColumns = groupByConf.derivationsScala
+                  .finalOutputColumn(
+                    outputDf.columns,
+                    ensureKeys = groupByConf.keys(tableUtils.partitionColumn)
+                  )
+                  .toSeq
                 val result = outputDf.select(finalOutputColumns: _*)
                 result.save(outputTable, tableProps)
               }

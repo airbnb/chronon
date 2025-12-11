@@ -16,16 +16,16 @@
 
 package ai.chronon.online
 
-import ai.chronon.aggregator.row.RowAggregator
 import ai.chronon.aggregator.windowing.SawtoothOnlineAggregator
 import ai.chronon.api.Constants.{ReversalField, TimeField}
 import ai.chronon.api.Extensions.{GroupByOps, MetadataOps}
 import ai.chronon.api._
+import ai.chronon.online.serde.{AvroCodec, AvroConversions}
 import org.apache.avro.Schema
-import org.apache.spark.sql.SparkSession
-import scala.collection.JavaConverters.asScalaBufferConverter
 
-import ai.chronon.online.OnlineDerivationUtil.{DerivationFunc, buildDerivationFunction, buildDerivedFields, timeFields}
+import ai.chronon.online.DerivationUtils.{DerivationFunc, buildDerivationFunction, buildDerivedFields, timeFields}
+
+import scala.util.ScalaJavaConversions.ListOps
 
 // mixin class - with schema
 class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, partitionSpec: PartitionSpec)
@@ -41,7 +41,7 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
 
   lazy val aggregator: SawtoothOnlineAggregator = {
     new SawtoothOnlineAggregator(batchEndTsMillis,
-                                 groupByServingInfo.groupBy.aggregations.asScala.toSeq,
+                                 groupByServingInfo.groupBy.aggregations.toScala.toSeq,
                                  valueChrononSchema.fields.map(sf => (sf.name, sf.fieldType)))
   }
 

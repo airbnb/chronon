@@ -2,7 +2,7 @@ package ai.chronon.flink.window
 
 import ai.chronon.api.GroupBy
 
-import scala.jdk.CollectionConverters._
+import scala.util.ScalaJavaConversions.ListOps
 import org.slf4j.LoggerFactory
 
 /**
@@ -24,7 +24,7 @@ object KeySelector {
   def getKeySelectionFunction(groupBy: GroupBy): Map[String, Any] => List[Any] = {
     // List uses MurmurHash.seqHash for its .hashCode(), which gives us hashing based on content.
     // (instead of based on the instance, which is the case for Array).
-    val groupByKeys: List[String] = groupBy.keyColumns.asScala.toList
+    val groupByKeys: List[String] = groupBy.keyColumns.toScala.toList
     logger.info(
       f"Creating key selection function for Flink app. groupByKeys=$groupByKeys"
     )

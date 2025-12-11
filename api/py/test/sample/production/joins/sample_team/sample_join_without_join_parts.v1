@@ -1,0 +1,34 @@
+{
+  "metaData": {
+    "name": "sample_team.sample_join_without_join_parts.v1",
+    "online": 0,
+    "production": 0,
+    "customJson": "{\"check_consistency\": false, \"lag\": 0, \"join_tags\": null, \"join_part_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_sample_namespace.sample_table_group_by_ds\", \"spec\": \"sample_namespace.sample_table_group_by/ds={{ ds }}\", \"start\": \"2021-04-09\", \"end\": null}"
+    ],
+    "tableProperties": {
+      "source": "chronon"
+    },
+    "outputNamespace": "chronon_db",
+    "team": "sample_team",
+    "samplePercent": 100.0,
+    "offlineSchedule": "@daily"
+  },
+  "left": {
+    "events": {
+      "table": "sample_namespace.sample_table_group_by",
+      "query": {
+        "selects": {
+          "event": "event_expr",
+          "group_by_subject": "group_by_expr",
+          "ts": "ts"
+        },
+        "startPartition": "2021-04-09",
+        "timeColumn": "ts",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": []
+}

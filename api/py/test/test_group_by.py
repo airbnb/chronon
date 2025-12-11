@@ -16,7 +16,7 @@
 import pytest, json
 
 from ai.chronon import group_by, query
-from ai.chronon.group_by import GroupBy, TimeUnit, Window, Aggregation, Accuracy
+from ai.chronon.group_by import GroupBy, Derivation, TimeUnit, Window, Aggregation, Accuracy
 from ai.chronon.api import ttypes
 from ai.chronon.api.ttypes import EventSource, EntitySource, Operation
 
@@ -79,7 +79,6 @@ def entity_source(snapshotTable, mutationTable):
             reversalColumn="is_reverse",
         ),
     )
-
 
 def test_pretty_window_str(days_unit, hours_unit):
     """
@@ -274,3 +273,73 @@ def test_additional_metadata():
         tags={"to_deprecate": True}
     )
     assert json.loads(gb.metaData.customJson)['groupby_tags']['to_deprecate']
+
+
+
+def test_group_by_with_description():
+    gb = group_by.GroupBy(
+        sources=[
+            ttypes.EventSource(
+                table="event_table1",
+                query=query.Query(
+                    selects=None,
+                    time_column="ts"
+                )
+            )
+        ],
+        keys=["key1", "key2"],
+        aggregations=[group_by.Aggregation(input_column="event_id", operation=ttypes.Operation.SUM)],
+        name="test.additional_metadata_gb",
+        description="GroupBy description"
+    )
+    assert gb.metaData.description == "GroupBy description"
+
+
+def test_derivation():
+    derivation = Derivation(name="derivation_name", expression="derivation_expression")
+    expected_derivation = ttypes.Derivation(
+        name="derivation_name",
+        expression="derivation_expression")
+
+    assert derivation == expected_derivation
+
+
+def test_derivation_with_description():
+    derivation = Derivation(name="derivation_name", expression="derivation_expression", description="Derivation description")
+    expected_derivation = ttypes.Derivation(
+        name="derivation_name",
+        expression="derivation_expression",
+        metaData=ttypes.MetaData(description="Derivation description"))
+
+    assert derivation == expected_derivation
+
+
+def test_join_source_topic_validation():
+    """Test that GroupBy with JoinSource validates parent join has a topic"""
+    def make_join(left_source):
+        return ttypes.Join(left=left_source, joinParts=[], metaData=ttypes.MetaData(name='t'))
+
+    def make_gb(join, has_v=False):
+        selects = {'k': 'k', 'v': 'v'} if has_v else {'k': 'k'}
+        return ttypes.GroupBy(
+            sources=[ttypes.Source(joinSource=ttypes.JoinSource(
+                join=join, query=ttypes.Query(selects=selects, timeColumn='ts')))],
+            keyColumns=['k'],
+            aggregations=[ttypes.Aggregation(inputColumn='v', operation=ttypes.Operation.LAST)],
+            metaData=ttypes.MetaData(name='t'))
+
+    # Test 1: Join without topic should fail
+    join_no_topic = make_join(ttypes.Source(events=ttypes.EventSource(
+        table='t', topic=None, query=ttypes.Query(selects={'k': 'k'}, timeColumn='ts'))))
+    with pytest.raises(AssertionError, match="parent join must have a topic"):
+        group_by.validate_group_by(make_gb(join_no_topic))
+
+    # Test 2: Join with EventSource topic should pass
+    join_event = make_join(ttypes.Source(events=ttypes.EventSource(
+        table='t', topic='topic', query=ttypes.Query(selects={'k': 'k'}, timeColumn='ts'))))
+    group_by.validate_group_by(make_gb(join_event, has_v=True))
+
+    # Test 3: Join with EntitySource mutationTopic should pass
+    join_entity = make_join(ttypes.Source(entities=ttypes.EntitySource(
+        snapshotTable='t', mutationTopic='topic', query=ttypes.Query(selects={'k': 'k'}, timeColumn='ts'))))
+    group_by.validate_group_by(make_gb(join_entity, has_v=True))

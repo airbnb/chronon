@@ -22,10 +22,10 @@ import junit.framework.TestCase
 import org.junit.Assert._
 
 import java.util
-import scala.collection.JavaConverters._
+import scala.util.ScalaJavaConversions.JListOps
 
 class TestRow(val fieldsSeq: Any*)(tsIndex: Int = 0) extends Row {
-  val fields: util.List[Any] = new java.util.ArrayList[Any](fieldsSeq.asJava)
+  val fields: util.List[Any] = new java.util.ArrayList[Any](fieldsSeq.toJava)
   override val length: Int = fields.size()
 
   override def get(index: Int): Any = fields.get(index)
@@ -51,16 +51,16 @@ object TestRow {
 class RowAggregatorTest extends TestCase {
   def testUpdate(): Unit = {
     val rows = List(
-      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), Map("A" -> 1, "B" -> 2)),
-      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq(), null),
-      TestRow(3L, 5, 7.0f, "D", null, null, Map("A" -> null, "B" -> 1)),
-      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D"), Map("A" -> 5, "B" -> 1, (null, 2))),
-      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"), Map.empty[String, Int])
+      TestRow(1L, 4, 5.0f, "A", Seq(5, 3, 4), Seq("D", "A", "B", "A"), Map("A" -> 1, "B" -> 2), Seq(1.0f, 2.0f)),
+      TestRow(2L, 3, 4.0f, "B", Seq(6, null), Seq(), null, Seq(3.0f, 4.0f)),
+      TestRow(3L, 5, 7.0f, "D", null, null, Map("A" -> null, "B" -> 1), null),
+      TestRow(4L, 7, 1.0f, "A", Seq(), Seq("B", "A", "D"), Map("A" -> 5, "B" -> 1, (null, 2)), Seq(5.0f, 6.0f)),
+      TestRow(5L, 3, 1.0f, "B", Seq(null), Seq("A", "B", "C"), Map.empty[String, Int], Seq(7.0f, 8.0f))
     )
 
     val rowsToDelete = List(
-      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H"), Map("B" -> 1, "A" -> 3)),
-      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq(), Map("B" -> 2, "D" -> 3))
+      TestRow(4L, 2, 1.0f, "A", Seq(1, null), Seq("B", "C", "D", "H"), Map("B" -> 1, "A" -> 3), Seq(1.0f, 2.0f)),
+      TestRow(5L, 1, 2.0f, "H", Seq(1), Seq(), Map("B" -> 2, "D" -> 3), Seq(3.0f, 4.0f))
     )
 
     val schema = List(
@@ -70,7 +70,8 @@ class RowAggregatorTest extends TestCase {
       "title" -> StringType,
       "session_lengths" -> ListType(IntType),
       "hist_input" -> ListType(StringType),
-      "hist_map" -> MapType(StringType, IntType)
+      "hist_map" -> MapType(StringType, IntType),
+      "embeddings" -> ListType(FloatType)
     )
 
     val sessionLengthAvgByTitle = new java.util.HashMap[String, Double]()
@@ -85,7 +86,7 @@ class RowAggregatorTest extends TestCase {
     val mapAvg = new java.util.HashMap[String, Double]()
     mapAvg.put("A", 3.0)
     mapAvg.put("B", 1.0)
-    mapAvg.put("D", 3.0)  // sum = -3 / count = -1
+    mapAvg.put("D", 3.0) // sum = -3 / count = -1
     mapAvg.put(null, 2.0)
 
     val specsAndExpected: Array[(AggregationPart, Any)] = Array(
@@ -93,11 +94,11 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.COUNT, "views") -> 3L,
       Builders.AggregationPart(Operation.SUM, "rating") -> 15.0,
       Builders.AggregationPart(Operation.LAST, "title") -> "B",
-      Builders.AggregationPart(Operation.LAST_K, "title", argMap = Map("k" -> "2")) -> List("B", "A").asJava,
-      Builders.AggregationPart(Operation.FIRST_K, "title", argMap = Map("k" -> "2")) -> List("A", "B").asJava,
+      Builders.AggregationPart(Operation.LAST_K, "title", argMap = Map("k" -> "2")) -> List("B", "A").toJava,
+      Builders.AggregationPart(Operation.FIRST_K, "title", argMap = Map("k" -> "2")) -> List("A", "B").toJava,
       Builders.AggregationPart(Operation.FIRST, "title") -> "A",
-      Builders.AggregationPart(Operation.TOP_K, "title", argMap = Map("k" -> "2")) -> List("D", "B").asJava,
-      Builders.AggregationPart(Operation.BOTTOM_K, "title", argMap = Map("k" -> "2")) -> List("A", "A").asJava,
+      Builders.AggregationPart(Operation.TOP_K, "title", argMap = Map("k" -> "2")) -> List("D", "B").toJava,
+      Builders.AggregationPart(Operation.BOTTOM_K, "title", argMap = Map("k" -> "2")) -> List("A", "A").toJava,
       Builders.AggregationPart(Operation.MAX, "title") -> "D",
       Builders.AggregationPart(Operation.MIN, "title") -> "A",
       Builders.AggregationPart(Operation.APPROX_UNIQUE_COUNT, "title") -> 3L,
@@ -106,7 +107,9 @@ class RowAggregatorTest extends TestCase {
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths") -> 8.0,
       Builders.AggregationPart(Operation.AVERAGE, "session_lengths", bucket = "title") -> sessionLengthAvgByTitle,
       Builders.AggregationPart(Operation.HISTOGRAM, "hist_input", argMap = Map("k" -> "2")) -> histogram,
-      Builders.AggregationPart(Operation.AVERAGE, "hist_map") -> mapAvg
+      Builders.AggregationPart(Operation.AVERAGE, "hist_map") -> mapAvg,
+      Builders.AggregationPart(Operation.SUM, "embeddings", elementWise = true) -> List(12.0, 14.0).toJava,
+      Builders.AggregationPart(Operation.AVERAGE, "embeddings", elementWise = true) -> List(6.0, 7.0).toJava
     )
 
     val (specs, expectedVals) = specsAndExpected.unzip

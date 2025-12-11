@@ -20,8 +20,9 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.{Builders, Constants}
 import ai.chronon.spark.JoinUtils.{contains_any, set_add}
-import ai.chronon.spark.{GroupBy, JoinUtils, PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{GroupBy, JoinUtils, PartitionRange, SparkSessionBuilder}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.functions._
 import org.apache.spark.sql.types._

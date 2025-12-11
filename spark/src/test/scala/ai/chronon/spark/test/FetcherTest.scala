@@ -23,8 +23,10 @@ import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
-import ai.chronon.online.{JavaRequest, LoggableResponseBase64, MetadataStore, SparkConversions}
+import ai.chronon.online.{JavaRequest, KVStore, LoggableResponseBase64, MetadataStore}
+import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.stats.ConsistencyJob
 import ai.chronon.spark.{Join => _, _}
 import com.google.gson.GsonBuilder
@@ -32,7 +34,7 @@ import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
 import org.apache.spark.sql.functions.{avg, col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
-import org.junit.Assert.{assertEquals, assertTrue}
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.mockito.ArgumentMatchers.{any, anyString}
 import org.mockito.Mockito.{reset, spy, when}
 import org.slf4j.LoggerFactory
@@ -43,7 +45,7 @@ import java.util.concurrent.Executors
 import scala.collection.Seq
 import scala.compat.java8.FutureConverters
 import scala.concurrent.duration.{Duration, SECONDS}
-import scala.concurrent.{Await, ExecutionContext}
+import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.ScalaJavaConversions._
 import scala.util.{Failure, Random, Try}
 
@@ -194,7 +196,7 @@ class FetcherTest extends TestCase {
       accuracy = Accuracy.TEMPORAL,
       metaData = Builders.MetaData(name = "unit_test/fetcher_mutations_gb", namespace = namespace, team = "chronon"),
       derivations = Seq(
-        Builders.Derivation(name = "*", expression = "*"),
+        Builders.Derivation.star(),
         Builders.Derivation(name = "rating_average_1d_same", expression = "rating_average_1d")
       )
     )
@@ -273,6 +275,10 @@ class FetcherTest extends TestCase {
         Builders.Aggregation(operation = Operation.LAST_K,
                              argMap = Map("k" -> "300"),
                              inputColumn = "user",
+                             windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS))),
+        Builders.Aggregation(operation = Operation.BOUNDED_UNIQUE_COUNT,
+                             argMap = Map("k" -> "5"),
+                             inputColumn = "user",
                              windows = Seq(new Window(2, TimeUnit.DAYS), new Window(30, TimeUnit.DAYS)))
       ),
       metaData = Builders.MetaData(name = "unit_test/vendor_ratings", namespace = namespace),
@@ -322,7 +328,7 @@ class FetcherTest extends TestCase {
       metaData = Builders.MetaData(name = "unit_test/vendor_credit_derivation", namespace = namespace),
       derivations = Seq(
         Builders.Derivation("credit_sum_3d_test_rename", "credit_sum_3d"),
-        Builders.Derivation("*", "*")
+        Builders.Derivation.star()
       )
     )
 
@@ -383,7 +389,7 @@ class FetcherTest extends TestCase {
                                    team = "chronon",
                                    consistencySamplePercent = 30),
       derivations = Seq(
-        Builders.Derivation("*", "*"),
+        Builders.Derivation.star(),
         Builders.Derivation("hist_3d", "unit_test_vendor_ratings_txn_types_histogram_3d"),
         Builders.Derivation("payment_variance", "unit_test_user_payments_payment_variance/2"),
         Builders.Derivation("derived_ds", "from_unixtime(ts/1000, 'yyyy-MM-dd')"),
@@ -401,7 +407,10 @@ class FetcherTest extends TestCase {
 
     val listingEventData = Seq(
       Row(1L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
-      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10")
+      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
+      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
+      Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
+      Row(null, toTs("2021-04-10 03:10:00"), "2021-04-10")
     )
     val ratingEventData = Seq(
       // 1L listing id event data
@@ -422,7 +431,9 @@ class FetcherTest extends TestCase {
       Row(2L, toTs("2021-04-10 02:30:00"), 5, "2021-04-10"),
       Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
       Row(2L, toTs("2021-04-10 02:30:00"), 8, "2021-04-10"),
-      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10") // dated 4/10 but excluded from avg agg based on ts
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10"), // dated 4/10 but excluded from avg agg based on ts
+      Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10"), // dated 4/10 but excluded from avg agg based on ts
+      Row(null, toTs("2021-04-10 02:30:00"), 8, "2021-04-10")
     )
     // Schemas
     // {..., event (generic event column), ...}
@@ -498,6 +509,11 @@ class FetcherTest extends TestCase {
           operation = Operation.APPROX_HISTOGRAM_K,
           inputColumn = "rating",
           windows = Seq(new Window(1, TimeUnit.DAYS))
+        ),
+        Builders.Aggregation(
+          operation = Operation.BOUNDED_UNIQUE_COUNT,
+          inputColumn = "rating",
+          windows = Seq(new Window(1, TimeUnit.DAYS))
         )
       ),
       accuracy = Accuracy.TEMPORAL,
@@ -524,7 +540,7 @@ class FetcherTest extends TestCase {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     val spark: SparkSession = createSparkSession()
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore(s"FetcherTest#$namespace")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
 
@@ -660,7 +676,7 @@ class FetcherTest extends TestCase {
     val namespace = "derivation_fetch"
     val joinConf = generateMutationData(namespace)
     val derivations = Seq(
-      Builders.Derivation(name = "*", expression = "*"),
+      Builders.Derivation.star(),
       Builders.Derivation(name = "unit_test_fetcher_mutations_gb_rating_sum_plus",
                           expression = "unit_test_fetcher_mutations_gb_rating_sum + 1"),
       Builders.Derivation(name = "listing_id_renamed", expression = "listing_id")
@@ -673,11 +689,102 @@ class FetcherTest extends TestCase {
   def testTemporalFetchJoinDerivationRenameOnly(): Unit = {
     val namespace = "derivation_fetch_rename_only"
     val joinConf = generateMutationData(namespace)
-    val derivations = Seq(Builders.Derivation(name = "*", expression = "*"),
-                          Builders.Derivation(name = "listing_id_renamed", expression = "listing_id"))
+    val derivations =
+      Seq(Builders.Derivation.star(), Builders.Derivation(name = "listing_id_renamed", expression = "listing_id"))
     joinConf.setDerivations(derivations.toJava)
 
     compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
+  }
+
+  def testFetcherDerivationsNoWildcard(): Unit = {
+    val spark: SparkSession = createSparkSession()
+    val namespace = "derivation_fetch_no_wildcard"
+    val tableUtils = TableUtils(spark)
+    tableUtils.createDatabase(namespace)
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+
+    // Create test data table
+    val eventData = List(
+      Column("user", StringType, 50),
+      Column("value", LongType, 1000)
+    )
+    val eventTable = s"$namespace.events"
+    DataFrameGen.events(spark, eventData, 100, partitions = 20).save(eventTable)
+
+    // Create GroupBy with derivations WITHOUT wildcard
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.events(
+          table = eventTable,
+          query = Builders.Query(
+            selects = Builders.Selects("value"),
+            startPartition = "2021-01-01"
+          )
+        )
+      ),
+      keyColumns = Seq("user"),
+      aggregations = Seq(
+        Builders.Aggregation(operation = Operation.SUM, inputColumn = "value"),
+        Builders.Aggregation(operation = Operation.COUNT, inputColumn = "value")
+      ),
+      derivations = Seq(
+        // NO WILDCARD! Only derived columns should be present in fetch response
+        Builders.Derivation(name = "total_value", expression = "value_sum"),
+        Builders.Derivation(name = "event_count", expression = "value_count")
+      ),
+      accuracy = Accuracy.TEMPORAL,
+      metaData = Builders.MetaData(name = "unit_test/fetcher_no_wildcard_gb", namespace = namespace, team = "chronon")
+    )
+
+    // Create Join configuration
+    val leftTable = s"$namespace.left_queries"
+    val leftData = List(Column("user", StringType, 50))
+    DataFrameGen.events(spark, leftData, 50, partitions = 10).save(leftTable)
+
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(
+        table = leftTable,
+        query = Builders.Query(startPartition = "2021-01-01")
+      ),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupByConf)),
+      metaData = Builders.MetaData(name = "unit_test/fetcher_no_wildcard_join", namespace = namespace, team = "chronon")
+    )
+
+    val endDs = "2021-04-10"
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#no_wildcard")
+    val inMemoryKvStore = kvStoreFunc()
+    val mockApi = new MockApi(kvStoreFunc, namespace)
+
+    // Serve the GroupBy to online KV store
+    OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
+
+    // Store join metadata
+    val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
+    inMemoryKvStore.create(ChrononMetadataKey)
+    metadataStore.putJoinConf(joinConf)
+
+    // Fetch a request
+    @transient lazy val fetcher = mockApi.buildFetcher(debug = false)
+    val request = Request(joinConf.metaData.nameToFilePath, Map("user" -> "user_1".asInstanceOf[AnyRef]))
+    val response = fetcher.fetchJoin(Seq(request))
+    val result = Await.result(response, Duration(10, SECONDS)).head
+
+    val responseKeys = result.values.get.keySet
+
+    // Create expected schema: ONLY derived columns (no wildcard means no original aggregations in online)
+    val expectedSchema = Set(
+      "unit_test_fetcher_no_wildcard_gb_total_value",   // Derived column with prefix
+      "unit_test_fetcher_no_wildcard_gb_event_count"    // Derived column with prefix
+    )
+
+    // Verify schema matches exactly (Set comparison ensures exact match)
+    assertEquals(s"Fetcher response should contain ONLY derived columns (no wildcard). " +
+                 s"Expected: ${expectedSchema.mkString(", ")}, " +
+                 s"Actual: ${responseKeys.mkString(", ")}",
+                 expectedSchema,
+                 responseKeys)
+
+    logger.info(s"✅ Fetcher correctly returns ONLY derived columns (no wildcard): ${responseKeys.mkString(", ")}")
   }
 
   def testTemporalFetchJoinGenerated(): Unit = {
@@ -728,7 +835,7 @@ class FetcherTest extends TestCase {
     val joinConf = generateMutationData(namespace, Some(spark))
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testTemporalFetchGroupByNonExistKey")
     val inMemoryKvStore = kvStoreFunc()
     val mockApi = new MockApi(kvStoreFunc, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher(debug = false)
@@ -783,16 +890,40 @@ class FetcherTest extends TestCase {
     val groupByConf = joinConf.joinParts.toScala.head.groupBy
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
-    OnlineUtils.serve(tableUtils, kvStoreFunc(), kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testGroupByServingInfoTtlCacheRefresh")
+    val inMemoryKvStore = kvStoreFunc()
+    OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
 
-    val spyKvStore = spy(kvStoreFunc())
-    val mockApi = new MockApi(() => spyKvStore, namespace)
+    // Create spy for intercepting calls
+    val spyKvStore = spy(inMemoryKvStore)
+
+    // Wrap spy in a serializable wrapper
+    @transient var spyRef = spyKvStore
+    val kvStoreWrapper = new KVStore with Serializable {
+      override def multiGet(requests: collection.Seq[KVStore.GetRequest]): Future[collection.Seq[KVStore.GetResponse]] =
+        spyRef.multiGet(requests)
+      override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] =
+        spyRef.multiPut(putRequests)
+      override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit =
+        spyRef.bulkPut(sourceOfflineTable, destinationOnlineDataSet, partition)
+      override def create(dataset: String): Unit =
+        spyRef.create(dataset)
+    }
+
+    val mockApi = new MockApi(() => kvStoreWrapper, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher()
 
     /* 1st request: kv store failure */
-    when(spyKvStore.getString(anyString(), anyString(), any()))
-      .thenReturn(Failure(new Exception("kvstore error")))
+    when(spyKvStore.multiGet(any()))
+      .thenAnswer((invocation: org.mockito.invocation.InvocationOnMock) => {
+        import scala.concurrent.Future
+        val requests = invocation.getArgument[Seq[KVStore.GetRequest]](0)
+        Future.successful(
+          requests.map { req =>
+            KVStore.GetResponse(req, Failure(new Exception("kvstore error")))
+          }
+        )
+      })
     val request = Seq(Request(groupByConf.metaData.name, Map("listing_id" -> 1L.asInstanceOf[AnyRef])))
     def fetch(): Response = Await.result(fetcher.fetchGroupBys(request), Duration(10, SECONDS)).head
     val response1 = fetch()
@@ -818,21 +949,47 @@ class FetcherTest extends TestCase {
     val joinConf = generateMutationData(namespace, Some(spark))
     val endDs = "2021-04-10"
     val tableUtils = TableUtils(spark)
-    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest")
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testJoinConfTtlCacheRefresh")
     val inMemoryKvStore = kvStoreFunc()
+
+    // Load data with the real store
     joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, jp.groupBy, dropDsOnWrite = true))
     val metadataStore = new MetadataStore(inMemoryKvStore, timeoutMillis = 10000)
     inMemoryKvStore.create(ChrononMetadataKey)
     metadataStore.putJoinConf(joinConf)
 
+    // Create spy for intercepting calls
     val spyKvStore = spy(inMemoryKvStore)
-    val mockApi = new MockApi(() => spyKvStore, namespace)
+
+    // Wrap spy in a serializable wrapper
+    @transient var spyRef = spyKvStore
+    val kvStoreWrapper = new KVStore with Serializable {
+      override def multiGet(requests: collection.Seq[KVStore.GetRequest]): Future[collection.Seq[KVStore.GetResponse]] =
+        spyRef.multiGet(requests)
+      override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] =
+        spyRef.multiPut(putRequests)
+      override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit =
+        spyRef.bulkPut(sourceOfflineTable, destinationOnlineDataSet, partition)
+      override def create(dataset: String): Unit =
+        spyRef.create(dataset)
+    }
+
+    val mockApi = new MockApi(() => kvStoreWrapper, namespace)
     @transient lazy val fetcher = mockApi.buildFetcher()
 
     /* 1st request: kv store failure. */
-    when(spyKvStore.getString(anyString(), anyString(), any()))
-      .thenReturn(Failure(new Exception("kvstore error")))
+    when(spyKvStore.multiGet(any()))
+      .thenAnswer((invocation: org.mockito.invocation.InvocationOnMock) => {
+        import scala.concurrent.Future
+        val requests = invocation.getArgument[Seq[KVStore.GetRequest]](0)
+        Future.successful(
+          requests.map { req =>
+            KVStore.GetResponse(req, Failure(new Exception("kvstore error")))
+          }
+        )
+      })
+
     val request = Seq(Request(joinConf.metaData.name, Map("listing_id" -> 1L.asInstanceOf[AnyRef])))
     def fetch(): Try[Response] = Try(Await.result(fetcher.fetchJoin(request), Duration(10, SECONDS)).head)
     val response1 = fetch()

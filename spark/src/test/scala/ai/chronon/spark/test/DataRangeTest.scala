@@ -19,8 +19,9 @@ package ai.chronon.spark.test
 import ai.chronon.aggregator.test.Column
 import ai.chronon.api
 import ai.chronon.api.{Builders, Constants, QueryUtils, Source}
-import ai.chronon.spark.{PartitionRange, SparkSessionBuilder, TableUtils}
+import ai.chronon.spark.{PartitionRange, SparkSessionBuilder}
 import ai.chronon.spark.Extensions._
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -54,7 +55,7 @@ class DataRangeTest {
     val (scanQuery, _) = partitionRange.scanQueryStringAndDf(
       source.getEvents.query,
       testTable,
-      fillIfAbsent=Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull).toMap
+      fillIfAbsent = Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull).toMap
     )
 
     val expected: String =
@@ -97,7 +98,7 @@ class DataRangeTest {
       source.getEvents.query,
       testTable,
       fillIfAbsent = Seq(Constants.TimeColumn -> Option(source.getEvents.query).map(_.timeColumn).orNull,
-        customPartitionCol -> null).toMap,
+                         customPartitionCol -> null).toMap,
       partitionColOpt = Some(customPartitionCol)
     )
 
@@ -126,7 +127,7 @@ class DataRangeTest {
 
     val clauses = range.whereClauses("ds")
 
-    assertEquals(Seq("ds >= '2023-01-01'",  "ds <= '2023-01-02'"), clauses)
+    assertEquals(Seq("ds >= '2023-01-01'", "ds <= '2023-01-02'"), clauses)
   }
 
   @Test

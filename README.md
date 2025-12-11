@@ -239,7 +239,7 @@ And then:
 spark-sql> SELECT user_id, quickstart_returns_v1_refund_amt_sum_30d, quickstart_purchases_v1_purchase_price_sum_14d, quickstart_users_v1_email_verified from default.quickstart_training_set_v1 limit 100;
 ```
 
-Note that this only selects a few columns. You can also run a `select * from default.quickstart_training_set_v1 limit 100` to see all columns, however, note that the table is quite wide and the results might not be very readable on your screen.
+Note that this only selects a few columns. You can also run a `select * from default.quickstart_training_set_v1 limit 100;` to see all columns, however, note that the table is quite wide and the results might not be very readable on your screen.
 
 To exit the sql shell you can run:
 
