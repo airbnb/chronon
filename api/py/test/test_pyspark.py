@@ -23,8 +23,6 @@ Requirements:
     - PySpark with py4j
 """
 
-import os
-import tempfile
 from pathlib import Path
 
 import pytest
@@ -65,8 +63,13 @@ def find_jar(target_dir: Path, artifact_name: str) -> Path:
     return candidates[0]
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def spark() -> SparkSession:
+    """Create a SparkSession with Chronon JARs on the classpath.
+
+    This fixture is module-scoped to ensure the SparkSession is created once
+    with the correct classpath before any tests run.
+    """
     chronon_root = Path(__file__).parents[3]
 
     # Define JAR locations
@@ -87,30 +90,37 @@ def spark() -> SparkSession:
             )
         jars.append(find_jar(target_dir, artifact_name))
 
-    # Create symlinks with unique names for Spark classpath
-    temp_jars_dir = tempfile.TemporaryDirectory()
-    for n, jar in enumerate(jars, start=1):
-        jar_symlink = os.path.join(temp_jars_dir.name, f"{n}.jar")
-        os.symlink(jar, jar_symlink)
+    # Build explicit classpath string (colon-separated JAR paths)
+    classpath = ":".join(str(jar) for jar in jars)
+
+    # Stop any existing SparkSession to ensure our classpath settings take effect
+    # The extraClassPath must be set before the JVM starts
+    existing = SparkSession.getActiveSession()
+    if existing is not None:
+        existing.stop()
+        SparkSession._instantiatedSession = None  # type: ignore[attr-defined]
 
     spark_conf = (
-            SparkConf()
-            .set("spark.ui.enabled", "false")
-            .set("spark.executor.extraClassPath", temp_jars_dir.name + "/*")
-            .set("spark.driver.extraClassPath", temp_jars_dir.name + "/*")
-            .set("spark.sql.shuffle.partitions", "10")
-            .set("spark.default.parallelism", "10")
-            .set("spark.driver.host", "127.0.0.1")
-            .setMaster("local[2]")
-            .setAppName("chronon-pyspark-tests")
-        )
-
-    spark = (
-        SparkSession.builder.config(conf=spark_conf)
-        .master("local[*]")
-        .appName("Unit-tests")
-        .getOrCreate()
+        SparkConf()
+        .set("spark.ui.enabled", "false")
+        .set("spark.executor.extraClassPath", classpath)
+        .set("spark.driver.extraClassPath", classpath)
+        .set("spark.sql.shuffle.partitions", "10")
+        .set("spark.default.parallelism", "10")
+        .set("spark.driver.host", "127.0.0.1")
+        .setMaster("local[2]")
+        .setAppName("chronon-pyspark-tests")
     )
+
+    spark = SparkSession.builder.config(conf=spark_conf).getOrCreate()
+
+    # Verify the JARs are loaded by checking if PySparkUtils class exists
+    try:
+        spark._jvm.ai.chronon.spark.PySparkUtils
+    except Exception as e:
+        raise Exception(
+            f"Chronon JARs not loaded correctly. Classpath: {classpath}. Error: {e}"
+        )
 
     return spark
 
