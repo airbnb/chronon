@@ -112,9 +112,15 @@ This interface defines operations that vary by platform (Databricks, Jupyter, et
 
 Concrete implementations for specific notebook environments:
 
+**Databricks:**
 - **DatabricksPlatform**: Implements platform-specific operations for Databricks
 - **DatabricksGroupBy**: Executes GroupBy objects in Databricks
 - **DatabricksJoin**: Executes Join objects in Databricks
+
+**Jupyter (JupyterLab, JupyterHub, classic notebooks):**
+- **JupyterPlatform**: Implements platform-specific operations for Jupyter
+- **JupyterGroupBy**: Executes GroupBy objects in Jupyter
+- **JupyterJoin**: Executes Join objects in Jupyter
 
 ```
 ┌─────────────────────────┐
@@ -151,6 +157,14 @@ Concrete implementations for specific notebook environments:
 │ + get_platform()  │    │ + get_platform()  │
 └───────────────────┘    └───────────────────┘
 
+┌────────▼──────────┐    ┌────────▼──────────┐
+│   JupyterGroupBy  │    │    JupyterJoin    │
+├───────────────────┤    ├───────────────────┤
+│                   │    │                   │
+├───────────────────┤    ├───────────────────┤
+│ + get_platform()  │    │ + get_platform()  │
+└───────────────────┘    └───────────────────┘
+
 ┌─────────────────────────────┐
 │   PlatformInterface         │
 │         (ABC)               │
@@ -165,18 +179,19 @@ Concrete implementations for specific notebook environments:
 │ + drop_table_if_exists()    │
 └───────────┬─────────────────┘
             │
-            │
-┌───────────▼────────────────┐
-│  DatabricksPlatform        │
-├────────────────────────────┤
-│ - dbutils: DBUtils         │
-├────────────────────────────┤
-│ + register_udfs()          │
-│ + get_executable_join_cls()│
-│ + start_log_capture()      │
-│ + end_log_capture()        │
-│ + get_databricks_user()    │
-└────────────────────────────┘
+    ┌───────┴───────┐
+    │               │
+┌───▼───────────────────┐  ┌───▼───────────────────┐
+│  DatabricksPlatform   │  │   JupyterPlatform     │
+├───────────────────────┤  ├───────────────────────┤
+│ - dbutils: DBUtils    │  │ - log_file: str       │
+├───────────────────────┤  ├───────────────────────┤
+│ + register_udfs()     │  │ + register_udfs()     │
+│ + get_executable_..() │  │ + get_executable_..() │
+│ + start_log_capture() │  │ + start_log_capture() │
+│ + end_log_capture()   │  │ + end_log_capture()   │
+│ + get_databricks_user │  │ + get_jupyter_user()  │
+└───────────────────────┘  └───────────────────────┘
 ```
 
 ## Flow of Execution
@@ -335,6 +350,8 @@ For optimal debugging, configure your Spark cluster to write Chronon JVM logs to
 
 ### Example Usage
 
+#### Databricks Example
+
 Here's a minimal example of using the Chronon Python interface in a Databricks notebook (assumes JARs are already configured):
 
 ```python
@@ -352,6 +369,36 @@ executable = DatabricksGroupBy(my_group_by, spark)
 
 # Run the executable
 result_df = executable.run(start_date='20250101', end_date='20250107')
+```
+
+#### Jupyter Example
+
+Here's a minimal example of using the Chronon Python interface in a Jupyter notebook:
+
+```python
+# Import the required modules
+from pyspark.sql import SparkSession
+from ai.chronon.pyspark.jupyter import JupyterGroupBy, JupyterJoin
+from ai.chronon.api.ttypes import GroupBy, Join
+from ai.chronon.group_by import Aggregation, Operation, Window, TimeUnit
+
+# Define your GroupBy or Join object
+my_group_by = GroupBy(...)
+
+# Create an executable (uses username prefix by default)
+executable = JupyterGroupBy(my_group_by, spark)
+
+# Run the executable
+result_df = executable.run(start_date='20250101', end_date='20250107')
+
+# You can also customize the name prefix and output namespace
+executable_custom = JupyterGroupBy(
+    my_group_by,
+    spark,
+    name_prefix="my_project",
+    output_namespace="my_database",
+    use_username_prefix=False
+)
 ```
 
 ## Current Limitations
