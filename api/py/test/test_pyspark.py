@@ -248,6 +248,7 @@ def test_group_by(
     )
 
 
+@pytest.mark.skip(reason="Requires renderUnpartitionedDataSourceQueryWithArrayList which is not yet in OSS")
 def test_source(
     spark: SparkSession,
     sample_source: Source,
