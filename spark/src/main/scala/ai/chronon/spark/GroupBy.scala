@@ -799,6 +799,11 @@ object GroupBy {
                      filterForSkew: Option[String] = None,
                      shouldFinalize: Boolean = true): GroupBy = {
     val mutationFn: () => DataFrame = if (mutationDataFrame == null) null else () => mutationDataFrame
-    new GroupBy(aggregations.asScala.toSeq, keyColumns.asScala.toSeq, inputDataFrame, mutationFn, filterForSkew, shouldFinalize)
+    new GroupBy(aggregations.asScala.toSeq,
+                keyColumns.asScala.toSeq,
+                inputDataFrame,
+                mutationFn,
+                filterForSkew,
+                shouldFinalize)
   }
 }
