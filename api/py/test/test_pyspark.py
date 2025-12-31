@@ -24,7 +24,6 @@ Requirements:
 """
 
 import os
-import re
 import tempfile
 from pathlib import Path
 
@@ -40,65 +39,59 @@ from ai.chronon.query import Query, select
 from ai.chronon.repo.test_helpers import run_group_by_with_inputs, create_mock_source
 
 
+def find_jar(target_dir: Path, artifact_name: str) -> Path:
+    """Find JAR file by artifact name, handling version variations.
+
+    JARs can be versioned as:
+    - artifact_2.12-0.0.110.jar (release)
+    - artifact_2.12-0.0.110-SNAPSHOT.jar (snapshot)
+    - artifact_2.12-branch-name-0.0.110-SNAPSHOT.jar (branch build)
+    """
+    # Find all JARs matching the artifact (exclude sources/javadoc)
+    pattern = f"{artifact_name}_2.12-*.jar"
+    candidates = [
+        j for j in target_dir.glob(pattern)
+        if not j.name.endswith(("-sources.jar", "-javadoc.jar"))
+    ]
+
+    if not candidates:
+        raise Exception(
+            f"No JAR found for {artifact_name} in {target_dir}. "
+            f"Pattern: {pattern}. "
+            "Run `sbt '++ 2.12.12 publishLocal'` to build them."
+        )
+
+    # Return the first match (there should typically be only one)
+    return candidates[0]
+
+
 @pytest.fixture
 def spark() -> SparkSession:
     chronon_root = Path(__file__).parents[3]
 
-    chronon_version = None
-
-    with open(chronon_root / "version.sbt", 'r') as file:
-        data = file.read().replace(' ', '')
-        version_match = re.search(r'version:="(.*?)"', data)
-
-        if version_match:
-            chronon_version = version_match.group(1)
-        else:
-            raise Exception(
-                "Unable to find version in {}/version.sbt".format(chronon_root)
-            )
-
-    # Check if JARs exist
-    api_dir = chronon_root / "api" / "target" / "scala-2.12"
-    if not api_dir.exists():
-        raise Exception(
-            f"Chronon JARs not built: {api_dir} does not exist. "
-            "Run `sbt '++ 2.12.12 publishLocal'` to build them."
-        )
-
-    # In CI the files contain "-SNAPSHOT" after the version number
-    api_jar = api_dir / f"api_2.12-{chronon_version}.jar"
-    snapshot_jar = api_dir / f"api_2.12-{chronon_version}-SNAPSHOT.jar"
-    if not api_jar.exists():
-        if snapshot_jar.exists():
-            chronon_version += "-SNAPSHOT"
-        else:
-            raise Exception(
-                f"Chronon JARs not found in {api_dir}. "
-                f"Found: {list(api_dir.glob('*.jar'))}. "
-                "Run `sbt '++ 2.12.12 publishLocal'` to build them."
-            )
-
-    temp_jars_dir = tempfile.TemporaryDirectory()
-    jars = [
-        "{}/api/target/scala-2.12/api_2.12-{}.jar".format(chronon_root, chronon_version),
-        "{}/spark/target/scala-2.12/spark_uber_2.12-{}.jar".format(chronon_root, chronon_version),
-        "{}/aggregator/target/scala-2.12/aggregator_2.12-{}.jar".format(chronon_root, chronon_version),
-        "{}/online/target/scala-2.12/online_2.12-{}.jar".format(chronon_root, chronon_version),
+    # Define JAR locations
+    jar_configs = [
+        (chronon_root / "api" / "target" / "scala-2.12", "api"),
+        (chronon_root / "spark" / "target" / "scala-2.12", "spark_uber"),
+        (chronon_root / "aggregator" / "target" / "scala-2.12", "aggregator"),
+        (chronon_root / "online" / "target" / "scala-2.12", "online"),
     ]
 
-    # We run a counter here to ensure that the jars have unique symlink names.
-    n = 1
-    for jar in jars:
-        split_name = os.path.splitext(os.path.basename(jar))
-        if not os.path.isfile(jar):
+    # Find all required JARs
+    jars = []
+    for target_dir, artifact_name in jar_configs:
+        if not target_dir.exists():
             raise Exception(
-                f"Chronon JAR not found: {jar}. "
+                f"Chronon JARs not built: {target_dir} does not exist. "
                 "Run `sbt '++ 2.12.12 publishLocal'` to build them."
             )
+        jars.append(find_jar(target_dir, artifact_name))
 
-        jar_symlink = os.path.join(temp_jars_dir.name, f"{n}{split_name[1]}")
-        os.symlink(os.path.abspath(jar), jar_symlink)
-        n += 1
+    # Create symlinks with unique names for Spark classpath
+    temp_jars_dir = tempfile.TemporaryDirectory()
+    for n, jar in enumerate(jars, start=1):
+        jar_symlink = os.path.join(temp_jars_dir.name, f"{n}.jar")
+        os.symlink(jar, jar_symlink)
 
     spark_conf = (
             SparkConf()
