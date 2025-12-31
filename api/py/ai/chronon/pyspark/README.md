@@ -309,4 +309,14 @@ executable = DatabricksGroupBy(my_group_by, spark)
 result_df = executable.run(start_date='20250101', end_date='20250107')
 ```
 
+## Current Limitations
+
+### Validation
+
+The `validate()` method is not yet implemented in the open-source version. This method exists in some internal implementations to validate GroupBy and Join configurations before execution. Future contributions may add this functionality.
+
+### StagingQuery
+
+While `StagingQuery` is included in the type system for forward compatibility, a `StagingQueryExecutable` class is not yet implemented. Contributors are welcome to add this functionality.
+
 ---

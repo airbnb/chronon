@@ -18,7 +18,7 @@ from ai.chronon.utils import (
 )
 
 # Define type variable for our executables
-T = TypeVar('T', GroupBy, Join)
+T = TypeVar('T', GroupBy, Join, StagingQuery)
 
 
 class PySparkExecutable(Generic[T], ABC):
