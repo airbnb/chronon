@@ -33,15 +33,16 @@ from pathlib import Path
 # Skip all tests if pyspark is not available
 pyspark = pytest.importorskip("pyspark")
 
-from pyspark.conf import SparkConf
-from pyspark.sql import SparkSession
-from pyspark.sql.dataframe import DataFrame
-from pyspark.sql.types import LongType, StringType, StructField, StructType
+from pyspark.conf import SparkConf  # noqa: E402
+from pyspark.sql import SparkSession  # noqa: E402
+from pyspark.sql.dataframe import DataFrame  # noqa: E402
+from pyspark.sql.types import LongType, StringType, StructField, StructType  # noqa: E402
 
-from ai.chronon.repo.test_helpers import run_group_by_with_inputs, create_mock_source
-from ai.chronon.group_by import GroupBy, Aggregation, Operation, Window, TimeUnit, Accuracy
-from ai.chronon.api.ttypes import Source, EventSource
-from ai.chronon.query import Query, select
+from ai.chronon.repo.test_helpers import run_group_by_with_inputs, create_mock_source  # noqa: E402
+from ai.chronon.group_by import GroupBy, Aggregation, Operation, Window, TimeUnit, Accuracy  # noqa: E402
+from ai.chronon.api.ttypes import Source, EventSource  # noqa: E402
+from ai.chronon.query import Query, select  # noqa: E402
+
 
 @pytest.fixture
 def spark() -> SparkSession:
@@ -56,14 +57,22 @@ def spark() -> SparkSession:
         if version_match:
             chronon_version = version_match.group(1)
         else:
-            raise Exception("Unable to find version in {}/version.sbt".format(chronon_root))
+            raise Exception(
+                "Unable to find version in {}/version.sbt".format(chronon_root)
+            )
 
-    # when run in CI the files contain "-SNAPSHOT" after the version number, check for it
-    if not Path(f"{chronon_root}/api/target/scala-2.12/api_2.12-{chronon_version}.jar").exists():
-        if Path(f"{chronon_root}/api/target/scala-2.12/api_2.12-{chronon_version}-SNAPSHOT.jar").exists():
+    # when run in CI the files contain "-SNAPSHOT" after the version number
+    api_jar = f"{chronon_root}/api/target/scala-2.12/api_2.12-{chronon_version}.jar"
+    snapshot_jar = f"{chronon_root}/api/target/scala-2.12/api_2.12-{chronon_version}-SNAPSHOT.jar"
+    if not Path(api_jar).exists():
+        if Path(snapshot_jar).exists():
             chronon_version += "-SNAPSHOT"
         else:
-            print(f"Did not find jar file; directory contents: {os.listdir(f'{chronon_root}/api/target/scala-2.12')}", file=sys.stderr)
+            api_dir = f'{chronon_root}/api/target/scala-2.12'
+            print(
+                f"Did not find jar file; directory contents: {os.listdir(api_dir)}",
+                file=sys.stderr
+            )
 
     temp_jars_dir = tempfile.TemporaryDirectory()
     jars = [
@@ -78,7 +87,10 @@ def spark() -> SparkSession:
     for jar in jars:
         split_name = os.path.splitext(os.path.basename(jar))
         if not os.path.isfile(jar):
-            raise Exception("Unable to locate jar: {}.\nTry running `sbt \"++ 2.12.12 publishLocal\" first.".format(jar))
+            raise Exception(
+                "Unable to locate jar: {}.\n"
+                "Try running `sbt \"++ 2.12.12 publishLocal\" first.".format(jar)
+            )
 
         jar_symlink = os.path.join(temp_jars_dir.name, f"{n}{split_name[1]}")
         os.symlink(os.path.abspath(jar), jar_symlink)
@@ -105,6 +117,7 @@ def spark() -> SparkSession:
 
     return spark
 
+
 @pytest.fixture
 def input_df(spark: SparkSession) -> DataFrame:
     data: list = [
@@ -125,6 +138,7 @@ def input_df(spark: SparkSession) -> DataFrame:
     )
 
     return spark.createDataFrame(data=data, schema=schema)
+
 
 @pytest.fixture
 def query_df(spark: SparkSession) -> DataFrame:
@@ -165,6 +179,7 @@ def sample_raw_underlying_table(spark: SparkSession) -> DataFrame:
 
     return spark.createDataFrame(data=data, schema=schema)
 
+
 @pytest.fixture
 def sample_source() -> Source:
     return Source(
@@ -172,7 +187,10 @@ def sample_source() -> Source:
             table="events.payments",
             query=Query(
                 selects=select(
-                    merchant="merchant", action_type="type", currency="currency", charge="charge"
+                    merchant="merchant",
+                    action_type="type",
+                    currency="currency",
+                    charge="charge"
                 ),
                 wheres=["type='payment'"],
                 start_partition="20220101",
@@ -180,7 +198,6 @@ def sample_source() -> Source:
             ),
         )
     )
-
 
 
 @pytest.fixture
@@ -208,8 +225,13 @@ def sample_group_by(sample_source: Source) -> GroupBy:
         name="sample_group_by",
     )
 
-def test_group_by(spark: SparkSession, input_df: DataFrame, query_df: DataFrame, sample_group_by: GroupBy):
 
+def test_group_by(
+    spark: SparkSession,
+    input_df: DataFrame,
+    query_df: DataFrame,
+    sample_group_by: GroupBy
+):
     result_df = run_group_by_with_inputs(sample_group_by, input_df, query_df, spark)
     result_df.show(100, False)
 
@@ -218,7 +240,12 @@ def test_group_by(spark: SparkSession, input_df: DataFrame, query_df: DataFrame,
         and result_df.where("merchant = 'merchant2'").collect()[0]["currency_last_1d"] == "GBP"
     )
 
-def test_source(spark: SparkSession, sample_source: Source, sample_raw_underlying_table: DataFrame):
+
+def test_source(
+    spark: SparkSession,
+    sample_source: Source,
+    sample_raw_underlying_table: DataFrame
+):
     result_df = create_mock_source(
             source=sample_source,
             accuracy=Accuracy.TEMPORAL,
@@ -231,4 +258,3 @@ def test_source(spark: SparkSession, sample_source: Source, sample_raw_underlyin
         len(result_df.where("type = 'payment'").collect()) == 2
         and len(result_df.where("type != 'payment'").collect()) == 0
     )
-

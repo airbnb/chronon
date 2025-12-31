@@ -23,7 +23,7 @@ if pyspark is not available.
 """
 
 from __future__ import annotations
-from typing import List, TYPE_CHECKING
+from typing import List
 
 from ai.chronon.group_by import Accuracy, GroupBy
 from ai.chronon.api.ttypes import Source
