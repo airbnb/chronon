@@ -6,7 +6,8 @@
 3. [Core Components](#core-components)
 4. [Flow of Execution](#flow-of-execution)
 5. [Extending the Framework](#extending-the-framework)
-6. [Setup and Dependencies](#setup-and-dependencies)
+6. [Environment Setup](#environment-setup)
+7. [Current Limitations](#current-limitations)
 
 ## Introduction
 
@@ -277,20 +278,64 @@ When implementing a platform interface, pay special attention to these methods:
 
 - **start_log_capture()** and **end_log_capture()**: Implement platform-specific log capturing
 
-## Setup and Dependencies
+## Environment Setup
 
-### Requirements
+Whether you are running on Databricks, Jupyter, or any other PySpark environment, you need to include the Chronon JARs and their dependencies in your cluster's classpath. This is essential because the Python interface communicates with the JVM via Py4J to execute Chronon's Scala-based computation engine.
 
-1. **Spark Dependencies**: The Chronon Java/Scala JARs must be included in your Spark cluster
+### Required JARs
 
-2. **Python Dependencies**:
-    - pyspark (tested on both 3.1 and 3.3)
+The following Chronon modules must be available on the JVM classpath:
 
-3. **Log File**: You will need to make sure that your Chronon JVM logs are writting to single file. This is generally platform specific.
+| Module | Description |
+|--------|-------------|
+| `chronon-api` | Thrift API definitions and data structures |
+| `chronon-aggregator` | Core aggregation logic |
+| `chronon-online` | Online serving utilities |
+| `chronon-spark` | Spark integration and execution engine |
 
-### Example Setup
+These JARs are published to Maven Central. You can find the latest versions at [Maven Central](https://search.maven.org/search?q=g:ai.chronon).
 
-Here's a minimal example of setting up and using the Chronon Python interface in a Databricks notebook. It assumes that you have already included the necessary jars in your cluster dependencies.
+### Platform-Specific Setup
+
+The exact method for adding JARs to your Spark cluster varies by platform:
+
+- **Databricks**: Add JARs via cluster libraries (UI or cluster configuration)
+- **Jupyter/Local Spark**: Use `spark.jars` configuration or `--jars` flag when starting Spark
+- **EMR/Dataproc**: Include JARs in bootstrap actions or cluster configuration
+- **Kubernetes**: Include JARs in your Spark driver/executor Docker images
+
+Consult your platform's documentation for specific instructions on adding external JARs to the Spark classpath.
+
+### Verifying Your Setup
+
+Once the JARs are correctly configured, you can verify the setup by accessing the Chronon Scala code from Python:
+
+```python
+# This should work without errors if JARs are properly configured
+spark_session._jsparkSession
+jvm = spark_session._jvm
+py_spark_utils = jvm.ai.chronon.spark.PySparkUtils
+
+# Test parsing a simple GroupBy JSON (should not throw)
+# py_spark_utils.parseGroupBy('{"metaData": {"name": "test"}}')
+```
+
+If you see a `Py4JJavaError` mentioning `ClassNotFoundException`, the Chronon JARs are not on the classpath.
+
+### Python Dependencies
+
+In addition to the JARs, you need the following Python packages:
+
+- `pyspark` (tested on 3.1.x and 3.3.x)
+- `thrift` (for Thrift object serialization)
+
+### Log Configuration
+
+For optimal debugging, configure your Spark cluster to write Chronon JVM logs to a single file. This allows the Python interface to capture and display relevant logs during execution. The specific log configuration is platform-dependent.
+
+### Example Usage
+
+Here's a minimal example of using the Chronon Python interface in a Databricks notebook (assumes JARs are already configured):
 
 ```python
 # Import the required modules
