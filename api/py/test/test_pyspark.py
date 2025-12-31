@@ -23,6 +23,16 @@ Requirements:
     - PySpark with py4j
 """
 
+import pytest
+import tempfile
+import os
+import re
+import sys
+from pathlib import Path
+
+# Skip all tests if pyspark is not available
+pyspark = pytest.importorskip("pyspark")
+
 from pyspark.conf import SparkConf
 from pyspark.sql import SparkSession
 from pyspark.sql.dataframe import DataFrame
@@ -32,13 +42,6 @@ from ai.chronon.repo.test_helpers import run_group_by_with_inputs, create_mock_s
 from ai.chronon.group_by import GroupBy, Aggregation, Operation, Window, TimeUnit, Accuracy
 from ai.chronon.api.ttypes import Source, EventSource
 from ai.chronon.query import Query, select
-
-import pytest
-import tempfile
-import os
-import re
-import sys
-from pathlib import Path
 
 @pytest.fixture
 def spark() -> SparkSession:

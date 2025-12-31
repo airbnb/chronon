@@ -17,14 +17,19 @@ Test helpers for PySpark integration testing.
 
 Provides utility functions to bridge Python GroupBy/Source definitions
 to their Scala counterparts via Py4J for testing purposes.
+
+Note: This module requires pyspark to be installed. Import will fail
+if pyspark is not available.
 """
 
 from __future__ import annotations
-from typing import List
+from typing import List, TYPE_CHECKING
 
 from ai.chronon.group_by import Accuracy, GroupBy
 from ai.chronon.api.ttypes import Source
 from ai.chronon.repo.serializer import thrift_simple_json
+
+# These imports require pyspark to be installed
 from py4j.java_gateway import JavaClass, JavaGateway, JVMView
 from pyspark.sql import SparkSession
 from pyspark.sql.dataframe import DataFrame
@@ -44,15 +49,19 @@ def create_mock_group_by(gb: GroupBy, input_df: DataFrame, spark: SparkSession) 
     java_gateway: JavaGateway = spark._sc._gateway
     jvm: JVMView = java_gateway.jvm
 
-    # In order to create a Java ai.chronon.spark.GroupBy, we need Java representations of our python group-by's aggregations.
-    # To do this we transform a python ai.chronon.group_by GroupBy to a Java ai.chronon.api GroupBy
-    # we need to convert the py obj to a json thrift obj, which in return can be parsed to a Java ai.chronon.api GroupBy
+    # In order to create a Java ai.chronon.spark.GroupBy, we need Java representations
+    # of our python group-by's aggregations.
+    # To do this we transform a python ai.chronon.group_by GroupBy to a
+    # Java ai.chronon.api GroupBy
+    # we need to convert the py obj to a json thrift obj, which in return can be
+    # parsed to a Java ai.chronon.api GroupBy
     group_by_json: str = thrift_simple_json(gb)
     java_thrift_group_by: JavaClass = jvm.ai.chronon.spark.PySparkUtils.parseGroupBy(
         group_by_json
     )
 
-    # We do not support mutation dataframes and currently only support group bys that use event sources and temporal accuracy
+    # We do not support mutation dataframes and currently only support group bys
+    # that use event sources and temporal accuracy
     java_spark_group_by: JavaClass = jvm.ai.chronon.spark.GroupBy.usingArrayList(
         java_thrift_group_by.getAggregations(),
         java_thrift_group_by.getKeyColumns(),
@@ -80,7 +89,10 @@ def run_group_by_with_inputs(gb: GroupBy, input_df: DataFrame, query_df: DataFra
 
     Example usage:
 
-    gb = GroupBy(<a group by keyed by merchant that finds the last currency, count and sum of charges over a few different time windows>)
+    gb = GroupBy(
+        <a group by keyed by merchant that finds the last currency,
+        count and sum of charges over a few different time windows>
+    )
     input_df =
         +---------+-------+--------+--------+-------------+--------+
         | merchant|   type|currency|  charge|           ts|      ds|
@@ -127,14 +139,23 @@ def run_group_by_with_inputs(gb: GroupBy, input_df: DataFrame, query_df: DataFra
         )
 
 
-def create_mock_source(source: Source, accuracy: Accuracy, key_columns: List[str], mock_underlying_table_df: DataFrame, spark: SparkSession):
+def create_mock_source(
+    source: Source,
+    accuracy: Accuracy,
+    key_columns: List[str],
+    mock_underlying_table_df: DataFrame,
+    spark: SparkSession
+):
     """
-    Generates the query and applies it to a mock underlying table so that users can create tests to make sure sources are working as expected.
+    Generates the query and applies it to a mock underlying table so that users
+    can create tests to make sure sources are working as expected.
 
     :param source: The source that we will mock the query from
     :param accuracy: Accuracy.TEMPORAL or Accuracy.SNAPSHOT
     :param key_columns: The query dataframe that will represent our queries
-    :param mock_underlying_table_df: Dataframe that represents the underlying table that we will apply the query to. The schema should be equal to the schema of the source's events or entities snapshot table.
+    :param mock_underlying_table_df: Dataframe that represents the underlying table
+        that we will apply the query to. The schema should be equal to the schema
+        of the source's events or entities snapshot table.
     :param spark: The spark session that we can use to access the JVM
     """
 
@@ -158,7 +179,11 @@ def create_mock_source(source: Source, accuracy: Accuracy, key_columns: List[str
     cleansed_source_query = source_query.replace(
         uncleansed_base_table_name, cleansed_base_table_name
     )
-    print(f"Creating mock source with accuracy {accuracy} (0 for TEMPORAL, 1 for SNAPSHOT) and rendering source query:\n {cleansed_source_query}")
+    print(
+        f"Creating mock source with accuracy {accuracy} "
+        f"(0 for TEMPORAL, 1 for SNAPSHOT) and rendering source query:\n"
+        f" {cleansed_source_query}"
+    )
 
     result_df = spark.sql(cleansed_source_query)
 
