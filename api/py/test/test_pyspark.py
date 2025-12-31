@@ -23,25 +23,22 @@ Requirements:
     - PySpark with py4j
 """
 
-import pytest
-import tempfile
 import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
-# Skip all tests if pyspark is not available
-pyspark = pytest.importorskip("pyspark")
+import pytest
+from pyspark.conf import SparkConf
+from pyspark.sql import SparkSession
+from pyspark.sql.dataframe import DataFrame
+from pyspark.sql.types import LongType, StringType, StructField, StructType
 
-from pyspark.conf import SparkConf  # noqa: E402
-from pyspark.sql import SparkSession  # noqa: E402
-from pyspark.sql.dataframe import DataFrame  # noqa: E402
-from pyspark.sql.types import LongType, StringType, StructField, StructType  # noqa: E402
-
-from ai.chronon.repo.test_helpers import run_group_by_with_inputs, create_mock_source  # noqa: E402
-from ai.chronon.group_by import GroupBy, Aggregation, Operation, Window, TimeUnit, Accuracy  # noqa: E402
-from ai.chronon.api.ttypes import Source, EventSource  # noqa: E402
-from ai.chronon.query import Query, select  # noqa: E402
+from ai.chronon.api.ttypes import Source, EventSource
+from ai.chronon.group_by import GroupBy, Aggregation, Operation, Window, TimeUnit, Accuracy
+from ai.chronon.query import Query, select
+from ai.chronon.repo.test_helpers import run_group_by_with_inputs, create_mock_source
 
 
 @pytest.fixture
@@ -87,9 +84,9 @@ def spark() -> SparkSession:
     for jar in jars:
         split_name = os.path.splitext(os.path.basename(jar))
         if not os.path.isfile(jar):
-            raise Exception(
-                "Unable to locate jar: {}.\n"
-                "Try running `sbt \"++ 2.12.12 publishLocal\" first.".format(jar)
+            pytest.skip(
+                f"Chronon JARs not found: {jar}. "
+                "Run `sbt '++ 2.12.12 publishLocal'` to build them."
             )
 
         jar_symlink = os.path.join(temp_jars_dir.name, f"{n}{split_name[1]}")
