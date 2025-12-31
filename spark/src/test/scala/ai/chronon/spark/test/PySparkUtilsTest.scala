@@ -111,7 +111,7 @@ class PySparkUtilsTest {
   @Test
   def testGetFiveMinuteResolution(): Unit = {
     val resolution = PySparkUtils.getFiveMinuteResolution
-    // FiveMinuteResolution has hopSizes array ending with 5 minutes = 300000ms
+    // FiveMinuteResolution has hopSizes array ending with 5 minutes = 300000 millis
     assertTrue("getFiveMinuteResolution should return FiveMinuteResolution", resolution.hopSizes.contains(300000L))
   }
 }
