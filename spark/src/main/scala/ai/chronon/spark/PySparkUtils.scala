@@ -4,6 +4,7 @@ import ai.chronon.aggregator.windowing.{FiveMinuteResolution, Resolution}
 import ai.chronon.api
 import ai.chronon.api.Extensions.MetadataOps
 import ai.chronon.api.ThriftJsonCodec
+import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.DataFrame
 import org.slf4j.LoggerFactory
 
