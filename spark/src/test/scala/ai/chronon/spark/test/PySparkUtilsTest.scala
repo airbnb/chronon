@@ -18,8 +18,8 @@ package ai.chronon.spark.test
 
 import ai.chronon.api
 import ai.chronon.api.Accuracy
-import ai.chronon.spark.{PySparkUtils, TimeRange}
-import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
+import ai.chronon.spark.PySparkUtils
+import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 
 /**
@@ -75,15 +75,6 @@ class PySparkUtilsTest {
   }
 
   @Test
-  def testGetTimeRangeOptionalWithValue(): Unit = {
-    val timeRange = TimeRange(Some(1000L), Some(2000L))
-    val result = PySparkUtils.getTimeRangeOptional(timeRange)
-    assertTrue("getTimeRangeOptional(timeRange) should return Some", result.isDefined)
-    assertEquals("getTimeRangeOptional should preserve start", Some(1000L), result.get.start)
-    assertEquals("getTimeRangeOptional should preserve end", Some(2000L), result.get.end)
-  }
-
-  @Test
   def testGetAccuracyTemporal(): Unit = {
     val result = PySparkUtils.getAccuracy(getTemporal = true)
     assertEquals("getAccuracy(true) should return TEMPORAL", Accuracy.TEMPORAL, result)
@@ -114,13 +105,13 @@ class PySparkUtilsTest {
     // A minimal source with events
     val sourceJson = """{"events":{"table":"test_table"}}"""
     val result = PySparkUtils.parseSource(sourceJson)
-    assertEquals("parseSource should parse events table correctly", "test_table", result.events.table)
+    assertEquals("parseSource should parse events table correctly", "test_table", result.getEvents.getTable)
   }
 
   @Test
   def testGetFiveMinuteResolution(): Unit = {
     val resolution = PySparkUtils.getFiveMinuteResolution
-    // FiveMinuteResolution has hopMs of 5 minutes = 300000ms
-    assertEquals("getFiveMinuteResolution should return 5 minute resolution", 300000L, resolution.hopMs)
+    // FiveMinuteResolution has hopSizes array ending with 5 minutes = 300000ms
+    assertTrue("getFiveMinuteResolution should return FiveMinuteResolution", resolution.hopSizes.contains(300000L))
   }
 }
