@@ -25,7 +25,6 @@ Requirements:
 
 import os
 import re
-import sys
 import tempfile
 from pathlib import Path
 
@@ -58,17 +57,25 @@ def spark() -> SparkSession:
                 "Unable to find version in {}/version.sbt".format(chronon_root)
             )
 
-    # when run in CI the files contain "-SNAPSHOT" after the version number
-    api_jar = f"{chronon_root}/api/target/scala-2.12/api_2.12-{chronon_version}.jar"
-    snapshot_jar = f"{chronon_root}/api/target/scala-2.12/api_2.12-{chronon_version}-SNAPSHOT.jar"
-    if not Path(api_jar).exists():
-        if Path(snapshot_jar).exists():
+    # Check if JARs exist
+    api_dir = chronon_root / "api" / "target" / "scala-2.12"
+    if not api_dir.exists():
+        raise Exception(
+            f"Chronon JARs not built: {api_dir} does not exist. "
+            "Run `sbt '++ 2.12.12 publishLocal'` to build them."
+        )
+
+    # In CI the files contain "-SNAPSHOT" after the version number
+    api_jar = api_dir / f"api_2.12-{chronon_version}.jar"
+    snapshot_jar = api_dir / f"api_2.12-{chronon_version}-SNAPSHOT.jar"
+    if not api_jar.exists():
+        if snapshot_jar.exists():
             chronon_version += "-SNAPSHOT"
         else:
-            api_dir = f'{chronon_root}/api/target/scala-2.12'
-            print(
-                f"Did not find jar file; directory contents: {os.listdir(api_dir)}",
-                file=sys.stderr
+            raise Exception(
+                f"Chronon JARs not found in {api_dir}. "
+                f"Found: {list(api_dir.glob('*.jar'))}. "
+                "Run `sbt '++ 2.12.12 publishLocal'` to build them."
             )
 
     temp_jars_dir = tempfile.TemporaryDirectory()
@@ -84,8 +91,8 @@ def spark() -> SparkSession:
     for jar in jars:
         split_name = os.path.splitext(os.path.basename(jar))
         if not os.path.isfile(jar):
-            pytest.skip(
-                f"Chronon JARs not found: {jar}. "
+            raise Exception(
+                f"Chronon JAR not found: {jar}. "
                 "Run `sbt '++ 2.12.12 publishLocal'` to build them."
             )
 
