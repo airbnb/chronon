@@ -335,7 +335,6 @@ If you see a `Py4JJavaError` mentioning `ClassNotFoundException`, the Chronon JA
 In addition to the JARs, you need the following Python packages:
 
 - `pyspark` (tested on 3.1.x and 3.3.x)
-- `thrift` (for Thrift object serialization)
 
 ### Log Configuration
 
