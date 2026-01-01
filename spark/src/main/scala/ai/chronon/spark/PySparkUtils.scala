@@ -112,17 +112,17 @@ object PySparkUtils {
   /**
     * Helper function to allow a user to execute a Join.
     *
-    * @param joinConf   api.Join Chronon scala Join API object
-    * @param endDate    str this represents the last date we will perform the Join for
-    * @param stepDays   int this will determine how we chunk filling the missing partitions
-    * @param tableUtils TableUtils this will be used to perform ops against our data sources
+    * @param joinConf      api.Join Chronon scala Join API object
+    * @param endDate       str this represents the last date we will perform the Join for
+    * @param stepDays      int this will determine how we chunk filling the missing partitions
+    * @param skipFirstHole whether to skip the first hole in the partition range
+    * @param tableUtils    TableUtils this will be used to perform ops against our data sources
     * @return DataFrame
     */
   def runJoin(joinConf: api.Join,
               endDate: String,
               stepDays: Option[Int],
               skipFirstHole: Boolean,
-              sampleNumOfRows: Option[Int],
               tableUtils: TableUtils): DataFrame = {
     logger.info(s"Executing Join ${joinConf.metaData.name}")
     val join = new Join(

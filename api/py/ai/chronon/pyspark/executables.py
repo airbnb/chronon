@@ -192,12 +192,6 @@ class PySparkExecutable(Generic[T], ABC):
 
         self.platform.log_operation("Finished executing Join Sources")
 
-    def print_with_timestamp(self, message: str) -> None:
-        """Utility to print a message with timestamp."""
-        current_utc_time = datetime.utcnow()
-        time_str = current_utc_time.strftime('[%Y-%m-%d %H:%M:%S UTC]')
-        print(f'{time_str} {message}')
-
     def group_by_to_java(self, group_by: GroupBy) -> JavaObject:
         """
         Convert GroupBy object to Java representation.
@@ -307,12 +301,12 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
         Returns:
             DataFrame with the execution results
         """
-        start_date: str = start_date or self.default_start_date
-        end_date: str = end_date or self.default_end_date
+        effective_start_date = start_date or self.default_start_date
+        effective_end_date = end_date or self.default_end_date
 
         self.platform.log_operation(
             f"Executing GroupBy {self.obj.metaData.name} from "
-            f"{start_date} to {end_date} with step_days {step_days}"
+            f"{effective_start_date} to {effective_end_date} with step_days {step_days}"
         )
         self.platform.log_operation(
             f"Skip Execution of Underlying Join Sources: "
@@ -322,18 +316,18 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
         if not skip_execution_of_underlying_join:
             self._execute_underlying_join_sources(
                 group_bys=[self.obj],
-                start_date=start_date,
-                end_date=end_date,
+                start_date=effective_start_date,
+                end_date=effective_end_date,
                 step_days=step_days
             )
 
         # Prepare GroupBy for execution
         group_by_to_execute: GroupBy = copy.deepcopy(self.obj)
-        group_by_to_execute.backfillStartDate = start_date
+        group_by_to_execute.backfillStartDate = effective_start_date
 
         # Update sources with correct dates
         group_by_to_execute = self._update_source_dates_for_group_by(
-            group_by_to_execute, start_date, end_date
+            group_by_to_execute, effective_start_date, effective_end_date
         )
 
         # Get output table name
@@ -358,7 +352,7 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
             result_df_scala: JavaObject = (
                 self.jvm.ai.chronon.spark.PySparkUtils.runGroupBy(
                     java_group_by,
-                    end_date,
+                    effective_end_date,
                     self.jvm.ai.chronon.spark.PySparkUtils.getIntOptional(
                         str(step_days)),
                     self.platform.get_table_utils()
@@ -484,7 +478,6 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
         end_date: str | None = None,
         step_days: int = 30,
         skip_first_hole: bool = False,
-        sample_num_of_rows: int | None = None,
         skip_execution_of_underlying_join: bool = False
     ) -> DataFrame:
         """
@@ -495,7 +488,6 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
             end_date: End date for the execution (format: YYYYMMDD)
             step_days: Number of days to process in each step
             skip_first_hole: Whether to skip the first hole in the join
-            sample_num_of_rows: Number of rows to sample (None for all)
             skip_execution_of_underlying_join: Whether to skip execution of
                 underlying joins
 
@@ -510,7 +502,6 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
             f"{start_date} to {end_date} with step_days {step_days}"
         )
         self.platform.log_operation(f"Skip First Hole: {skip_first_hole}")
-        self.platform.log_operation(f"Sample Number of Rows: {sample_num_of_rows}")
         self.platform.log_operation(
             f"Skip Execution of Underlying Join: {skip_execution_of_underlying_join}"
         )
@@ -551,9 +542,6 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
                     str(step_days)
                 ),
                 skip_first_hole,
-                self.jvm.ai.chronon.spark.PySparkUtils.getIntOptional(
-                    None if not sample_num_of_rows else str(sample_num_of_rows)
-                ),
                 self.platform.get_table_utils()
             )
 
@@ -585,12 +573,12 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
             end_date: End date for analysis (format: YYYYMMDD)
             enable_hitter_analysis: Whether to enable hitter analysis
         """
-        start_date: str = start_date or self.default_start_date
-        end_date: str = end_date or self.default_end_date
+        effective_start_date = start_date or self.default_start_date
+        effective_end_date = end_date or self.default_end_date
 
         self.platform.log_operation(
             f"Analyzing Join {self.obj.metaData.name} from "
-            f"{start_date} to {end_date}"
+            f"{effective_start_date} to {effective_end_date}"
         )
         self.platform.log_operation(
             f"Enable Hitter Analysis: {enable_hitter_analysis}"
@@ -599,12 +587,12 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
         # Prepare Join for analysis
         join_to_analyze: Join = copy.deepcopy(self.obj)
         join_to_analyze.left = self._update_source_dates(
-            join_to_analyze.left, start_date, end_date
+            join_to_analyze.left, effective_start_date, effective_end_date
         )
 
         # Update join parts sources
         join_to_analyze.joinParts = self._update_source_dates_for_join_parts(
-            join_to_analyze.joinParts, start_date, end_date
+            join_to_analyze.joinParts, effective_start_date, effective_end_date
         )
 
         # Start log capture just before executing JVM calls
@@ -618,8 +606,8 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
             # Analyze Join
             self.jvm.ai.chronon.spark.PySparkUtils.analyzeJoin(
                 java_join,
-                start_date,
-                end_date,
+                effective_start_date,
+                effective_end_date,
                 enable_hitter_analysis,
                 self.platform.get_table_utils()
             )
@@ -867,7 +855,7 @@ class PlatformInterface(ABC):
         Returns:
             The updated object
         """
-        obj_type: type[GroupBy] | type[Join] = type(obj)
+        obj_type: type[GroupBy] | type[Join] | type[StagingQuery] = type(obj)
 
         # Handle object naming
         if not obj.metaData.name:
