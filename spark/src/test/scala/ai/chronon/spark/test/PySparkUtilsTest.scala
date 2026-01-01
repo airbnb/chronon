@@ -127,7 +127,8 @@ class PySparkUtilsTest {
 
   @Test
   def testParseStagingQueryWithCreateView(): Unit = {
-    val stagingQueryJson = """{"metaData":{"name":"test_view"},"query":"SELECT * FROM test","createView":true}"""
+    // Thrift JSON codec uses integers for booleans (1 = true, 0 = false)
+    val stagingQueryJson = """{"metaData":{"name":"test_view"},"query":"SELECT * FROM test","createView":1}"""
     val result = PySparkUtils.parseStagingQuery(stagingQueryJson)
     assertTrue("parseStagingQuery should parse createView correctly", result.createView)
   }
