@@ -34,7 +34,7 @@ from pyspark.sql.types import LongType, StringType, StructField, StructType
 from ai.chronon.api.ttypes import Source, EventSource
 from ai.chronon.group_by import GroupBy, Aggregation, Operation, Window, TimeUnit, Accuracy
 from ai.chronon.query import Query, select
-from ai.chronon.repo.test_helpers import run_group_by_with_inputs, create_mock_source
+from ai.chronon.repo.test_helpers import run_group_by_with_inputs
 
 
 def find_jar(target_dir: Path, artifact_name: str) -> Path:
@@ -166,28 +166,6 @@ def query_df(spark: SparkSession) -> DataFrame:
 
 
 @pytest.fixture
-def sample_raw_underlying_table(spark: SparkSession) -> DataFrame:
-    data: list = [
-        ("merchant1", "payment", "EUR", "charge-1", 1640995200, "20220101"),
-        ("merchant2", "not a payment", "GBP", "charge-2", 1640995300, "20220101"),
-        ("merchant1", "payment", "USD", "charge-3", 1640995400, "20220101"),
-    ]
-
-    schema = StructType(
-        [
-            StructField("merchant", StringType(), True),
-            StructField("type", StringType(), True),
-            StructField("currency", StringType(), True),
-            StructField("charge", StringType(), True),
-            StructField("created", LongType(), True),
-            StructField("ds", StringType(), True),
-        ]
-    )
-
-    return spark.createDataFrame(data=data, schema=schema)
-
-
-@pytest.fixture
 def sample_source() -> Source:
     return Source(
         events=EventSource(
@@ -245,24 +223,4 @@ def test_group_by(
     assert (
         result_df.where("merchant = 'merchant1'").collect()[0]["currency_last_1d"] == "USD"
         and result_df.where("merchant = 'merchant2'").collect()[0]["currency_last_1d"] == "GBP"
-    )
-
-
-@pytest.mark.skip(reason="Requires renderUnpartitionedDataSourceQueryWithArrayList which is not yet in OSS")
-def test_source(
-    spark: SparkSession,
-    sample_source: Source,
-    sample_raw_underlying_table: DataFrame
-):
-    result_df = create_mock_source(
-            source=sample_source,
-            accuracy=Accuracy.TEMPORAL,
-            key_columns=["merchant"],
-            mock_underlying_table_df=sample_raw_underlying_table,
-            spark=spark,
-        )
-
-    assert (
-        len(result_df.where("type = 'payment'").collect()) == 2
-        and len(result_df.where("type != 'payment'").collect()) == 0
     )

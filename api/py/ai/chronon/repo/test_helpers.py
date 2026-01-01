@@ -15,21 +15,15 @@
 """
 Test helpers for PySpark integration testing.
 
-Provides utility functions to bridge Python GroupBy/Source definitions
+Provides utility functions to bridge Python GroupBy definitions
 to their Scala counterparts via Py4J for testing purposes.
-
-Note: This module requires pyspark to be installed. Import will fail
-if pyspark is not available.
 """
 
 from __future__ import annotations
-from typing import List
 
 from ai.chronon.group_by import Accuracy, GroupBy
-from ai.chronon.api.ttypes import Source
 from ai.chronon.repo.serializer import thrift_simple_json
 
-# These imports require pyspark to be installed
 from py4j.java_gateway import JavaClass, JavaGateway, JVMView
 from pyspark.sql import SparkSession
 from pyspark.sql.dataframe import DataFrame
@@ -137,54 +131,3 @@ def run_group_by_with_inputs(gb: GroupBy, input_df: DataFrame, query_df: DataFra
         raise NotImplementedError(
             "Only group bys with accuracy of ai.chronon.group_by.Accuracy.Temporal are supported currently."
         )
-
-
-def create_mock_source(
-    source: Source,
-    accuracy: Accuracy,
-    key_columns: List[str],
-    mock_underlying_table_df: DataFrame,
-    spark: SparkSession
-):
-    """
-    Generates the query and applies it to a mock underlying table so that users
-    can create tests to make sure sources are working as expected.
-
-    :param source: The source that we will mock the query from
-    :param accuracy: Accuracy.TEMPORAL or Accuracy.SNAPSHOT
-    :param key_columns: The query dataframe that will represent our queries
-    :param mock_underlying_table_df: Dataframe that represents the underlying table
-        that we will apply the query to. The schema should be equal to the schema
-        of the source's events or entities snapshot table.
-    :param spark: The spark session that we can use to access the JVM
-    """
-
-    java_gateway = spark._sc._gateway
-    jvm = java_gateway.jvm
-
-    source_json: str = thrift_simple_json(source)
-    java_thrift_source = jvm.ai.chronon.spark.PySparkUtils.parseSource(source_json)
-
-    source_query: str = jvm.ai.chronon.spark.GroupBy.renderUnpartitionedDataSourceQueryWithArrayList(
-        java_thrift_source,
-        key_columns,
-        jvm.ai.chronon.spark.PySparkUtils.getAccuracy(True if accuracy == Accuracy.TEMPORAL else False),
-    )
-
-    uncleansed_base_table_name = source.events.table if source.events else source.entities.snapshotTable
-    cleansed_base_table_name = uncleansed_base_table_name.replace(".", "_")
-
-    mock_underlying_table_df.createOrReplaceTempView(cleansed_base_table_name)
-
-    cleansed_source_query = source_query.replace(
-        uncleansed_base_table_name, cleansed_base_table_name
-    )
-    print(
-        f"Creating mock source with accuracy {accuracy} "
-        f"(0 for TEMPORAL, 1 for SNAPSHOT) and rendering source query:\n"
-        f" {cleansed_source_query}"
-    )
-
-    result_df = spark.sql(cleansed_source_query)
-
-    return result_df
