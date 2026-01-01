@@ -137,7 +137,6 @@ Concrete implementations for specific notebook environments:
 │ + get_platform()        │
 │ # _update_query_dates() │
 │ # _update_source_dates()│
-│ # print_with_timestamp()│
 └───────────────┬─────────┘
                 │
     ┌───────────┼────────────────────┐
@@ -170,6 +169,8 @@ Concrete implementations for specific notebook environments:
 │ + end_log_capture()         │
 │ + log_operation()           │
 │ + drop_table_if_exists()    │
+│ + set_metadata()            │
+│ + get_table_utils()         │
 └───────────┬─────────────────┘
             │
     ┌───────┴───────┐
