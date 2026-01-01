@@ -591,7 +591,7 @@ def get_max_window_for_gb_in_days(group_by: api.GroupBy) -> int:
                     result = int(
                         max(
                             result,
-                            ceil(window.length / 60 * 24),
+                            ceil(window.length / (60 * 24)),
                         )
                     )
                 elif window.timeUnit == api.TimeUnit.HOURS:
