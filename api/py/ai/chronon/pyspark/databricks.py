@@ -7,7 +7,7 @@ from pyspark.dbutils import DBUtils
 from pyspark.sql import SparkSession
 from typing_extensions import override
 
-from ai.chronon.api.ttypes import GroupBy, Join
+from ai.chronon.api.ttypes import GroupBy, Join, StagingQuery
 from ai.chronon.pyspark.constants import (
     DATABRICKS_JVM_LOG_FILE,
     DATABRICKS_OUTPUT_NAMESPACE,
@@ -17,6 +17,7 @@ from ai.chronon.pyspark.executables import (
     GroupByExecutable,
     JoinExecutable,
     PlatformInterface,
+    StagingQueryExecutable,
 )
 
 
@@ -132,6 +133,37 @@ class DatabricksJoin(JoinExecutable):
         super().__init__(join, spark_session)
 
         self.obj: Join = self.platform.set_metadata(
+            obj=self.obj,
+            mod_prefix=DATABRICKS_ROOT_DIR_FOR_IMPORTED_FEATURES,
+            name_prefix=cast(DatabricksPlatform, self.platform).get_databricks_user(),
+            output_namespace=DATABRICKS_OUTPUT_NAMESPACE
+        )
+
+    @override
+    def get_platform(self) -> PlatformInterface:
+        """
+        Get the platform interface.
+
+        Returns:
+            The Databricks platform interface
+        """
+        return DatabricksPlatform(self.spark)
+
+
+class DatabricksStagingQuery(StagingQueryExecutable):
+    """Class for executing StagingQuery objects in Databricks."""
+
+    def __init__(self, staging_query: StagingQuery, spark_session: SparkSession):
+        """
+        Initialize a StagingQuery executor for Databricks.
+
+        Args:
+            staging_query: The StagingQuery object to execute
+            spark_session: The SparkSession to use
+        """
+        super().__init__(staging_query, spark_session)
+
+        self.obj: StagingQuery = self.platform.set_metadata(
             obj=self.obj,
             mod_prefix=DATABRICKS_ROOT_DIR_FOR_IMPORTED_FEATURES,
             name_prefix=cast(DatabricksPlatform, self.platform).get_databricks_user(),

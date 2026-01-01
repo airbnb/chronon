@@ -42,7 +42,7 @@ from typing import Any, Optional
 from pyspark.sql import SparkSession
 from typing_extensions import override
 
-from ai.chronon.api.ttypes import GroupBy, Join
+from ai.chronon.api.ttypes import GroupBy, Join, StagingQuery
 from ai.chronon.pyspark.constants import (
     JUPYTER_JVM_LOG_FILE,
     JUPYTER_OUTPUT_NAMESPACE,
@@ -52,6 +52,7 @@ from ai.chronon.pyspark.executables import (
     GroupByExecutable,
     JoinExecutable,
     PlatformInterface,
+    StagingQueryExecutable,
 )
 
 
@@ -345,6 +346,67 @@ class JupyterJoin(JoinExecutable):
                 effective_name_prefix = jupyter_platform.get_jupyter_user()
 
         self.obj: Join = self.platform.set_metadata(
+            obj=self.obj,
+            mod_prefix=JUPYTER_ROOT_DIR_FOR_IMPORTED_FEATURES,
+            name_prefix=effective_name_prefix,
+            output_namespace=output_namespace or JUPYTER_OUTPUT_NAMESPACE
+        )
+
+    @override
+    def get_platform(self) -> PlatformInterface:
+        """
+        Get the platform interface.
+
+        Returns:
+            The Jupyter platform interface
+        """
+        return JupyterPlatform(self.spark)
+
+
+class JupyterStagingQuery(StagingQueryExecutable):
+    """
+    Class for executing StagingQuery objects in Jupyter notebooks.
+
+    Example:
+        from ai.chronon.pyspark.jupyter import JupyterStagingQuery
+
+        executable = JupyterStagingQuery(my_staging_query, spark)
+        df = executable.run(end_date='20250107')
+    """
+
+    def __init__(
+        self,
+        staging_query: StagingQuery,
+        spark_session: SparkSession,
+        name_prefix: Optional[str] = None,
+        output_namespace: Optional[str] = None,
+        use_username_prefix: bool = True
+    ):
+        """
+        Initialize a StagingQuery executor for Jupyter.
+
+        Args:
+            staging_query: The StagingQuery object to execute
+            spark_session: The SparkSession to use
+            name_prefix: Optional custom prefix for the object name.
+                        If not provided and use_username_prefix is True,
+                        uses the current username.
+            output_namespace: Optional namespace override for output tables
+            use_username_prefix: Whether to prefix object names with username
+                                (default: True)
+        """
+        super().__init__(staging_query, spark_session)
+
+        # Determine name prefix
+        effective_name_prefix: Optional[str] = None
+        if name_prefix:
+            effective_name_prefix = name_prefix
+        elif use_username_prefix:
+            jupyter_platform = self.platform
+            if isinstance(jupyter_platform, JupyterPlatform):
+                effective_name_prefix = jupyter_platform.get_jupyter_user()
+
+        self.obj: StagingQuery = self.platform.set_metadata(
             obj=self.obj,
             mod_prefix=JUPYTER_ROOT_DIR_FOR_IMPORTED_FEATURES,
             name_prefix=effective_name_prefix,

@@ -114,4 +114,41 @@ class PySparkUtilsTest {
     // FiveMinuteResolution has hopSizes array ending with 5 minutes = 300000 millis
     assertTrue("getFiveMinuteResolution should return FiveMinuteResolution", resolution.hopSizes.contains(300000L))
   }
+
+  @Test
+  def testParseStagingQueryBasic(): Unit = {
+    val stagingQueryJson = """{"metaData":{"name":"test_staging_query","outputNamespace":"test_namespace"},"query":"SELECT * FROM test_table","startPartition":"20250101"}"""
+    val result = PySparkUtils.parseStagingQuery(stagingQueryJson)
+    assertEquals("parseStagingQuery should parse name correctly", "test_staging_query", result.metaData.name)
+    assertEquals("parseStagingQuery should parse outputNamespace correctly", "test_namespace", result.metaData.outputNamespace)
+    assertEquals("parseStagingQuery should parse query correctly", "SELECT * FROM test_table", result.query)
+    assertEquals("parseStagingQuery should parse startPartition correctly", "20250101", result.startPartition)
+  }
+
+  @Test
+  def testParseStagingQueryWithCreateView(): Unit = {
+    val stagingQueryJson = """{"metaData":{"name":"test_view"},"query":"SELECT * FROM test","createView":true}"""
+    val result = PySparkUtils.parseStagingQuery(stagingQueryJson)
+    assertTrue("parseStagingQuery should parse createView correctly", result.createView)
+  }
+
+  @Test
+  def testGetBooleanOptionalWithNull(): Unit = {
+    val result = PySparkUtils.getBooleanOptional(null)
+    assertTrue("getBooleanOptional(null) should return None", result.isEmpty)
+  }
+
+  @Test
+  def testGetBooleanOptionalWithTrue(): Unit = {
+    val result = PySparkUtils.getBooleanOptional(java.lang.Boolean.TRUE)
+    assertTrue("getBooleanOptional(true) should return Some", result.isDefined)
+    assertTrue("getBooleanOptional(true) should return true", result.get)
+  }
+
+  @Test
+  def testGetBooleanOptionalWithFalse(): Unit = {
+    val result = PySparkUtils.getBooleanOptional(java.lang.Boolean.FALSE)
+    assertTrue("getBooleanOptional(false) should return Some", result.isDefined)
+    assertTrue("getBooleanOptional(false) should return false", !result.get)
+  }
 }

@@ -177,4 +177,65 @@ object PySparkUtils {
     logger.info(s"Finished analyzing Join: ${joinConf.metaData.name}")
   }
 
+  /**
+    * Type parameters are difficult to support in Pyspark, so we provide these helper methods for ThriftJsonCodec.fromJsonStr
+    *
+    * @param stagingQueryJson a JSON string representing a staging query
+    * @return Chronon Scala API StagingQuery object
+    */
+  def parseStagingQuery(stagingQueryJson: String): api.StagingQuery = {
+    ThriftJsonCodec.fromJsonStr[api.StagingQuery](stagingQueryJson, check = true, classOf[api.StagingQuery])
+  }
+
+  /**
+    * Helper function to allow a user to execute a Staging Query.
+    *
+    * StagingQuery is used to materialize intermediate data transformations with SQL-based
+    * queries. Unlike GroupBy and Join which return DataFrames, StagingQuery writes directly
+    * to an output table and returns a DataFrame of the result.
+    *
+    * @param stagingQueryConf       api.StagingQuery Chronon scala StagingQuery API object
+    * @param endDate                str this represents the last date we will perform the query for
+    * @param stepDays               int this will determine how we chunk filling the missing partitions
+    * @param enableAutoExpand       whether to auto-expand the output table schema if new columns are added
+    * @param overrideStartPartition optional override for the start partition
+    * @param skipFirstHole          whether to skip the first hole in partition range
+    * @param tableUtils             TableUtils this will be used to perform ops against our data sources
+    * @return DataFrame containing the staging query output
+    */
+  def runStagingQuery(stagingQueryConf: api.StagingQuery,
+                      endDate: String,
+                      stepDays: Option[Int],
+                      enableAutoExpand: Option[Boolean],
+                      overrideStartPartition: Option[String],
+                      skipFirstHole: Boolean,
+                      tableUtils: TableUtils): DataFrame = {
+    logger.info(s"Executing StagingQuery: ${stagingQueryConf.metaData.name}")
+    val stagingQuery = new StagingQuery(stagingQueryConf, endDate, tableUtils)
+
+    // Check if this is a view or a table
+    val createView = Option(stagingQueryConf.createView).getOrElse(false)
+    if (createView) {
+      stagingQuery.createStagingQueryView()
+    } else {
+      stagingQuery.computeStagingQuery(
+        stepDays = stepDays,
+        enableAutoExpand = enableAutoExpand,
+        overrideStartPartition = overrideStartPartition,
+        skipFirstHole = skipFirstHole
+      )
+    }
+    logger.info(s"Finished executing StagingQuery: ${stagingQueryConf.metaData.name}")
+    tableUtils.sql(s"SELECT * FROM ${stagingQueryConf.metaData.outputTable}")
+  }
+
+  /**
+    * Helper function to get a boolean optional for Pyspark.
+    *
+    * @param value a Boolean value or null
+    * @return Boolean optional
+    */
+  def getBooleanOptional(value: java.lang.Boolean): Option[Boolean] =
+    if (value == null) Option.empty[Boolean] else Option(value.booleanValue())
+
 }

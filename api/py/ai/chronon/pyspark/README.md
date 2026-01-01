@@ -14,8 +14,8 @@
 The Chronon PySpark Interface provides a clean, object-oriented framework for executing Chronon feature definitions directly within a PySpark environment, like Databricks Notebooks. This interface streamlines the developer experience by removing the need to switch between multiple tools, allowing rapid prototyping and iteration of Chronon feature engineering workflows.
 
 This library enables users to:
-- Run and Analyze GroupBy and Join operations in a type-safe manner
-- Execute feature computations within notebook environments like Databricks
+- Run and Analyze GroupBy, Join, and StagingQuery operations in a type-safe manner
+- Execute feature computations within notebook environments like Databricks and Jupyter
 - Implement platform-specific behavior while preserving a consistent interface
 - Access JVM-based functionality directly from Python code
 
@@ -88,10 +88,11 @@ class PySparkExecutable(Generic[T], ABC):
 
 ### Specialized Executables
 
-Two specialized interfaces extend the base executable for different Chronon types:
+Three specialized interfaces extend the base executable for different Chronon types:
 
 - **GroupByExecutable**: Interface for executing GroupBy objects
 - **JoinExecutable**: Interface for executing Join objects
+- **StagingQueryExecutable**: Interface for executing StagingQuery objects
 
 These interfaces define type-specific behaviors for running and analyzing features.
 
@@ -116,11 +117,13 @@ Concrete implementations for specific notebook environments:
 - **DatabricksPlatform**: Implements platform-specific operations for Databricks
 - **DatabricksGroupBy**: Executes GroupBy objects in Databricks
 - **DatabricksJoin**: Executes Join objects in Databricks
+- **DatabricksStagingQuery**: Executes StagingQuery objects in Databricks
 
 **Jupyter (JupyterLab, JupyterHub, classic notebooks):**
 - **JupyterPlatform**: Implements platform-specific operations for Jupyter
 - **JupyterGroupBy**: Executes GroupBy objects in Jupyter
 - **JupyterJoin**: Executes Join objects in Jupyter
+- **JupyterStagingQuery**: Executes StagingQuery objects in Jupyter
 
 ```
 ┌─────────────────────────┐
@@ -137,33 +140,23 @@ Concrete implementations for specific notebook environments:
 │ # print_with_timestamp()│
 └───────────────┬─────────┘
                 │
-    ┌───────────┴────────────┐
-    │                        │
-┌───▼───────────────┐    ┌───▼───────────────┐
-│  GroupByExecutable│    │  JoinExecutable   │
-├───────────────────┤    ├───────────────────┤
-│                   │    │                   │
-├───────────────────┤    ├───────────────────┤
-│ + run()           │    │ + run()           │
-│ + analyze()       │    │ + analyze()       │
-└────────┬──────────┘    └────────┬──────────┘
-         │                        │
-         │                        │
-┌────────▼──────────┐    ┌────────▼──────────┐
-│ DatabricksGroupBy │    │  DatabricksJoin   │
-├───────────────────┤    ├───────────────────┤
-│                   │    │                   │
-├───────────────────┤    ├───────────────────┤
-│ + get_platform()  │    │ + get_platform()  │
-└───────────────────┘    └───────────────────┘
-
-┌────────▼──────────┐    ┌────────▼──────────┐
-│   JupyterGroupBy  │    │    JupyterJoin    │
-├───────────────────┤    ├───────────────────┤
-│                   │    │                   │
-├───────────────────┤    ├───────────────────┤
-│ + get_platform()  │    │ + get_platform()  │
-└───────────────────┘    └───────────────────┘
+    ┌───────────┼────────────────────┐
+    │           │                    │
+┌───▼────────┐ ┌▼─────────────┐ ┌────▼────────────────┐
+│ GroupBy    │ │ Join         │ │ StagingQuery        │
+│ Executable │ │ Executable   │ │ Executable          │
+├────────────┤ ├──────────────┤ ├─────────────────────┤
+│ + run()    │ │ + run()      │ │ + run()             │
+│ + analyze()│ │ + analyze()  │ │                     │
+└─────┬──────┘ └──────┬───────┘ └──────────┬──────────┘
+      │               │                    │
+      ▼               ▼                    ▼
+  Databricks      Databricks          Databricks
+  GroupBy         Join                StagingQuery
+      │               │                    │
+      ▼               ▼                    ▼
+   Jupyter         Jupyter             Jupyter
+   GroupBy         Join                StagingQuery
 
 ┌─────────────────────────────┐
 │   PlatformInterface         │
@@ -401,14 +394,51 @@ executable_custom = JupyterGroupBy(
 )
 ```
 
+#### StagingQuery Example
+
+StagingQuery is used to materialize intermediate data transformations with SQL-based queries. The query supports date templates like `{{ start_date }}`, `{{ end_date }}`, `{{ latest_date }}`, and `{{ max_date(table=namespace.my_table) }}`.
+
+```python
+# Import the required modules
+from pyspark.sql import SparkSession
+from ai.chronon.pyspark.jupyter import JupyterStagingQuery
+from ai.chronon.api.ttypes import StagingQuery, MetaData
+
+# Create a StagingQuery object
+my_staging_query = StagingQuery(
+    metaData=MetaData(
+        name="my_project.user_sessions_staged",
+        outputNamespace="my_database"
+    ),
+    query="""
+        SELECT
+            user_id,
+            session_id,
+            COUNT(*) as event_count,
+            ds
+        FROM my_database.raw_events
+        WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'
+        GROUP BY user_id, session_id, ds
+    """,
+    startPartition="20250101"
+)
+
+# Create an executable
+executable = JupyterStagingQuery(my_staging_query, spark)
+
+# Run the staging query
+result_df = executable.run(
+    end_date='20250107',
+    step_days=7,  # Process 7 days at a time
+    enable_auto_expand=True,  # Auto-expand schema if new columns added
+    skip_first_hole=True
+)
+```
+
 ## Current Limitations
 
 ### Validation
 
 The `validate()` method is not yet implemented in the open-source version. This method exists in some internal implementations to validate GroupBy and Join configurations before execution. Future contributions may add this functionality.
-
-### StagingQuery
-
-While `StagingQuery` is included in the type system for forward compatibility, a `StagingQueryExecutable` class is not yet implemented. Contributors are welcome to add this functionality.
 
 ---

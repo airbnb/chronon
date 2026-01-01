@@ -230,6 +230,24 @@ class PySparkExecutable(Generic[T], ABC):
         )
         return java_join
 
+    def staging_query_to_java(self, staging_query: StagingQuery) -> JavaObject:
+        """
+        Convert StagingQuery object to Java representation.
+
+        Args:
+            staging_query: The StagingQuery object to convert
+
+        Returns:
+            Java representation of the StagingQuery
+        """
+        json_representation: str = thrift_simple_json(staging_query)
+        java_staging_query: JavaObject = (
+            self.jvm.ai.chronon.spark.PySparkUtils.parseStagingQuery(
+                json_representation
+            )
+        )
+        return java_staging_query
+
 
 class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
     """Interface for executing GroupBy objects"""
@@ -591,6 +609,112 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
             self.platform.end_log_capture(log_token)
             self.platform.log_operation(
                 f"Analysis failed for Join {self.obj.metaData.name}: {str(e)}"
+            )
+            raise e
+
+
+class StagingQueryExecutable(PySparkExecutable[StagingQuery], ABC):
+    """
+    Interface for executing StagingQuery objects.
+
+    StagingQuery is used to materialize intermediate data transformations with
+    SQL-based queries. Unlike GroupBy and Join which aggregate and join features,
+    StagingQuery runs arbitrary SQL transformations with date template substitution.
+
+    The query supports these templates:
+    - {{ start_date }}: Start partition for the current computation range
+    - {{ end_date }}: End partition for the current computation range
+    - {{ latest_date }}: The end partition independent of computation range
+    - {{ max_date(table=namespace.my_table) }}: Max partition of a given table
+    """
+
+    def run(
+        self,
+        end_date: str | None = None,
+        step_days: int | None = None,
+        enable_auto_expand: bool = True,
+        override_start_partition: str | None = None,
+        skip_first_hole: bool = True
+    ) -> DataFrame:
+        """
+        Execute the StagingQuery object.
+
+        Args:
+            end_date: End date for the execution (format: YYYYMMDD).
+                     Defaults to yesterday.
+            step_days: Number of days to process in each step. None for single batch.
+            enable_auto_expand: Whether to auto-expand the output table schema
+                               if new columns are added (default: True)
+            override_start_partition: Optional override for the start partition.
+                                     If not provided, uses the StagingQuery's
+                                     configured startPartition.
+            skip_first_hole: Whether to skip the first hole in partition range
+                            (default: True)
+
+        Returns:
+            DataFrame with the staging query results
+        """
+        end_date = end_date or self.default_end_date
+
+        self.platform.log_operation(
+            f"Executing StagingQuery {self.obj.metaData.name} "
+            f"ending at {end_date}"
+        )
+        if step_days:
+            self.platform.log_operation(f"Step Days: {step_days}")
+        self.platform.log_operation(f"Enable Auto Expand: {enable_auto_expand}")
+        if override_start_partition:
+            self.platform.log_operation(
+                f"Override Start Partition: {override_start_partition}"
+            )
+        self.platform.log_operation(f"Skip First Hole: {skip_first_hole}")
+
+        # Prepare StagingQuery for execution
+        staging_query_to_execute: StagingQuery = copy.deepcopy(self.obj)
+
+        # Get output table name
+        staging_query_output_table: str = staging_query_to_execute.metaData.outputTable
+
+        # Start log capture just before executing JVM calls
+        log_token = self.platform.start_log_capture(
+            f"Run StagingQuery: {self.obj.metaData.name}"
+        )
+
+        try:
+            # Convert to Java StagingQuery
+            java_staging_query = self.staging_query_to_java(staging_query_to_execute)
+
+            # Execute StagingQuery
+            result_df_scala: JavaObject = (
+                self.jvm.ai.chronon.spark.PySparkUtils.runStagingQuery(
+                    java_staging_query,
+                    end_date,
+                    self.jvm.ai.chronon.spark.PySparkUtils.getIntOptional(
+                        str(step_days) if step_days else None
+                    ),
+                    self.jvm.ai.chronon.spark.PySparkUtils.getBooleanOptional(
+                        enable_auto_expand
+                    ),
+                    self.jvm.ai.chronon.spark.PySparkUtils.getStringOptional(
+                        override_start_partition
+                    ),
+                    skip_first_hole,
+                    self.platform.get_table_utils()
+                )
+            )
+
+            result_df = DataFrame(result_df_scala, self.spark)
+            self.platform.end_log_capture(log_token)
+            self.platform.log_operation(
+                f"StagingQuery {self.obj.metaData.name} executed successfully "
+                f"and was written to {staging_query_output_table}"
+            )
+            return result_df
+        except Exception as e:
+            self.platform.end_log_capture(log_token)
+            self.platform.log_operation(
+                f"Execution failed for StagingQuery "
+                f"{self.obj.metaData.name}: {str(e)}"
             )
             raise e
 
