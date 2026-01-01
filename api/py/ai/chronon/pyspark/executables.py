@@ -258,9 +258,14 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
         """
         Update start and end dates of sources in GroupBy.
 
+        The source start_date is shifted back by the maximum window size to ensure
+        enough historical data is available for windowed aggregations. For example,
+        if computing features for 20251201-20251202 with a 3-day window, the source
+        needs data starting from 20251128 to correctly aggregate the 3-day window.
+
         Args:
             group_by: The GroupBy object to update
-            start_date: The new start date
+            start_date: The new start date for feature computation
             end_date: The new end date
 
         Returns:
@@ -269,9 +274,16 @@ class GroupByExecutable(PySparkExecutable[GroupBy], ABC):
         if not group_by.sources:
             return group_by
 
+        # Shift start_date back by max window to ensure enough data for aggregations
+        max_window_days: int = get_max_window_for_gb_in_days(group_by)
+        shifted_start_date: str = (
+            datetime.strptime(start_date, PARTITION_COLUMN_FORMAT) -
+            timedelta(days=max_window_days)
+        ).strftime(PARTITION_COLUMN_FORMAT)
+
         for i, source in enumerate(group_by.sources):
             group_by.sources[i] = self._update_source_dates(
-                source, start_date, end_date
+                source, shifted_start_date, end_date
             )
         return group_by
 
@@ -437,9 +449,13 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
         """
         Update start and end dates of sources in JoinParts.
 
+        Each JoinPart contains a GroupBy with windowed aggregations. The source
+        start_date for each GroupBy is shifted back by its maximum window size
+        to ensure enough historical data is available for aggregations.
+
         Args:
             join_parts: List of JoinPart objects
-            start_date: The new start date
+            start_date: The new start date for feature computation
             end_date: The new end date
 
         Returns:
@@ -449,9 +465,16 @@ class JoinExecutable(PySparkExecutable[Join], ABC):
             return []
 
         for jp in join_parts:
+            # Shift start_date back by max window for this GroupBy
+            max_window_days: int = get_max_window_for_gb_in_days(jp.groupBy)
+            shifted_start_date: str = (
+                datetime.strptime(start_date, PARTITION_COLUMN_FORMAT) -
+                timedelta(days=max_window_days)
+            ).strftime(PARTITION_COLUMN_FORMAT)
+
             for i, source in enumerate(jp.groupBy.sources):
                 jp.groupBy.sources[i] = self._update_source_dates(
-                    source, start_date, end_date
+                    source, shifted_start_date, end_date
                 )
         return join_parts
 
