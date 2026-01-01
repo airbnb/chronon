@@ -500,34 +500,6 @@ class TestGetMaxWindowForGbInDays:
         )
         assert utils.get_max_window_for_gb_in_days(group_by) == 2
 
-    def test_window_in_minutes(self):
-        """Window specified in minutes converts correctly to days."""
-        group_by = api.GroupBy(
-            metaData=api.MetaData(name="test"),
-            aggregations=[
-                api.Aggregation(
-                    inputColumn="col",
-                    operation=api.Operation.COUNT,
-                    windows=[api.Window(length=1440, timeUnit=api.TimeUnit.MINUTES)]
-                )
-            ]
-        )
-        assert utils.get_max_window_for_gb_in_days(group_by) == 1
-
-    def test_window_in_minutes_rounds_up(self):
-        """Window in minutes that doesn't divide evenly rounds up."""
-        group_by = api.GroupBy(
-            metaData=api.MetaData(name="test"),
-            aggregations=[
-                api.Aggregation(
-                    inputColumn="col",
-                    operation=api.Operation.COUNT,
-                    windows=[api.Window(length=1500, timeUnit=api.TimeUnit.MINUTES)]
-                )
-            ]
-        )
-        assert utils.get_max_window_for_gb_in_days(group_by) == 2
-
     def test_multiple_windows_returns_max(self):
         """Multiple windows returns the maximum value."""
         group_by = api.GroupBy(
@@ -574,7 +546,7 @@ class TestGetMaxWindowForGbInDays:
                     inputColumn="col",
                     operation=api.Operation.COUNT,
                     windows=[
-                        api.Window(length=60, timeUnit=api.TimeUnit.MINUTES),
+                        api.Window(length=12, timeUnit=api.TimeUnit.HOURS),
                         api.Window(length=48, timeUnit=api.TimeUnit.HOURS),
                         api.Window(length=3, timeUnit=api.TimeUnit.DAYS),
                     ]
@@ -583,7 +555,7 @@ class TestGetMaxWindowForGbInDays:
         )
         assert utils.get_max_window_for_gb_in_days(group_by) == 3
 
-    def test_small_minute_window_returns_minimum_of_one(self):
+    def test_small_hour_window_returns_minimum_of_one(self):
         """Very small window still returns at least 1 day."""
         group_by = api.GroupBy(
             metaData=api.MetaData(name="test"),
@@ -591,7 +563,7 @@ class TestGetMaxWindowForGbInDays:
                 api.Aggregation(
                     inputColumn="col",
                     operation=api.Operation.COUNT,
-                    windows=[api.Window(length=60, timeUnit=api.TimeUnit.MINUTES)]
+                    windows=[api.Window(length=1, timeUnit=api.TimeUnit.HOURS)]
                 )
             ]
         )

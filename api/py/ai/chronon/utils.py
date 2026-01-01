@@ -587,14 +587,7 @@ def get_max_window_for_gb_in_days(group_by: api.GroupBy) -> int:
     if group_by.aggregations:
         for agg in group_by.aggregations:
             for window in agg.windows:
-                if window.timeUnit == api.TimeUnit.MINUTES:
-                    result = int(
-                        max(
-                            result,
-                            ceil(window.length / (60 * 24)),
-                        )
-                    )
-                elif window.timeUnit == api.TimeUnit.HOURS:
+                if window.timeUnit == api.TimeUnit.HOURS:
                     result = int(
                         max(
                             result,
