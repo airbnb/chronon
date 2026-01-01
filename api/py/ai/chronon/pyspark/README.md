@@ -7,7 +7,6 @@
 4. [Flow of Execution](#flow-of-execution)
 5. [Extending the Framework](#extending-the-framework)
 6. [Environment Setup](#environment-setup)
-7. [Current Limitations](#current-limitations)
 
 ## Introduction
 
@@ -435,11 +434,5 @@ result_df = executable.run(
     skip_first_hole=True
 )
 ```
-
-## Current Limitations
-
-### Validation
-
-The `validate()` method is not yet implemented in the open-source version. This method exists in some internal implementations to validate GroupBy and Join configurations before execution. Future contributions may add this functionality.
 
 ---
