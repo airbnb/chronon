@@ -851,7 +851,7 @@ object Extensions {
     @transient lazy val logger = LoggerFactory.getLogger(getClass)
     // all keys as they should appear in left that are being used on right
     def leftKeyCols: Array[String] = {
-      join.joinParts.toScala
+      join.getRegularAndExternalJoinParts
         .flatMap {
           _.rightToLeft.values
         }
@@ -1048,7 +1048,7 @@ object Extensions {
           if (externalPart.prefix != null) {
             syntheticJoinPart.setPrefix(externalPart.prefix)
           }
-          new ExternalJoinPart(syntheticJoinPart, externalPart.fullName)
+          new ExternalJoinPart(syntheticJoinPart, syntheticJoinPart.fullPrefix)
         }
     }
 

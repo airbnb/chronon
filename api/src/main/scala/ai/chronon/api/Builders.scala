@@ -203,11 +203,12 @@ object Builders {
   }
 
   object ExternalSource {
-    def apply(metadata: MetaData, keySchema: DataType, valueSchema: DataType): ExternalSource = {
+    def apply(metadata: MetaData, keySchema: DataType, valueSchema: DataType, offlineGroupBy: GroupBy = null): ExternalSource = {
       val result = new ExternalSource()
       result.setMetadata(metadata)
       result.setKeySchema(toTDataType(keySchema))
       result.setValueSchema(toTDataType(valueSchema))
+      result.setOfflineGroupBy(offlineGroupBy)
       result
     }
   }
