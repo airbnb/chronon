@@ -14,6 +14,7 @@ from ai.chronon.utils import (
     join_part_name,
     sanitize,
 )
+from ai.chronon.repo.external_join_part import ExternalJoinPart
 
 TASK_PREFIX = "compute_join"
 DEFAULT_SPARK_SETTINGS = {
@@ -50,7 +51,15 @@ def get_regular_and_external_join_parts(join):
                     keyMapping=ext_part.keyMapping if ext_part.keyMapping else None,
                     prefix=ext_part.prefix if ext_part.prefix else None,
                 )
-                external_join_parts.append(synthetic_jp)
+                full_prefix = "_".join(
+                    [
+                        component
+                        for component in ['ext', ext_part.prefix, sanitize(ext_part.source.metadata.name)]
+                        if component is not None
+                    ]
+                )
+                external_jp = ExternalJoinPart(synthetic_jp, full_prefix=full_prefix)
+                external_join_parts.append(external_jp)
 
     return regular_join_parts + external_join_parts
 

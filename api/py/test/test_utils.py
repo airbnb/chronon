@@ -390,3 +390,53 @@ def test_get_dependencies_with_events(query_with_partition_column: Query):
     partition_col = query_with_partition_column.partitionColumn or "ds"
     expected_spec = f"event_table/{partition_col}={{{{ macros.ds_add(ds, -2) }}}}"
     assert dep["spec"] == expected_spec
+
+
+def test_external_join_part():
+    """Test ExternalJoinPart class: initialization, inheritance, and attribute copying."""
+    from ai.chronon.repo.external_join_part import ExternalJoinPart
+
+    group_by = api.GroupBy(
+        metaData=api.MetaData(name="sample_team.test_group_by.v1"),
+        keyColumns=["key1"],
+    )
+    source_jp = api.JoinPart(
+        groupBy=group_by,
+        keyMapping={"key": "mapped_key"},
+        prefix="my_prefix",
+    )
+    external_jp = ExternalJoinPart(source_jp, full_prefix="ext_my_prefix_test_group_by_v1")
+
+    # Verify it's an instance of JoinPart
+    assert isinstance(external_jp, api.JoinPart)
+    # Verify attributes are copied
+    assert external_jp.groupBy == group_by
+    assert external_jp.keyMapping == {"key": "mapped_key"}
+    assert external_jp.prefix == "my_prefix"
+    # Verify external-specific attributes
+    assert external_jp.external_join_full_prefix == "ext_my_prefix_test_group_by_v1"
+    assert external_jp._source_join_part is source_jp
+
+
+def test_join_part_name_external_and_regular():
+    """Test join_part_name for both ExternalJoinPart and regular JoinPart."""
+    from ai.chronon.repo.external_join_part import ExternalJoinPart
+    from ai.chronon.utils import join_part_name
+
+    group_by = api.GroupBy(metaData=api.MetaData(name="sample_team.my_group_by.v1"))
+
+    # Regular JoinPart with prefix
+    regular_jp = api.JoinPart(groupBy=group_by, prefix="my_prefix")
+    assert join_part_name(regular_jp) == "my_prefix_sample_team_my_group_by_v1"
+
+    # Regular JoinPart without prefix
+    regular_jp_no_prefix = api.JoinPart(groupBy=group_by)
+    assert join_part_name(regular_jp_no_prefix) == "sample_team_my_group_by_v1"
+
+    # ExternalJoinPart with prefix
+    external_jp = ExternalJoinPart(regular_jp, full_prefix="ext_my_prefix_source")
+    assert join_part_name(external_jp) == "ext_my_prefix_source"
+
+    # ExternalJoinPart without user prefix
+    external_jp_no_prefix = ExternalJoinPart(regular_jp_no_prefix, full_prefix="ext_source")
+    assert join_part_name(external_jp_no_prefix) == "ext_source"
