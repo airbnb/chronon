@@ -238,6 +238,19 @@ def validate_group_by(group_by: ttypes.GroupBy):
                 )
             else:
                 assert not utils.is_streaming(src), "SNAPSHOT accuracy should not be specified for streaming sources"
+        elif src.joinSource:
+            # When using a join as a source, the parent join must have a topic for streaming
+            # If you want to chain batch only joins, use regular EventSource/EntitySource instead
+            parent_join = src.joinSource.join
+            parent_left = parent_join.left if parent_join else None
+            assert parent_left and utils.is_streaming(parent_left), (
+                "When using a JoinSource as the source for a GroupBy, the parent join must have a topic. "
+                "Please specify either events.topic for EventSource or entities.mutationTopic for EntitySource "
+                "in the parent join's left source. Otherwise, use a regular EventSource or EntitySource."
+                "If you want to chain batch only joins, use regular EventSource/EntitySource instead"
+                "There are helper methods like get_join_output_table_name, get_staging_query_output_table_name"
+                "and group_by_output_table_name."
+            )
         else:
             if contains_windowed_aggregation(aggregations):
                 assert query.timeColumn, "Please specify timeColumn for entity source with windowed aggregations"
