@@ -302,3 +302,58 @@ class TestJoinBackfill(unittest.TestCase):
         # Verify the prefixes are correct
         self.assertEqual(result[0].external_join_full_prefix, "ext_prefix_1_external_source_1")
         self.assertEqual(result[1].external_join_full_prefix, "ext_prefix_2_external_source_2")
+
+    def test_external_join_part_from_external_part_factory_method(self):
+        """Test the ExternalJoinPart.from_external_part factory method directly."""
+        # Create a mock external part with offlineGroupBy
+        external_part = convert_json_to_obj({
+            "source": {
+                "metadata": {"name": "my.external.source"},
+                "offlineGroupBy": {
+                    "metaData": {"name": "test.offline_gb.v1"},
+                    "keyColumns": ["key1", "key2"],
+                    "sources": [{"events": {"table": "test_table"}}],
+                },
+            },
+            "prefix": "test_prefix",
+            "keyMapping": {"left_key": "right_key", "another_key": "mapped_key"},
+        })
+
+        # Use the factory method
+        external_jp = ExternalJoinPart.from_external_part(external_part)
+
+        # Verify it's an ExternalJoinPart
+        self.assertIsInstance(external_jp, ExternalJoinPart)
+
+        # Verify the full_prefix is computed correctly
+        self.assertEqual(external_jp.external_join_full_prefix, "ext_test_prefix_my_external_source")
+
+        # Verify the synthetic JoinPart has the correct attributes
+        self.assertEqual(external_jp.groupBy.metaData.name, "test.offline_gb.v1")
+        self.assertEqual(external_jp.keyMapping, {"left_key": "right_key", "another_key": "mapped_key"})
+        self.assertEqual(external_jp.prefix, "test_prefix")
+
+        # Verify join_part_name uses the external_join_full_prefix
+        self.assertEqual(join_part_name(external_jp), "ext_test_prefix_my_external_source")
+
+    def test_external_join_part_from_external_part_without_prefix(self):
+        """Test the factory method when external part has no user-defined prefix."""
+        external_part = convert_json_to_obj({
+            "source": {
+                "metadata": {"name": "another.source"},
+                "offlineGroupBy": {
+                    "metaData": {"name": "test.offline_gb.v1"},
+                    "keyColumns": ["key1"],
+                },
+            },
+            # No prefix and no keyMapping
+        })
+
+        external_jp = ExternalJoinPart.from_external_part(external_part)
+
+        # Verify the full_prefix is computed correctly without user prefix
+        self.assertEqual(external_jp.external_join_full_prefix, "ext_another_source")
+
+        # Verify keyMapping and prefix are None
+        self.assertIsNone(external_jp.keyMapping)
+        self.assertIsNone(external_jp.prefix)
