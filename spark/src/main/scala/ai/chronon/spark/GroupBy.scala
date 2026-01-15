@@ -660,15 +660,19 @@ object GroupBy {
       throw new Exception(s"mutationTopic is not set for groupby ${groupByConf.metaData.name} with Accuracy.TEMPORAL")
     }
     // chronon run ds macro is only supported for group bys
+    // Use intersectedRange for validation when available, since it represents the actual data being scanned.
+    // This allows bootstrap phase to work with multi-day queryRange as long as the intersectedRange is single day.
     val selects = Option(source.query.selects)
       .map(_.toScala.map(keyValue => {
         if (keyValue._2.contains(Constants.ChrononRunDs)) {
           assert(
-            queryRange.isSingleDay,
+            intersectedRange.isDefined && intersectedRange.get.isSingleDay,
             s"ChrononRunDs is only supported for single day queries. " +
-              s"Got start: ${queryRange.start}, end: ${queryRange.end} (date range include multiple days)"
+              s"intersectedRange: ${intersectedRange.map(r => s"${r.start} to ${r.end}").getOrElse("undefined")}, " +
+              s"queryRange: ${queryRange.start} to ${queryRange.end}"
           )
-          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => s"'${queryRange.start}'")
+          // Python configs already have quotes around the macro, so no need for quotes here
+          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => intersectedRange.get.start)
           (keyValue._1, parametricMacro.replace(keyValue._2))
         } else {
           keyValue
