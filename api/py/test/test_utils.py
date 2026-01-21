@@ -15,9 +15,8 @@
 import json
 import os
 
-import pytest
-
 import ai.chronon.api.ttypes as api
+import pytest
 from ai.chronon import utils
 from ai.chronon.api.ttypes import EntitySource, EventSource, Query, Source
 from ai.chronon.repo.serializer import file2thrift, json2thrift
@@ -147,7 +146,7 @@ def test_get_applicable_mode_for_joins(
     assert "backfill" in modes
     assert "stats-summary" in modes
     assert "consistency-metrics-compute" not in modes
-    assert "log-flattener" in modes  # default sample rate = 100
+    assert "log-flattener" in modes  # sample_percent explicitly set to 100
 
     modes = utils.get_applicable_modes(never_scheduled_join)
     assert "backfill" not in modes
@@ -334,9 +333,7 @@ def test_wait_for_simple_schema_lag_zero_no_subpartition(
     table = "mytable"
     paritition_col = query_with_partition_column.partitionColumn or "ds"
     expected_spec = f"mytable/{paritition_col}={{{{ ds }}}}"
-    result = wait_for_simple_schema(
-        table, 0, "2021-01-01", "2021-01-02", query=query_with_partition_column
-    )
+    result = wait_for_simple_schema(table, 0, "2021-01-01", "2021-01-02", query=query_with_partition_column)
     assert result["spec"] == expected_spec
 
 
@@ -347,9 +344,7 @@ def test_wait_for_simple_schema_lag_nonzero_no_subpartition(
     lag = 3
     partition_col = query_with_partition_column.partitionColumn or "ds"
     expected_spec = f"mytable/{partition_col}={{{{ macros.ds_add(ds, -3) }}}}"
-    result = wait_for_simple_schema(
-        table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column
-    )
+    result = wait_for_simple_schema(table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column)
     assert result["spec"] == expected_spec
 
 
@@ -358,9 +353,7 @@ def test_wait_for_simple_schema_with_subpartition(query_with_partition_column: Q
     lag = 0
     partition_col = query_with_partition_column.partitionColumn or "ds"
     expected_spec = f"mytable/{partition_col}={{{{ ds }}}}/system=mobile"
-    result = wait_for_simple_schema(
-        table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column
-    )
+    result = wait_for_simple_schema(table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column)
     assert result["spec"] == expected_spec
 
 
