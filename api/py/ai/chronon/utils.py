@@ -28,6 +28,7 @@ from typing import Dict, List, Optional, Union, cast
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 from ai.chronon.repo import TEAMS_FILE_PATH, teams
+from ai.chronon.repo.external_join_part import ExternalJoinPart
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
@@ -252,6 +253,8 @@ def join_part_name(jp):
         )
     if not jp.groupBy.metaData.name and isinstance(jp.groupBy, api.GroupBy):
         __set_name(jp.groupBy, api.GroupBy, "group_bys")
+    if isinstance(jp, ExternalJoinPart):
+        return jp.external_join_full_prefix
     return "_".join(
         [
             component

@@ -16,7 +16,7 @@
 
 package ai.chronon.api.test
 
-import ai.chronon.api.{Accuracy, Builders, Constants, GroupBy}
+import ai.chronon.api.{Accuracy, Builders, Constants, GroupBy, IntType, LongType}
 import org.junit.Test
 import ai.chronon.api.Extensions._
 import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
@@ -247,5 +247,23 @@ class ExtensionsTest {
     join2.derivations.get(0).setMetaData(updatedMetadata)
     assertEquals(join1.semanticHash(excludeTopic = true), join2.semanticHash(excludeTopic = true))
     assertEquals(join1.semanticHash(excludeTopic = false), join2.semanticHash(excludeTopic = false))
+  }
+
+  @Test
+  def leftKeyColsIncludesExternalPartKeyMappings(): Unit = {
+    val metadata = Builders.MetaData(name = "test", team = "team")
+    val groupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.events(query = null, table = "db.gb_table")),
+      keyColumns = Seq("right_key"),
+      metaData = metadata)
+    val externalSource = Builders.ExternalSource(metadata, keySchema = IntType, valueSchema = LongType, offlineGroupBy = groupBy)
+
+    val join = Builders.Join(
+      left = Builders.Source.events(query = null, table = "db.join_table"),
+      externalParts = Seq(Builders.ExternalPart(externalSource = externalSource, keyMapping = Map("left_key" -> "right_key"), prefix = "ext"))
+    )
+
+    assertTrue(join.leftKeyCols.contains("left_key"))
+
   }
 }

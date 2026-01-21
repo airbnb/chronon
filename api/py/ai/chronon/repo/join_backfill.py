@@ -1,7 +1,6 @@
 import json
 import os
 
-import ai.chronon.api.ttypes as api
 from ai.chronon.scheduler.interfaces.flow import Flow
 from ai.chronon.scheduler.interfaces.node import Node
 from ai.chronon.scheduler.interfaces.orchestrator import WorkflowOrchestrator
@@ -14,6 +13,7 @@ from ai.chronon.utils import (
     join_part_name,
     sanitize,
 )
+from ai.chronon.repo.external_join_part import ExternalJoinPart
 
 TASK_PREFIX = "compute_join"
 DEFAULT_SPARK_SETTINGS = {
@@ -44,13 +44,8 @@ def get_regular_and_external_join_parts(join):
     if join.onlineExternalParts:
         for ext_part in join.onlineExternalParts:
             if ext_part.source.offlineGroupBy is not None:
-                # Create synthetic JoinPart from external part with offlineGroupBy
-                synthetic_jp = api.JoinPart(
-                    groupBy=ext_part.source.offlineGroupBy,
-                    keyMapping=ext_part.keyMapping if ext_part.keyMapping else None,
-                    prefix=ext_part.prefix if ext_part.prefix else None,
-                )
-                external_join_parts.append(synthetic_jp)
+                external_jp = ExternalJoinPart.from_external_part(ext_part)
+                external_join_parts.append(external_jp)
 
     return regular_join_parts + external_join_parts
 
