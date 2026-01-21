@@ -8,7 +8,7 @@
 5. [Extending the Framework](#extending-the-framework)
 6. [Environment Setup](#environment-setup)
 
-## Introduction
+## Introduction 
 
 The Chronon PySpark Interface provides a clean, object-oriented framework for executing Chronon feature definitions directly within a PySpark environment, like Databricks Notebooks. This interface streamlines the developer experience by removing the need to switch between multiple tools, allowing rapid prototyping and iteration of Chronon feature engineering workflows.
 
