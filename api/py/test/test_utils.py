@@ -440,3 +440,131 @@ def test_join_part_name_external_and_regular():
     # ExternalJoinPart without user prefix
     external_jp_no_prefix = ExternalJoinPart(regular_jp_no_prefix, full_prefix="ext_source")
     assert join_part_name(external_jp_no_prefix) == "ext_source"
+
+
+class TestGetMaxWindowForGbInDays:
+    """Tests for get_max_window_for_gb_in_days function."""
+
+    def test_no_aggregations_returns_default(self):
+        """GroupBy with no aggregations returns default of 1."""
+        group_by = api.GroupBy(metaData=api.MetaData(name="test"))
+        assert utils.get_max_window_for_gb_in_days(group_by) == 1
+
+    def test_empty_aggregations_returns_default(self):
+        """GroupBy with empty aggregations list returns default of 1."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 1
+
+    def test_window_in_days(self):
+        """Window specified in days returns correct value."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=7, timeUnit=api.TimeUnit.DAYS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 7
+
+    def test_window_in_hours(self):
+        """Window specified in hours converts correctly to days."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=48, timeUnit=api.TimeUnit.HOURS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 2
+
+    def test_window_in_hours_rounds_up(self):
+        """Window in hours that doesn't divide evenly rounds up."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=25, timeUnit=api.TimeUnit.HOURS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 2
+
+    def test_multiple_windows_returns_max(self):
+        """Multiple windows returns the maximum value."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[
+                        api.Window(length=1, timeUnit=api.TimeUnit.DAYS),
+                        api.Window(length=7, timeUnit=api.TimeUnit.DAYS),
+                        api.Window(length=30, timeUnit=api.TimeUnit.DAYS),
+                    ]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 30
+
+    def test_multiple_aggregations_returns_max(self):
+        """Multiple aggregations returns max across all windows."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col1",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=7, timeUnit=api.TimeUnit.DAYS)]
+                ),
+                api.Aggregation(
+                    inputColumn="col2",
+                    operation=api.Operation.SUM,
+                    windows=[api.Window(length=14, timeUnit=api.TimeUnit.DAYS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 14
+
+    def test_mixed_time_units_returns_max(self):
+        """Mixed time units correctly converts and returns max."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[
+                        api.Window(length=12, timeUnit=api.TimeUnit.HOURS),
+                        api.Window(length=48, timeUnit=api.TimeUnit.HOURS),
+                        api.Window(length=3, timeUnit=api.TimeUnit.DAYS),
+                    ]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 3
+
+    def test_small_hour_window_returns_minimum_of_one(self):
+        """Very small window still returns at least 1 day."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=1, timeUnit=api.TimeUnit.HOURS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 1

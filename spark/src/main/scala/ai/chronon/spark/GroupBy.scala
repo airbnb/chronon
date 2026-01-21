@@ -779,4 +779,26 @@ object GroupBy {
       throw new Exception(fullMessage)
     }
   }
+
+  /**
+    * Factory method to create a GroupBy from Java ArrayLists.
+    * This is useful for PySpark integration where Py4J works better with Java collections.
+    *
+    * @param aggregations Java ArrayList of aggregations
+    * @param keyColumns Java ArrayList of key column names
+    * @param inputDataFrame input DataFrame
+    * @param mutationDataFrame mutation DataFrame (optional)
+    * @param filterForSkew optional filter for skew
+    * @param shouldFinalize whether to finalize the aggregations
+    * @return GroupBy
+    */
+  def usingArrayList(aggregations: java.util.ArrayList[api.Aggregation],
+                     keyColumns: java.util.ArrayList[String],
+                     inputDataFrame: DataFrame,
+                     mutationDataFrame: DataFrame = null,
+                     filterForSkew: Option[String] = None,
+                     shouldFinalize: Boolean = true): GroupBy = {
+    val mutationFn: () => DataFrame = if (mutationDataFrame == null) null else () => mutationDataFrame
+    new GroupBy(aggregations.toScala, keyColumns.toScala, inputDataFrame, mutationFn, filterForSkew, shouldFinalize)
+  }
 }
