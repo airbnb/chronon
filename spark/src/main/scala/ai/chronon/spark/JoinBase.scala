@@ -347,12 +347,16 @@ abstract class JoinBase(joinConf: api.Join,
 
     if (tableUtils.joinPartUniquenessCheck) {
       // Uniqueness check on key columns (+ ts for temporal cases) - throw error if violated
+      logger.info(s"Performing uniqueness check for join part: ${joinPart.groupBy.metaData.name}")
+
       val hasTimeColumn = rightDfWithDerivations.columns.contains(Constants.TimeColumn)
       val keyColumns = joinPart.groupBy.keyColumns.toScala ++
         (if (hasTimeColumn) Seq(Constants.TimeColumn) else Seq.empty) :+
         tableUtils.partitionColumn
       val totalCount = rightDfWithDerivations.count()
       val distinctCount = rightDfWithDerivations.select(keyColumns.map(col): _*).distinct().count()
+      logger.info(s"Join part: ${joinPart.groupBy.metaData.name} - total count: $totalCount")
+      logger.info(s"Join part: ${joinPart.groupBy.metaData.name} - distinct key count: $distinctCount")
 
       if (totalCount != distinctCount) {
         throw new IllegalStateException(
