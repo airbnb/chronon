@@ -355,6 +355,7 @@ abstract class JoinBase(joinConf: api.Join,
         tableUtils.partitionColumn
       val totalCount = rightDfWithDerivations.count()
       val distinctCount = rightDfWithDerivations.select(keyColumns.map(col): _*).distinct().count()
+      logger.info(s"Join part: ${joinPart.groupBy.metaData.name} - total count: $totalCount")
       logger.info(s"Join part: ${joinPart.groupBy.metaData.name} - distinct key count: $distinctCount")
 
       if (totalCount != distinctCount) {
