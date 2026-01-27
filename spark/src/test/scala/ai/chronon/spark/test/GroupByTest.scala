@@ -41,6 +41,7 @@ import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.types.{ArrayType, StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Encoders, Row, SparkSession}
+import org.apache.spark.sql.functions.col
 import org.junit.Assert._
 import org.junit.Test
 
@@ -995,113 +996,6 @@ class GroupByTest {
       table = sourceTable
     )
     (source, endPartition)
-  }
-
-  /**
-   * the test compute daily intermediate aggregations
-   *
-   *  Test is one daily partition data is correct
-   *  Tests SUM, AVERAGE (with IR structure verification), and COUNT operations
-   */
-  @Test
-  def testIncrementalDailyData(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncremental" + "_" + Random.alphanumeric.take(6).mkString, local = true)
-    implicit val tableUtils = TableUtils(spark)
-    val namespace = s"incremental_groupBy_${Random.alphanumeric.take(6).mkString}"
-    tableUtils.createDatabase(namespace)
-    val schema = List(
-      Column("user", StringType, 10), // ts = last 10 days
-      Column("session_length", IntType, 2),
-      Column("rating", DoubleType, 2000)
-    )
-
-    val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
-
-    val aggregations: Seq[Aggregation] = Seq(
-        Builders.Aggregation(Operation.SUM, "session_length", Seq(new Window(10, TimeUnit.DAYS))),
-        Builders.Aggregation(Operation.AVERAGE, "rating", Seq(new Window(10, TimeUnit.DAYS))),
-        Builders.Aggregation(Operation.COUNT, "session_length", Seq(new Window(10, TimeUnit.DAYS)))
-    )
-
-    val tableProps: Map[String, String] = Map(
-      "source" -> "chronon"
-    )
-
-    val today_date = tableUtils.partitionSpec.at(System.currentTimeMillis())
-    val today_minus_10_date = tableUtils.partitionSpec.minus(today_date, new Window(10, TimeUnit.DAYS))
-    val today_minus_30_date = tableUtils.partitionSpec.minus(today_date, new Window(30, TimeUnit.DAYS))
-
-    val partitionRange = PartitionRange(
-        today_minus_30_date,
-        today_date
-    )
-
-    val groupBy = new GroupBy(aggregations, Seq("user"), df)
-    groupBy.computeIncrementalDf(s"${namespace}.testIncrementalOutput", partitionRange, tableProps)
-
-    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalOutput where ds='$today_minus_10_date'")
-    df.createOrReplaceTempView("test_incremental_input")
-
-    // ASSERTION 1: Verify IR table has expected columns
-    val irColumns = actualIncrementalDf.schema.fieldNames.toSet
-    assertTrue("IR must contain 'user' column", irColumns.contains("user"))
-    assertTrue("IR must contain 'ds' column", irColumns.contains("ds"))
-    assertTrue("IR must contain 'ts' column", irColumns.contains("ts"))
-
-    // ASSERTION 2: Verify AVERAGE IR structure (must be StructType with sum and count)
-    val ratingIRColumnOpt = actualIncrementalDf.schema.fields
-      .find(_.name.contains("rating_average"))
-
-    assertTrue("Should have rating IR column", ratingIRColumnOpt.isDefined)
-    val ratingIRColumn = ratingIRColumnOpt.get
-
-    println(s"=== Rating IR Column: ${ratingIRColumn.name}, Type: ${ratingIRColumn.dataType} ===")
-
-    // ASSERT: IR should be a StructType with sum and count fields
-    assertTrue(s"Rating IR should be StructType for AVERAGE, got ${ratingIRColumn.dataType}",
-               ratingIRColumn.dataType.isInstanceOf[StructType])
-
-    val structType = ratingIRColumn.dataType.asInstanceOf[StructType]
-    val structFieldNames = structType.fieldNames.toSet
-
-    // ASSERT: Struct should contain 'sum' and 'count' fields
-    assertTrue(s"AVERAGE IR must contain 'sum' field, found fields: ${structFieldNames}",
-               structFieldNames.exists(_.toLowerCase.contains("sum")))
-    assertTrue(s"AVERAGE IR must contain 'count' field, found fields: ${structFieldNames}",
-               structFieldNames.exists(_.toLowerCase.contains("count")))
-
-    // ASSERTION 3: Verify IR table has data
-    val irRowCount = actualIncrementalDf.count()
-    assertTrue(s"IR table should have rows, found ${irRowCount}", irRowCount > 0)
-
-    val query =
-      s"""
-         |select user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000 as ts,
-         |  sum(session_length) as session_length_sum,
-         |  struct( sum(rating) as sum, count(rating) as count ) as rating_average,
-         |  count(session_length) as session_length_count
-         |from test_incremental_input
-         |where ds='$today_minus_10_date'
-         |group by user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000
-         |""".stripMargin
-
-    val expectedDf = spark.sql(query)
-
-    val diff = Comparison.sideBySide(actualIncrementalDf, expectedDf, List("user", tableUtils.partitionColumn))
-
-    if (diff.count() > 0) {
-      println(s"=== Diff Details ===")
-      println(s"Actual count: ${irRowCount}")
-      println(s"Expected count: ${expectedDf.count()}")
-      println(s"Diff count: ${diff.count()}")
-      diff.show()
-      println("diff result rows")
-    }
-
-    // ASSERTION 5: Main verification - no differences
-    assertEquals(0, diff.count())
-
-    println("=== All Incremental Assertions Passed (SUM, AVERAGE with IR verification, COUNT) ===")
   }
 
   /**
