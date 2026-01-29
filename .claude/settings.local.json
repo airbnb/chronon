@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find:*)",
+      "Bash(python -m pytest:*)",
+      "Bash(python3 -m pytest:*)",
+      "Bash(source:*)",
+      "Bash(bazelisk test:*)",
+      "Bash(bazelisk query:*)",
+      "Bash(python3:*)"
+    ]
+  }
+}
