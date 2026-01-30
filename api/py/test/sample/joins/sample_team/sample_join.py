@@ -12,27 +12,23 @@
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from sources import test_sources
-from group_bys.sample_team import sample_group_by, sample_group_by_group_by
 from ai.chronon.join import (
     Join,
     JoinPart,
 )
-
+from group_bys.sample_team import sample_group_by, sample_group_by_group_by
+from sources import test_sources
 
 v1 = Join(
     left=test_sources.staging_entities,
     right_parts=[JoinPart(group_by=sample_group_by.v1, tags={"experimental": True})],
-    table_properties={
-        "config_json": """{"sample_key": "sample_value"}"""
-    },
+    table_properties={"config_json": """{"sample_key": "sample_value"}"""},
     output_namespace="sample_namespace",
     tags={"business_relevance": "personalization"},
     env={
-        "backfill": {
-            "EXECUTOR_MEMORY": "9G"
-        },
+        "backfill": {"EXECUTOR_MEMORY": "9G"},
     },
+    sample_percent=100.0,
 )
 
 never = Join(
@@ -40,7 +36,8 @@ never = Join(
     right_parts=[JoinPart(group_by=sample_group_by.v1, tags={"experimental": True})],
     output_namespace="sample_namespace",
     tags={"business_relevance": "personalization"},
-    offline_schedule='@never',
+    offline_schedule="@never",
+    sample_percent=100.0,
 )
 
 group_by_of_group_by = Join(
