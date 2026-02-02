@@ -487,7 +487,8 @@ def Join(
         This is used to blacklist crawlers etc
     :param sample_percent:
         Online only parameter. What percent of online serving requests to this join should be logged into warehouse.
-        Default is None (logging disabled). Set to a value between 0-100 to enable logging (e.g., 100.0 for all requests).
+        Default is None (logging disabled).
+        Set to a value between 0-100 to enable logging (e.g., 100.0 for all requests).
     :param consistency_sample_percent:
         Online only parameter. What percent of online serving requests to this join should be sampled to compute
         online offline consistency metrics.
