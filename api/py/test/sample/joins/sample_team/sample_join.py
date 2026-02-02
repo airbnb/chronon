@@ -52,6 +52,7 @@ consistency_check = Join(
     output_namespace="sample_namespace",
     tags={"business_relevance": "personalization"},
     check_consistency=True,
+    sample_percent=100.0,
 )
 
 no_log_flattener = Join(
