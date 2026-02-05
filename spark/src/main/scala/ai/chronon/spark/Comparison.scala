@@ -20,12 +20,31 @@ import org.slf4j.LoggerFactory
 import ai.chronon.online.Extensions.StructTypeOps
 import com.google.gson.{Gson, GsonBuilder}
 import org.apache.spark.sql.DataFrame
-import org.apache.spark.sql.types.{DecimalType, DoubleType, FloatType, MapType}
+import org.apache.spark.sql.types.{ArrayType, DecimalType, DoubleType, FloatType, MapType, StructType}
+import org.apache.spark.sql.functions.col
 
 import java.util
+import scala.collection.mutable
 
 object Comparison {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
+
+  // Flatten struct columns into individual columns so nested double fields can be compared with tolerance
+  private def flattenStructs(df: DataFrame): DataFrame = {
+    val flattenedSelects = df.schema.fields.flatMap { field =>
+      field.dataType match {
+        case structType: StructType =>
+          // Flatten struct fields: struct_name.field_name -> struct_name_field_name
+          structType.fields.map { subField =>
+            col(s"${field.name}.${subField.name}").alias(s"${field.name}_${subField.name}")
+          }
+        case _ =>
+          // Keep non-struct fields as-is
+          Seq(col(field.name))
+      }
+    }
+    df.select(flattenedSelects: _*)
+  }
 
   // used for comparison
   def sortedJson(m: Map[String, Any]): String = {
@@ -38,6 +57,40 @@ object Comparison {
     gson.toJson(tm)
   }
 
+  // Convert element to simple representation (Row → Array)
+  private def simplifyElement(x: Any): Any = {
+    if (x == null) return null
+    x match {
+      case row: org.apache.spark.sql.Row =>
+        // Extract just the values from Row, without Spark schema metadata
+        (0 until row.length).map(i => if (row.isNullAt(i)) null else row.get(i)).toArray
+      case other => other
+    }
+  }
+
+  // Convert element to string for sorting
+  private def elementToString(x: Any): String = {
+    if (x == null) return ""
+    val simplified = simplifyElement(x)
+    simplified match {
+      case arr: Array[_] => arr.mkString("[", ",", "]")
+      case other => other.toString
+    }
+  }
+
+  // Sort lists/arrays for comparison (order shouldn't matter for sets)
+  def sortedList(list: mutable.WrappedArray[Any]): String = {
+    if (list == null) return null
+    // Sort using clean string representation
+    val sorted = list.sorted(Ordering.by[Any, String](elementToString))
+    val gson = new GsonBuilder()
+      .serializeSpecialFloatingPointValues()
+      .create()
+    // Simplify Row objects to plain arrays before JSON serialization
+    val simplified = sorted.map(simplifyElement)
+    gson.toJson(simplified.toArray)
+  }
+
   def stringifyMaps(df: DataFrame): DataFrame = {
     try {
       df.sparkSession.udf.register("sorted_json", (m: Map[String, Any]) => sortedJson(m))
@@ -47,6 +100,22 @@ object Comparison {
     val selects = for (field <- df.schema.fields) yield {
       if (field.dataType.isInstanceOf[MapType]) {
         s"sorted_json(${field.name}) as `${field.name}`"
+      } else {
+        s"${field.name} as `${field.name}`"
+      }
+    }
+    df.selectExpr(selects: _*)
+  }
+
+  def sortLists(df: DataFrame): DataFrame = {
+    try {
+      df.sparkSession.udf.register("sorted_list", (list: mutable.WrappedArray[Any]) => sortedList(list))
+    } catch {
+      case e: Exception => e.printStackTrace()
+    }
+    val selects = for (field <- df.schema.fields) yield {
+      if (field.dataType.isInstanceOf[ArrayType]) {
+        s"sorted_list(${field.name}) as `${field.name}`"
       } else {
         s"${field.name} as `${field.name}`"
       }
@@ -69,8 +138,13 @@ object Comparison {
         |""".stripMargin
     )
 
-    val prefixedExpectedDf = prefixColumnName(stringifyMaps(a), s"${aName}_")
-    val prefixedOutputDf = prefixColumnName(stringifyMaps(b), s"${bName}_")
+    // Flatten structs so nested double fields can be compared with tolerance
+    // Sort lists so order doesn't matter for comparison (e.g., UNIQUE_COUNT arrays)
+    val aFlattened = flattenStructs(sortLists(stringifyMaps(a)))
+    val bFlattened = flattenStructs(sortLists(stringifyMaps(b)))
+
+    val prefixedExpectedDf = prefixColumnName(aFlattened, s"${aName}_")
+    val prefixedOutputDf = prefixColumnName(bFlattened, s"${bName}_")
 
     val joinExpr = keys
       .map(key => prefixedExpectedDf(s"${aName}_$key") <=> prefixedOutputDf(s"${bName}_$key"))
@@ -82,15 +156,16 @@ object Comparison {
     )
 
     var finalDf = joined
+    // Use flattened schema for comparison
     val comparisonColumns =
-      a.schema.fieldNames.toSet.diff(keys.toSet).toList.sorted
+      aFlattened.schema.fieldNames.toSet.diff(keys.toSet).toList.sorted
     val colOrder =
       keys.map(key => { finalDf(s"${aName}_$key").as(key) }) ++
         comparisonColumns.flatMap { col =>
           List(finalDf(s"${aName}_$col"), finalDf(s"${bName}_$col"))
         }
-    // double columns need to be compared approximately
-    val doubleCols = a.schema.fields
+    // double columns need to be compared approximately (now includes flattened struct fields)
+    val doubleCols = aFlattened.schema.fields
       .filter(field =>
         field.dataType == DoubleType || field.dataType == FloatType || field.dataType.isInstanceOf[DecimalType])
       .map(_.name)

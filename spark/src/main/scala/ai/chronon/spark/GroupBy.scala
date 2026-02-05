@@ -100,7 +100,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     SparkConversions.fromChrononSchema(valueChrononSchema)
   }
 
-  lazy val flattenedAgg: RowAggregator = new RowAggregator(selectedSchema, aggregations.flatMap(_.unWindowed))
+  @transient lazy val flattenedAgg: RowAggregator = new RowAggregator(selectedSchema, aggregations.flatMap(_.unWindowed))
   lazy val incrementalSchema: Array[(String, api.DataType)] = flattenedAgg.incrementalOutputSchema
 
 
@@ -374,7 +374,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       hopsArrayHead.map { array: HopIr =>
         val timestamp = array.last.asInstanceOf[Long]
         val withoutTimestamp = array.dropRight(1)
-        ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), withoutTimestamp)
+        val normalizedIR = flattenedAgg.normalize(withoutTimestamp)
+        ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), normalizedIR)
       }
     }
   }
@@ -808,7 +809,8 @@ object GroupBy {
       incrementalDf: DataFrame,
       aggregationParts: Seq[api.AggregationPart],
       groupByConf: api.GroupBy,
-      tableUtils: TableUtils) : RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+      tableUtils: TableUtils,
+      rowAggregator: RowAggregator) : RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
 
     val keyColumns = groupByConf.getKeyColumns.toScala
     val keyBuilder: Row => KeyWithHash =
@@ -819,15 +821,19 @@ object GroupBy {
         //Extract timestamp from partition column
         val ds = row.getAs[String](tableUtils.partitionColumn)
         val ts = tableUtils.partitionSpec.epochMillis(ds)
-
-        val irs = new Array[Any](aggregationParts.length)
+        
+        // Extract normalized IRs from the row
+        val normalizedIrs = new Array[Any](aggregationParts.length)
         aggregationParts.zipWithIndex.foreach { case (part, idx) =>
           val value = row.get(row.fieldIndex(part.incrementalOutputColumnName))
-          irs(idx) = value match {
+          normalizedIrs(idx) = value match {
             case r: Row => r.toSeq.toArray
             case other => other
           }
         }
+
+        // Denormalize IRs to in-memory format (e.g., ArrayList -> HashSet)
+        val irs = rowAggregator.denormalize(normalizedIrs)
 
         // Build HopIR : [IR1, IR2, ..., IRn, ts]
         val hopIr: HopIr = irs :+ ts
@@ -855,12 +861,16 @@ object GroupBy {
 
     val (_, incrementalDf: DataFrame) =  incrementalQueryableRange.scanQueryStringAndDf(null, incrementalOutputTable)
 
-    val incrementalHops  = convertIncrementalDfToHops(incrementalDf, aggregationParts, groupByConf, tableUtils)
-
     // Create a DataFrame with the source schema (raw data schema) to match aggregations
     // We need this because GroupBy class variables expect inputDf schema to match aggregation input columns
     // We create an empty DataFrame with the correct schema - it won't be used for computation
     val sourceDf = buildSourceDataFrame(groupByConf, range, None, tableUtils, schemaOnly = true)
+
+    // Create RowAggregator for denormalizing IRs when reading from incremental table
+    val chrononSchema = SparkConversions.toChrononSchema(sourceDf.schema)
+    val rowAggregator = new RowAggregator(chrononSchema, aggregationParts)
+
+    val incrementalHops  = convertIncrementalDfToHops(incrementalDf, aggregationParts, groupByConf, tableUtils, rowAggregator)
 
     new GroupBy(
       groupByConf.getAggregations.toScala,

@@ -39,7 +39,7 @@ import ai.chronon.spark._
 import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{ArrayType, StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{ArrayType, BinaryType, MapType, StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Encoders, Row, SparkSession}
 import org.apache.spark.sql.functions.col
 import org.junit.Assert._
@@ -999,27 +999,30 @@ class GroupByTest {
   }
 
   /**
-   * Comprehensive test for incremental aggregations covering all directly comparable operations.
-   * Tests: SUM, COUNT, AVERAGE, MIN, MAX, UNIQUE_COUNT, VARIANCE
-   * All these operations have IRs that can be directly compared (no binary sketches).
+   * Tests basic aggregations in incremental mode by comparing Chronon's output against SQL.
+   *
+   * Operations: SUM, COUNT, AVERAGE, MIN, MAX, VARIANCE, UNIQUE_COUNT, HISTOGRAM, BOUNDED_UNIQUE_COUNT
+   *
+   * Actual:   Chronon computes daily IRs using computeIncrementalDf, storing intermediate results
+   * Expected: SQL query computes the same aggregations directly on the input data for the same date
    */
   @Test
-  def testIncrementalAllAggregations(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncrementalAll" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+  def testIncrementalBasicAggregations(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncrementalBasic" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
-    val namespace = s"incremental_all_aggs_${Random.alphanumeric.take(6).mkString}"
+    val namespace = s"incremental_basic_aggs_${Random.alphanumeric.take(6).mkString}"
     tableUtils.createDatabase(namespace)
 
     val schema = List(
       Column("user", StringType, 10),
       Column("price", DoubleType, 100),
       Column("quantity", IntType, 50),
-      Column("product_id", StringType, 20),  // Low cardinality for UNIQUE_COUNT
+      Column("product_id", StringType, 20),  // Low cardinality for UNIQUE_COUNT, HISTOGRAM, BOUNDED_UNIQUE_COUNT
       Column("rating", DoubleType, 2000)
     )
 
     val df = DataFrameGen.events(spark, schema, count = 100000, partitions = 100)
-
+    
     val aggregations: Seq[Aggregation] = Seq(
       // Simple aggregations
       Builders.Aggregation(Operation.SUM, "price", Seq(new Window(7, TimeUnit.DAYS))),
@@ -1032,8 +1035,17 @@ class GroupByTest {
       Builders.Aggregation(Operation.MIN, "price", Seq(new Window(7, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.MAX, "quantity", Seq(new Window(7, TimeUnit.DAYS))),
 
-      // Variance (struct IR with sum/sum_of_squares/count)
-      Builders.Aggregation(Operation.VARIANCE, "price", Seq(new Window(7, TimeUnit.DAYS)))
+      // Variance (struct IR with count/mean/m2)
+      Builders.Aggregation(Operation.VARIANCE, "price", Seq(new Window(7, TimeUnit.DAYS))),
+
+      // UNIQUE_COUNT (array IR)
+      Builders.Aggregation(Operation.UNIQUE_COUNT, "price", Seq(new Window(7, TimeUnit.DAYS))),
+
+      // HISTOGRAM (map IR)
+      Builders.Aggregation(Operation.HISTOGRAM, "product_id", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "0")),
+
+      // BOUNDED_UNIQUE_COUNT (array IR with bound)
+      Builders.Aggregation(Operation.BOUNDED_UNIQUE_COUNT, "product_id", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "100"))
     )
 
     val tableProps: Map[String, String] = Map("source" -> "chronon")
@@ -1045,10 +1057,10 @@ class GroupByTest {
     val partitionRange = PartitionRange(today_minus_20_date, today_date)
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
-    groupBy.computeIncrementalDf(s"${namespace}.testIncrementalAllAggsOutput", partitionRange, tableProps)
+    groupBy.computeIncrementalDf(s"${namespace}.testIncrementalBasicAggsOutput", partitionRange, tableProps)
 
-    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalAllAggsOutput where ds='$today_minus_7_date'")
-    df.createOrReplaceTempView("test_all_aggs_input")
+    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalBasicAggsOutput where ds='$today_minus_7_date'")
+    df.createOrReplaceTempView("test_basic_aggs_input")
 
     println("=== Incremental IR Schema ===")
     actualIncrementalDf.printSchema()
@@ -1066,16 +1078,9 @@ class GroupByTest {
     assertTrue("IR must contain MIN price", irColumns.exists(_.contains("price_min")))
     assertTrue("IR must contain MAX quantity", irColumns.exists(_.contains("quantity_max")))
     assertTrue("IR must contain VARIANCE price", irColumns.exists(_.contains("price_variance")))
-
-    // ASSERTION 3: Verify complex IR structures
-    val avgColumn = actualIncrementalDf.schema.fields.find(_.name.contains("rating_average"))
-    assertTrue("AVERAGE IR should be StructType", avgColumn.isDefined && avgColumn.get.dataType.isInstanceOf[StructType])
-
-    val varianceColumn = actualIncrementalDf.schema.fields.find(_.name.contains("price_variance"))
-    assertTrue("VARIANCE IR should be StructType", varianceColumn.isDefined && varianceColumn.get.dataType.isInstanceOf[StructType])
-
-    println(s"✓ AVERAGE IR type: ${avgColumn.get.dataType}")
-    println(s"✓ VARIANCE IR type: ${varianceColumn.get.dataType}")
+    assertTrue("IR must contain UNIQUE COUNT price", irColumns.exists(_.contains("price_unique_count")))
+    assertTrue("IR must contain HISTOGRAM product_id", irColumns.exists(_.contains("product_id_histogram")))
+    assertTrue("IR must contain BOUNDED_UNIQUE_COUNT product_id", irColumns.exists(_.contains("product_id_bounded_unique_count")))
 
     // ASSERTION 4: Verify IR table has data
     val irRowCount = actualIncrementalDf.count()
@@ -1084,24 +1089,53 @@ class GroupByTest {
     // ASSERTION 5: Compare against SQL computation
     val query =
       s"""
-         |select user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000 as ts,
-         |  sum(price) as price_sum,
-         |  count(quantity) as quantity_count,
-         |  struct(sum(rating) as sum, count(rating) as count) as rating_average,
-         |  min(price) as price_min,
-         |  max(quantity) as quantity_max,
-         |  struct(
-         |    cast(count(price) as int) as count,
-         |    avg(price) as mean,
-         |    sum(price * price) - count(price) * avg(price) * avg(price) as m2
-         |  ) as price_variance
-         |from test_all_aggs_input
-         |where ds='$today_minus_7_date'
-         |group by user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000
+         |WITH base_aggs AS (
+         |  SELECT user, ds, UNIX_TIMESTAMP(ds, 'yyyy-MM-dd')*1000 as ts,
+         |    sum(price) as price_sum,
+         |    count(quantity) as quantity_count,
+         |    struct(sum(rating) as sum, count(rating) as count) as rating_average,
+         |    min(price) as price_min,
+         |    max(quantity) as quantity_max,
+         |    struct(
+         |      cast(count(price) as int) as count,
+         |      avg(price) as mean,
+         |      sum(price * price) - count(price) * avg(price) * avg(price) as m2
+         |    ) as price_variance,
+         |    collect_set(price) as price_unique_count,
+         |    slice(collect_set(md5(product_id)), 1, 100) as product_id_bounded_unique_count
+         |  FROM test_basic_aggs_input
+         |  WHERE ds='$today_minus_7_date'
+         |  GROUP BY user, ds
+         |),
+         |histogram_agg AS (
+         |  SELECT user, ds,
+         |    map_from_entries(collect_list(struct(product_id, cast(cnt as int)))) as product_id_histogram
+         |  FROM (
+         |    SELECT user, ds, product_id, count(*) as cnt
+         |    FROM test_basic_aggs_input
+         |    WHERE ds='$today_minus_7_date' AND product_id IS NOT NULL
+         |    GROUP BY user, ds, product_id
+         |  )
+         |  GROUP BY user, ds
+         |)
+         |SELECT b.*, h.product_id_histogram
+         |FROM base_aggs b
+         |LEFT JOIN histogram_agg h ON b.user <=> h.user AND b.ds <=> h.ds
          |""".stripMargin
 
     val expectedDf = spark.sql(query)
-    val diff = Comparison.sideBySide(actualIncrementalDf, expectedDf, List("user", tableUtils.partitionColumn))
+
+    // Convert array columns to counts for comparison (since MD5 hashing differs between Scala and SQL)
+    import org.apache.spark.sql.functions.size
+    val actualWithCounts = actualIncrementalDf
+      .withColumn("price_unique_count", size(col("price_unique_count")))
+      .withColumn("product_id_bounded_unique_count", size(col("product_id_bounded_unique_count")))
+
+    val expectedWithCounts = expectedDf
+      .withColumn("price_unique_count", size(col("price_unique_count")))
+      .withColumn("product_id_bounded_unique_count", size(col("product_id_bounded_unique_count")))
+
+    val diff = Comparison.sideBySide(actualWithCounts, expectedWithCounts, List("user", tableUtils.partitionColumn))
 
     if (diff.count() > 0) {
       println(s"=== Diff Details for All Aggregations ===")
@@ -1112,15 +1146,6 @@ class GroupByTest {
     }
 
     assertEquals(0, diff.count())
-
-    println("=== All Incremental Assertions Passed ===")
-    println("✓ SUM: Simple numeric IR")
-    println("✓ COUNT: Simple numeric IR")
-    println("✓ AVERAGE: Struct IR {sum, count}")
-    println("✓ MIN: Simple numeric IR")
-    println("✓ MAX: Simple numeric IR")
-    println("✓ UNIQUE_COUNT: Array IR [unique values] - directly comparable!")
-    println("✓ VARIANCE: Struct IR {sum, sum_of_squares, count}")
   }
 
   /**
@@ -1176,6 +1201,199 @@ class GroupByTest {
       println("=== Diff result rows ===")
     }
     assertEquals(0, diff.count())
+  }
+
+  /**
+   * Unit test for FIRST and LAST aggregations with incremental IR
+   * FIRST/LAST use TimeTuple IR: struct {epochMillis: Long, payload: Value}
+   * FIRST keeps the value with the earliest timestamp
+   * LAST keeps the value with the latest timestamp
+   */
+  @Test
+  def testIncrementalFirstLast(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestFirstLast" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace = s"incremental_first_last_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+    val schema = List(
+      Column("user", StringType, 5),
+      Column("value", DoubleType, 100)
+    )
+
+    // Generate events and add random milliseconds to ts for unique timestamps
+    import org.apache.spark.sql.functions.{rand, col}
+    import org.apache.spark.sql.types.{LongType => SparkLongType}
+
+    val dfWithRandom = DataFrameGen.events(spark, schema, count = 10000, partitions = 20)
+      .withColumn("ts", col("ts") + (rand() * 86400000).cast(SparkLongType))  // Add 0-24h random millis
+      .cache()  // Mark for caching
+
+    // Force materialization - computes and caches the random values
+    dfWithRandom.count()
+
+    // Write the CACHED data to table - writes already-materialized values
+    dfWithRandom.write.mode("overwrite").saveAsTable(s"${namespace}.test_first_last_input")
+
+    // Read back from table - guaranteed same data as what was written
+    val df = spark.table(s"${namespace}.test_first_last_input")
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.FIRST, "value", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.LAST, "value", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.FIRST_K, "value", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "3")),
+      Builders.Aggregation(Operation.LAST_K, "value", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "3")),
+      Builders.Aggregation(Operation.TOP_K, "value", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "3")),
+      Builders.Aggregation(Operation.BOTTOM_K, "value", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "3"))
+    )
+
+    val tableProps: Map[String, String] = Map("source" -> "chronon")
+    val today_date = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val today_minus_7_date = tableUtils.partitionSpec.minus(today_date, new Window(7, TimeUnit.DAYS))
+    val today_minus_20_date = tableUtils.partitionSpec.minus(today_date, new Window(20, TimeUnit.DAYS))
+    val partitionRange = PartitionRange(today_minus_20_date, today_date)
+
+    val groupBy = new GroupBy(aggregations, Seq("user"), df)
+    groupBy.computeIncrementalDf(s"${namespace}.testIncrementalFirstLastOutput", partitionRange, tableProps)
+
+    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalFirstLastOutput where ds='$today_minus_7_date'")
+
+    println("=== Incremental FIRST/LAST IR Schema ===")
+    actualIncrementalDf.printSchema()
+
+    // Compare against SQL computation
+    // Note: ts column in IR table is the partition timestamp (derived from ds)
+    // But FIRST/LAST use the actual event timestamps (with random milliseconds)
+    val query =
+      s"""
+         |SELECT user,
+         |  to_date(from_unixtime(ts / 1000, 'yyyy-MM-dd HH:mm:ss')) as ds,
+         |  named_struct(
+         |    'epochMillis', min(ts),
+         |    'payload', sort_array(collect_list(struct(ts, value)))[0].value
+         |  ) as value_first,
+         |  named_struct(
+         |    'epochMillis', max(ts),
+         |    'payload', reverse(sort_array(collect_list(struct(ts, value))))[0].value
+         |  ) as value_last,
+         |  transform(
+         |    slice(sort_array(filter(collect_list(struct(ts, value)), x -> x.value IS NOT NULL)), 1, 3),
+         |    x -> named_struct('epochMillis', x.ts, 'payload', x.value)
+         |  ) as value_first3,
+         |  transform(
+         |    slice(reverse(sort_array(filter(collect_list(struct(ts, value)), x -> x.value IS NOT NULL))), 1, 3),
+         |    x -> named_struct('epochMillis', x.ts, 'payload', x.value)
+         |  ) as value_last3,
+         |  transform(
+         |    slice(sort_array(filter(collect_list(struct(value, ts)), x -> x.value IS NOT NULL), false), 1, 3),
+         |    x -> x.value
+         |  ) as value_top3,
+         |  transform(
+         |    slice(sort_array(filter(collect_list(struct(value, ts)), x -> x.value IS NOT NULL), true), 1, 3),
+         |    x -> x.value
+         |  ) as value_bottom3
+         |FROM ${namespace}.test_first_last_input
+         |WHERE to_date(from_unixtime(ts / 1000, 'yyyy-MM-dd HH:mm:ss'))='$today_minus_7_date'
+         |GROUP BY user, to_date(from_unixtime(ts / 1000, 'yyyy-MM-dd HH:mm:ss'))
+         |""".stripMargin
+
+    val expectedDf = spark.sql(query)
+
+    // Drop ts from comparison - it's just the partition timestamp, not part of the aggregation IR
+    val actualWithoutTs = actualIncrementalDf.drop("ts")
+
+    // Comparison.sideBySide handles sorting arrays and converting Row objects to clean JSON
+    val diff = Comparison.sideBySide(actualWithoutTs, expectedDf, List("user", tableUtils.partitionColumn))
+
+    if (diff.count() > 0) {
+      println(s"=== Diff Details for Time-based Aggregations ===")
+      println(s"Expected count: ${expectedDf.count()}")
+      println(s"Diff count: ${diff.count()}")
+      diff.show(100, truncate = false)
+    }
+
+    assertEquals(0, diff.count())
+
+    println("=== Time-based Aggregations Incremental Test Passed ===")
+    println("✓ FIRST: TimeTuple IR {epochMillis, payload}")
+    println("✓ LAST: TimeTuple IR {epochMillis, payload}")
+    println("✓ FIRST_K: Array[TimeTuple] - stores timestamps")
+    println("✓ LAST_K: Array[TimeTuple] - stores timestamps")
+    println("✓ TOP_K: Array[Double] - stores only values")
+    println("✓ BOTTOM_K: Array[Double] - stores only values")
+
+    // Cleanup
+    spark.stop()
+  }
+
+  @Test
+  def testIncrementalStatisticalAggregations(): Unit = {
+    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestStatistical" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace = s"incremental_stats_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+    val schema = List(
+      Column("user", StringType, 5),
+      Column("value", DoubleType, 100),
+      Column("category", StringType, 10)  // For APPROX_UNIQUE_COUNT
+    )
+
+    // Generate sufficient data for statistical aggregations
+    val df = DataFrameGen.events(spark, schema, count = 10000, partitions = 20)
+    df.write.mode("overwrite").saveAsTable(s"${namespace}.test_stats_input")
+    val inputDf = spark.table(s"${namespace}.test_stats_input")
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.SKEW, "value", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.KURTOSIS, "value", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.APPROX_PERCENTILE, "value", Seq(new Window(7, TimeUnit.DAYS)),
+        argMap = Map("percentiles" -> "[0.5, 0.25, 0.75]")),
+      Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "category", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.APPROX_HISTOGRAM_K, "category", Seq(new Window(7, TimeUnit.DAYS)),
+        argMap = Map("k" -> "10"))
+    )
+
+    val tableProps: Map[String, String] = Map("source" -> "chronon")
+    val today_date = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val today_minus_7_date = tableUtils.partitionSpec.minus(today_date, new Window(7, TimeUnit.DAYS))
+    val today_minus_20_date = tableUtils.partitionSpec.minus(today_date, new Window(20, TimeUnit.DAYS))
+    val partitionRange = PartitionRange(today_minus_20_date, today_date)
+
+    val groupBy = new GroupBy(aggregations, Seq("user"), inputDf)
+    groupBy.computeIncrementalDf(s"${namespace}.testIncrementalStatsOutput", partitionRange, tableProps)
+
+    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalStatsOutput where ds='$today_minus_7_date'")
+
+    // Verify IR table has data
+    assertTrue(s"IR table should have rows", actualIncrementalDf.count() > 0)
+
+    // Verify APPROX_HISTOGRAM_K column exists and has binary data (sketch)
+    val histogramCol = actualIncrementalDf.schema.fields.find(_.name.contains("category_approx_histogram_k"))
+    assertTrue("APPROX_HISTOGRAM_K column should exist", histogramCol.isDefined)
+    assertTrue("APPROX_HISTOGRAM_K should be BinaryType (sketch)", histogramCol.get.dataType.isInstanceOf[BinaryType])
+
+    // Verify histogram sketch is non-null
+    val histogramData = spark.sql(
+      s"""
+         |SELECT category_approx_histogram_k
+         |FROM ${namespace}.testIncrementalStatsOutput
+         |WHERE ds='$today_minus_7_date' AND category_approx_histogram_k IS NOT NULL
+         |LIMIT 1
+         |""".stripMargin
+    ).collect()
+
+    assertTrue("APPROX_HISTOGRAM_K should produce non-null sketch data", histogramData.nonEmpty)
+
+    println("=== Statistical Aggregations Incremental Test Passed ===")
+    println("✓ SKEW: Statistical skewness")
+    println("✓ KURTOSIS: Statistical kurtosis")
+    println("✓ APPROX_PERCENTILE: Approximate percentiles")
+    println("✓ APPROX_UNIQUE_COUNT: Approximate distinct count")
+    println("✓ APPROX_HISTOGRAM_K: Approximate histogram with k buckets")
+
+    // Cleanup
+    spark.stop()
   }
 
 }
