@@ -79,7 +79,8 @@ object Comparison {
   }
 
   // Sort lists/arrays for comparison (order shouldn't matter for sets)
-  def sortedList(list: mutable.WrappedArray[Any]): String = {
+  // Use Seq[Any] for Scala 2.13 compatibility (WrappedArray in 2.11/2.12, ArraySeq in 2.13)
+  def sortedList(list: Seq[Any]): String = {
     if (list == null) return null
     // Sort using clean string representation
     val sorted = list.sorted(Ordering.by[Any, String](elementToString))
@@ -109,7 +110,7 @@ object Comparison {
 
   def sortLists(df: DataFrame): DataFrame = {
     try {
-      df.sparkSession.udf.register("sorted_list", (list: mutable.WrappedArray[Any]) => sortedList(list))
+      df.sparkSession.udf.register("sorted_list", (list: Seq[Any]) => sortedList(list))
     } catch {
       case e: Exception => e.printStackTrace()
     }
