@@ -37,7 +37,7 @@ object Comparison {
           // Flatten struct fields: struct_name.field_name -> struct_name_field_name
           structType.fields.map { subField =>
             col(s"${field.name}.${subField.name}").alias(s"${field.name}_${subField.name}")
-          }
+          }.toSeq
         case _ =>
           // Keep non-struct fields as-is
           Seq(col(field.name))
