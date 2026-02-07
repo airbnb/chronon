@@ -34,6 +34,8 @@ import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.LoggerFactory
 
+import scala.jdk.CollectionConverters._
+
 import java.util
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
@@ -810,34 +812,60 @@ object GroupBy {
       aggregationParts: Seq[api.AggregationPart],
       groupByConf: api.GroupBy,
       tableUtils: TableUtils,
-      rowAggregator: RowAggregator) : RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+      inputSchema: Seq[(String, api.DataType)]) : RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
 
     val keyColumns = groupByConf.getKeyColumns.toScala
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, incrementalDf.schema)
 
     incrementalDf.rdd
-      .map { row =>
-        //Extract timestamp from partition column
-        val ds = row.getAs[String](tableUtils.partitionColumn)
-        val ts = tableUtils.partitionSpec.epochMillis(ds)
-        
-        // Extract normalized IRs from the row
-        val normalizedIrs = new Array[Any](aggregationParts.length)
-        aggregationParts.zipWithIndex.foreach { case (part, idx) =>
-          val value = row.get(row.fieldIndex(part.incrementalOutputColumnName))
-          normalizedIrs(idx) = value match {
-            case r: Row => r.toSeq.toArray
-            case other => other
+      .mapPartitions { rows =>
+        // Reconstruct RowAggregator once per partition on executor
+        // Avoids serializing TimedDispatcher and reduces network overhead
+        val rowAggregator = new RowAggregator(inputSchema, aggregationParts)
+
+        rows.map { row =>
+          //Extract timestamp from partition column
+          val ds = row.getAs[String](tableUtils.partitionColumn)
+          val ts = tableUtils.partitionSpec.epochMillis(ds)
+
+          // Extract normalized IRs from the row
+          // Recursively convert Spark types to Java types that denormalize() expects
+          // This handles nested structures (e.g., FIRST_K: Array<Struct> → ArrayList[Array])
+          def convertSparkToJava(value: Any): Any = value match {
+            case null => null
+            case r: Row =>
+              // Struct → Array[Any], recursively convert nested values
+              r.toSeq.map(convertSparkToJava).toArray
+            case arr: scala.collection.mutable.WrappedArray[_] =>
+              // Array → ArrayList, recursively convert elements
+              val converted = arr.map(convertSparkToJava)
+              new java.util.ArrayList[Any](converted.toSeq.asJava)
+            case map: scala.collection.Map[_, _] =>
+              // Map → HashMap, recursively convert values
+              val javaMap = new java.util.HashMap[Any, Any]()
+              map.foreach { case (k, v) =>
+                javaMap.put(k, convertSparkToJava(v))
+              }
+              javaMap
+            case other =>
+              // Scalars (Long, Double, String, byte arrays, etc.) pass through
+              other
           }
+
+          val normalizedIrs = new Array[Any](aggregationParts.length)
+          aggregationParts.zipWithIndex.foreach { case (part, idx) =>
+            val value = row.get(row.fieldIndex(part.incrementalOutputColumnName))
+            normalizedIrs(idx) = convertSparkToJava(value)
+          }
+
+          // Denormalize IRs to in-memory format (e.g., ArrayList -> HashSet)
+          val irs = rowAggregator.denormalize(normalizedIrs)
+
+          // Build HopIR : [IR1, IR2, ..., IRn, ts]
+          val hopIr: HopIr = irs :+ ts
+          (keyBuilder(row), hopIr)
         }
-
-        // Denormalize IRs to in-memory format (e.g., ArrayList -> HashSet)
-        val irs = rowAggregator.denormalize(normalizedIrs)
-
-        // Build HopIR : [IR1, IR2, ..., IRn, ts]
-        val hopIr: HopIr = irs :+ ts
-        (keyBuilder(row), hopIr)
       }
       .groupByKey()
       .mapValues{ hopIrs =>
@@ -866,11 +894,11 @@ object GroupBy {
     // We create an empty DataFrame with the correct schema - it won't be used for computation
     val sourceDf = buildSourceDataFrame(groupByConf, range, None, tableUtils, schemaOnly = true)
 
-    // Create RowAggregator for denormalizing IRs when reading from incremental table
+    // Extract input schema for RowAggregator reconstruction on executors
+    // Pass lightweight schema instead of heavy RowAggregator to avoid serializing TimedDispatcher
     val chrononSchema = SparkConversions.toChrononSchema(sourceDf.schema)
-    val rowAggregator = new RowAggregator(chrononSchema, aggregationParts)
 
-    val incrementalHops  = convertIncrementalDfToHops(incrementalDf, aggregationParts, groupByConf, tableUtils, rowAggregator)
+    val incrementalHops  = convertIncrementalDfToHops(incrementalDf, aggregationParts, groupByConf, tableUtils, chrononSchema)
 
     new GroupBy(
       groupByConf.getAggregations.toScala,

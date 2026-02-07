@@ -1166,10 +1166,33 @@ class GroupByTest {
     val outputDates = CStream.genPartitions(10, tableUtils.partitionSpec)
 
     val aggregations: Seq[Aggregation] = Seq(
+      // Basic
       Builders.Aggregation(Operation.SUM, "time_spent_ms", Seq(new Window(10, TimeUnit.DAYS), new Window(5, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.SUM, "price", Seq(new Window(10, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.COUNT, "user", Seq(new Window(10, TimeUnit.DAYS))),
-      Builders.Aggregation(Operation.AVERAGE, "price", Seq(new Window(10, TimeUnit.DAYS)))
+      Builders.Aggregation(Operation.AVERAGE, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.MIN, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.MAX, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      // Statistical
+      Builders.Aggregation(Operation.VARIANCE, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.SKEW, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.KURTOSIS, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.APPROX_PERCENTILE, "price", Seq(new Window(10, TimeUnit.DAYS)),
+        argMap = Map("percentiles" -> "[0.5, 0.25, 0.75]")),
+      // Temporal
+      Builders.Aggregation(Operation.FIRST, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.LAST, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.FIRST_K, "price", Seq(new Window(10, TimeUnit.DAYS)), argMap = Map("k" -> "3")),
+      Builders.Aggregation(Operation.LAST_K, "price", Seq(new Window(10, TimeUnit.DAYS)), argMap = Map("k" -> "3")),
+      Builders.Aggregation(Operation.TOP_K, "price", Seq(new Window(10, TimeUnit.DAYS)), argMap = Map("k" -> "3")),
+      Builders.Aggregation(Operation.BOTTOM_K, "price", Seq(new Window(10, TimeUnit.DAYS)), argMap = Map("k" -> "3")),
+      // Cardinality / Set
+      Builders.Aggregation(Operation.UNIQUE_COUNT, "user", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "user", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.BOUNDED_UNIQUE_COUNT, "user", Seq(new Window(10, TimeUnit.DAYS))),
+      // Distribution
+      Builders.Aggregation(Operation.HISTOGRAM, "user", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.APPROX_HISTOGRAM_K, "user", Seq(new Window(10, TimeUnit.DAYS)), argMap = Map("k" -> "10"))
     )
 
     val (source, endPartition) = createTestSourceIncremental(windowSize = 30, suffix = "_snapshot_events", partitionColOpt = Some(tableUtils.partitionColumn))
