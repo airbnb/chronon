@@ -31,13 +31,13 @@ object Comparison {
 
   // Flatten struct columns into individual columns so nested double fields can be compared with tolerance
   private def flattenStructs(df: DataFrame): DataFrame = {
-    val flattenedSelects = df.schema.fields.flatMap { field =>
+    val flattenedSelects = df.schema.fields.toSeq.flatMap { field =>
       field.dataType match {
         case structType: StructType =>
           // Flatten struct fields: struct_name.field_name -> struct_name_field_name
           structType.fields.map { subField =>
             col(s"${field.name}.${subField.name}").alias(s"${field.name}_${subField.name}")
-          }
+          }.toSeq
         case _ =>
           // Keep non-struct fields as-is
           Seq(col(field.name))
