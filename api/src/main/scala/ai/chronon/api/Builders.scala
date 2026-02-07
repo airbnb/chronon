@@ -69,7 +69,8 @@ object Builders {
               inputColumn: String,
               window: Window = WindowUtils.Unbounded,
               argMap: Map[String, String] = null,
-              bucket: String = null): AggregationPart = {
+              bucket: String = null,
+              elementWise: Boolean = false): AggregationPart = {
       val result = new AggregationPart()
       result.setOperation(operation)
       result.setInputColumn(inputColumn)
@@ -79,6 +80,7 @@ object Builders {
       if (bucket != null) {
         result.setBucket(bucket)
       }
+      result.setElementWise(elementWise)
       result
     }
   }
@@ -201,11 +203,15 @@ object Builders {
   }
 
   object ExternalSource {
-    def apply(metadata: MetaData, keySchema: DataType, valueSchema: DataType): ExternalSource = {
+    def apply(metadata: MetaData,
+              keySchema: DataType,
+              valueSchema: DataType,
+              offlineGroupBy: GroupBy = null): ExternalSource = {
       val result = new ExternalSource()
       result.setMetadata(metadata)
       result.setKeySchema(toTDataType(keySchema))
       result.setValueSchema(toTDataType(valueSchema))
+      result.setOfflineGroupBy(offlineGroupBy)
       result
     }
   }

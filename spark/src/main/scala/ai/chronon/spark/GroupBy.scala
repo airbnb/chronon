@@ -297,7 +297,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       .map { queriesUnfilteredDf.filter }
       .getOrElse(queriesUnfilteredDf.removeNulls(keyColumns))
 
-    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.timeRange)
+    val TimeRange(minQueryTs, maxQueryTs) = queryTimeRange.getOrElse(queriesDf.calculateTimeRange)
     val hopsRdd = hopsAggregate(minQueryTs, resolution)
 
     def headStart(ts: Long): Long = TsUtils.round(ts, resolution.hopSizes.min)
@@ -696,12 +696,19 @@ object GroupBy {
       throw new Exception(s"mutationTopic is not set for groupby ${groupByConf.metaData.name} with Accuracy.TEMPORAL")
     }
     // chronon run ds macro is only supported for group bys
+    // Use intersectedRange for validation when available, since it represents the actual data being scanned.
+    // This allows bootstrap phase to work with multi-day queryRange as long as the intersectedRange is single day.
     val selects = Option(source.query.selects)
       .map(_.toScala.map(keyValue => {
         if (keyValue._2.contains(Constants.ChrononRunDs)) {
-          assert(intersectedRange.isDefined && intersectedRange.get.isSingleDay,
-                 s"ChrononRunDs is only supported for single day queries")
-          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => queryRange.start)
+          assert(
+            intersectedRange.isDefined && intersectedRange.get.isSingleDay,
+            s"ChrononRunDs is only supported for single day queries. " +
+              s"intersectedRange: ${intersectedRange.map(r => s"${r.start} to ${r.end}").getOrElse("undefined")}, " +
+              s"queryRange: ${queryRange.start} to ${queryRange.end}"
+          )
+          // Python configs already have quotes around the macro, so no need for quotes here
+          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => intersectedRange.get.start)
           (keyValue._1, parametricMacro.replace(keyValue._2))
         } else {
           keyValue
@@ -982,7 +989,12 @@ object GroupBy {
               if (!groupByConf.hasDerivations) {
                 outputDf.save(outputTable, tableProps)
               } else {
-                val finalOutputColumns = groupByConf.derivationsScala.finalOutputColumn(outputDf.columns).toSeq
+                val finalOutputColumns = groupByConf.derivationsScala
+                  .finalOutputColumn(
+                    outputDf.columns,
+                    ensureKeys = groupByConf.keys(tableUtils.partitionColumn)
+                  )
+                  .toSeq
                 val result = outputDf.select(finalOutputColumns: _*)
                 result.save(outputTable, tableProps)
               }
@@ -1004,5 +1016,27 @@ object GroupBy {
         .mkString("\n")
       throw new Exception(fullMessage)
     }
+  }
+
+  /**
+    * Factory method to create a GroupBy from Java ArrayLists.
+    * This is useful for PySpark integration where Py4J works better with Java collections.
+    *
+    * @param aggregations Java ArrayList of aggregations
+    * @param keyColumns Java ArrayList of key column names
+    * @param inputDataFrame input DataFrame
+    * @param mutationDataFrame mutation DataFrame (optional)
+    * @param filterForSkew optional filter for skew
+    * @param shouldFinalize whether to finalize the aggregations
+    * @return GroupBy
+    */
+  def usingArrayList(aggregations: java.util.ArrayList[api.Aggregation],
+                     keyColumns: java.util.ArrayList[String],
+                     inputDataFrame: DataFrame,
+                     mutationDataFrame: DataFrame = null,
+                     filterForSkew: Option[String] = None,
+                     shouldFinalize: Boolean = true): GroupBy = {
+    val mutationFn: () => DataFrame = if (mutationDataFrame == null) null else () => mutationDataFrame
+    new GroupBy(aggregations.toScala, keyColumns.toScala, inputDataFrame, mutationFn, filterForSkew, shouldFinalize)
   }
 }

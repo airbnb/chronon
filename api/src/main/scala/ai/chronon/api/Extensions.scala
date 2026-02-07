@@ -208,7 +208,8 @@ object Extensions {
               _.toScala
             )
             .orNull,
-          bucket
+          bucket,
+          Option(aggregation.elementWise).getOrElse(false)
         )
       }
     }
@@ -230,7 +231,8 @@ object Extensions {
               _.toScala.toMap
             )
             .orNull,
-          bucket
+          bucket,
+          Option(aggregation.elementWise).getOrElse(false)
         )
       }
     }
@@ -854,7 +856,7 @@ object Extensions {
     @transient lazy val logger = LoggerFactory.getLogger(getClass)
     // all keys as they should appear in left that are being used on right
     def leftKeyCols: Array[String] = {
-      join.joinParts.toScala
+      join.getRegularAndExternalJoinParts
         .flatMap {
           _.rightToLeft.values
         }
@@ -1225,7 +1227,7 @@ object Extensions {
       derivationsWithoutStar.filter(d => JoinOps.isIdentifier(d.expression))
 
     // Used during offline spark job and this method preserves ordering of derivations
-    def derivationProjection(baseColumns: Seq[String]): Seq[(String, String)] = {
+    def derivationProjection(baseColumns: Seq[String], ensureKeys: Seq[String] = Seq.empty): Seq[(String, String)] = {
       val wildcardDerivations = if (derivationsContainStar) { // select all baseColumns except renamed ones
         val expressions = derivations.iterator.map(_.expression).toSet
         baseColumns.filterNot(expressions)
@@ -1233,17 +1235,31 @@ object Extensions {
         Seq.empty
       }
 
-      derivations.iterator.flatMap { d =>
+      // expand wildcard derivations
+      val expandedDerivations = derivations.iterator.flatMap { d =>
         if (d.name == "*") {
           wildcardDerivations.map(c => c -> c)
         } else {
           Seq(d.name -> d.expression)
         }
       }.toSeq
+
+      val expandedDerivationCols = expandedDerivations.map(_._1).toSet
+      val baseColumnsSet = baseColumns.toSet
+
+      // Ensure infrastructure columns (keys, partition column) are preserved even if not in derivations
+      // Only include keys that actually exist in the base columns (to handle cases where ts is expected
+      // but not present in snapshot aggregations)
+      val missingKeys = ensureKeys
+        .filter(baseColumnsSet.contains) // Only ensure keys that exist in the DataFrame
+        .filterNot(expandedDerivationCols.contains)
+        .map { key => key -> key }
+
+      missingKeys ++ expandedDerivations
     }
 
-    def finalOutputColumn(baseColumns: Seq[String]): Seq[Column] = {
-      val projections = derivationProjection(baseColumns)
+    def finalOutputColumn(baseColumns: Seq[String], ensureKeys: Seq[String] = Seq.empty): Seq[Column] = {
+      val projections = derivationProjection(baseColumns, ensureKeys)
       val finalOutputColumns = projections
         .flatMap {
           case (name, expression) => Some(expr(expression).as(name))

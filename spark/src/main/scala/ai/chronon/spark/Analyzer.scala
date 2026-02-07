@@ -236,6 +236,8 @@ class Analyzer(tableUtils: TableUtils,
       .mkString("\n")
   }
 
+  // TODO: Add check for element wise operations (e.g. dimensions and null-ness)
+  // More details at: https://github.com/airbnb/chronon/pull/1065#discussion_r2524393195
   def analyzeGroupBy(groupByConf: api.GroupBy,
                      prefix: String = "",
                      includeOutputTableName: Boolean = false,

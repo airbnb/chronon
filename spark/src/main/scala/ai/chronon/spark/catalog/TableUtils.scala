@@ -365,6 +365,10 @@ case class TableUtils(sparkSession: SparkSession) {
   val chrononAvroSchemaValidation: Boolean =
     sparkSession.conf.get("spark.chronon.avroSchemaValidation", "true").toBoolean
 
+  // whether or not to enable joinPart (key col, ts) uniqueness check
+  val joinPartUniquenessCheck: Boolean =
+    sparkSession.conf.get("spark.chronon.joinPartUniquenessCheck", "false").toBoolean
+
   private lazy val tableFormatProvider: FormatProvider = {
     sparkSession.conf.getOption("spark.chronon.table.format_provider") match {
       case Some(clazzName) =>

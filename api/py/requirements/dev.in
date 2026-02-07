@@ -5,3 +5,4 @@ black
 pre-commit
 isort
 autoflake
+pyspark>=3.0.0
