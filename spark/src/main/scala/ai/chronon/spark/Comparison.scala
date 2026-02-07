@@ -74,7 +74,7 @@ object Comparison {
     val simplified = simplifyElement(x)
     simplified match {
       case arr: Array[_] => arr.mkString("[", ",", "]")
-      case other => other.toString
+      case other         => other.toString
     }
   }
 

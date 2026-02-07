@@ -961,7 +961,7 @@ class GroupByTest {
     """)
     assertTrue("Should be able to filter GroupBy results", filteredResult.count() >= 0)
   }
-  
+
 
   private def createTestSourceIncremental(windowSize: Int = 365,
                                suffix: String = "",

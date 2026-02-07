@@ -909,7 +909,7 @@ case class TableUtils(sparkSession: SparkSession) {
           .map(partitionSpec.shift(_, inputToOutputShift))
       }
       .getOrElse(fillablePartitions)
-    
+
     val inputMissing = fillablePartitions -- allInputExisting
     val missingPartitions = outputMissing -- inputMissing
     val missingChunks = chunk(missingPartitions)

@@ -25,9 +25,7 @@ import scala.collection.Seq
 // The primary API of the aggregator package.
 // the semantics are to mutate values in place for performance reasons
 // userAggregationParts is used when incrementalMode = True.
-class RowAggregator(val inputSchema: Seq[(String, DataType)],
-                    val aggregationParts: Seq[AggregationPart],
-                    )
+class RowAggregator(val inputSchema: Seq[(String, DataType)], val aggregationParts: Seq[AggregationPart])
     extends Serializable
     with SimpleAggregator[Row, Array[Any], Array[Any]] {
 

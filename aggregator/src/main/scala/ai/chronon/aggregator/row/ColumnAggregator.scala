@@ -224,7 +224,7 @@ object ColumnAggregator {
   private def toJavaDouble[A: Numeric](inp: Any) =
     implicitly[Numeric[A]].toDouble(inp.asInstanceOf[A]).asInstanceOf[java.lang.Double]
 
- def construct(baseInputType: DataType,
+  def construct(baseInputType: DataType,
                 aggregationPart: AggregationPart,
                 columnIndices: ColumnIndices,
                 bucketIndex: Option[Int]): ColumnAggregator = {
