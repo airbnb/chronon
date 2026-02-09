@@ -1282,10 +1282,19 @@ class GroupByTest {
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     groupBy.computeIncrementalDf(s"${namespace}.testIncrementalFirstLastOutput", partitionRange, tableProps)
 
-    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalFirstLastOutput where ds='$today_minus_7_date'")
+    val rawIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalFirstLastOutput where ds='$today_minus_7_date'")
 
     println("=== Incremental FIRST/LAST IR Schema ===")
-    actualIncrementalDf.printSchema()
+    rawIncrementalDf.printSchema()
+
+    // Sort array columns in raw IRs to match SQL output ordering
+    // Raw IRs store unsorted arrays for mergeability, but we need to sort them for comparison
+    import org.apache.spark.sql.functions.{sort_array, col}
+    val actualIncrementalDf = rawIncrementalDf
+      .withColumn("value_first3", sort_array(col("value_first3")))
+      .withColumn("value_last3", sort_array(col("value_last3")))
+      .withColumn("value_top3", sort_array(col("value_top3")))
+      .withColumn("value_bottom3", sort_array(col("value_bottom3")))
 
     // Compare against SQL computation
     // Note: ts column in IR table is the partition timestamp (derived from ds)
@@ -1307,11 +1316,13 @@ class GroupByTest {
          |    x -> named_struct('epochMillis', x.ts, 'payload', x.value)
          |  ) as value_first3,
          |  transform(
-         |    slice(reverse(sort_array(filter(collect_list(struct(ts, value)), x -> x.value IS NOT NULL))), 1, 3),
+         |    slice(sort_array(filter(collect_list(struct(ts, value)), x -> x.value IS NOT NULL)),
+         |          greatest(-size(sort_array(filter(collect_list(struct(ts, value)), x -> x.value IS NOT NULL))), -3), 3),
          |    x -> named_struct('epochMillis', x.ts, 'payload', x.value)
          |  ) as value_last3,
          |  transform(
-         |    slice(sort_array(filter(collect_list(struct(value, ts)), x -> x.value IS NOT NULL), false), 1, 3),
+         |    slice(sort_array(filter(collect_list(struct(value, ts)), x -> x.value IS NOT NULL), true),
+         |          greatest(-size(sort_array(filter(collect_list(struct(value, ts)), x -> x.value IS NOT NULL))), -3), 3),
          |    x -> x.value
          |  ) as value_top3,
          |  transform(
