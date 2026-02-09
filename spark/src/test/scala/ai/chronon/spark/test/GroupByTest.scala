@@ -485,6 +485,7 @@ class GroupByTest {
     )
     (source, endPartition)
   }
+  
 
   def backfill(name: String,
                source: Source,
