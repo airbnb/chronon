@@ -97,7 +97,7 @@ object Extensions {
     def cleanName: String = metaData.name.sanitize
 
     def outputTable = s"${metaData.outputNamespace}.${metaData.cleanName}"
-    def incrementalOutputTable = s"${metaData.outputNamespace}.${metaData.cleanName}_inc"
+    def incrementalOutputTable = s"${metaData.outputNamespace}.${metaData.cleanName}_daily_inc"
     def preModelTransformsTable = s"${metaData.outputNamespace}.${metaData.cleanName}_pre_mt"
     def outputLabelTable = s"${metaData.outputNamespace}.${metaData.cleanName}_labels"
     def outputFinalView = s"${metaData.outputNamespace}.${metaData.cleanName}_labeled"
