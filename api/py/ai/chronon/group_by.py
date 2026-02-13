@@ -389,7 +389,7 @@ def GroupBy(
     derivations: Optional[List[ttypes.Derivation]] = None,
     deprecation_date: Optional[str] = None,
     description: Optional[str] = None,
-    is_incremental: Optional[bool] = False,
+    is_incremental: Optional[bool] = None,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
