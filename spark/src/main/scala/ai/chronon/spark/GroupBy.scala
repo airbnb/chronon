@@ -373,12 +373,14 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       hopsArrays: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)]): RDD[(Array[Any], Array[Any])] = {
     hopsArrays.flatMap {
       case (keyWithHash: KeyWithHash, hopsArray: HopsAggregator.OutputArrayType) =>
-        val hopsArrayHead: Array[HopIr] = hopsArray.headOption.get
-        hopsArrayHead.map { array: HopIr =>
-          val timestamp = array.last.asInstanceOf[Long]
-          val withoutTimestamp = array.dropRight(1)
-          val normalizedIR = flattenedAgg.normalize(withoutTimestamp)
-          ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), normalizedIR)
+        hopsArray.headOption match {
+          case Some(dailyHops) =>
+            dailyHops.map { hopIr =>
+              val timestamp = hopIr.last.asInstanceOf[Long]
+              val normalizedIR = flattenedAgg.normalize(hopIr.dropRight(1))
+              ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), normalizedIR)
+            }
+          case None => Iterator.empty
         }
     }
   }
