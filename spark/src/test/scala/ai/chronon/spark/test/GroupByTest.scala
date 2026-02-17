@@ -39,9 +39,8 @@ import ai.chronon.spark._
 import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{ArrayType, BinaryType, MapType, StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Encoders, Row, SparkSession}
-import org.apache.spark.sql.functions.col
 import org.junit.Assert._
 import org.junit.Test
 
@@ -117,7 +116,6 @@ class GroupByTest {
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
-
     val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
     val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
     val datesViewName = "test_group_by_snapshot_events_output_range"
@@ -452,7 +450,6 @@ class GroupByTest {
              tableUtils = tableUtils,
              additionalAgg = aggs)
   }
-
 
   private def createTestSource(windowSize: Int = 365,
                                suffix: String = "",
@@ -961,9 +958,6 @@ class GroupByTest {
     """)
     assertTrue("Should be able to filter GroupBy results", filteredResult.count() >= 0)
   }
-
-
-
 
   /**
    * Test that GroupBy derivations without wildcards preserve infrastructure columns (keys, partition, time).
