@@ -135,6 +135,23 @@ def extract_and_convert(
     if not yes and not click.confirm("Do you want to update existing env variables in these files?", default=True):
         respect_existing_env_vars = True
 
+    # Smart detection for samplePercent changes (only for Joins)
+    # If existing compiled files have samplePercent set but new config doesn't specify it,
+    # warn the user and ask if they want to preserve the existing value
+    respect_existing_sample_percent = False
+    sample_percent_changes = _detect_sample_percent_changes(full_output_root, results, obj_class)
+    if sample_percent_changes and not yes:
+        _print_warning("\nDetected samplePercent changes that would disable logging:")
+        for name, old_val, new_val in sample_percent_changes:
+            _print_warning(f"  {name}: {old_val}% -> disabled (not set)")
+        _print_warning("")
+        if not click.confirm(
+            "Do you want to disable logging for these Joins? (Choose 'n' to preserve existing samplePercent)",
+            default=False,
+        ):
+            respect_existing_sample_percent = True
+            _print_warning("Will preserve existing samplePercent values.\n")
+
     for name, obj in results.items():
         team_name = name.split(".")[0]
         _set_team_level_metadata(obj, teams_path, team_name)
@@ -147,7 +164,8 @@ def extract_and_convert(
             log_level,
             force_overwrite,
             force_overwrite,
-            respect_existing_env_vars
+            respect_existing_env_vars,
+            respect_existing_sample_percent,
         ):
             num_written_objs += 1
 
@@ -217,6 +235,7 @@ def extract_and_convert(
             validator=validator,
             log_level=log_level,
             respect_existing_env_vars=respect_existing_env_vars,
+            respect_existing_sample_percent=False,  # GroupBys don't have samplePercent
         )
     if extra_dependent_joins_to_materialize:
         _handle_extra_conf_objects_to_materialize(
@@ -228,6 +247,7 @@ def extract_and_convert(
             log_level=log_level,
             is_gb=False,
             respect_existing_env_vars=respect_existing_env_vars,
+            respect_existing_sample_percent=respect_existing_sample_percent,
         )
     if num_written_objs > 0:
         print(f"Successfully wrote {num_written_objs} {(obj_class).__name__} objects to {full_output_root}")
@@ -415,6 +435,7 @@ def _handle_extra_conf_objects_to_materialize(
     log_level=logging.INFO,
     is_gb=True,
     respect_existing_env_vars=False,
+    respect_existing_sample_percent=False,
 ) -> None:
     num_written_objs = 0
     # load materialized joins to validate the additional conf objects against.
@@ -431,6 +452,7 @@ def _handle_extra_conf_objects_to_materialize(
             force_compile=True,
             force_overwrite=force_overwrite,
             respect_existing_env_vars=respect_existing_env_vars,
+            respect_existing_sample_percent=respect_existing_sample_percent,
         ):
             num_written_objs += 1
     print(f"Successfully wrote {num_written_objs} {'GroupBy' if is_gb else 'Join'} objects to {full_output_root}")
@@ -471,6 +493,54 @@ def _set_templated_values(obj, cls, teams_path, team_name):
         ]
     if cls == api.GroupBy and obj.metaData.dependencies:
         obj.metaData.dependencies = [__fill_template(dep, obj, namespace) for dep in obj.metaData.dependencies]
+
+
+def _get_existing_sample_percent(output_file: str) -> Optional[float]:
+    """
+    Returns the existing samplePercent value from a compiled file, or None if not set.
+    """
+    if os.path.exists(output_file):
+        try:
+            with open(output_file, "r") as f:
+                existing_content = json.load(f)
+            return existing_content.get("metaData", {}).get("samplePercent")
+        except (json.JSONDecodeError, IOError):
+            pass
+    return None
+
+
+def _detect_sample_percent_changes(
+    full_output_root: str,
+    results: dict,
+    obj_class: type,
+) -> List[Tuple[str, float, Optional[float]]]:
+    """
+    Detect files where samplePercent would change from a set value to None/unset.
+    Returns a list of (name, old_value, new_value) tuples for files with changes.
+    """
+    changes = []
+    if obj_class is not Join:
+        return changes
+
+    for name, obj in results.items():
+        _, _, output_file = _construct_output_file_name(full_output_root, name, obj)
+        existing_sample_percent = _get_existing_sample_percent(output_file)
+        new_sample_percent = obj.metaData.samplePercent
+
+        # Detect when existing value is set but new value is None/unset
+        if existing_sample_percent is not None and existing_sample_percent > 0 and new_sample_percent is None:
+            changes.append((name, existing_sample_percent, new_sample_percent))
+
+    return changes
+
+
+def _preserve_sample_percent(output_file: str, obj: object) -> None:
+    """
+    Preserve the existing samplePercent value from the compiled file into the object.
+    """
+    existing_sample_percent = _get_existing_sample_percent(output_file)
+    if existing_sample_percent is not None:
+        obj.metaData.samplePercent = existing_sample_percent
 
 
 def _find_all_mode_to_env_maps(obj: dict, path: str = "") -> dict:
@@ -550,6 +620,7 @@ def _write_obj(
     force_compile: bool = False,
     force_overwrite: bool = False,
     respect_existing_env_vars: bool = False,
+    respect_existing_sample_percent: bool = False,
 ) -> bool:
     """
     Returns True if the object is successfully written.
@@ -575,6 +646,14 @@ def _write_obj(
     elif not validator.safe_to_overwrite(obj):
         _print_warning(f"Cannot overwrite {class_name} {file_name} with existing online conf")
         return False
+
+    # Preserve existing samplePercent if requested (only for Joins)
+    if respect_existing_sample_percent and obj_class is Join:
+        existing_sample_percent = _get_existing_sample_percent(output_file)
+        if existing_sample_percent is not None and obj.metaData.samplePercent is None:
+            obj.metaData.samplePercent = existing_sample_percent
+            _print_warning(f"(preserving existing samplePercent: {existing_sample_percent}%)")
+
     if respect_existing_env_vars:
         _write_obj_as_json_preserve_mode_to_env_map(file_name, obj, output_file, obj_class)
     else:

@@ -403,7 +403,7 @@ def Join(
     env: Optional[Dict[str, Dict[str, str]]] = None,
     lag: int = 0,
     skew_keys: Optional[Dict[str, List[str]]] = None,
-    sample_percent: float = 100.0,
+    sample_percent: Optional[float] = None,
     consistency_sample_percent: float = 5.0,
     online_external_parts: Optional[List[api.ExternalPart]] = None,
     offline_schedule: str = "@daily",
@@ -487,6 +487,8 @@ def Join(
         This is used to blacklist crawlers etc
     :param sample_percent:
         Online only parameter. What percent of online serving requests to this join should be logged into warehouse.
+        Default is None (logging disabled).
+        Set to a value between 0-100 to enable logging (e.g., 100.0 for all requests).
     :param consistency_sample_percent:
         Online only parameter. What percent of online serving requests to this join should be sampled to compute
         online offline consistency metrics.
@@ -605,7 +607,7 @@ def Join(
         assert has_duplicates is False, "Please address all the above mentioned duplicates."
 
     if bootstrap_from_log:
-        has_logging = sample_percent > 0 and online
+        has_logging = sample_percent is not None and sample_percent > 0 and online
         assert has_logging, "Join must be online with sample_percent set in order to use bootstrap_from_log option"
         bootstrap_parts = (bootstrap_parts or []) + [
             api.BootstrapPart(
