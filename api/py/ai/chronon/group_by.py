@@ -389,6 +389,7 @@ def GroupBy(
     derivations: Optional[List[ttypes.Derivation]] = None,
     deprecation_date: Optional[str] = None,
     description: Optional[str] = None,
+    is_incremental: Optional[bool] = None,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
@@ -596,6 +597,7 @@ def GroupBy(
         backfillStartDate=backfill_start_date,
         accuracy=accuracy,
         derivations=derivations,
+        isIncremental=is_incremental,
     )
     validate_group_by(group_by)
     return group_by
