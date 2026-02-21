@@ -152,7 +152,12 @@ object CStream {
   }
 }
 
-case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: Int = 10, nullRate: Double = 0.01) {
+case class Column(name: String,
+                  `type`: DataType,
+                  cardinality: Int,
+                  chunkSize: Int = 10,
+                  nullRate: Double = 0.01,
+                  fixedListSize: Boolean = false) {
   def genImpl(dtype: DataType, partitionColumn: String, partitionSpec: PartitionSpec): CStream[Any] =
     dtype match {
       case StringType =>
@@ -169,7 +174,31 @@ case class Column(name: String, `type`: DataType, cardinality: Int, chunkSize: I
           case _                    => new LongStream(cardinality, nullRate)
         }
       case ListType(elementType) =>
-        genImpl(elementType, partitionColumn, partitionSpec).chunk(chunkSize)
+        val value = genImpl(elementType, partitionColumn, partitionSpec)
+        if (fixedListSize) value.chunk(chunkSize, chunkSize) else value.chunk(chunkSize)
+      case StructType(_, fields) =>
+        val fieldGens = fields.map(f => genImpl(f.fieldType, partitionColumn, partitionSpec))
+        new CStream[Any] {
+          override def next(): Any = {
+            if (math.random < nullRate) null
+            else fieldGens.map(_.next()).toArray
+          }
+        }
+      case MapType(keyType, valueType) =>
+        val keyGen = genImpl(keyType, partitionColumn, partitionSpec)
+        val valGen = genImpl(valueType, partitionColumn, partitionSpec)
+        new CStream[Any] {
+          override def next(): Any = {
+            if (math.random < nullRate) return null
+            val size = (math.random * chunkSize).toInt + 1
+            val map = new java.util.HashMap[Any, Any]()
+            (0 until size).foreach { _ =>
+              val k = keyGen.next()
+              if (k != null) map.put(k, valGen.next())
+            }
+            map
+          }
+        }
       case otherType => throw new UnsupportedOperationException(s"Can't generate random data for $otherType yet.")
     }
 
