@@ -1,0 +1,81 @@
+{
+  "metaData": {
+    "name": "bootcamp.user_purchase_features.v1",
+    "online": 1,
+    "customJson": "{\"lag\": 0, \"groupby_tags\": null, \"column_tags\": {}}",
+    "dependencies": [
+      "{\"name\": \"wait_for_purchases_ds\", \"spec\": \"purchases/ds={{ ds }}\", \"start\": null, \"end\": null}"
+    ],
+    "tableProperties": {},
+    "outputNamespace": "default",
+    "team": "bootcamp",
+    "offlineSchedule": "@daily"
+  },
+  "sources": [
+    {
+      "events": {
+        "table": "purchases",
+        "query": {
+          "selects": {
+            "user_id": "user_id",
+            "purchase_price": "purchase_price",
+            "item_category": "item_category"
+          },
+          "timeColumn": "ts",
+          "setups": []
+        }
+      }
+    }
+  ],
+  "keyColumns": [
+    "user_id"
+  ],
+  "aggregations": [
+    {
+      "inputColumn": "purchase_price",
+      "operation": 7,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_price",
+      "operation": 6,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        }
+      ]
+    },
+    {
+      "inputColumn": "purchase_price",
+      "operation": 8,
+      "argMap": {},
+      "windows": [
+        {
+          "length": 1,
+          "timeUnit": 1
+        },
+        {
+          "length": 7,
+          "timeUnit": 1
+        }
+      ]
+    }
+  ],
+  "backfillStartDate": "2023-12-01"
+}
