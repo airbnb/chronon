@@ -421,6 +421,23 @@ With Chronon you can use any data available in your organization, including ever
 
 We welcome contributions to the Chronon project! Please read [CONTRIBUTING](CONTRIBUTING.md) for details.
 
+# Adoption
+
+We maintain a live list of adopters of Chronon in this section:
+
+- Airbnb
+- Stripe
+- OpenAI
+- Roku
+- Netflix
+- Uber
+- Intuit
+- Airwallex
+- Sardine AI
+- Monzo Bank
+
+Please open a merge request to append your organization name if you are using Chronon.
+
 # Support
 
 Use the GitHub issue tracker for reporting bugs or feature requests.
