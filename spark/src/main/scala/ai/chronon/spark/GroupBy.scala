@@ -698,7 +698,16 @@ object GroupBy {
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
     groupByConf.setups.foreach(tableUtils.sql)
-    val overrideStart = overrideStartPartition.getOrElse(groupByConf.backfillStartDate)
+    val historicalBackfill = Option(groupByConf.metaData.historicalBackfill).forall(_.booleanValue)
+    val effectiveOverrideStartPartition = if (historicalBackfill) {
+      overrideStartPartition
+    } else {
+      logger.info(
+        s"Historical backfill is set to false for GroupBy ${groupByConf.metaData.name}. " +
+          s"Backfilling latest single partition only: $endPartition")
+      Some(endPartition)
+    }
+    val overrideStart = effectiveOverrideStartPartition.getOrElse(groupByConf.backfillStartDate)
     val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.toScala)
