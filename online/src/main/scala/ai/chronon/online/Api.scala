@@ -57,13 +57,18 @@ trait KVStore {
 
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
-  // Method for push mode writes. Default delegates to multiPut (no notification).
-  // Override in KVStore implementations that support synchronous write + notification.
+  // Method for push mode writes. Override in KVStore implementations that support
+  // synchronous write + notification (e.g. Mussel sync write API).
+  // Throws UnsupportedOperationException by default so misconfiguration (enabling push mode
+  // on a KVStore that hasn't implemented this) fails loudly rather than silently dropping notifications.
   def multiPutWithNotification(
       putRequests: Seq[PutRequest],
       notificationTopic: String
   ): Future[Seq[Boolean]] = {
-    multiPut(putRequests)
+    throw new UnsupportedOperationException(
+      s"multiPutWithNotification is not supported by ${getClass.getName}. " +
+        "Override this method to enable push mode."
+    )
   }
 
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.

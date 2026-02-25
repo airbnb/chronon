@@ -24,13 +24,11 @@ import org.slf4j.LoggerFactory
 
 import scala.util.{Failure, Success}
 
-case class PushModeConfig(notificationTopic: String)
-
 class DataWriter(onlineImpl: Api,
                  context: Context,
                  statsIntervalSecs: Int,
                  debug: Boolean = false,
-                 pushModeConfig: Option[PushModeConfig] = None)
+                 notificationTopic: Option[String] = None)
     extends ForeachWriter[PutRequest] {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
@@ -47,9 +45,9 @@ class DataWriter(onlineImpl: Api,
   override def process(putRequest: PutRequest): Unit = {
     localStats.get().increment(putRequest)
     if (!debug) {
-      val future = pushModeConfig match {
-        case Some(config) =>
-          kvStore.multiPutWithNotification(Seq(putRequest), config.notificationTopic).map(_.head)(kvStore.executionContext)
+      val future = notificationTopic match {
+        case Some(topic) =>
+          kvStore.multiPutWithNotification(Seq(putRequest), topic).map(_.head)(kvStore.executionContext)
         case None =>
           kvStore.put(putRequest)
       }
