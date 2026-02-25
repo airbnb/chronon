@@ -57,8 +57,8 @@ trait KVStore {
 
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
-  // Method for push mode writes. Override in KVStore implementations that support
-  // synchronous write + notification (e.g. Mussel sync write API).
+  // Method for put with notification, used by push mode.
+  // Override in KVStore implementations that support write + notification.
   // Throws UnsupportedOperationException by default so misconfiguration (enabling push mode
   // on a KVStore that hasn't implemented this) fails loudly rather than silently dropping notifications.
   def multiPutWithNotification(
