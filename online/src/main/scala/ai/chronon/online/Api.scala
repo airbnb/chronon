@@ -57,6 +57,15 @@ trait KVStore {
 
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
+  // Method for push mode writes. Default delegates to multiPut (no notification).
+  // Override in KVStore implementations that support synchronous write + notification.
+  def multiPutWithNotification(
+      putRequests: Seq[PutRequest],
+      notificationTopic: String
+  ): Future[Seq[Boolean]] = {
+    multiPut(putRequests)
+  }
+
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): Try[String] = {
     val bytesTry = getResponse(key, dataset, timeoutMillis)

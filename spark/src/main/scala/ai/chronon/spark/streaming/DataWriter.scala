@@ -24,7 +24,13 @@ import org.slf4j.LoggerFactory
 
 import scala.util.{Failure, Success}
 
-class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debug: Boolean = false)
+case class PushModeConfig(notificationTopic: String)
+
+class DataWriter(onlineImpl: Api,
+                 context: Context,
+                 statsIntervalSecs: Int,
+                 debug: Boolean = false,
+                 pushModeConfig: Option[PushModeConfig] = None)
     extends ForeachWriter[PutRequest] {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
@@ -41,7 +47,12 @@ class DataWriter(onlineImpl: Api, context: Context, statsIntervalSecs: Int, debu
   override def process(putRequest: PutRequest): Unit = {
     localStats.get().increment(putRequest)
     if (!debug) {
-      val future = kvStore.put(putRequest)
+      val future = pushModeConfig match {
+        case Some(config) =>
+          kvStore.multiPutWithNotification(Seq(putRequest), config.notificationTopic).map(_.head)(kvStore.executionContext)
+        case None =>
+          kvStore.put(putRequest)
+      }
       putRequest.tsMillis.foreach { ts: Long =>
         context.distribution(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
         context.increment(Metrics.Name.RowCount)

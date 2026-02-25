@@ -43,6 +43,23 @@ class GroupBy(inputStream: DataFrame,
     extends Serializable {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
+  private val pushModeConfig: Option[PushModeConfig] = {
+    val enabled = groupByConf.getMetaData.customJsonLookUp("enable_write_notifications") match {
+      case b: java.lang.Boolean => b.booleanValue()
+      case _                    => false
+    }
+    if (enabled) {
+      val topicOverride = Option(
+        groupByConf.getMetaData.customJsonLookUp("notification_topic_override")
+      ).map(_.toString)
+      val defaultTopic = session.conf.get(
+        "spark.chronon.stream.push.default_notification_topic",
+        "chronon-default-notifications"
+      )
+      Some(PushModeConfig(topicOverride.getOrElse(defaultTopic)))
+    } else None
+  }
+
   private def buildStreamingQuery(inputTable: String): String = {
     val streamingSource = groupByConf.streamingSource.get
     val query = streamingSource.query
@@ -169,7 +186,7 @@ class GroupBy(inputStream: DataFrame,
     val keyToBytes = AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
     val valueToBytes = AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
 
-    val dataWriter = new DataWriter(onlineImpl, context.withSuffix("egress"), 120, debug)
+    val dataWriter = new DataWriter(onlineImpl, context.withSuffix("egress"), 120, debug, pushModeConfig)
     selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)

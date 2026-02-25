@@ -17,7 +17,7 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, SourceOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, ResponseWithContext}
 import ai.chronon.online.KVStore.PutRequest
@@ -71,6 +71,23 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   val context: Metrics.Context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
+
+  private val pushModeConfig: Option[PushModeConfig] = {
+    val enabled = groupByConf.getMetaData.customJsonLookUp("enable_write_notifications") match {
+      case b: java.lang.Boolean => b.booleanValue()
+      case _                    => false
+    }
+    if (enabled) {
+      val topicOverride = Option(
+        groupByConf.getMetaData.customJsonLookUp("notification_topic_override")
+      ).map(_.toString)
+      val defaultTopic = session.conf.get(
+        "spark.chronon.stream.push.default_notification_topic",
+        "chronon-default-notifications"
+      )
+      Some(PushModeConfig(topicOverride.getOrElse(defaultTopic)))
+    } else None
+  }
 
   private case class Schemas(joinCodec: JoinCodec,
                              leftStreamSchema: StructType,
@@ -590,8 +607,13 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
             // Report kvStore metrics
             val kvContext = egressCtx.withSuffix("put")
-            kvStore
-              .multiPut(putRequests)
+            val writeFuture = pushModeConfig match {
+              case Some(config) =>
+                kvStore.multiPutWithNotification(putRequests, config.notificationTopic)
+              case None =>
+                kvStore.multiPut(putRequests)
+            }
+            writeFuture
               .andThen {
                 case Success(results) =>
                   results.foreach { result =>
