@@ -420,7 +420,6 @@ class GroupByIncrementalTest {
     // Drop ts from comparison - it's just the partition timestamp, not part of the aggregation IR
     val actualWithoutTs = actualIncrementalDf.drop("ts")
 
-    // Comparison.sideBySide handles sorting arrays and converting Row objects to clean JSON
     val diff = Comparison.sideBySide(actualWithoutTs, expectedDf, List("user", tableUtils.partitionColumn))
 
     if (diff.count() > 0) {
