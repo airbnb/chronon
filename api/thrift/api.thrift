@@ -309,6 +309,7 @@ struct GroupBy {
     6: optional string backfillStartDate
     // Optional derivation list
     7: optional list<Derivation> derivations
+    8: optional bool isIncremental
 }
 
 struct JoinPart {
