@@ -119,6 +119,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   // Micro batch repartition size - when set to 0, we won't do the repartition
   private val microBatchRepartition: Int = getProp("batch_repartition", "0").toInt
 
+  // Chunk size for fetchBaseJoin calls - when set to 0, we won't chunk
+  private val fetchChunkSize: Int = getProp("fetch_chunk_size", "0").toInt
+
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
     private val keyIndices: Array[Int] = keyColumns.map(inputSchema.fieldIndex)
@@ -435,10 +438,19 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             logger.info(logMessage)
           }
 
-          val responsesFuture = fetcher.fetchBaseJoin(requests, Option(joinSource.join))
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects
-          val responses = Await.result(responsesFuture, 5.second)
+          val responses = if (fetchChunkSize > 0 && requests.length > fetchChunkSize) {
+            implicit val ec = fetcher.executionContext
+            val chunks = requests.grouped(fetchChunkSize).toSeq
+            context.distribution("chain.fetch_chunk.count", chunks.size)
+            val chunkFutures = chunks.map(chunk => fetcher.fetchBaseJoin(chunk, Option(joinSource.join)))
+            val combinedFuture = Future.sequence(chunkFutures).map(_.flatten)
+            Await.result(combinedFuture, 5.second)
+          } else {
+            val responsesFuture = fetcher.fetchBaseJoin(requests, Option(joinSource.join))
+            Await.result(responsesFuture, 5.second)
+          }
 
           // debug print payload for requests and responses
           if (debug && shouldSample) {
