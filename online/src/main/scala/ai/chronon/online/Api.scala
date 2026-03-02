@@ -57,6 +57,20 @@ trait KVStore {
 
   def put(putRequest: PutRequest): Future[Boolean] = multiPut(Seq(putRequest)).map(_.head)
 
+  // Method for put with notification, used by push mode.
+  // Override in KVStore implementations that support write + notification.
+  // Throws UnsupportedOperationException by default so misconfiguration (enabling push mode
+  // on a KVStore that hasn't implemented this) fails loudly rather than silently dropping notifications.
+  def multiPutWithNotification(
+      putRequests: Seq[PutRequest],
+      notificationTopic: String
+  ): Future[Seq[Boolean]] = {
+    throw new UnsupportedOperationException(
+      s"multiPutWithNotification is not supported by ${getClass.getName}. " +
+        "Override this method to enable push mode."
+    )
+  }
+
   // helper method to blocking read a string - used for fetching metadata & not in hotpath.
   def getString(key: String, dataset: String, timeoutMillis: Long): Try[String] = {
     val bytesTry = getResponse(key, dataset, timeoutMillis)
