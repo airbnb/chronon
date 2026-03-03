@@ -1038,4 +1038,45 @@ class GroupByTest {
     println(s"   Columns: ${result.columns.mkString(", ")}")
     result.show(5)
   }
+
+  @Test
+  def testNoHistoricalBackfill(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_no_historical_backfill_gb" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val sixtyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    val endPartition = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+
+    val schema = List(
+      Column("item", StringType, 100),
+      Column("price", DoubleType, 500)
+    )
+    val sourceTable = s"$namespace.items_no_historical_backfill"
+    DataFrameGen.entities(spark, schema, 1000, partitions = 100).save(sourceTable)
+
+    val source = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("price"), startPartition = sixtyDaysAgo),
+      snapshotTable = sourceTable
+    )
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "price")),
+      metaData = Builders.MetaData(name = "test.item_no_historical_backfill",
+                                   namespace = namespace,
+                                   team = "chronon",
+                                   historicalBackill = false),
+      backfillStartDate = sixtyDaysAgo
+    )
+
+    GroupBy.computeBackfill(groupByConf, endPartition, tableUtils)
+
+    val outputTable = groupByConf.metaData.outputTable
+    val partitions = tableUtils.partitions(outputTable)
+    assertEquals(s"Expected only 1 partition ($endPartition), got: $partitions", 1, partitions.size)
+    assertEquals(endPartition, partitions.head)
+  }
 }

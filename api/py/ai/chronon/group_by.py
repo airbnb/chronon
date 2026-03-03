@@ -387,6 +387,7 @@ def GroupBy(
     name: Optional[str] = None,
     tags: Optional[Dict[str, str]] = None,
     derivations: Optional[List[ttypes.Derivation]] = None,
+    historical_backfill: Optional[bool] = None,
     deprecation_date: Optional[str] = None,
     description: Optional[str] = None,
     **kwargs,
@@ -500,6 +501,11 @@ def GroupBy(
         Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
         output schema. It is supported for offline computations for now.
     :type derivations: List[ai.chronon.api.ttypes.Derivation]
+    :param historical_backfill:
+        Flag to indicate whether GroupBy backfill should fill all historical holes.
+        Setting to False will only backfill the latest single partition.
+        Only applicable when backfill_start_date is set.
+    :type historical_backfill: bool
     :param deprecation_date:
         Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
     :type deprecation_date: str
@@ -512,6 +518,11 @@ def GroupBy(
         A GroupBy object containing specified aggregations.
     """
     assert sources, "Sources are not specified"
+
+    if historical_backfill is not None:
+        assert backfill_start_date is not None, (
+            "historical_backfill can only be set when backfill_start_date is specified."
+        )
 
     agg_inputs = []
     if aggregations is not None:
@@ -584,6 +595,7 @@ def GroupBy(
         tableProperties=table_properties,
         team=team,
         offlineSchedule=offline_schedule,
+        historicalBackfill=historical_backfill,
         deprecationDate=deprecation_date,
         description=description,
     )

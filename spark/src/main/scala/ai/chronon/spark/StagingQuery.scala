@@ -55,7 +55,16 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       tableUtils.sql(stagingQueryConf.query).save(outputTable)
       return
     }
-    val overrideStart = overrideStartPartition.getOrElse(stagingQueryConf.startPartition)
+    val historicalBackfill = Option(stagingQueryConf.metaData.historicalBackfill).forall(_.booleanValue)
+    val effectiveOverrideStartPartition = if (historicalBackfill) {
+      overrideStartPartition
+    } else {
+      logger.info(
+        s"Historical backfill is set to false for StagingQuery ${stagingQueryConf.metaData.name}. " +
+          s"Backfilling latest single partition only: $endPartition")
+      Some(endPartition)
+    }
+    val overrideStart = effectiveOverrideStartPartition.getOrElse(stagingQueryConf.startPartition)
     val unfilledRanges =
       tableUtils.unfilledRanges(outputTable,
                                 PartitionRange(overrideStart, endPartition)(tableUtils),
