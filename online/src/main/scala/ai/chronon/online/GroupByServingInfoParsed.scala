@@ -99,7 +99,7 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
   }
 
   def selectedChrononSchema: StructType = {
-    AvroConversions.toChrononSchema(parser.parse(selectedAvroSchema)).asInstanceOf[StructType]
+    AvroConversions.toChrononSchema(parser.parse(selectedAvroSchema), cleanName = true).asInstanceOf[StructType]
   }
 
   // Schema associated to the stored KV value for streaming data.
