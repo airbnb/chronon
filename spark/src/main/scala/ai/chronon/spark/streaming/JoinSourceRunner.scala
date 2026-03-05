@@ -609,6 +609,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
             // Report kvStore metrics
             val kvContext = egressCtx.withSuffix("put")
+            val writeStartMillis = System.currentTimeMillis()
             val writeFuture = notificationTopic match {
               case Some(topic) =>
                 kvStore.multiPutWithNotification(putRequests, topic)
@@ -618,6 +619,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             writeFuture
               .andThen {
                 case Success(results) =>
+                  kvContext.distribution(Metrics.Name.WriteLatencyMillis, System.currentTimeMillis() - writeStartMillis)
+                  if (notificationTopic.isDefined) kvContext.count(Metrics.Name.PushNotificationCount, results.size)
                   results.foreach { result =>
                     if (result) {
                       kvContext.increment("success")

@@ -45,6 +45,7 @@ class DataWriter(onlineImpl: Api,
   override def process(putRequest: PutRequest): Unit = {
     localStats.get().increment(putRequest)
     if (!debug) {
+      val writeStartMillis = System.currentTimeMillis()
       val future = notificationTopic match {
         case Some(topic) =>
           kvStore.multiPutWithNotification(Seq(putRequest), topic).map(_.head)(kvStore.executionContext)
@@ -61,6 +62,8 @@ class DataWriter(onlineImpl: Api,
       val kvContext = context.withSuffix("put")
       future.andThen {
         case Success(result) =>
+          kvContext.distribution(Metrics.Name.WriteLatencyMillis, System.currentTimeMillis() - writeStartMillis)
+          if (notificationTopic.isDefined) kvContext.increment(Metrics.Name.PushNotificationCount)
           if (result) {
             kvContext.increment("success")
           } else {
