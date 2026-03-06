@@ -1071,9 +1071,8 @@ object Driver {
         case e: Throwable =>
           e.printStackTrace()
           logger.error("Model Transform Batch Job failed", e)
-          System.exit(-1)
+          throw e
       }
-      System.exit(0) // Terminate once completion to shutdown execution context
     }
   }
 
