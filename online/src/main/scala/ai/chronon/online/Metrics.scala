@@ -87,6 +87,8 @@ object Metrics {
 
     val PutKeyNullPercent = "put.key.null_percent"
     val PutValueNullPercent = "put.value.null_percent"
+    val WriteLatencyMillis = "write.latency.millis"
+    val PushNotificationCount = "push_notification.count"
 
     val Exception = "exception"
     val validationFailure = "validation.failure"
