@@ -663,7 +663,7 @@ def _auto_set_group_by_name(group_by: api.GroupBy) -> None:
         gc.collect()
         group_by_module_name = None
         for ref in gc.get_referrers(group_by):
-            if "__name__" in ref and ref["__name__"].startswith("group_bys"):
+            if isinstance(ref, dict) and ref.get("__name", "").startswith("group_bys"):
                 group_by_module_name = ref["__name__"]
                 break
 
