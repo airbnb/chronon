@@ -48,6 +48,7 @@ class DataWriter(onlineImpl: Api,
       val writeStartMillis = System.currentTimeMillis()
       val future = notificationTopic match {
         case Some(topic) =>
+          logger.debug(s"[PushMode] Sending write with notification to topic=$topic dataset=${putRequest.dataset}")
           kvStore.multiPutWithNotification(Seq(putRequest), topic).map(_.head)(kvStore.executionContext)
         case None =>
           kvStore.put(putRequest)

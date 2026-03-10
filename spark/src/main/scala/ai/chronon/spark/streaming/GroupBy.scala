@@ -43,24 +43,7 @@ class GroupBy(inputStream: DataFrame,
     extends Serializable {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
-  private val notificationTopic: Option[String] = {
-    val enabled = groupByConf.getMetaData.customJsonLookUp("enable_write_notifications") match {
-      case b: java.lang.Boolean => b.booleanValue()
-      case _                    => false
-    }
-    if (enabled) {
-      val topic = Option(groupByConf.getMetaData.customJsonLookUp("notification_topic_override"))
-        .map(_.toString)
-        .orElse(Option(session.conf.get("spark.chronon.stream.push.default_notification_topic", null)))
-        .getOrElse(
-          throw new IllegalArgumentException(
-            s"Push mode is enabled for GroupBy ${groupByConf.getMetaData.getName} but no notification topic is configured. " +
-              "Set 'notification_topic_override' in customJson or Spark config 'spark.chronon.stream.push.default_notification_topic'."
-          )
-        )
-      Some(topic)
-    } else None
-  }
+  private val notificationTopic: Option[String] = PushModeConfig.resolveNotificationTopic(groupByConf, session)
 
   private def buildStreamingQuery(inputTable: String): String = {
     val streamingSource = groupByConf.streamingSource.get
