@@ -191,15 +191,20 @@ object Metrics {
     def increment(metric: String): Unit = stats.increment(prefix(metric), tags)
 
     def incrementException(exception: Throwable)(implicit logger: org.slf4j.Logger): Unit = {
-      val stackTrace = exception.getStackTrace
+      // Unwrap CompletionException to expose the real underlying cause in the metric tag
+      val rootCause = exception match {
+        case ce: java.util.concurrent.CompletionException if ce.getCause != null => ce.getCause
+        case other => other
+      }
+      val stackTrace = rootCause.getStackTrace
       val exceptionSignature = if (stackTrace.isEmpty) {
-        exception.getClass.toString
+        rootCause.getClass.toString
       } else {
         val stackRoot = stackTrace.apply(0)
         val file = stackRoot.getFileName
         val line = stackRoot.getLineNumber
         val method = stackRoot.getMethodName
-        s"[$method@$file:$line]${exception.getClass.toString}"
+        s"[$method@$file:$line]${rootCause.getClass.toString}"
       }
       logger.error(s"Exception Message: ${exception.traceString}")
       stats.increment(prefix(Name.Exception), s"$tags,${Metrics.Name.Exception}:${exceptionSignature}")
