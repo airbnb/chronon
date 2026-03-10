@@ -194,7 +194,7 @@ object Metrics {
       // Unwrap CompletionException to expose the real underlying cause in the metric tag
       val rootCause = exception match {
         case ce: java.util.concurrent.CompletionException if ce.getCause != null => ce.getCause
-        case other                                                                => other
+        case other                                                               => other
       }
       val stackTrace = rootCause.getStackTrace
       val exceptionSignature = if (stackTrace.isEmpty) {
