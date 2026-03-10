@@ -17,6 +17,7 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
+import ai.chronon.api.Extensions.MetadataOps
 import org.apache.spark.sql.SparkSession
 
 object PushModeConfig {
