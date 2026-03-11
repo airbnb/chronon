@@ -167,10 +167,9 @@ object MetadataExporter {
 
   // Extract GroupBys that are embedded in Join files but have no standalone file.
   // Returns (syntheticPath, groupBy) pairs, deduped across all Join files.
-  private def embeddedOnlyGroupBys(
-      filePaths: Seq[String],
-      standaloneNames: Set[String],
-      inputPath: String): Seq[(String, api.GroupBy)] = {
+  private def embeddedOnlyGroupBys(filePaths: Seq[String],
+                                   standaloneNames: Set[String],
+                                   inputPath: String): Seq[(String, api.GroupBy)] = {
     val seen = scala.collection.mutable.Set[String]() ++ standaloneNames
     val result = ListBuffer[(String, api.GroupBy)]()
     filePaths
@@ -273,7 +272,7 @@ object MetadataExporter {
                       outputTableName: String,
                       ds: String,
                       extraOutputTablePropertiesJson: Option[String],
-                      processEmbeddedGroupBys: Boolean = false): Unit = {
+                      processEmbeddedGroupBys: Boolean): Unit = {
     val filePaths = getFilePaths(inputPath)
     val processedData = filePaths.map { path =>
       try {
