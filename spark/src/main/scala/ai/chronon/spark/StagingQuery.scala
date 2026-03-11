@@ -55,7 +55,8 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
       tableUtils.sql(stagingQueryConf.query).save(outputTable)
       return
     }
-    val historicalBackfill = !stagingQueryConf.metaData.isSetHistoricalBackfill || stagingQueryConf.metaData.historicalBackfill
+    val historicalBackfill =
+      !stagingQueryConf.metaData.isSetHistoricalBackfill || stagingQueryConf.metaData.historicalBackfill
     val effectiveOverrideStartPartition = if (historicalBackfill) {
       overrideStartPartition
     } else {
