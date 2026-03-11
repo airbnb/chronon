@@ -27,7 +27,7 @@ import ai.chronon.api.{
   DoubleType,
   IntType,
   LongType,
-  Metadata,
+  MetaData,
   Operation,
   Source,
   StringType,
@@ -1080,7 +1080,6 @@ class GroupByTest {
     assertEquals(s"Expected only 1 partition ($endPartition), got: $partitions", 1, partitions.size)
     assertEquals(endPartition, partitions.head)
   }
-}
 
   @Test
   def testHistoricalBackfillUnset(): Unit = {
