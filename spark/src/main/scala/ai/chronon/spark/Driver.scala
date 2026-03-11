@@ -573,6 +573,10 @@ object Driver {
         opt[String](required = false, descr = "Hive table to write output metadata to")
       val outputTablePropertiesJson: ScallopOption[String] =
         opt[String](required = false, descr = "Optional output table properties in JSON format")
+      val processEmbeddedGroupBys: ScallopOption[Boolean] =
+        opt[Boolean](required = false,
+                     default = Some(false),
+                     descr = "When true, extract and enrich GroupBys embedded in Joins that have no standalone config file")
       override def subcommandName() = "metadata-export"
     }
 
@@ -582,7 +586,8 @@ object Driver {
                            args.outputRootPath.toOption,
                            args.outputTableName.toOption,
                            dsOpt,
-                           args.outputTablePropertiesJson.toOption)
+                           args.outputTablePropertiesJson.toOption,
+                           args.processEmbeddedGroupBys())
     }
   }
 

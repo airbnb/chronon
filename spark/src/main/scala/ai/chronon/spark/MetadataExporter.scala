@@ -39,6 +39,7 @@ object MetadataExporter {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   val GROUPBY_PATH_SUFFIX = "/group_bys"
+  val EMBEDDED_GROUPBY_PATH_SUFFIX = "/embedded_group_bys"
   val JOIN_PATH_SUFFIX = "/joins"
   val STAGING_QUERY_PATH_SUFFIX = "/staging_queries"
 
@@ -181,7 +182,7 @@ object MetadataExporter {
             val name = gb.metaData.name
             if (!seen.contains(name)) {
               seen += name
-              result += (s"$inputPath$GROUPBY_PATH_SUFFIX/$name" -> gb)
+              result += (s"$inputPath$EMBEDDED_GROUPBY_PATH_SUFFIX/$name" -> gb)
             }
           }
         }
@@ -215,7 +216,8 @@ object MetadataExporter {
       .withColumn("ds", lit(ds))
       .withColumn(
         "entityType",
-        when($"path".contains(GROUPBY_PATH_SUFFIX), "groupBy")
+        when($"path".contains(EMBEDDED_GROUPBY_PATH_SUFFIX), "embeddedGroupBy")
+          .when($"path".contains(GROUPBY_PATH_SUFFIX), "groupBy")
           .when($"path".contains(JOIN_PATH_SUFFIX), "join")
           .when($"path".contains(STAGING_QUERY_PATH_SUFFIX), "stagingQueries")
           .otherwise("unknown")
@@ -232,7 +234,7 @@ object MetadataExporter {
     logger.info(s"${tableName} : Wrote to output table successfully")
   }
 
-  def processEntities(inputPath: String, outputPath: String): Unit = {
+  def processEntities(inputPath: String, outputPath: String, processEmbeddedGroupBys: Boolean = false): Unit = {
     val filePaths = getFilePaths(inputPath)
     val processSuccess = filePaths.map { path =>
       try {
@@ -247,17 +249,19 @@ object MetadataExporter {
         case exception: Throwable => (path, false, ExceptionUtils.getStackTrace(exception))
       }
     }
-    // Also process GroupBys that only appear embedded in Joins (no standalone file).
-    val embeddedSuccess = embeddedOnlyGroupBys(filePaths, standaloneGroupByNames(filePaths), inputPath).map {
-      case (syntheticPath, groupBy) =>
-        try {
-          val data = enrichEmbeddedGroupBy(groupBy)
-          writeOutputToFile(data, syntheticPath, outputPath + GROUPBY_PATH_SUFFIX)
-          (syntheticPath, true, None)
-        } catch {
-          case exception: Throwable => (syntheticPath, false, ExceptionUtils.getStackTrace(exception))
-        }
-    }
+    // Optionally process GroupBys that only appear embedded in Joins (no standalone file).
+    val embeddedSuccess = if (processEmbeddedGroupBys) {
+      embeddedOnlyGroupBys(filePaths, standaloneGroupByNames(filePaths), inputPath).map {
+        case (syntheticPath, groupBy) =>
+          try {
+            val data = enrichEmbeddedGroupBy(groupBy)
+            writeOutputToFile(data, syntheticPath, outputPath + EMBEDDED_GROUPBY_PATH_SUFFIX)
+            (syntheticPath, true, None)
+          } catch {
+            case exception: Throwable => (syntheticPath, false, ExceptionUtils.getStackTrace(exception))
+          }
+      }
+    } else Seq.empty
     val allResults = processSuccess ++ embeddedSuccess
     val failuresAndTraces = allResults.filter(!_._2)
     logger.info(
@@ -268,7 +272,8 @@ object MetadataExporter {
   def processEntities(inputPath: String,
                       outputTableName: String,
                       ds: String,
-                      extraOutputTablePropertiesJson: Option[String]): Unit = {
+                      extraOutputTablePropertiesJson: Option[String],
+                      processEmbeddedGroupBys: Boolean = false): Unit = {
     val filePaths = getFilePaths(inputPath)
     val processedData = filePaths.map { path =>
       try {
@@ -278,16 +283,18 @@ object MetadataExporter {
         case exception: Throwable => (path, false, ExceptionUtils.getStackTrace(exception))
       }
     }
-    // Also process GroupBys that only appear embedded in Joins (no standalone file).
-    val embeddedData = embeddedOnlyGroupBys(filePaths, standaloneGroupByNames(filePaths), inputPath).map {
-      case (syntheticPath, groupBy) =>
-        try {
-          val data = enrichEmbeddedGroupBy(groupBy)
-          (syntheticPath, true, data)
-        } catch {
-          case exception: Throwable => (syntheticPath, false, ExceptionUtils.getStackTrace(exception))
-        }
-    }
+    // Optionally process GroupBys that only appear embedded in Joins (no standalone file).
+    val embeddedData = if (processEmbeddedGroupBys) {
+      embeddedOnlyGroupBys(filePaths, standaloneGroupByNames(filePaths), inputPath).map {
+        case (syntheticPath, groupBy) =>
+          try {
+            val data = enrichEmbeddedGroupBy(groupBy)
+            (syntheticPath, true, data)
+          } catch {
+            case exception: Throwable => (syntheticPath, false, ExceptionUtils.getStackTrace(exception))
+          }
+      }
+    } else Seq.empty
     val allData = processedData ++ embeddedData
     val failuresAndTraces = allData.filter(!_._2)
     logger.info(
@@ -301,9 +308,10 @@ object MetadataExporter {
           outputPathOpt: Option[String] = None,
           outputTableNameOpt: Option[String] = None,
           ds: Option[String] = None,
-          outputTablePropertiesJson: Option[String] = None): Unit = {
+          outputTablePropertiesJson: Option[String] = None,
+          processEmbeddedGroupBys: Boolean = false): Unit = {
     if (outputPathOpt.isDefined) {
-      processEntities(inputPath, outputPathOpt.get)
+      processEntities(inputPath, outputPathOpt.get, processEmbeddedGroupBys)
     } else if (outputTableNameOpt.isDefined) {
       if (ds.isEmpty) {
         throw new IllegalArgumentException(
@@ -311,7 +319,7 @@ object MetadataExporter {
             s"To write to a Hive table, both `outputTableName` and `ds` must be provided."
         )
       }
-      processEntities(inputPath, outputTableNameOpt.get, ds.get, outputTablePropertiesJson)
+      processEntities(inputPath, outputTableNameOpt.get, ds.get, outputTablePropertiesJson, processEmbeddedGroupBys)
     } else {
       throw new IllegalArgumentException(
         s"Missing output destination: either `outputRootPath` or `outputTableName` must be provided.\n" +
