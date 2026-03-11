@@ -698,7 +698,7 @@ object GroupBy {
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
     groupByConf.setups.foreach(tableUtils.sql)
-    val historicalBackfill = Option(groupByConf.metaData.historicalBackfill).forall(_.booleanValue)
+    val historicalBackfill = !groupByConf.metaData.isSetHistoricalBackfill || groupByConf.metaData.historicalBackfill
     val effectiveOverrideStartPartition = if (historicalBackfill) {
       overrideStartPartition
     } else {
