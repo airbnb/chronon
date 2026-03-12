@@ -39,6 +39,7 @@ object MetadataExporter {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   val GROUPBY_PATH_SUFFIX = "/group_bys"
+  // group by configs embedded in a join but without a standalone JSON config file
   val EMBEDDED_GROUPBY_PATH_SUFFIX = "/embedded_group_bys"
   val JOIN_PATH_SUFFIX = "/joins"
   val STAGING_QUERY_PATH_SUFFIX = "/staging_queries"
