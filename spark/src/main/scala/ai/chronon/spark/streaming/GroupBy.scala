@@ -43,6 +43,8 @@ class GroupBy(inputStream: DataFrame,
     extends Serializable {
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
+  private val notificationTopic: Option[String] = PushModeConfig.resolveNotificationTopic(groupByConf, session)
+
   private def buildStreamingQuery(inputTable: String): String = {
     val streamingSource = groupByConf.streamingSource.get
     val query = streamingSource.query
@@ -169,7 +171,7 @@ class GroupBy(inputStream: DataFrame,
     val keyToBytes = AvroConversions.encodeBytes(keyZSchema, GenericRowHandler.func)
     val valueToBytes = AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
 
-    val dataWriter = new DataWriter(onlineImpl, context.withSuffix("egress"), 120, debug)
+    val dataWriter = new DataWriter(onlineImpl, context.withSuffix("egress"), 120, debug, notificationTopic)
     selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)

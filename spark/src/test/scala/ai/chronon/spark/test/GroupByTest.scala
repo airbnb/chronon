@@ -27,6 +27,7 @@ import ai.chronon.api.{
   DoubleType,
   IntType,
   LongType,
+  MetaData,
   Operation,
   Source,
   StringType,
@@ -39,9 +40,8 @@ import ai.chronon.spark._
 import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{ArrayType, BinaryType, MapType, StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
 import org.apache.spark.sql.{Encoders, Row, SparkSession}
-import org.apache.spark.sql.functions.col
 import org.junit.Assert._
 import org.junit.Test
 
@@ -117,7 +117,6 @@ class GroupByTest {
 
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
-
     val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
     val outputDatesDf = spark.createDataFrame(outputDatesRdd, StructType(Seq(StructField("ds", SparkStringType))))
     val datesViewName = "test_group_by_snapshot_events_output_range"
@@ -452,7 +451,6 @@ class GroupByTest {
              tableUtils = tableUtils,
              additionalAgg = aggs)
   }
-
 
   private def createTestSource(windowSize: Int = 365,
                                suffix: String = "",
@@ -962,9 +960,6 @@ class GroupByTest {
     assertTrue("Should be able to filter GroupBy results", filteredResult.count() >= 0)
   }
 
-
-
-
   /**
    * Test that GroupBy derivations without wildcards preserve infrastructure columns (keys, partition, time).
    * This validates the fix for the bug where derivations would drop necessary columns.
@@ -1043,5 +1038,97 @@ class GroupByTest {
     println(s"✅ GroupBy derivations correctly preserved infrastructure columns:")
     println(s"   Columns: ${result.columns.mkString(", ")}")
     result.show(5)
+  }
+
+  @Test
+  def testNoHistoricalBackfill(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_no_historical_backfill_gb" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val sixtyDaysAgo = tableUtils.partitionSpec.minus(today, new Window(60, TimeUnit.DAYS))
+    val endPartition = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+
+    val schema = List(
+      Column("item", StringType, 100),
+      Column("price", DoubleType, 500)
+    )
+    val sourceTable = s"$namespace.items_no_historical_backfill"
+    DataFrameGen.entities(spark, schema, 1000, partitions = 100).save(sourceTable)
+
+    val source = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("price"), startPartition = sixtyDaysAgo),
+      snapshotTable = sourceTable
+    )
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "price")),
+      metaData = Builders.MetaData(name = "test.item_no_historical_backfill",
+                                   namespace = namespace,
+                                   team = "chronon",
+                                   historicalBackill = false),
+      backfillStartDate = sixtyDaysAgo
+    )
+
+    GroupBy.computeBackfill(groupByConf, endPartition, tableUtils)
+
+    val outputTable = groupByConf.metaData.outputTable
+    val partitions = tableUtils.partitions(outputTable)
+    assertEquals(s"Expected only 1 partition ($endPartition), got: $partitions", 1, partitions.size)
+    assertEquals(endPartition, partitions.head)
+  }
+
+  @Test
+  def testHistoricalBackfillUnset(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_historical_backfill_unset_gb" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val tenDaysAgo = tableUtils.partitionSpec.minus(today, new Window(10, TimeUnit.DAYS))
+    val fiveDaysAgo = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+
+    val schema = List(
+      Column("item", StringType, 100),
+      Column("price", DoubleType, 500)
+    )
+    val sourceTable = s"$namespace.items_historical_backfill_unset"
+    DataFrameGen.entities(spark, schema, 1000, partitions = 100).save(sourceTable)
+
+    val source = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("price"), startPartition = tenDaysAgo),
+      snapshotTable = sourceTable
+    )
+
+    val metaData = new MetaData()
+    metaData.setName("test.item_historical_backfill_unset")
+    metaData.setOutputNamespace(namespace)
+    metaData.setTeam("chronon")
+    assert(!metaData.isSetHistoricalBackfill, "historicalBackfill should not be set for this test")
+
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "price")),
+      metaData = metaData,
+      backfillStartDate = tenDaysAgo
+    )
+
+    GroupBy.computeBackfill(groupByConf, fiveDaysAgo, tableUtils)
+
+    val outputTable = groupByConf.metaData.outputTable
+    val partitions = tableUtils.partitions(outputTable)
+    assertTrue(
+      s"Expected multiple partitions from $tenDaysAgo when historicalBackfill is unset, got: $partitions",
+      partitions.size > 1
+    )
+    assertTrue(
+      s"Expected $tenDaysAgo in partitions when historicalBackfill is unset, got: $partitions",
+      partitions.contains(tenDaysAgo)
+    )
   }
 }

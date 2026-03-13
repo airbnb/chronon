@@ -880,7 +880,6 @@ case class TableUtils(sparkSession: SparkSession) {
       outputPartitionRange
     }
     val outputExisting = partitions(outputTable)
-    logger.info(s"outputExisting : ${outputExisting}")
     // To avoid recomputing partitions removed by retention mechanisms we will not fill holes in the very beginning of the range
     // If a user fills a new partition in the newer end of the range, then we will never fill any partitions before that range.
     // We instead log a message saying why we won't fill the earliest hole.
@@ -889,8 +888,6 @@ case class TableUtils(sparkSession: SparkSession) {
     } else {
       validPartitionRange.start
     }
-
-    logger.info(s"Cutoff partition for skipping holes is set to $cutoffPartition")
     val fillablePartitions =
       if (skipFirstHole) {
         validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)

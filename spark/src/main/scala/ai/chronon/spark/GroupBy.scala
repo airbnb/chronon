@@ -373,12 +373,14 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       hopsArrays: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)]): RDD[(Array[Any], Array[Any])] = {
     hopsArrays.flatMap {
       case (keyWithHash: KeyWithHash, hopsArray: HopsAggregator.OutputArrayType) =>
-        val hopsArrayHead: Array[HopIr] = hopsArray.headOption.get
-        hopsArrayHead.map { array: HopIr =>
-          val timestamp = array.last.asInstanceOf[Long]
-          val withoutTimestamp = array.dropRight(1)
-          val normalizedIR = flattenedAgg.normalize(withoutTimestamp)
-          ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), normalizedIR)
+        hopsArray.headOption match {
+          case Some(dailyHops) =>
+            dailyHops.map { hopIr =>
+              val timestamp = hopIr.last.asInstanceOf[Long]
+              val normalizedIR = flattenedAgg.normalize(hopIr.dropRight(1))
+              ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), normalizedIR)
+            }
+          case None => Iterator.empty
         }
     }
   }
@@ -943,7 +945,16 @@ object GroupBy {
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
     groupByConf.setups.foreach(tableUtils.sql)
-    val overrideStart = overrideStartPartition.getOrElse(groupByConf.backfillStartDate)
+    val historicalBackfill = !groupByConf.metaData.isSetHistoricalBackfill || groupByConf.metaData.historicalBackfill
+    val effectiveOverrideStartPartition = if (historicalBackfill) {
+      overrideStartPartition
+    } else {
+      logger.info(
+        s"Historical backfill is set to false for GroupBy ${groupByConf.metaData.name}. " +
+          s"Backfilling latest single partition only: $endPartition")
+      Some(endPartition)
+    }
+    val overrideStart = effectiveOverrideStartPartition.getOrElse(groupByConf.backfillStartDate)
     val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.toScala)

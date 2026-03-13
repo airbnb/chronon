@@ -5,7 +5,7 @@
         },
         "common_env": {
             "VERSION": "latest",
-            "SPARK_SUBMIT_PATH": "spark-submit",
+            "SPARK_SUBMIT_PATH": "[TODO]/path/to/spark-submit",
             "JOB_MODE": "local[*]",
             "HADOOP_DIR": "[STREAMING-TODO]/path/to/folder/containing",
             "CHRONON_ONLINE_CLASS": "[ONLINE-TODO]your.online.class",
