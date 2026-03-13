@@ -1540,4 +1540,117 @@ class JoinTest {
     result.show(5)
   }
 
+  /**
+    * Tests that keyMapping supports SQL expression values (not just simple column renames).
+    *
+    * Setup:
+    *   - Left side has entity_id strings like "Video:1", "Video:2", etc.
+    *   - Right side (GroupBy) is keyed on video_id (BIGINT) with a score feature.
+    *   - keyMapping uses a SQL expression to extract the numeric ID from the entity string:
+    *     "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id"
+    *
+    * Validates:
+    *   - The join completes successfully with expression-based key mapping.
+    *   - Feature values are correctly matched (e.g., Video:3 gets score=300).
+    *   - Temporary expression columns are cleaned up from the output.
+    */
+  @Test
+  def testExpressionKeyMapping(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("ExprKeyMappingTest_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_expr_key_mapping_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    val start = tableUtils.partitionSpec.minus(today, new Window(30, TimeUnit.DAYS))
+    val end = tableUtils.partitionSpec.minus(today, new Window(1, TimeUnit.DAYS))
+
+    // Create left event table with entity_id strings like "Video:1" through "Video:5"
+    val leftData = (1 to 50).map { i =>
+      val ds = tableUtils.partitionSpec.minus(today, new Window(i % 25 + 1, TimeUnit.DAYS))
+      val ts = tableUtils.partitionSpec.epochMillis(ds)
+      Row(s"Video:${i % 5 + 1}", ts, ds)
+    }
+    val leftSchema = StructType(List(
+      org.apache.spark.sql.types.StructField("entity_id", SparkStringType),
+      org.apache.spark.sql.types.StructField("ts", SparkLongType),
+      org.apache.spark.sql.types.StructField("ds", SparkStringType)
+    ))
+    val leftDf = spark.createDataFrame(spark.sparkContext.parallelize(leftData.toList), leftSchema)
+    val leftTable = s"$namespace.expr_key_left"
+    leftDf.save(leftTable)
+
+    // Create right entity table keyed by video_id (long), where score = video_id * 100
+    val rightData = (1 to 5).flatMap { videoId =>
+      (1 to 25).map { dayOffset =>
+        val ds = tableUtils.partitionSpec.minus(today, new Window(dayOffset, TimeUnit.DAYS))
+        Row(videoId.toLong, videoId * 100L, ds)
+      }
+    }
+    val rightSchema = StructType(List(
+      org.apache.spark.sql.types.StructField("video_id", SparkLongType),
+      org.apache.spark.sql.types.StructField("score", SparkLongType),
+      org.apache.spark.sql.types.StructField("ds", SparkStringType)
+    ))
+    val rightDf = spark.createDataFrame(spark.sparkContext.parallelize(rightData.toList), rightSchema)
+    val rightTable = s"$namespace.expr_key_right"
+    rightDf.save(rightTable)
+
+    // Define a GroupBy keyed on video_id with score as a feature
+    val groupBy = Builders.GroupBy(
+      sources = Seq(
+        Builders.Source.entities(
+          query = Builders.Query(selects = Map("video_id" -> "video_id", "score" -> "score"), startPartition = start),
+          snapshotTable = rightTable
+        )
+      ),
+      keyColumns = Seq("video_id"),
+      metaData = Builders.MetaData(name = "test.video_scores", namespace = namespace, team = "chronon")
+    )
+
+    // Join with expression keyMapping: extract numeric ID from "Video:N" string
+    val joinConf = Builders.Join(
+      left = Builders.Source.events(
+        query = Builders.Query(
+          selects = Map("entity_id" -> "entity_id"),
+          startPartition = start,
+          timeColumn = "ts"
+        ),
+        table = leftTable
+      ),
+      joinParts = Seq(
+        Builders.JoinPart(
+          groupBy = groupBy,
+          keyMapping = Map("entity_id" -> "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id"),
+          prefix = "video"
+        )
+      ),
+      metaData = Builders.MetaData(name = "test.expr_key_mapping_join", namespace = namespace, team = "chronon")
+    )
+
+    // Run the join backfill
+    val runner = new Join(joinConf, end, tableUtils)
+    val result = runner.computeJoin()
+
+    // Verify result is populated and contains the expected feature column
+    assertTrue("Result should not be empty", result.count() > 0)
+    assertTrue("Result should contain video_test_video_scores_score column",
+      result.columns.contains("video_test_video_scores_score"))
+
+    // Verify temporary expression columns are cleaned up
+    assertFalse("Result should not contain temp expression columns",
+      result.columns.exists(_.startsWith("__chronon_expr_key_")))
+
+    // Verify correct join semantics: entity_id "Video:3" should match video_id=3, which has score=300
+    val video3Rows = result.filter(col("entity_id") === "Video:3")
+      .select("video_test_video_scores_score")
+      .collect()
+    assertTrue("Should have rows for Video:3", video3Rows.length > 0)
+    video3Rows.foreach { row =>
+      if (!row.isNullAt(0)) {
+        assertEquals(300L, row.getLong(0))
+      }
+    }
+  }
+
 }

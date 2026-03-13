@@ -315,16 +315,33 @@ class Join(joinConf: api.Join,
               logger.info(s"Counted $leftRowCount rows, running join in bloom filter mode.")
               // Generate a Bloom filter for 'joinPart' when the row count to be backfilled falls below a specified threshold.
               // This method anticipates that there will likely be a substantial number of rows on the right side that need to be filtered out.
+              val keyExprs = joinPart.keyExpressions
+
+              // Compute expression columns on left for bloom filter generation
+              val leftDfForBlooms = keyExprs.foldLeft(unfilledLeftDf.map(_.df).get) {
+                case (df, (rightKey, sqlExpr)) =>
+                  df.withColumn(s"__expr_${rightKey}", org.apache.spark.sql.functions.expr(sqlExpr))
+              }
+
               val leftBlooms = joinConf.leftKeyCols.iterator.map { key =>
-                key -> unfilledLeftDf
-                  .map(_.df.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange))
-                  .getOrElse(null)
+                key -> leftDfForBlooms.generateBloomFilter(key, leftRowCount, joinConf.left.table, leftRange)
               }.toJMap
 
-              val rightBlooms = joinPart.rightToLeft.iterator.map {
+              // Simple rename keys: map left bloom to right key name
+              val renameRightBlooms = joinPart.rightToLeft.iterator.map {
                 case (rightCol, leftCol) =>
                   rightCol -> leftBlooms.get(leftCol)
-              }.toJMap
+              }.toMap
+
+              // Expression keys: generate bloom on computed column, map to right key name
+              val exprBlooms = keyExprs.keys.iterator.map { rightKey =>
+                rightKey -> leftDfForBlooms.generateBloomFilter(s"__expr_${rightKey}",
+                                                                leftRowCount,
+                                                                joinConf.left.table,
+                                                                leftRange)
+              }.toMap
+
+              val rightBlooms = (renameRightBlooms ++ exprBlooms).iterator.toJMap
 
               val bloomSizes = rightBlooms.toScala.map {
                 case (rightCol, bloom) =>

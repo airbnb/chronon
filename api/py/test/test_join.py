@@ -17,7 +17,7 @@ import json
 import pytest
 from ai.chronon.api import ttypes as api
 from ai.chronon.group_by import GroupBy
-from ai.chronon.join import Derivation, Join
+from ai.chronon.join import Derivation, Join, JoinPart, _resolve_right_key
 
 
 def event_source(table, is_cumulative=False):
@@ -150,6 +150,50 @@ def test_derivation():
     expected_derivation = api.Derivation(name="derivation_name", expression="derivation_expression")
 
     assert derivation == expected_derivation
+
+
+def test_resolve_right_key_bare_column():
+    assert _resolve_right_key("user_id") == "user_id"
+    assert _resolve_right_key("  user_id  ") == "user_id"
+    assert _resolve_right_key("`user_id`") == "`user_id`"
+
+
+def test_resolve_right_key_expression():
+    assert _resolve_right_key("CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id") == "video_id"
+    assert _resolve_right_key("CONCAT('x', y) AS z") == "z"
+
+
+def test_resolve_right_key_missing_alias():
+    with pytest.raises(ValueError, match="must end with"):
+        _resolve_right_key("CAST(x AS BIGINT)")
+
+
+def test_join_part_expression_key_mapping():
+    gb = api.GroupBy(
+        sources=[event_source("sample_namespace.table").events],
+        keyColumns=["video_id"],
+        aggregations=[],
+        metaData=api.MetaData(name="test_gb"),
+    )
+    jp = JoinPart(
+        group_by=gb,
+        key_mapping={"entity_id": "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id"},
+    )
+    assert jp.keyMapping["entity_id"] == "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id"
+
+
+def test_join_part_expression_key_mapping_invalid_alias():
+    gb = api.GroupBy(
+        sources=[event_source("sample_namespace.table").events],
+        keyColumns=["video_id"],
+        aggregations=[],
+        metaData=api.MetaData(name="test_gb"),
+    )
+    with pytest.raises(Exception):
+        JoinPart(
+            group_by=gb,
+            key_mapping={"entity_id": "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS wrong_key"},
+        )
 
 
 def test_derivation_with_description():

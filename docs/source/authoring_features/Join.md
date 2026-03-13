@@ -86,9 +86,45 @@ See the [Computation examples](#computation-examples) for an explanation of how 
 
 `prefix` adds the specified string to the names of the columns from group_by.
 
-`keyMapping` is a map of string to string. This is used to re-map keys from left side into right side. You could have 
+`keyMapping` is a map of string to string. This is used to re-map keys from left side into right side. You could have
 a group_by on the right keyed by `user`. On the left you have chosen to call the user `user_id` or `vendor`. Then you
 can use the remapping facility to specify this relation for each group_by.
+
+### Simple Rename
+
+```python
+JoinPart(
+    group_by=user_features_gb,
+    key_mapping={"seller_id": "user_id"},  # left "seller_id" maps to right "user_id"
+)
+```
+
+### Expression-Based Key Mapping
+
+`keyMapping` values can also be SQL expressions ending with `AS <alias>`, where the alias must match a GroupBy key column. This is useful when the left side key needs a transformation to match the right side key type or format.
+
+```python
+JoinPart(
+    group_by=video_embeddings_gb,  # keyed on video_id (BIGINT)
+    key_mapping={
+        "entity_id": "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id",
+    },
+    prefix="video",
+)
+```
+
+In the example above, the left side has `entity_id` strings like `"Video:123"`, and the right side GroupBy is keyed on `video_id` (a numeric type). The expression extracts the numeric ID from the entity string and casts it to `BIGINT` to match the right side key.
+
+You can mix simple renames and expressions in the same `keyMapping`:
+
+```python
+key_mapping={
+    "seller_id": "user_id",  # simple rename
+    "entity_id": "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id",  # expression
+}
+```
+
+Expression key mapping works across batch (Spark) and online (fetcher) environments. Any SQL expression supported by Spark's Catalyst engine can be used (e.g., `CAST`, `SPLIT`, `SUBSTR`, `CONCAT`, arithmetic).
 
 ## Label Join
 Label Join can be used to combine features and labels together into one view, which is useful for model training workflows.

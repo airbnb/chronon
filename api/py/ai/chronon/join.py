@@ -17,6 +17,7 @@ import gc
 import importlib
 import json
 import logging
+import re
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
@@ -26,6 +27,25 @@ import ai.chronon.utils as utils
 from ai.chronon.group_by import validate_group_by
 
 logging.basicConfig(level=logging.INFO)
+
+_BARE_COLUMN_RE = re.compile(r"^`?[a-zA-Z_][a-zA-Z0-9_]*`?$")
+_EXPR_ALIAS_RE = re.compile(r"(?s).+\s+[Aa][Ss]\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*$")
+
+
+def _resolve_right_key(value: str) -> str:
+    """Extract the target right-side key from a keyMapping value.
+    For bare column names: returns the value itself.
+    For expressions: extracts the AS alias.
+    """
+    value = value.strip()
+    if _BARE_COLUMN_RE.match(value):
+        return value
+    m = _EXPR_ALIAS_RE.match(value)
+    if m:
+        return m.group(1)
+    raise ValueError(
+        f"keyMapping expression value must end with ' AS <column_name>', got: '{value}'"
+    )
 
 
 def JoinPart(
@@ -44,6 +64,15 @@ def JoinPart(
     :type group_by: ai.chronon.api.GroupBy
     :param key_mapping:
         Names of keys don't always match on left and right, this mapping tells us how to map when they don't.
+        Values can be either bare column names (simple rename) or SQL expressions ending with ``AS <alias>``
+        where the alias must match a GroupBy key column. For example::
+
+            # Simple rename: left has seller_id, right has user_id
+            key_mapping={"seller_id": "user_id"}
+
+            # Expression: left has entity_id like "Video:123", right has video_id (BIGINT)
+            key_mapping={"entity_id": "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id"}
+
     :type key_mapping: Dict[str, str]
     :param prefix:
         All the output columns of the groupBy will be prefixed with this string. This is used when you need to join
@@ -61,7 +90,8 @@ def JoinPart(
     _auto_set_group_by_name(group_by)
 
     if key_mapping:
-        utils.check_contains(key_mapping.values(), group_by.keyColumns, "key", group_by.metaData.name)
+        right_keys = [_resolve_right_key(v) for v in key_mapping.values()]
+        utils.check_contains(right_keys, group_by.keyColumns, "key", group_by.metaData.name)
 
     join_part = api.JoinPart(groupBy=group_by, keyMapping=key_mapping, prefix=prefix)
     join_part.tags = tags

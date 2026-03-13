@@ -73,6 +73,17 @@ abstract class JoinBase(joinConf: api.Join,
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
     val partLeftKeys = joinPart.rightToLeft.values.toArray
+    val keyExprs = joinPart.keyExpressions
+
+    // For expression keys, compute temp columns on left DataFrame
+    val exprTempCols: Map[String, String] = keyExprs.map {
+      case (rightKey, _) =>
+        rightKey -> s"__chronon_expr_key_${rightKey}"
+    }
+    val leftWithExprs = exprTempCols.foldLeft(leftDf) {
+      case (df, (rightKey, tempCol)) =>
+        df.withColumn(tempCol, expr(keyExprs(rightKey)))
+    }
 
     // compute join keys, besides the groupBy keys -  like ds, ts etc.,
     // At dataframe, we already renamed various partition column names to the common default
@@ -85,12 +96,13 @@ abstract class JoinBase(joinConf: api.Join,
         Seq(Constants.TimePartitionColumn)
       }
     }
-    val keys = partLeftKeys ++ additionalKeys
+    val keys = partLeftKeys ++ exprTempCols.values ++ additionalKeys
 
     // apply prefix to value columns
-    val nonValueColumns = joinPart.rightToLeft.keys.toArray ++ Array(Constants.TimeColumn,
-                                                                     tableUtils.partitionColumn,
-                                                                     Constants.TimePartitionColumn)
+    val nonValueColumns: Set[String] =
+      joinPart.rightToLeft.keys.toSet ++ keyExprs.keys.toSet ++ Set(Constants.TimeColumn,
+                                                                    tableUtils.partitionColumn,
+                                                                    Constants.TimePartitionColumn)
     val valueColumns = rightDf.schema.names.filterNot(nonValueColumns.contains)
     val prefixedRightDf = rightDf.prefixColumnNames(joinPart.fullPrefix, valueColumns)
 
@@ -98,6 +110,8 @@ abstract class JoinBase(joinConf: api.Join,
     val newColumns = prefixedRightDf.columns.map { column =>
       if (joinPart.rightToLeft.contains(column)) {
         col(column).as(joinPart.rightToLeft(column))
+      } else if (exprTempCols.contains(column)) {
+        col(column).as(exprTempCols(column))
       } else {
         col(column)
       }
@@ -122,15 +136,19 @@ abstract class JoinBase(joinConf: api.Join,
     logger.info(s"""
                    |Join keys for ${joinPart.groupBy.metaData.name}: ${keys.mkString(", ")}
                    |Left Schema:
-                   |${leftDf.schema.pretty}
+                   |${leftWithExprs.schema.pretty}
                    |Right Schema:
                    |${joinableRightDf.schema.pretty}""".stripMargin)
-    val joinedDf = coalescedJoin(leftDf, joinableRightDf, keys)
+    val joinedDf = coalescedJoin(leftWithExprs, joinableRightDf, keys)
+
+    // Drop temporary expression columns after join
+    val finalDf = exprTempCols.values.foldLeft(joinedDf) { case (df, tempCol) => df.drop(tempCol) }
+
     logger.info(s"""Final Schema:
-                   |${joinedDf.schema.pretty}
+                   |${finalDf.schema.pretty}
                    |""".stripMargin)
 
-    joinedDf
+    finalDf
   }
 
   def computeRightTable(leftDf: Option[DfWithStats],
