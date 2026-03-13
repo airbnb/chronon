@@ -505,7 +505,12 @@ class Runner:
                 logging.info("Running args list {} with pool size {}".format(command_list, self.parallelism))
                 pool.map(check_call, command_list)
         elif len(command_list) == 1:
-            check_call(command_list[0])
+            command = command_list[0]
+            # Deduplicate when CHRONON_ONLINE_JAR and --online-jar are both present
+            online_jar = os.environ.get("CHRONON_ONLINE_JAR", "")
+            if online_jar and online_jar in command:
+                os.environ.pop("CHRONON_ONLINE_JAR")
+            check_call(command)
 
     def _gen_final_args(self, start_ds=None, end_ds=None):
         base_args = MODE_ARGS[self.mode].format(
