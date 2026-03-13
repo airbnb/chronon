@@ -703,6 +703,23 @@ object Extensions {
             .map({ case (key, value) => value -> key }))
         .getOrElse(Map.empty[String, String])
     }
+
+    private val BareColumnPattern = "^`?[a-zA-Z_][a-zA-Z0-9_]*`?$".r
+
+    def isSimpleRename(value: String): Boolean = BareColumnPattern.findFirstIn(value.trim).isDefined
+
+    case class ParsedExpression(expression: String, alias: String)
+
+    private val ExpressionWithAlias = """(?s)(.+)\s+[Aa][Ss]\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*$""".r
+
+    def parseExpressionValue(value: String): ParsedExpression =
+      value match {
+        case ExpressionWithAlias(expr, alias) => ParsedExpression(expr.trim, alias.trim)
+        case _ =>
+          throw new IllegalArgumentException(
+            s"Expression keyMapping value must end with ' AS <alias>': $value"
+          )
+      }
   }
 
   implicit class ExternalPartOps(externalPart: ExternalPart) extends ExternalPart(externalPart) {
@@ -748,7 +765,7 @@ object Extensions {
   }
 
   implicit class JoinPartOps(joinPart: JoinPart) extends JoinPart(joinPart) {
-    lazy val fullPrefix = {
+    lazy val fullPrefix: String = {
       joinPart match {
         case part: ExternalJoinPart =>
           part.externalJoinFullPrefix
@@ -756,20 +773,40 @@ object Extensions {
           (Option(prefix) ++ Some(groupBy.getMetaData.cleanName)).mkString("_")
       }
     }
+
+    private lazy val (renameMappings, rawExpressionMappings): (Map[String, String], Map[String, String]) = {
+      Option(joinPart.keyMapping)
+        .map(_.toScala.partition { case (_, value) => KeyMappingHelper.isSimpleRename(value) })
+        .getOrElse((Map.empty[String, String], Map.empty[String, String]))
+    }
+
+    lazy val keyExpressions: Map[String, String] = {
+      rawExpressionMappings.map {
+        case (_, exprWithAlias) =>
+          val parsed = KeyMappingHelper.parseExpressionValue(exprWithAlias)
+          parsed.alias -> parsed.expression
+      }
+    }
+
+    lazy val expressionLeftKeys: Map[String, String] = {
+      rawExpressionMappings.map {
+        case (leftCol, exprWithAlias) =>
+          val parsed = KeyMappingHelper.parseExpressionValue(exprWithAlias)
+          parsed.alias -> leftCol
+      }
+    }
+
     lazy val leftToRight: Map[String, String] = rightToLeft.map { case (key, value) => value -> key }
 
     def valueColumns: Seq[String] = joinPart.groupBy.valueColumns.map(fullPrefix + "_" + _)
 
     def rightToLeft: Map[String, String] = {
-      val rightToRight = joinPart.groupBy.keyColumns.toScala.map { key => key -> key }.toMap
-      Option(joinPart.keyMapping)
-        .map { leftToRight =>
-          val rToL = leftToRight.toScala.map {
-            case (left, right) => right -> left
-          }.toMap
-          rightToRight ++ rToL
-        }
-        .getOrElse(rightToRight)
+      val rightToRight = joinPart.groupBy.keyColumns.toScala
+        .filterNot(keyExpressions.contains)
+        .map { key => key -> key }
+        .toMap
+      val rToL = renameMappings.map { case (left, right) => right -> left }
+      rightToRight ++ rToL
     }
 
     def copyForVersioningComparison: JoinPart = {
@@ -1007,6 +1044,7 @@ object Extensions {
                 .map(_.toScala.getOrElse(leftKey, leftKey))
                 .orElse(Some(leftKey))
                 .filter(joinPart.groupBy.keyColumns.contains(_))
+                .filter(!joinPart.keyExpressions.contains(_))
                 .map(generateSkewFilterSql(_, values.toScala))
           }
           .filter(_.nonEmpty)

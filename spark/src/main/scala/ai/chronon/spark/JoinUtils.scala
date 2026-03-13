@@ -298,8 +298,14 @@ object JoinUtils {
     val joinPart = originalJoinPart.deepCopy()
     // Modifies the joinPart to inject the key filter into the where Clause of GroupBys by hardcoding the keyset
     val groupByKeyNames = joinPart.groupBy.getKeyColumns.toScala
+    val keyExprs = joinPart.keyExpressions
 
-    val collectedLeft = leftDf.collect()
+    // Add computed expression columns to left before collecting
+    val leftWithExprs = keyExprs.foldLeft(leftDf) {
+      case (df, (rightKey, sqlExpr)) =>
+        df.withColumn(s"__expr_${rightKey}", org.apache.spark.sql.functions.expr(sqlExpr))
+    }
+    val collectedLeft = leftWithExprs.collect()
 
     joinPart.groupBy.sources.toScala.foreach { source =>
       val selectMap = Option(source.rootQuery.getQuerySelects).getOrElse(Map.empty[String, String])
@@ -310,11 +316,15 @@ object JoinUtils {
       groupByKeyExpressions
         .map {
           case (keyName, groupByKeyExpression) =>
-            val leftSideKeyName = joinPart.rightToLeft.get(keyName).get
-            logger.info(
-              s"KeyName: $keyName, leftSide KeyName: $leftSideKeyName , Join right to left: ${joinPart.rightToLeft
-                .mkString(", ")}")
-            val values = collectedLeft.map(row => row.getAs[Any](leftSideKeyName))
+            val values = if (keyExprs.contains(keyName)) {
+              collectedLeft.map(row => row.getAs[Any](s"__expr_${keyName}"))
+            } else {
+              val leftSideKeyName = joinPart.rightToLeft.get(keyName).get
+              logger.info(
+                s"KeyName: $keyName, leftSide KeyName: $leftSideKeyName , Join right to left: ${joinPart.rightToLeft
+                  .mkString(", ")}")
+              collectedLeft.map(row => row.getAs[Any](leftSideKeyName))
+            }
             // Check for null keys, warn if found
             val (notNullValues, nullValues) = values.partition(_ != null)
             if (notNullValues.isEmpty) {

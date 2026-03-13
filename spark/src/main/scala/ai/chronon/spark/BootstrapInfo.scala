@@ -90,9 +90,10 @@ object BootstrapInfo {
     var joinParts: Seq[JoinPartMetadata] = allJoinParts.map(part => {
       // set computeDependency to False as we compute dependency upstream
       val gb = GroupBy.from(part.groupBy, range, tableUtils, computeDependency)
+      val rightToLeftWithExpressions = part.rightToLeft ++ part.expressionLeftKeys
       val keySchema = SparkConversions
         .toChrononSchema(gb.keySchema)
-        .map(field => StructField(part.rightToLeft(field._1), field._2))
+        .map(field => StructField(rightToLeftWithExpressions(field._1), field._2))
 
       Analyzer.validateAvroCompatibility(tableUtils, gb, part.groupBy)
 

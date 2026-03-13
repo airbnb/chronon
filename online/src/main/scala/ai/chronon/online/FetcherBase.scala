@@ -614,15 +614,23 @@ class FetcherBase(kvStore: KVStore,
             joinContext.get.increment("join_request.count")
             join.joinPartOps.map { part =>
               val joinContextInner = Metrics.Context(joinContext.get, part)
-              val missingKeys = part.leftToRight.keys.filterNot(request.keys.contains)
+              val neededLeftKeys = part.leftToRight.keys.toSet ++ part.expressionLeftKeys.values.toSet
+              val missingKeys = neededLeftKeys.filterNot(request.keys.contains)
               if (missingKeys.nonEmpty) {
                 Right(KeyMissingException(part.fullPrefix, missingKeys.toSeq, request.keys))
               } else {
-                val rightKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
+                val renameKeys = part.leftToRight.map { case (leftKey, rightKey) => rightKey -> request.keys(leftKey) }
+                val exprKeys = part.keyExpressions.map {
+                  case (rightKey, sqlExpr) =>
+                    val inputCols = part.expressionLeftKeys.get(rightKey).toSeq
+                    rightKey -> KeyExpressionEvaluator.evaluate(sqlExpr, inputCols, request.keys)
+                }
                 Left(
-                  PrefixedRequest(
-                    part.fullPrefix,
-                    Request(part.groupBy.getMetaData.getName, rightKeys, request.atMillis, Some(joinContextInner))))
+                  PrefixedRequest(part.fullPrefix,
+                                  Request(part.groupBy.getMetaData.getName,
+                                          renameKeys ++ exprKeys,
+                                          request.atMillis,
+                                          Some(joinContextInner))))
               }
             }
           } else {

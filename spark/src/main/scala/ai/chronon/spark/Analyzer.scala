@@ -426,6 +426,16 @@ class Analyzer(tableUtils: TableUtils,
 
       // Run validation checks.
       keysWithError ++= runSchemaValidation(leftSchema.toMap, analyzeGroupByResult.keySchema.toMap, part.rightToLeft)
+      // Validate expression key mappings: left key must exist, right alias must exist
+      part.expressionLeftKeys.foreach {
+        case (rightKey, leftKey) =>
+          if (!leftSchema.toMap.contains(leftKey))
+            keysWithError += leftKey -> s"[ERROR]: Left side of the join doesn't contain the key $leftKey (used in expression keyMapping). Available keys are [${leftSchema.toMap.keys
+              .mkString(",")}]"
+          if (!analyzeGroupByResult.keySchema.toMap.contains(rightKey))
+            keysWithError += rightKey -> s"[ERROR]: Right side of the join doesn't contain the key $rightKey (expression alias). Available keys are [${analyzeGroupByResult.keySchema.toMap.keys
+              .mkString(",")}]"
+      }
       val subPartitionFilters =
         part.groupBy.sources.toScala.map(source => source.table -> source.subPartitionFilters).toMap
       dataAvailabilityErrors ++= runDataAvailabilityCheck(joinConf.left.dataModel,
@@ -466,9 +476,14 @@ class Analyzer(tableUtils: TableUtils,
         val keyCols: Seq[String] = joinPart.groupBy.keyColumns.toScala
         if (joinPart.keyMapping == null) keyCols
         else {
-          keyCols.map(key => {
-            if (joinPart.rightToLeft.contains(key)) joinPart.rightToLeft(key)
-            else key
+          keyCols.flatMap(key => {
+            if (joinPart.keyExpressions.contains(key)) {
+              Some(joinPart.expressionLeftKeys(key))
+            } else if (joinPart.rightToLeft.contains(key)) {
+              Some(joinPart.rightToLeft(key))
+            } else {
+              Some(key)
+            }
           })
         }
       })

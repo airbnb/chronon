@@ -17,6 +17,7 @@
 package ai.chronon.api.test
 
 import ai.chronon.api.{Accuracy, Builders, Constants, GroupBy, IntType, LongType}
+import ai.chronon.api.Extensions.KeyMappingHelper
 import org.junit.Test
 import ai.chronon.api.Extensions._
 import org.junit.Assert.{assertEquals, assertFalse, assertNotEquals, assertTrue}
@@ -247,6 +248,115 @@ class ExtensionsTest {
     join2.derivations.get(0).setMetaData(updatedMetadata)
     assertEquals(join1.semanticHash(excludeTopic = true), join2.semanticHash(excludeTopic = true))
     assertEquals(join1.semanticHash(excludeTopic = false), join2.semanticHash(excludeTopic = false))
+  }
+
+  @Test
+  def testIsSimpleRename(): Unit = {
+    assertTrue(KeyMappingHelper.isSimpleRename("user_id"))
+    assertTrue(KeyMappingHelper.isSimpleRename("a"))
+    assertTrue(KeyMappingHelper.isSimpleRename("col123"))
+    assertTrue(KeyMappingHelper.isSimpleRename("`user_id`"))
+    assertTrue(KeyMappingHelper.isSimpleRename("  user_id  "))
+    assertFalse(KeyMappingHelper.isSimpleRename("CAST(x AS BIGINT) AS video_id"))
+    assertFalse(KeyMappingHelper.isSimpleRename("SPLIT(entity_id, ':')[1]"))
+    assertFalse(KeyMappingHelper.isSimpleRename("a + b"))
+    assertFalse(KeyMappingHelper.isSimpleRename("func(x)"))
+  }
+
+  @Test
+  def testParseExpressionValue(): Unit = {
+    val simple = KeyMappingHelper.parseExpressionValue("CAST(x AS BIGINT) AS video_id")
+    assertEquals("CAST(x AS BIGINT)", simple.expression)
+    assertEquals("video_id", simple.alias)
+
+    val nested = KeyMappingHelper.parseExpressionValue("CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id")
+    assertEquals("CAST(SPLIT(entity_id, ':')[1] AS BIGINT)", nested.expression)
+    assertEquals("video_id", nested.alias)
+
+    val concat = KeyMappingHelper.parseExpressionValue("CONCAT('Video:', CAST(id AS STRING)) AS entity_key")
+    assertEquals("CONCAT('Video:', CAST(id AS STRING))", concat.expression)
+    assertEquals("entity_key", concat.alias)
+  }
+
+  @Test(expected = classOf[IllegalArgumentException])
+  def testParseExpressionValueMissingAlias(): Unit = {
+    KeyMappingHelper.parseExpressionValue("CAST(x AS BIGINT)")
+  }
+
+  @Test
+  def testJoinPartOpsWithExpressionKeyMapping(): Unit = {
+    val groupByMetadata = Builders.MetaData(name = "test")
+    val groupBy = Builders.GroupBy(keyColumns = Seq("video_id"), metaData = groupByMetadata)
+    val joinPart = Builders.JoinPart(
+      groupBy = groupBy,
+      keyMapping = Map("entity_id" -> "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id")
+    )
+
+    assertEquals(Map("video_id" -> "CAST(SPLIT(entity_id, ':')[1] AS BIGINT)"), joinPart.keyExpressions)
+    assertEquals(Map("video_id" -> "entity_id"), joinPart.expressionLeftKeys)
+    assertTrue(joinPart.rightToLeft.isEmpty)
+  }
+
+  @Test
+  def testJoinPartOpsMixedKeyMapping(): Unit = {
+    val groupByMetadata = Builders.MetaData(name = "test")
+    val groupBy = Builders.GroupBy(keyColumns = Seq("user_id", "video_id"), metaData = groupByMetadata)
+    val joinPart = Builders.JoinPart(
+      groupBy = groupBy,
+      keyMapping = Map(
+        "seller_id" -> "user_id",
+        "entity_id" -> "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id"
+      )
+    )
+
+    assertEquals(Map("video_id" -> "CAST(SPLIT(entity_id, ':')[1] AS BIGINT)"), joinPart.keyExpressions)
+    assertEquals(Map("video_id" -> "entity_id"), joinPart.expressionLeftKeys)
+    assertEquals(Map("user_id" -> "seller_id"), joinPart.rightToLeft)
+    assertEquals(Map("seller_id" -> "user_id"), joinPart.leftToRight)
+  }
+
+  @Test
+  def testJoinPartOpsSimpleRenameBackwardCompat(): Unit = {
+    val groupByMetadata = Builders.MetaData(name = "test")
+    val groupBy = Builders.GroupBy(keyColumns = Seq("user_id", "c"), metaData = groupByMetadata)
+    val joinPart = Builders.JoinPart(
+      groupBy = groupBy,
+      keyMapping = Map("seller_id" -> "user_id")
+    )
+
+    assertTrue(joinPart.keyExpressions.isEmpty)
+    assertTrue(joinPart.expressionLeftKeys.isEmpty)
+    assertEquals(Map("user_id" -> "seller_id", "c" -> "c"), joinPart.rightToLeft)
+  }
+
+  @Test
+  def testJoinPartOpsNoKeyMapping(): Unit = {
+    val groupByMetadata = Builders.MetaData(name = "test")
+    val groupBy = Builders.GroupBy(keyColumns = Seq("a", "b"), metaData = groupByMetadata)
+    val joinPart = Builders.JoinPart(groupBy = groupBy)
+
+    assertTrue(joinPart.keyExpressions.isEmpty)
+    assertTrue(joinPart.expressionLeftKeys.isEmpty)
+    assertEquals(Map("a" -> "a", "b" -> "b"), joinPart.rightToLeft)
+  }
+
+  @Test
+  def partSkewFilterShouldSkipExpressionMappedKeys(): Unit = {
+    val groupByMetadata = Builders.MetaData(name = "test")
+    val groupBy = Builders.GroupBy(keyColumns = Seq("video_id", "c"), metaData = groupByMetadata)
+    val joinPart = Builders.JoinPart(
+      groupBy = groupBy,
+      keyMapping = Map(
+        "entity_id" -> "CAST(SPLIT(entity_id, ':')[1] AS BIGINT) AS video_id"
+      )
+    )
+    val join = Builders.Join(
+      joinParts = Seq(joinPart),
+      skewKeys = Map("entity_id" -> Seq("bad_val"), "c" -> Seq("d"))
+    )
+    val filter = join.partSkewFilter(joinPart)
+    assertTrue(filter.nonEmpty)
+    assertEquals("c NOT IN (d)", filter.get)
   }
 
   @Test
