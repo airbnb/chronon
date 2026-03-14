@@ -190,6 +190,24 @@ object MetadataExporter {
     result.toSeq
   }
 
+  // Enriches all embedded-only GroupBys, returning (syntheticPath, success, enrichedJson/stackTrace).
+  private def enrichEmbeddedGroupBys(
+      filePaths: Seq[String],
+      inputPath: String,
+      enabled: Boolean
+  ): Seq[(String, Boolean, String)] = {
+    if (!enabled) Seq.empty
+    else
+      embeddedOnlyGroupBys(filePaths, standaloneGroupByNames(filePaths), inputPath).map {
+        case (syntheticPath, groupBy) =>
+          try {
+            (syntheticPath, true, enrichEmbeddedGroupBy(groupBy))
+          } catch {
+            case exception: Throwable => (syntheticPath, false, ExceptionUtils.getStackTrace(exception))
+          }
+      }
+  }
+
   def writeOutputToFile(data: String, path: String, outputDirectory: String): Unit = {
     Files.createDirectories(Paths.get(outputDirectory))
     val file = new File(outputDirectory + "/" + path.split("/").last)
@@ -250,18 +268,16 @@ object MetadataExporter {
       }
     }
     // Optionally process GroupBys that only appear embedded in Joins (no standalone file).
-    val embeddedSuccess = if (processEmbeddedGroupBys) {
-      embeddedOnlyGroupBys(filePaths, standaloneGroupByNames(filePaths), inputPath).map {
-        case (syntheticPath, groupBy) =>
-          try {
-            val data = enrichEmbeddedGroupBy(groupBy)
-            writeOutputToFile(data, syntheticPath, outputPath + EMBEDDED_GROUPBY_PATH_SUFFIX)
-            (syntheticPath, true, None)
-          } catch {
-            case exception: Throwable => (syntheticPath, false, ExceptionUtils.getStackTrace(exception))
-          }
-      }
-    } else Seq.empty
+    val embeddedSuccess = enrichEmbeddedGroupBys(filePaths, inputPath, processEmbeddedGroupBys).map {
+      case (syntheticPath, true, data) =>
+        try {
+          writeOutputToFile(data, syntheticPath, outputPath + EMBEDDED_GROUPBY_PATH_SUFFIX)
+          (syntheticPath, true, None)
+        } catch {
+          case exception: Throwable => (syntheticPath, false, ExceptionUtils.getStackTrace(exception))
+        }
+      case failure => failure
+    }
     val allResults = processSuccess ++ embeddedSuccess
     val failuresAndTraces = allResults.filter(!_._2)
     logger.info(
@@ -284,17 +300,7 @@ object MetadataExporter {
       }
     }
     // Optionally process GroupBys that only appear embedded in Joins (no standalone file).
-    val embeddedData = if (processEmbeddedGroupBys) {
-      embeddedOnlyGroupBys(filePaths, standaloneGroupByNames(filePaths), inputPath).map {
-        case (syntheticPath, groupBy) =>
-          try {
-            val data = enrichEmbeddedGroupBy(groupBy)
-            (syntheticPath, true, data)
-          } catch {
-            case exception: Throwable => (syntheticPath, false, ExceptionUtils.getStackTrace(exception))
-          }
-      }
-    } else Seq.empty
+    val embeddedData = enrichEmbeddedGroupBys(filePaths, inputPath, processEmbeddedGroupBys)
     val allData = processedData ++ embeddedData
     val failuresAndTraces = allData.filter(!_._2)
     logger.info(
