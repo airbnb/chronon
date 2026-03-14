@@ -27,7 +27,7 @@ import junit.framework.TestCase
 import org.apache.spark.sql.SparkSession
 import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
-import org.junit.Assert.assertEquals
+import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 
 import scala.io.Source
 import java.io.File
@@ -91,5 +91,44 @@ class MetadataExporterTest extends TestCase {
     objectMapper.registerModule(DefaultScalaModule)
     val jsonNode = objectMapper.readTree(jsonString)
     assertEquals(jsonNode.get("metaData").get("name").asText(), "team.example_join.v1")
+  }
+
+  def testEmbeddedGroupByExport(): Unit = {
+    // Create the table used by both the Join left side and embedded GroupBy sources.
+    val namespace = "example_namespace"
+    val tablename = "table"
+    tableUtils.createDatabase(namespace)
+    val sampleData = List(
+      Column("a", api.StringType, 10),
+      Column("b", api.StringType, 10),
+      Column("c", api.LongType, 100),
+      Column("d", api.LongType, 100),
+      Column("e", api.LongType, 100)
+    )
+    val sampleTable = s"$namespace.$tablename"
+    DataFrameGen.events(spark, sampleData, 10000, partitions = 30).save(sampleTable)
+
+    val confResource = getClass.getResource("/")
+    val tmpDir: File = Files.createTempDir()
+    // Run with processEmbeddedGroupBys enabled.
+    MetadataExporter.run(confResource.getPath, Some(tmpDir.getAbsolutePath), processEmbeddedGroupBys = true)
+
+    // Verify the embedded-only GroupBy was exported to the embedded_group_bys directory.
+    val embeddedFile = new File(s"${tmpDir.getAbsolutePath}/embedded_group_bys/team.embedded_only_gb.v1")
+    assertTrue(s"Expected embedded GroupBy file at ${embeddedFile.getAbsolutePath}", embeddedFile.exists())
+
+    val source = Source.fromFile(embeddedFile)
+    val jsonString = source.getLines().mkString("\n")
+    source.close()
+    val objectMapper = new ObjectMapper()
+    objectMapper.registerModule(DefaultScalaModule)
+    val jsonNode = objectMapper.readTree(jsonString)
+    assertEquals("team.embedded_only_gb.v1", jsonNode.get("metaData").get("name").asText())
+
+    // Verify that the standalone GroupBy (which has its own file) was NOT duplicated
+    // in the embedded_group_bys directory.
+    val standaloneInEmbedded =
+      new File(s"${tmpDir.getAbsolutePath}/embedded_group_bys/team.example_group_by.v1")
+    assertFalse("Standalone GroupBy should not appear in embedded_group_bys", standaloneInEmbedded.exists())
   }
 }
