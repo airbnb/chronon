@@ -150,8 +150,8 @@ class GroupBy(inputStream: DataFrame,
     if (groupByConf.dataModel == api.DataModel.Entities) {
       assert(selectedDf.schema.fieldNames.contains(Constants.MutationTimeColumn), "Required Mutation ts")
     }
-    val keys = groupByConf.keyColumns.toScala.toArray
-    val keyIndices = keys.map(selectedDf.schema.fieldIndex)
+    val keyColumns = groupByConf.keyColumns.toScala.toArray
+    val keyIndices = keyColumns.map(selectedDf.schema.fieldIndex)
     val (additionalColumns, eventTimeColumn) = groupByConf.dataModel match {
       case api.DataModel.Entities => Constants.MutationAvroColumns -> Constants.MutationTimeColumn
       case api.DataModel.Events   => Seq.empty[String] -> Constants.TimeColumn
