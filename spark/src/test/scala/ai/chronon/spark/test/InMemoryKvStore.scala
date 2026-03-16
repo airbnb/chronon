@@ -79,7 +79,7 @@ class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset:
 
   override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] = {
     val result = putRequests.map {
-      case PutRequest(keyBytes, valueBytes, dataset, millis) =>
+      case PutRequest(keyBytes, valueBytes, dataset, millis, _) =>
         val table = database.get(dataset)
         val key = encode(keyBytes)
         table.compute(key, putFunc(millis.getOrElse(System.currentTimeMillis()) -> valueBytes))
