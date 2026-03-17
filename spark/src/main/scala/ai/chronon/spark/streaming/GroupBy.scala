@@ -97,6 +97,7 @@ class GroupBy(inputStream: DataFrame,
     val ingressContext = context.withSuffix("ingress")
     import session.implicits._
     implicit val structTypeEncoder: Encoder[Mutation] = Encoders.kryo[Mutation]
+    implicit val putRequestEncoder: Encoder[KVStore.PutRequest] = Encoders.kryo[KVStore.PutRequest]
     val deserialized: Dataset[Mutation] = inputStream
       .as[Array[Byte]]
       .map { arr =>
