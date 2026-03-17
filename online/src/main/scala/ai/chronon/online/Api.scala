@@ -38,7 +38,11 @@ object KVStore {
   case class GetResponse(request: GetRequest, values: Try[Seq[TimedValue]]) {
     def latest: Try[TimedValue] = values.map(_.maxBy(_.millis))
   }
-  case class PutRequest(keyBytes: Array[Byte], valueBytes: Array[Byte], dataset: String, tsMillis: Option[Long] = None, decodedKeys: Option[Map[String, AnyRef]] = None)
+  case class PutRequest(keyBytes: Array[Byte],
+                        valueBytes: Array[Byte],
+                        dataset: String,
+                        tsMillis: Option[Long] = None,
+                        decodedKeys: Option[Map[String, AnyRef]] = None)
 }
 
 // the main system level api for key value storage

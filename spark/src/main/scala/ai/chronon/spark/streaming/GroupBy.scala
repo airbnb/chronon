@@ -193,7 +193,8 @@ class GroupBy(inputStream: DataFrame,
             Instant.ofEpochMilli(ts))}
                |""".stripMargin)
         }
-        val decodedKeysMap = Some(keyColumns.zip(keys).map { case (name, v) => name -> v.asInstanceOf[AnyRef] }.toMap)
+        val decodedKeysMap =
+          Some(keyColumns.zip(keys).map { case (name, v) => name -> v.asInstanceOf[AnyRef] }.toMap)
         KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts), decodedKeysMap)
       }
       .writeStream
