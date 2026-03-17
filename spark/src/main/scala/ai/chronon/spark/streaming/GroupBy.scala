@@ -25,6 +25,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.online.Extensions.ChrononStructTypeOps
 import ai.chronon.spark.{EncoderUtil, GenericRowHandler}
 import com.google.gson.Gson
+import scala.collection.JavaConverters._
 import org.apache.spark.sql._
 import org.apache.spark.sql.streaming.{DataStreamWriter, StreamingQuery, Trigger}
 import ai.chronon.online.serde.{AvroConversions, SparkConversions}
