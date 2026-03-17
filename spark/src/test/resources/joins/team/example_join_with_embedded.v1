@@ -1,0 +1,61 @@
+{
+  "metaData": {
+    "name": "team.join_with_embedded.v1",
+    "online": 0,
+    "production": 0,
+    "dependencies": [],
+    "tableProperties": {},
+    "outputNamespace": "example_namespace",
+    "team": "relevance"
+  },
+  "left": {
+    "entities": {
+      "snapshotTable": "example_namespace.table",
+      "query": {
+        "startPartition": "2021-06-01",
+        "timeColumn": "CONCAT(ds, ' 23:59:59.999')",
+        "setups": []
+      }
+    }
+  },
+  "joinParts": [
+    {
+      "groupBy": {
+        "metaData": {
+          "name": "team.embedded_only_gb.v1",
+          "production": 0,
+          "dependencies": [],
+          "team": "team"
+        },
+        "sources": [
+          {
+            "entities": {
+              "snapshotTable": "example_namespace.table",
+              "query": {
+                "selects": {
+                  "a": "a",
+                  "b": "b",
+                  "c": "c",
+                  "d": "d",
+                  "e": "e"
+                },
+                "startPartition": "2021-06-01",
+                "setups": []
+              }
+            }
+          }
+        ],
+        "keyColumns": [
+          "a",
+          "b"
+        ],
+        "aggregations": [
+          {
+            "inputColumn": "c",
+            "operation": 7
+          }
+        ]
+      }
+    }
+  ]
+}
