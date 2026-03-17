@@ -97,7 +97,6 @@ class GroupBy(inputStream: DataFrame,
     val ingressContext = context.withSuffix("ingress")
     import session.implicits._
     implicit val structTypeEncoder: Encoder[Mutation] = Encoders.kryo[Mutation]
-    implicit val putRequestEncoder: Encoder[KVStore.PutRequest] = Encoders.kryo[KVStore.PutRequest]
     val deserialized: Dataset[Mutation] = inputStream
       .as[Array[Byte]]
       .map { arr =>
@@ -194,9 +193,9 @@ class GroupBy(inputStream: DataFrame,
             Instant.ofEpochMilli(ts))}
                |""".stripMargin)
         }
-        val decodedKeysMap =
-          Some(keyColumns.zip(keys).map { case (name, v) => name -> v.asInstanceOf[AnyRef] }.toMap)
-        KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts), decodedKeysMap)
+        val decodedKeysJson =
+          Some(new Gson().toJson(keyColumns.zip(keys).toMap.asJava))
+        KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts), decodedKeysJson)
       }
       .writeStream
       .outputMode("append")

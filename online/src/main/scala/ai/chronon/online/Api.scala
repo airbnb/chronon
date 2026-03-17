@@ -42,7 +42,7 @@ object KVStore {
                         valueBytes: Array[Byte],
                         dataset: String,
                         tsMillis: Option[Long] = None,
-                        decodedKeys: Option[Map[String, AnyRef]] = None)
+                        decodedKeysJson: Option[String] = None)
 }
 
 // the main system level api for key value storage

@@ -159,8 +159,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           Instant.ofEpochMilli(ts))}
              |""".stripMargin)
       }
-      val decodedKeysMap = Some(keyColumns.zip(keys).map { case (name, v) => name -> v.asInstanceOf[AnyRef] }.toMap)
-      KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts), decodedKeysMap)
+      val decodedKeysJson = Some(new Gson().toJson(keyColumns.zip(keys).toMap.asJava))
+      KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts), decodedKeysJson)
     }
   }
 
