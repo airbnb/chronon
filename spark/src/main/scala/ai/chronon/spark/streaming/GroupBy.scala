@@ -194,7 +194,7 @@ class GroupBy(inputStream: DataFrame,
                |""".stripMargin)
         }
         val decodedKeysJson =
-          Some(new Gson().toJson(keyColumns.zip(keys).toMap.asJava))
+          Some(new Gson().toJson(keyColumns.zip(keys.map(_.asInstanceOf[AnyRef])).toMap.asJava))
         KVStore.PutRequest(keyBytes, valueBytes, streamingDataset, Option(ts), decodedKeysJson)
       }
       .writeStream
