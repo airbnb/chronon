@@ -219,6 +219,18 @@ jobs:
         executor: docker_baseimg_executor
         steps:
             - checkout
+            - restore_cache:
+                keys:
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                  - sbt-cache-v1-{{ checksum "build.sbt" }}
+                  - sbt-cache-v1-
+            - run:
+                  name: Build Chronon JARs for PySpark tests
+                  shell: /bin/bash -leuxo pipefail
+                  command: |
+                    conda activate chronon_py
+                    export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -Xmx4G -Xms2G"
+                    sbt "++ 2.12.12; publishLocal"
             - run:
                   name: Run Chronon Python tests
                   shell: /bin/bash -leuxo pipefail
@@ -233,6 +245,12 @@ jobs:
                     popd
             - store_artifacts:
                   path: /chronon/api/py/htmlcov
+            - save_cache:
+                key: sbt-cache-v1-{{ checksum "build.sbt" }}-{{ checksum "project/plugins.sbt" }}
+                paths:
+                  - ~/.cache/coursier
+                  - ~/.ivy2/cache
+                  - ~/.sbt
 
     "Scalafmt Check":
         executor: docker_baseimg_executor

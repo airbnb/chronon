@@ -660,15 +660,19 @@ object GroupBy {
       throw new Exception(s"mutationTopic is not set for groupby ${groupByConf.metaData.name} with Accuracy.TEMPORAL")
     }
     // chronon run ds macro is only supported for group bys
+    // Use intersectedRange for validation when available, since it represents the actual data being scanned.
+    // This allows bootstrap phase to work with multi-day queryRange as long as the intersectedRange is single day.
     val selects = Option(source.query.selects)
       .map(_.toScala.map(keyValue => {
         if (keyValue._2.contains(Constants.ChrononRunDs)) {
           assert(
-            queryRange.isSingleDay,
+            intersectedRange.isDefined && intersectedRange.get.isSingleDay,
             s"ChrononRunDs is only supported for single day queries. " +
-              s"Got start: ${queryRange.start}, end: ${queryRange.end} (date range include multiple days)"
+              s"intersectedRange: ${intersectedRange.map(r => s"${r.start} to ${r.end}").getOrElse("undefined")}, " +
+              s"queryRange: ${queryRange.start} to ${queryRange.end}"
           )
-          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => s"'${queryRange.start}'")
+          // Python configs already have quotes around the macro, so no need for quotes here
+          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => intersectedRange.get.start)
           (keyValue._1, parametricMacro.replace(keyValue._2))
         } else {
           keyValue
@@ -694,7 +698,16 @@ object GroupBy {
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
     groupByConf.setups.foreach(tableUtils.sql)
-    val overrideStart = overrideStartPartition.getOrElse(groupByConf.backfillStartDate)
+    val historicalBackfill = !groupByConf.metaData.isSetHistoricalBackfill || groupByConf.metaData.historicalBackfill
+    val effectiveOverrideStartPartition = if (historicalBackfill) {
+      overrideStartPartition
+    } else {
+      logger.info(
+        s"Historical backfill is set to false for GroupBy ${groupByConf.metaData.name}. " +
+          s"Backfilling latest single partition only: $endPartition")
+      Some(endPartition)
+    }
+    val overrideStart = effectiveOverrideStartPartition.getOrElse(groupByConf.backfillStartDate)
     val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
       .map(_.toScala)
@@ -774,5 +787,27 @@ object GroupBy {
         .mkString("\n")
       throw new Exception(fullMessage)
     }
+  }
+
+  /**
+    * Factory method to create a GroupBy from Java ArrayLists.
+    * This is useful for PySpark integration where Py4J works better with Java collections.
+    *
+    * @param aggregations Java ArrayList of aggregations
+    * @param keyColumns Java ArrayList of key column names
+    * @param inputDataFrame input DataFrame
+    * @param mutationDataFrame mutation DataFrame (optional)
+    * @param filterForSkew optional filter for skew
+    * @param shouldFinalize whether to finalize the aggregations
+    * @return GroupBy
+    */
+  def usingArrayList(aggregations: java.util.ArrayList[api.Aggregation],
+                     keyColumns: java.util.ArrayList[String],
+                     inputDataFrame: DataFrame,
+                     mutationDataFrame: DataFrame = null,
+                     filterForSkew: Option[String] = None,
+                     shouldFinalize: Boolean = true): GroupBy = {
+    val mutationFn: () => DataFrame = if (mutationDataFrame == null) null else () => mutationDataFrame
+    new GroupBy(aggregations.toScala, keyColumns.toScala, inputDataFrame, mutationFn, filterForSkew, shouldFinalize)
   }
 }

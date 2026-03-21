@@ -238,6 +238,19 @@ def validate_group_by(group_by: ttypes.GroupBy):
                 )
             else:
                 assert not utils.is_streaming(src), "SNAPSHOT accuracy should not be specified for streaming sources"
+        elif src.joinSource:
+            # When using a join as a source, the parent join must have a topic for streaming
+            # If you want to chain batch only joins, use regular EventSource/EntitySource instead
+            parent_join = src.joinSource.join
+            parent_left = parent_join.left if parent_join else None
+            assert parent_left and utils.is_streaming(parent_left), (
+                "When using a JoinSource as the source for a GroupBy, the parent join must have a topic. "
+                "Please specify either events.topic for EventSource or entities.mutationTopic for EntitySource "
+                "in the parent join's left source. Otherwise, use a regular EventSource or EntitySource."
+                "If you want to chain batch only joins, use regular EventSource/EntitySource instead"
+                "There are helper methods like get_join_output_table_name, get_staging_query_output_table_name"
+                "and group_by_output_table_name."
+            )
         else:
             if contains_windowed_aggregation(aggregations):
                 assert query.timeColumn, "Please specify timeColumn for entity source with windowed aggregations"
@@ -374,6 +387,7 @@ def GroupBy(
     name: Optional[str] = None,
     tags: Optional[Dict[str, str]] = None,
     derivations: Optional[List[ttypes.Derivation]] = None,
+    historical_backfill: Optional[bool] = None,
     deprecation_date: Optional[str] = None,
     description: Optional[str] = None,
     **kwargs,
@@ -487,6 +501,11 @@ def GroupBy(
         Derivation allows arbitrary SQL select clauses to be computed using columns from the output of group by backfill
         output schema. It is supported for offline computations for now.
     :type derivations: List[ai.chronon.api.ttypes.Derivation]
+    :param historical_backfill:
+        Flag to indicate whether GroupBy backfill should fill all historical holes.
+        Setting to False will only backfill the latest single partition.
+        Only applicable when backfill_start_date is set.
+    :type historical_backfill: bool
     :param deprecation_date:
         Expected deprecation date of the group by. This is useful to track the deprecation status of the group by.
     :type deprecation_date: str
@@ -499,6 +518,11 @@ def GroupBy(
         A GroupBy object containing specified aggregations.
     """
     assert sources, "Sources are not specified"
+
+    if historical_backfill is not None:
+        assert backfill_start_date is not None, (
+            "historical_backfill can only be set when backfill_start_date is specified."
+        )
 
     agg_inputs = []
     if aggregations is not None:
@@ -571,6 +595,7 @@ def GroupBy(
         tableProperties=table_properties,
         team=team,
         offlineSchedule=offline_schedule,
+        historicalBackfill=historical_backfill,
         deprecationDate=deprecation_date,
         description=description,
     )

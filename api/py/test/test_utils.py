@@ -15,9 +15,8 @@
 import json
 import os
 
-import pytest
-
 import ai.chronon.api.ttypes as api
+import pytest
 from ai.chronon import utils
 from ai.chronon.api.ttypes import EntitySource, EventSource, Query, Source
 from ai.chronon.repo.serializer import file2thrift, json2thrift
@@ -147,7 +146,7 @@ def test_get_applicable_mode_for_joins(
     assert "backfill" in modes
     assert "stats-summary" in modes
     assert "consistency-metrics-compute" not in modes
-    assert "log-flattener" in modes  # default sample rate = 100
+    assert "log-flattener" in modes  # sample_percent explicitly set to 100
 
     modes = utils.get_applicable_modes(never_scheduled_join)
     assert "backfill" not in modes
@@ -334,9 +333,7 @@ def test_wait_for_simple_schema_lag_zero_no_subpartition(
     table = "mytable"
     paritition_col = query_with_partition_column.partitionColumn or "ds"
     expected_spec = f"mytable/{paritition_col}={{{{ ds }}}}"
-    result = wait_for_simple_schema(
-        table, 0, "2021-01-01", "2021-01-02", query=query_with_partition_column
-    )
+    result = wait_for_simple_schema(table, 0, "2021-01-01", "2021-01-02", query=query_with_partition_column)
     assert result["spec"] == expected_spec
 
 
@@ -347,9 +344,7 @@ def test_wait_for_simple_schema_lag_nonzero_no_subpartition(
     lag = 3
     partition_col = query_with_partition_column.partitionColumn or "ds"
     expected_spec = f"mytable/{partition_col}={{{{ macros.ds_add(ds, -3) }}}}"
-    result = wait_for_simple_schema(
-        table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column
-    )
+    result = wait_for_simple_schema(table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column)
     assert result["spec"] == expected_spec
 
 
@@ -358,9 +353,7 @@ def test_wait_for_simple_schema_with_subpartition(query_with_partition_column: Q
     lag = 0
     partition_col = query_with_partition_column.partitionColumn or "ds"
     expected_spec = f"mytable/{partition_col}={{{{ ds }}}}/system=mobile"
-    result = wait_for_simple_schema(
-        table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column
-    )
+    result = wait_for_simple_schema(table, lag, "2021-01-01", "2021-01-02", query=query_with_partition_column)
     assert result["spec"] == expected_spec
 
 
@@ -390,3 +383,181 @@ def test_get_dependencies_with_events(query_with_partition_column: Query):
     partition_col = query_with_partition_column.partitionColumn or "ds"
     expected_spec = f"event_table/{partition_col}={{{{ macros.ds_add(ds, -2) }}}}"
     assert dep["spec"] == expected_spec
+
+
+def test_external_join_part():
+    """Test ExternalJoinPart class: initialization, inheritance, and attribute copying."""
+    from ai.chronon.repo.external_join_part import ExternalJoinPart
+
+    group_by = api.GroupBy(
+        metaData=api.MetaData(name="sample_team.test_group_by.v1"),
+        keyColumns=["key1"],
+    )
+    source_jp = api.JoinPart(
+        groupBy=group_by,
+        keyMapping={"key": "mapped_key"},
+        prefix="my_prefix",
+    )
+    external_jp = ExternalJoinPart(source_jp, full_prefix="ext_my_prefix_test_group_by_v1")
+
+    # Verify it's an instance of JoinPart
+    assert isinstance(external_jp, api.JoinPart)
+    # Verify attributes are copied
+    assert external_jp.groupBy == group_by
+    assert external_jp.keyMapping == {"key": "mapped_key"}
+    assert external_jp.prefix == "my_prefix"
+    # Verify external-specific attributes
+    assert external_jp.external_join_full_prefix == "ext_my_prefix_test_group_by_v1"
+    assert external_jp._source_join_part is source_jp
+
+
+def test_join_part_name_external_and_regular():
+    """Test join_part_name for both ExternalJoinPart and regular JoinPart."""
+    from ai.chronon.repo.external_join_part import ExternalJoinPart
+    from ai.chronon.utils import join_part_name
+
+    group_by = api.GroupBy(metaData=api.MetaData(name="sample_team.my_group_by.v1"))
+
+    # Regular JoinPart with prefix
+    regular_jp = api.JoinPart(groupBy=group_by, prefix="my_prefix")
+    assert join_part_name(regular_jp) == "my_prefix_sample_team_my_group_by_v1"
+
+    # Regular JoinPart without prefix
+    regular_jp_no_prefix = api.JoinPart(groupBy=group_by)
+    assert join_part_name(regular_jp_no_prefix) == "sample_team_my_group_by_v1"
+
+    # ExternalJoinPart with prefix
+    external_jp = ExternalJoinPart(regular_jp, full_prefix="ext_my_prefix_source")
+    assert join_part_name(external_jp) == "ext_my_prefix_source"
+
+    # ExternalJoinPart without user prefix
+    external_jp_no_prefix = ExternalJoinPart(regular_jp_no_prefix, full_prefix="ext_source")
+    assert join_part_name(external_jp_no_prefix) == "ext_source"
+
+
+class TestGetMaxWindowForGbInDays:
+    """Tests for get_max_window_for_gb_in_days function."""
+
+    def test_no_aggregations_returns_default(self):
+        """GroupBy with no aggregations returns default of 1."""
+        group_by = api.GroupBy(metaData=api.MetaData(name="test"))
+        assert utils.get_max_window_for_gb_in_days(group_by) == 1
+
+    def test_empty_aggregations_returns_default(self):
+        """GroupBy with empty aggregations list returns default of 1."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 1
+
+    def test_window_in_days(self):
+        """Window specified in days returns correct value."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=7, timeUnit=api.TimeUnit.DAYS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 7
+
+    def test_window_in_hours(self):
+        """Window specified in hours converts correctly to days."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=48, timeUnit=api.TimeUnit.HOURS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 2
+
+    def test_window_in_hours_rounds_up(self):
+        """Window in hours that doesn't divide evenly rounds up."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=25, timeUnit=api.TimeUnit.HOURS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 2
+
+    def test_multiple_windows_returns_max(self):
+        """Multiple windows returns the maximum value."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[
+                        api.Window(length=1, timeUnit=api.TimeUnit.DAYS),
+                        api.Window(length=7, timeUnit=api.TimeUnit.DAYS),
+                        api.Window(length=30, timeUnit=api.TimeUnit.DAYS),
+                    ]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 30
+
+    def test_multiple_aggregations_returns_max(self):
+        """Multiple aggregations returns max across all windows."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col1",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=7, timeUnit=api.TimeUnit.DAYS)]
+                ),
+                api.Aggregation(
+                    inputColumn="col2",
+                    operation=api.Operation.SUM,
+                    windows=[api.Window(length=14, timeUnit=api.TimeUnit.DAYS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 14
+
+    def test_mixed_time_units_returns_max(self):
+        """Mixed time units correctly converts and returns max."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[
+                        api.Window(length=12, timeUnit=api.TimeUnit.HOURS),
+                        api.Window(length=48, timeUnit=api.TimeUnit.HOURS),
+                        api.Window(length=3, timeUnit=api.TimeUnit.DAYS),
+                    ]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 3
+
+    def test_small_hour_window_returns_minimum_of_one(self):
+        """Very small window still returns at least 1 day."""
+        group_by = api.GroupBy(
+            metaData=api.MetaData(name="test"),
+            aggregations=[
+                api.Aggregation(
+                    inputColumn="col",
+                    operation=api.Operation.COUNT,
+                    windows=[api.Window(length=1, timeUnit=api.TimeUnit.HOURS)]
+                )
+            ]
+        )
+        assert utils.get_max_window_for_gb_in_days(group_by) == 1

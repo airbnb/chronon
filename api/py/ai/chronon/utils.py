@@ -20,6 +20,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from math import ceil
 from collections.abc import Iterable
 from dataclasses import dataclass, fields
 from enum import Enum
@@ -28,6 +29,7 @@ from typing import Dict, List, Optional, Union, cast
 import ai.chronon.api.ttypes as api
 import ai.chronon.repo.extract_objects as eo
 from ai.chronon.repo import TEAMS_FILE_PATH, teams
+from ai.chronon.repo.external_join_part import ExternalJoinPart
 
 ChrononJobTypes = Union[api.GroupBy, api.Join, api.StagingQuery]
 
@@ -252,6 +254,8 @@ def join_part_name(jp):
         )
     if not jp.groupBy.metaData.name and isinstance(jp.groupBy, api.GroupBy):
         __set_name(jp.groupBy, api.GroupBy, "group_bys")
+    if isinstance(jp, ExternalJoinPart):
+        return jp.external_join_full_prefix
     return "_".join(
         [
             component
@@ -576,3 +580,27 @@ def get_config_path(join_name: str) -> str:
     assert "." in join_name, f"Invalid join name: {join_name}"
     team_name, config_name = join_name.split(".", 1)
     return f"production/joins/{team_name}/{config_name}"
+
+
+def get_max_window_for_gb_in_days(group_by: api.GroupBy) -> int:
+    result: int = 1
+    if group_by.aggregations:
+        for agg in group_by.aggregations:
+            for window in agg.windows:
+                if window.timeUnit == api.TimeUnit.HOURS:
+                    result = int(
+                        max(
+                            result,
+                            ceil(window.length / 24),
+                        )
+                    )
+                elif window.timeUnit == api.TimeUnit.DAYS:
+                    result = int(
+                        max(result, window.length)
+                    )
+                else:
+                    raise ValueError(
+                        f"Unsupported time unit {window.timeUnit}. " +
+                        "Please add logic above to handle the newly introduced time unit."
+                    )
+    return result

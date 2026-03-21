@@ -23,7 +23,7 @@ import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.{TableUtils, View}
 import ai.chronon.spark.{StagingQuery, _}
 import org.apache.spark.sql.SparkSession
-import org.junit.Assert.assertEquals
+import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
 import org.slf4j.LoggerFactory
 
@@ -407,5 +407,82 @@ class StagingQueryTest {
     }
 
     assert(isTableUnset, s"Expected $outputUnset to be a table when createView is unset")
+  }
+
+  @Test
+  def testStagingQueryNoHistoricalBackfill(): Unit = {
+    val namespace = "staging_query_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val schema = List(
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 1000)
+    )
+    val df = DataFrameGen
+      .events(spark, schema, count = 1000, partitions = 100)
+      .dropDuplicates("ts")
+    val viewName = s"$namespace.test_staging_query_no_historical_backfill"
+    df.save(viewName)
+
+    val endPartition = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+
+    val stagingQueryConf = Builders.StagingQuery(
+      query = s"SELECT * FROM $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+      startPartition = ninetyDaysAgo,
+      metaData = Builders.MetaData(name = "test.user_session_no_historical_backfill",
+                                   namespace = namespace,
+                                   historicalBackill = false)
+    )
+
+    val stagingQuery = new StagingQuery(stagingQueryConf, endPartition, tableUtils)
+    stagingQuery.computeStagingQuery()
+
+    val outputTable = stagingQueryConf.metaData.outputTable
+    val partitions = tableUtils.partitions(outputTable)
+    assertEquals(s"Expected only 1 partition ($endPartition), got: $partitions", 1, partitions.size)
+    assertEquals(endPartition, partitions.head)
+  }
+
+  @Test
+  def testStagingQueryHistoricalBackfillUnset(): Unit = {
+    val namespace = "staging_query_chronon_test" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val schema = List(
+      Column("user", StringType, 10),
+      Column("session_length", IntType, 1000)
+    )
+    val df = DataFrameGen
+      .events(spark, schema, count = 1000, partitions = 100)
+      .dropDuplicates("ts")
+    val viewName = s"$namespace.test_staging_query_historical_backfill_unset"
+    df.save(viewName)
+
+    val tenDaysAgo = tableUtils.partitionSpec.minus(today, new Window(10, TimeUnit.DAYS))
+    val fiveDaysAgo = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+
+    val metaData = new MetaData()
+    metaData.setName("test.user_session_historical_backfill_unset")
+    metaData.setOutputNamespace(namespace)
+    metaData.setTeam("chronon")
+    assert(!metaData.isSetHistoricalBackfill, "historicalBackfill should not be set for this test")
+
+    val stagingQueryConf = Builders.StagingQuery(
+      query = s"SELECT * FROM $viewName WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+      startPartition = tenDaysAgo,
+      metaData = metaData
+    )
+
+    val stagingQuery = new StagingQuery(stagingQueryConf, fiveDaysAgo, tableUtils)
+    stagingQuery.computeStagingQuery()
+
+    val outputTable = stagingQueryConf.metaData.outputTable
+    val partitions = tableUtils.partitions(outputTable)
+    assertTrue(
+      s"Expected multiple partitions from $tenDaysAgo when historicalBackfill is unset, got: $partitions",
+      partitions.size > 1
+    )
+    assertTrue(
+      s"Expected $tenDaysAgo in partitions when historicalBackfill is unset, got: $partitions",
+      partitions.contains(tenDaysAgo)
+    )
   }
 }
