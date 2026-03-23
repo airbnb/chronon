@@ -96,3 +96,10 @@ html_static_path = ["_static"]
 html_css_files = ["chronon.css"]
 html_context = {"default_mode": "light"}
 html_file_suffix = ".html"
+
+master_doc = 'contents'
+templates_path = ['_templates']
+html_additional_pages = {'index': 'index.html'}
+
+def setup(app):
+    app.add_css_file('landing_page.css')
