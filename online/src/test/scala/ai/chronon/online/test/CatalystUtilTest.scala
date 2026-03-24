@@ -169,6 +169,11 @@ trait CatalystUtilTestSparkSQLStructs {
 class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
 
   @Test
+  def testServingSessionDisablesSparkCleanerReferenceTracking(): Unit = {
+    assertEquals("false", CatalystUtil.session.sparkContext.getConf.get("spark.cleaner.referenceTracking"))
+  }
+
+  @Test
   def testSelectStarWithCommonScalarsShouldReturnAsIs(): Unit = {
     val selects = Seq(
       "bool_x" -> "bool_x",
