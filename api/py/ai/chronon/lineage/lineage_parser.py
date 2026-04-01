@@ -696,6 +696,15 @@ class LineageParser:
             # store lineage
             parsed_lineages = build_lineage(join_part_table, sql, sources)
             self.metadata.store_lineage(parsed_lineages, join_part_table)
+
+            # Register inline group-by features under the group-by name.
+            # When a group-by is embedded in a join (no standalone config file),
+            # downstream consumers look up features by the group-by name, not the
+            # join name. Without this, inline group-by features are invisible to
+            # any system that resolves features by group-by config name.
+            gb_config_name = gb.metaData.name
+            for feature in features:
+                self.metadata.store_feature(gb_config_name, ConfigType.GROUP_BY, feature, join_part_table)
         else:
             if gb.metaData.online:
                 output_table = f"{self.object_table_name(gb)}_upload"
