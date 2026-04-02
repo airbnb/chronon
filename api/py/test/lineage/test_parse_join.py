@@ -269,12 +269,19 @@ class TestParseJoin(unittest.TestCase):
         parser.parse_join(self.join)
         self.assertEqual(
             {
+                # Join-level features
                 "test_join.test_group_by_cnt_count",
                 "test_join.test_group_by_event_id_last_renamed_plus_one_join",
                 "test_join.test_group_by_event_id_last_renamed",
                 "test_join.test_group_by_event_id_approx_percentile",
                 "test_join.test_group_by_event_id_sum_plus_one",
                 "test_join.test_group_by_event_id_sum",
+                # Group-by-level features (also created for join-embedded group-bys)
+                "test_group_by.event_id_sum",
+                "test_group_by.cnt_count",
+                "test_group_by.event_id_approx_percentile",
+                "test_group_by.event_id_last_renamed",
+                "test_group_by.event_id_sum_plus_one",
             },
             set(parser.metadata.features.keys()),
         )
@@ -284,6 +291,28 @@ class TestParseJoin(unittest.TestCase):
         self.assertEqual("test_db.test_join", join_feature.table_name)
         self.assertEqual("test_group_by_event_id_sum", join_feature.column_name)
         self.assertEqual("test_join.test_group_by_event_id_sum", join_feature.feature_name)
+
+    def test_join_embedded_group_by_creates_gb_level_features(self):
+        """When a group-by is embedded in a join, the parser should create features
+        under both the join name and the group-by name. The lineage upload script
+        joins chronon_feature_lineage with ums_entity__afp_feature using the
+        group-by name (e.g. afp_feature:test_group_by.event_id_sum), so both
+        must be present for upstream lineage edges to be created in UMS.
+        """
+        parser = LineageParser()
+        parser.parse_join(self.join)
+
+        # Both join-level and group-by-level features must exist
+        self.assertIn("test_join.test_group_by_event_id_sum", parser.metadata.features)
+        self.assertIn("test_group_by.event_id_sum", parser.metadata.features)
+        self.assertIn("test_group_by.cnt_count", parser.metadata.features)
+
+        # Group-by-level feature points to the join-part table (where data lives)
+        gb_feature = parser.metadata.features["test_group_by.event_id_sum"]
+        self.assertEqual("test_group_by", gb_feature.config_name)
+        self.assertEqual(ConfigType.GROUP_BY, gb_feature.config_type)
+        self.assertEqual("test_db.test_join_test_group_by", gb_feature.table_name)
+        self.assertEqual("event_id_sum", gb_feature.column_name)
 
     def test_build_join_sql(self):
         expected_sql_path = os.path.join(os.path.dirname(__file__), "join_sqls/join.sql")
