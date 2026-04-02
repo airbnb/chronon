@@ -53,6 +53,9 @@ object CatalystUtil {
       .builder()
       .appName(s"catalyst_test_${Thread.currentThread().toString}")
       .master("local[*]")
+      // This serving path only uses Spark for Catalyst planning/codegen, not for long-lived RDD or shuffle cleanup.
+      // Disabling reference tracking avoids the ContextCleaner thread's periodic System.gc() calls in the JVM.
+      .config("spark.cleaner.referenceTracking", "false")
       .config("spark.sql.session.timeZone", "UTC")
       .config("spark.sql.adaptive.enabled", "false")
       .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
