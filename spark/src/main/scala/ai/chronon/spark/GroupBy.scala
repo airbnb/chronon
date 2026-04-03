@@ -23,7 +23,7 @@ import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, Constants, DataModel, Operation, ParametricMacro, TimeUnit, Window}
+import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro, TimeUnit, Window}
 import ai.chronon.online.serde.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
@@ -39,7 +39,6 @@ import scala.jdk.CollectionConverters._
 import java.util
 import scala.collection.{Seq, mutable}
 import scala.util.ScalaJavaConversions.{JListOps, ListOps, MapOps}
-import _root_.com.google.common.collect.Table
 
 class GroupBy(val aggregations: Seq[api.Aggregation],
               val keyColumns: Seq[String],
@@ -432,7 +431,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   /**
     * computes incremental daily table
     * @param incrementalOutputTable output of the incremental data stored here
-    * @param range date range to calculate daily aggregatiosn
+    * @param range date range to calculate daily aggregations
     * @param tableProps
     */
   def computeIncrementalDf(incrementalOutputTable: String, range: PartitionRange, tableProps: Map[String, String]) = {
@@ -791,8 +790,13 @@ object GroupBy {
       .map(_.toScala)
       .orNull
 
+    val maxWindow = groupByConf.maxWindow.getOrElse(
+      throw new IllegalArgumentException(
+        s"GroupBy ${groupByConf.metaData.name} has no windowed aggregations. " +
+          "Incremental mode requires at least one windowed aggregation."))
+
     val incrementalQueryableRange = PartitionRange(
-      tableUtils.partitionSpec.minus(range.start, groupByConf.maxWindow.get),
+      tableUtils.partitionSpec.minus(range.start, maxWindow),
       range.end
     )(tableUtils)
 
@@ -804,21 +808,18 @@ object GroupBy {
       skipFirstHole = false
     )
 
-    val incrementalGroupByAggParts = partitionRangeHoles
-      .map { holes =>
-        val incrementalAggregationParts = holes.map { hole =>
-          logger.info(s"Filling hole in incremental table: $hole")
-          val incrementalGroupByBackfill =
-            from(groupByConf, hole, tableUtils, computeDependency = true, incrementalMode = true)
-          incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, hole, tableProps)
-          incrementalGroupByBackfill.flattenedAgg.aggregationParts
-        }
+    val aggregationParts = groupByConf.getAggregations.toScala.flatMap(_.unWindowed)
 
-        incrementalAggregationParts.headOption.getOrElse(Seq.empty)
+    partitionRangeHoles.foreach { holes =>
+      holes.foreach { hole =>
+        logger.info(s"Filling hole in incremental table: $hole")
+        val incrementalGroupByBackfill =
+          from(groupByConf, hole, tableUtils, computeDependency = true, incrementalMode = true)
+        incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, hole, tableProps)
       }
-      .getOrElse(Seq.empty)
+    }
 
-    (incrementalQueryableRange, incrementalGroupByAggParts)
+    (incrementalQueryableRange, aggregationParts)
   }
 
   private def convertIncrementalDfToHops(
