@@ -15,17 +15,13 @@
 """
 PySpark integration tests for Chronon.
 
-These tests verify GroupBy execution through the local testing platform
-using the quickstart sample definitions.
-
 Requirements:
-    - Compiled Chronon JARs (run `sbt "++ 2.12.12 publishLocal"` first)
+    - Compiled Chronon JARs (CHRONON_SPARK_JAR env var or SBT build)
     - PySpark with py4j and Hive support
 """
 
 from __future__ import annotations
 
-import importlib
 import sys
 from pathlib import Path
 
@@ -34,41 +30,32 @@ from pyspark.sql import SparkSession
 from pyspark.sql.dataframe import DataFrame
 from pyspark.sql.types import DoubleType, LongType, StringType, StructField, StructType
 
-from ai.chronon.api.ttypes import GroupBy as GroupByThrift
-from ai.chronon.repo.extract_objects import import_module_set_name
 from ai.chronon.pyspark.local import (
     _get_or_create_session,
     reset_local_session,
     run_local_group_by,
 )
 
-# Add test/sample to the path so we can import the quickstart definitions.
 _sample_dir = str(Path(__file__).resolve().parent / "sample")
 if _sample_dir not in sys.path:
     sys.path.insert(0, _sample_dir)
 
-_purchases_mod = importlib.import_module("group_bys.quickstart.purchases")
-import_module_set_name(_purchases_mod, GroupByThrift)
-
-purchases_gb = _purchases_mod.v1
+from group_bys.quickstart.purchases import v1 as purchases_gb
 
 
 @pytest.fixture(scope="module", autouse=True)
 def cleanup():
-    """Ensure the local session is reset after all tests in this module."""
     yield
     reset_local_session()
 
 
 @pytest.fixture(scope="module")
 def spark() -> SparkSession:
-    """Get the singleton local SparkSession."""
     return _get_or_create_session()
 
 
 @pytest.fixture(scope="module")
 def purchases_df(spark: SparkSession) -> DataFrame:
-    """Synthetic purchase events matching data.purchases schema."""
     schema = StructType([
         StructField("user_id", StringType(), True),
         StructField("purchase_price", DoubleType(), True),
@@ -88,7 +75,6 @@ def purchases_df(spark: SparkSession) -> DataFrame:
 
 
 def test_group_by(purchases_df: DataFrame):
-    """Test that the quickstart purchases GroupBy runs and produces results."""
     result_df = run_local_group_by(
         group_by=purchases_gb,
         tables={"data.purchases": purchases_df},

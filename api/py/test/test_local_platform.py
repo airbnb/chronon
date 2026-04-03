@@ -20,13 +20,12 @@ test/sample/ with synthetic DataFrames to verify that GroupBy, Join,
 and StagingQuery can be executed locally.
 
 Requirements:
-    - Compiled Chronon JARs (run `sbt "++ 2.12.12 publishLocal"` first)
+    - Compiled Chronon JARs (CHRONON_SPARK_JAR env var or SBT build)
     - PySpark with py4j and Hive support
 """
 
 from __future__ import annotations
 
-import importlib
 import sys
 from pathlib import Path
 
@@ -41,8 +40,6 @@ from pyspark.sql.types import (
     StructType,
 )
 
-from ai.chronon.api.ttypes import GroupBy as GroupByThrift, Join as JoinThrift
-from ai.chronon.repo.extract_objects import import_module_set_name
 from ai.chronon.pyspark.local import (
     _get_or_create_session,
     register_tables,
@@ -57,22 +54,9 @@ _sample_dir = str(Path(__file__).resolve().parent / "sample")
 if _sample_dir not in sys.path:
     sys.path.insert(0, _sample_dir)
 
-# Import and set names via the standard Chronon mechanism.
-# import_module_set_name derives metaData.name and metaData.team from the
-# module's __name__ (e.g. "group_bys.quickstart.purchases" → name
-# "quickstart.purchases.v1", team "quickstart").
-_purchases_mod = importlib.import_module("group_bys.quickstart.purchases")
-import_module_set_name(_purchases_mod, GroupByThrift)
-
-_returns_mod = importlib.import_module("group_bys.quickstart.returns")
-import_module_set_name(_returns_mod, GroupByThrift)
-
-_training_set_mod = importlib.import_module("joins.quickstart.training_set")
-import_module_set_name(_training_set_mod, JoinThrift)
-
-purchases_gb = _purchases_mod.v1
-returns_gb = _returns_mod.v1
-training_set_join = _training_set_mod.v1
+from group_bys.quickstart.purchases import v1 as purchases_gb
+from group_bys.quickstart.returns import v1 as returns_gb
+from joins.quickstart.training_set import v1 as training_set_join
 
 
 # ---------------------------------------------------------------------------

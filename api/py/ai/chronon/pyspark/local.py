@@ -57,11 +57,13 @@ Example usage:
 
 from __future__ import annotations
 
+import gc
+import importlib
 import shutil
 import tempfile
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Union
 
 from pyspark.conf import SparkConf
 from pyspark.sql import DataFrame, SparkSession
@@ -81,6 +83,7 @@ from ai.chronon.pyspark.executables import (
     StagingQueryExecutable,
 )
 from ai.chronon.pyspark.jupyter import JupyterLogCapture
+from ai.chronon.repo.extract_objects import import_module_set_name
 
 
 # ---------------------------------------------------------------------------
@@ -100,8 +103,75 @@ def _get_or_create_session() -> SparkSession:
 
 
 # ---------------------------------------------------------------------------
+# Auto-naming
+# ---------------------------------------------------------------------------
+
+# Map from thrift type to the conventional module prefix for that type.
+_TYPE_TO_PREFIXES: dict[type, list[str]] = {
+    GroupBy: ["group_bys", "groupbys", "group_by"],
+    Join: ["joins", "join"],
+    StagingQuery: ["staging_queries", "staging_query"],
+}
+
+
+def _ensure_name(obj: Union[GroupBy, Join, StagingQuery]) -> None:
+    """Set metaData.name on *obj* if it is not already set.
+
+    Uses the garbage collector to find the Python module where *obj* was
+    defined, then calls ``import_module_set_name`` — the same mechanism
+    Chronon's compile pipeline uses — to derive name and team from the
+    module path.
+    """
+    if obj.metaData and obj.metaData.name:
+        return
+
+    obj_type = type(obj)
+    prefixes = _TYPE_TO_PREFIXES.get(obj_type, [])
+
+    gc.collect()
+    for ref in gc.get_referrers(obj):
+        if not isinstance(ref, dict) or "__name__" not in ref:
+            continue
+        mod_name = ref["__name__"]
+        if any(mod_name.startswith(p) for p in prefixes):
+            module = importlib.import_module(mod_name)
+            import_module_set_name(module, obj_type)
+            return
+
+    # Also set names on nested GroupBys inside JoinParts
+    if obj_type == Join and obj.joinParts:
+        for jp in obj.joinParts:
+            if jp.groupBy:
+                _ensure_name(jp.groupBy)
+
+
+# ---------------------------------------------------------------------------
 # Convenience Functions (Primary API)
 # ---------------------------------------------------------------------------
+
+
+def _enable_historical_backfill(obj: Union[GroupBy, Join, StagingQuery]) -> Optional[bool]:
+    """Enable historicalBackfill for local testing if not explicitly set.
+
+    When historicalBackfill is None, the JVM treats it as false, which means
+    only the latest partition is backfilled. For local testing we always want
+    full backfill over the requested date range, so we default to True.
+
+    Returns the original value so the caller can restore it after execution.
+    """
+    if obj.metaData and obj.metaData.historicalBackfill is None:
+        original = obj.metaData.historicalBackfill
+        obj.metaData.historicalBackfill = True
+        return original
+    return obj.metaData.historicalBackfill if obj.metaData else None
+
+
+def _restore_historical_backfill(
+    obj: Union[GroupBy, Join, StagingQuery], original: Optional[bool]
+) -> None:
+    """Restore historicalBackfill to its original value."""
+    if obj.metaData:
+        obj.metaData.historicalBackfill = original
 
 
 def run_local_group_by(
@@ -123,10 +193,15 @@ def run_local_group_by(
     Returns:
         DataFrame with the GroupBy results.
     """
+    _ensure_name(group_by)
+    original = _enable_historical_backfill(group_by)
     spark = _get_or_create_session()
     register_tables(spark, tables)
-    executable = LocalGroupBy(group_by, spark)
-    return executable.run(start_date=start_date, end_date=end_date, step_days=step_days)
+    try:
+        executable = LocalGroupBy(group_by, spark)
+        return executable.run(start_date=start_date, end_date=end_date, step_days=step_days)
+    finally:
+        _restore_historical_backfill(group_by, original)
 
 
 def run_local_join(
@@ -148,10 +223,21 @@ def run_local_join(
     Returns:
         DataFrame with the Join results.
     """
+    _ensure_name(join)
+    # Enable historicalBackfill on the Join and all nested GroupBys
+    originals = [(join, _enable_historical_backfill(join))]
+    if join.joinParts:
+        for jp in join.joinParts:
+            if jp.groupBy:
+                originals.append((jp.groupBy, _enable_historical_backfill(jp.groupBy)))
     spark = _get_or_create_session()
     register_tables(spark, tables)
-    executable = LocalJoin(join, spark)
-    return executable.run(start_date=start_date, end_date=end_date, step_days=step_days)
+    try:
+        executable = LocalJoin(join, spark)
+        return executable.run(start_date=start_date, end_date=end_date, step_days=step_days)
+    finally:
+        for obj, orig in originals:
+            _restore_historical_backfill(obj, orig)
 
 
 def run_local_staging_query(
@@ -171,10 +257,15 @@ def run_local_staging_query(
     Returns:
         DataFrame with the StagingQuery results.
     """
+    _ensure_name(staging_query)
+    original = _enable_historical_backfill(staging_query)
     spark = _get_or_create_session()
     register_tables(spark, tables)
-    executable = LocalStagingQuery(staging_query, spark)
-    return executable.run(end_date=end_date, step_days=step_days)
+    try:
+        executable = LocalStagingQuery(staging_query, spark)
+        return executable.run(end_date=end_date, step_days=step_days)
+    finally:
+        _restore_historical_backfill(staging_query, original)
 
 
 def reset_local_session() -> None:
@@ -284,6 +375,13 @@ def create_local_spark_session(
         existing.stop()
         SparkSession._instantiatedSession = None  # type: ignore[attr-defined]
 
+    import os
+    import sys
+
+    python_exec = os.path.realpath(sys.executable)
+    os.environ["PYSPARK_PYTHON"] = python_exec
+    os.environ["PYSPARK_DRIVER_PYTHON"] = python_exec
+
     spark_conf = (
         SparkConf()
         .setMaster("local[2]")
@@ -292,6 +390,9 @@ def create_local_spark_session(
         .set("spark.driver.extraClassPath", classpath)
         .set("spark.executor.extraClassPath", classpath)
         .set("spark.driver.host", "127.0.0.1")
+        # Ensure driver and worker use the same Python interpreter
+        .set("spark.pyspark.python", python_exec)
+        .set("spark.pyspark.driver.python", python_exec)
         # Low parallelism for local testing
         .set("spark.sql.shuffle.partitions", "2")
         .set("spark.default.parallelism", "2")
@@ -433,11 +534,6 @@ class LocalGroupBy(GroupByExecutable):
         name_prefix: str | None = None,
         output_namespace: str | None = None,
     ):
-        if not group_by.metaData or not group_by.metaData.name:
-            raise ValueError(
-                "GroupBy must have metaData.name set for local execution. "
-                "Pass name='...' to GroupBy()."
-            )
         super().__init__(group_by, spark_session)
         self.obj: GroupBy = self.platform.set_metadata(
             obj=self.obj,
@@ -461,11 +557,6 @@ class LocalJoin(JoinExecutable):
         name_prefix: str | None = None,
         output_namespace: str | None = None,
     ):
-        if not join.metaData or not join.metaData.name:
-            raise ValueError(
-                "Join must have metaData.name set for local execution. "
-                "Set join.metaData.name = '...' before passing to LocalJoin."
-            )
         # JVM requires team to be set
         if not join.metaData.team:
             join.metaData.team = "local"
@@ -492,10 +583,6 @@ class LocalStagingQuery(StagingQueryExecutable):
         name_prefix: str | None = None,
         output_namespace: str | None = None,
     ):
-        if not staging_query.metaData or not staging_query.metaData.name:
-            raise ValueError(
-                "StagingQuery must have metaData.name set for local execution."
-            )
         super().__init__(staging_query, spark_session)
         self.obj: StagingQuery = self.platform.set_metadata(
             obj=self.obj,
