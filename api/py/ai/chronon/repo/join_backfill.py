@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 
 from ai.chronon.scheduler.interfaces.flow import Flow
 from ai.chronon.scheduler.interfaces.node import Node
@@ -52,7 +53,7 @@ def get_regular_and_external_join_parts(join):
 class JoinBackfill:
     def __init__(
         self,
-        start_date: str | None,
+        start_date: Optional[str],
         end_date: str,
         config_path: str,
         extra_args: dict = None,
