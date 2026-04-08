@@ -564,13 +564,18 @@ class LineageParser:
 
     def handle_staging_query(self, staging_query: Any) -> None:
         """
-        Store a staging query configuration.
+        Store and parse a staging query configuration.
+
+        Previously staging queries were lazily parsed only when referenced by a GroupBy or Join.
+        This caused "no lineage" for standalone staging queries not used by any config.
+        Now we parse immediately to ensure all staging queries have lineage.
 
         :param staging_query: The staging query configuration object.
         :return: None
         """
         table_name = output_table_name(staging_query, full_name=True)
         self.staging_queries[table_name] = staging_query
+        self.parse_staging_query(staging_query)
 
     def parse_staging_query(self, staging_query: Any) -> None:
         """

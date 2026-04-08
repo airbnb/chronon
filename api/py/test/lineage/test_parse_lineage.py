@@ -29,6 +29,36 @@ class TestParseLineage(unittest.TestCase):
         for attr in attributes:
             self.assertGreater(len(getattr(metadata, attr)), 0, f"{attr} should not be empty")
 
+    def test_standalone_staging_query_has_lineage(self):
+        """
+        Test that standalone staging queries (not referenced by any GroupBy/Join)
+        are parsed and have lineage. This was a bug where staging queries were
+        lazily parsed only when referenced, causing "no lineage" for standalone ones.
+        """
+        parser = LineageParser()
+        parser.parse_lineage(TEST_BASE_PATH)
+        metadata = parser.metadata
+
+        # The standalone staging query should be in configs
+        standalone_config_name = "sample_team.standalone_staging_query.v1"
+        self.assertIn(
+            standalone_config_name, metadata.configs, "Standalone staging query should be parsed and in configs"
+        )
+
+        # The standalone staging query output table should be in parsed_staging_query_tables
+        standalone_table = "sample_namespace.sample_team_standalone_staging_query_v1"
+        self.assertIn(
+            standalone_table,
+            parser.parsed_staging_query_tables,
+            f"Standalone staging query {standalone_table} should be parsed",
+        )
+
+        # The standalone staging query output table should have lineage
+        standalone_lineages = [lineage for lineage in metadata.lineages if lineage.output_table == standalone_table]
+        self.assertGreater(
+            len(standalone_lineages), 0, f"Standalone staging query {standalone_table} should have lineage"
+        )
+
     def test_cannot_parse_lineage(self):
         # Can't parse lineage since there is no specific column.
         lineage = build_lineage("output", "SELECT COUNT(*) AS a FROM input")
