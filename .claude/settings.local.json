@@ -1,42 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(git config:*)",
-      "mcp__airbnb-core__fetch",
-      "mcp__airbnb-core__github_read_blob",
-      "Read(//Users/yuli_han/airlab/repos/chronon-internal/**)",
-      "Read(//Users/yuli_han/**)",
-      "Bash(grep -r \"chronon\" /Users/yuli_han/airlab/repos/data --include=\"*.txt\" --include=\"*.toml\" --include=\"*.cfg\" --include=\"requirements*\" -l 2>/dev/null | head -10)",
-      "Bash(grep -r \"chronon\" /Users/yuli_han/airlab/repos/treehouse --include=\"*.txt\" --include=\"*.toml\" --include=\"*.cfg\" --include=\"requirements*\" -l 2>/dev/null | head -10)",
-      "WebFetch(domain:developers.a.musta.ch)",
-      "Bash(grep -rn \"chronon\" /Users/yuli_han/airlab/repos/treehouse --include=\"*.sbt\" --include=\"*.scala\" --include=\"*.gradle\" --include=\"*.bzl\" --include=\"*.bazel\" 2>/dev/null | grep -v \"dist/\\\\|intellij\\\\|classpath\" | head -20)",
-      "Bash(grep -rn \"chronon-ai-airbnb\\\\|chronon_ai_airbnb\\\\|chronon-ai==\" /Users/yuli_han/airlab/repos/data --include=\"*.txt\" --include=\"*.toml\" --include=\"*.cfg\" --include=\"*.yml\" --include=\"*.yaml\" 2>/dev/null | grep -v \"__pycache__\\\\|\\\\.pyc\" | head -20)",
-      "Bash(find /Users/yuli_han/airlab/repos/data/airflow/teams/ml_infra/projects/chronon -name \"requirements*.txt\" -o -name \"*.toml\" 2>/dev/null | head -10 | xargs grep -l \"chronon\" 2>/dev/null)",
-      "Bash(grep -rn \"chronon\" /Users/yuli_han/airlab/repos/data --include=\"requirements*.txt\" --include=\"*.toml\" --include=\"setup.py\" 2>/dev/null | grep -v \"__pycache__\\\\|\\\\.pyc\\\\|\\\\.egg\" | head -20)",
-      "Bash(chmod +x /Users/yuli_han/airlab/repos/chronon-internal/create-version-bump-prs.sh)",
-      "Bash(cd /Users/yuli_han/airlab/repos/chronon-internal && ./create-version-bump-prs.sh 0.0.13 0.0.14 0.0.109 0.0.110)",
-      "Bash(cd /Users/yuli_han/airlab/repos/data && sed -i '' 's/API_VERSION = \"0.0.8\"/API_VERSION = \"0.0.14\"/' airflow/teams/ml_infra/projects/chronon/common/operators.py && grep \"API_VERSION\" airflow/teams/ml_infra/projects/chronon/common/operators.py)",
-      "Bash(cd /Users/yuli_han/airlab/repos/ml_models && sed -i '' 's/chronon-ai>=0\\\\.0\\\\.[0-9]*/chronon-ai>=0.0.110/' zipline/requirements.txt zipline/requirements.3.10.txt && grep \"chronon-ai\" zipline/requirements.txt zipline/requirements.3.10.txt)",
-      "Bash(sleep 90 && tail -20 /private/tmp/claude-501/-Users-yuli-han-chronon/5294be63-ca74-438f-94ea-0239699991d5/tasks/bqfb64u2m.output 2>/dev/null && echo \"EXIT:$?\")",
-      "Bash(cd /Users/yuli_han/airlab/repos/data && sed -i '' 's/<<<<<<< HEAD//' airflow/teams/ml_infra/projects/chronon/common/operators.py && sed -i '' '/API_VERSION = \"0.0.13\"/d' airflow/teams/ml_infra/projects/chronon/common/operators.py && sed -i '' '/=======/d' airflow/teams/ml_infra/projects/chronon/common/operators.py && sed -i '' '/>>>>>>> /d' airflow/teams/ml_infra/projects/chronon/common/operators.py && grep \"API_VERSION\" airflow/teams/ml_infra/projects/chronon/common/operators.py)",
-      "mcp__ship__get-pr-buildkite-url",
-      "mcp__ship__get-pr-sha",
-      "mcp__ship__get_build",
-      "mcp__ship__search_logs",
-      "mcp__ship__list_annotations",
-      "mcp__ship__tail_logs",
-      "mcp__ship__read_logs",
-      "mcp__ship__list_builds",
-      "mcp__glean-mcp__glean_search",
-      "mcp__ship__arborist-search-tests",
-      "Bash(find /Users/yuli_han/airlab/repos/ml_models -path */production/joins -type d)",
-      "Bash(gh pr:*)",
-      "Bash(git fetch:*)",
-      "Bash(python3 -m pytest api/py/test/lineage/test_parse_join.py -v)",
-      "Bash(pip3 install:*)",
-      "Bash(python3 -m pytest test/lineage/test_parse_join.py -v)",
-      "Bash(python3 -m pytest test/lineage/ -v)",
-      "Bash(GH_HOST=git.musta.ch gh pr view 297951 --repo airbnb/data)"
+      "Bash(git rm:*)",
+      "Bash(git commit -m ':*)"
     ]
   }
 }
