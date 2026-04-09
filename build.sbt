@@ -39,8 +39,6 @@ ThisBuild / developers := List(
   )
 )
 ThisBuild / assembly / test := {}
-ThisBuild / javacOptions ++= Seq("--release", "8")
-ThisBuild / scalacOptions += "-target:jvm-1.8"
 
 import xerial.sbt.Sonatype.sonatypeCentralHost
 ThisBuild / sonatypeCredentialHost := sonatypeCentralHost
