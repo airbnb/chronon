@@ -54,8 +54,7 @@ object KafkaStreamBuilder extends StreamBuilder {
     val reader = maxOffsetsPerTrigger
       .map(v => baseReader.option("maxOffsetsPerTrigger", v))
       .getOrElse(baseReader)
-    val df = reader.load()
-      .selectExpr("value")
+    val df = reader.load().selectExpr("value")
     DataStream(df, partitions = TopicChecker.getPartitions(topicInfo.name, bootstrap = bootstrap), topicInfo)
   }
 }
