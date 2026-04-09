@@ -564,13 +564,18 @@ class LineageParser:
 
     def handle_staging_query(self, staging_query: Any) -> None:
         """
-        Store a staging query configuration.
+        Store and parse a staging query configuration.
+
+        Previously staging queries were lazily parsed only when referenced by a GroupBy or Join.
+        This caused "no lineage" for standalone staging queries not used by any config.
+        Now we parse immediately to ensure all staging queries have lineage.
 
         :param staging_query: The staging query configuration object.
         :return: None
         """
         table_name = output_table_name(staging_query, full_name=True)
         self.staging_queries[table_name] = staging_query
+        self.parse_staging_query(staging_query)
 
     def parse_staging_query(self, staging_query: Any) -> None:
         """
@@ -696,6 +701,15 @@ class LineageParser:
             # store lineage
             parsed_lineages = build_lineage(join_part_table, sql, sources)
             self.metadata.store_lineage(parsed_lineages, join_part_table)
+
+            # Register inline group-by features under the group-by name.
+            # When a group-by is embedded in a join (no standalone config file),
+            # downstream consumers look up features by the group-by name, not the
+            # join name. Without this, inline group-by features are invisible to
+            # any system that resolves features by group-by config name.
+            gb_config_name = gb.metaData.name
+            for feature in features:
+                self.metadata.store_feature(gb_config_name, ConfigType.GROUP_BY, feature, join_part_table)
         else:
             if gb.metaData.online:
                 output_table = f"{self.object_table_name(gb)}_upload"
