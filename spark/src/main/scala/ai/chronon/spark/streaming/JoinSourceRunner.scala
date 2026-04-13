@@ -38,7 +38,7 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import java.{lang, util}
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{Duration, DurationInt, MILLISECONDS}
 import scala.concurrent.{Await, Future}
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 import scala.util.{Failure, Success}
@@ -130,6 +130,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   // Longer timeout for warm-up: absorbs cold-start cost (KV connections, CatalystUtil.session,
   // Janino codegen) which can exceed the normal 5s production timeout on first request.
   private val warmupTimeoutSeconds: Int = getProp("warmup.timeout_seconds", "60").toInt
+
+  // Timeout for async chain operations (KV fetch and model transforms). Can be tuned when
+  // external inference services have higher latency (e.g. large model backends).
+  private val chainTimeoutMillis: Long = getProp("timeout_millis", "5000").toLong
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
@@ -533,7 +537,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           val responsesFuture = fetcher.fetchBaseJoin(requests, Option(joinSource.join))
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects
-          val responses = Await.result(responsesFuture, 5.second)
+          val responses = Await.result(responsesFuture, Duration(chainTimeoutMillis, MILLISECONDS))
 
           // debug print payload for requests and responses
           if (debug && shouldSample) {
@@ -607,7 +611,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           // Apply model transforms if necessary and then logging
           val modelTransformsF = fetcher.fetchModelTransforms(Future.successful(derivedValues.toSeq))
           val responsesF = fetcher.instrumentAndLog(modelTransformsF)
-          val responses = Await.result(responsesF, 5.second)
+          val responses = Await.result(responsesF, Duration(chainTimeoutMillis, MILLISECONDS))
 
           // debug print payload for requests and responses
           if (debug && shouldSample) {
