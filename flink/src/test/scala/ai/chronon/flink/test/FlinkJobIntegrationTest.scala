@@ -1,5 +1,6 @@
 package ai.chronon.flink.test
 
+import ai.chronon.api.{TimeUnit, Window}
 import ai.chronon.flink.window.{TimestampedIR, TimestampedTile}
 import ai.chronon.flink.{FlinkJob, SparkExpressionEvalFn}
 import ai.chronon.online.{Api, GroupByServingInfoParsed}
@@ -13,6 +14,7 @@ import org.junit.{After, Before, Test}
 import org.mockito.Mockito.withSettings
 import org.scalatestplus.mockito.MockitoSugar.mock
 
+import java.time.Instant
 import scala.util.ScalaJavaConversions.ListOps
 
 class FlinkJobIntegrationTest {
@@ -46,6 +48,12 @@ class FlinkJobIntegrationTest {
     val tileIR = groupByServingInfoParsed.tiledCodec.decodeTileIr(timestampedTile.tileBytes)
     TimestampedIR(tileIR._1, Some(timestampedTile.latestTsMillis))
   }
+
+  private def toMillis(iso: String): Long =
+    Instant.parse(iso).toEpochMilli
+
+  private def tileStart(tsMillis: Long, tileSizeMillis: Long): Long =
+    tsMillis - Math.floorMod(tsMillis, tileSizeMillis)
 
   @Before
   def setup(): Unit = {
@@ -157,5 +165,47 @@ class FlinkJobIntegrationTest {
     )
 
     assertEquals(expectedFinalIRsPerKey, finalIRsPerKey)
+  }
+
+  @Test
+  def testTiledFlinkJobWatermarksAfterSparkExpressionEval(): Unit = {
+    implicit val env: StreamExecutionEnvironment = StreamExecutionEnvironment.getExecutionEnvironment
+
+    val elements = Seq(
+      E2ETestEvent("id1", 1, 1.0, toMillis("2025-07-20T12:59:49Z")),
+      E2ETestEvent("id1", 1, 1.0, toMillis("2025-07-20T12:59:58Z"))
+    )
+    val source = new ShiftedWatermarkedE2EEventSource(elements, shiftMillis = 10000L)
+
+    val groupBy = FlinkTestUtils.makeGroupBy(
+      Seq("id"),
+      windows = Seq(new Window(1, TimeUnit.HOURS))
+    )
+
+    val encoder = Encoders.product[E2ETestEvent]
+    val outputSchema = new SparkExpressionEvalFn(encoder, groupBy).getOutputSchema
+    val groupByServingInfoParsed =
+      FlinkTestUtils.makeTestGroupByServingInfoParsed(groupBy, encoder.schema, outputSchema)
+    val mockApi = mock[Api](withSettings().serializable())
+    val writerFn = new MockAsyncKVStoreWriter(Seq(true, true), mockApi, "testTiledFlinkJobEventTimeWatermarkFG")
+    val job = new FlinkJob[E2ETestEvent](source, writerFn, groupByServingInfoParsed, encoder, 1)
+    job.runTiledGroupByJob(env).addSink(new CollectSink)
+
+    env.execute("TiledFlinkJobEventTimeWatermarkIntegrationTest")
+
+    val targetTileStart = toMillis("2025-07-20T12:00:00Z")
+    val hourMillis = 60L * 60L * 1000L
+    val targetTileValues = CollectSink.values.toScala
+      .map(_.putRequest)
+      .filter(request => tileStart(request.tsMillis.get, hourMillis) == targetTileStart)
+      .map { request =>
+        val timestampedTile =
+          avroConvertPutRequestToTimestampedTile(request, groupByServingInfoParsed)
+        avroConvertTimestampedTileToTimestampedIR(timestampedTile, groupByServingInfoParsed).ir.head
+          .asInstanceOf[Double]
+      }
+
+    assert(targetTileValues.nonEmpty)
+    assertEquals(2.0, targetTileValues.max, 0.0)
   }
 }

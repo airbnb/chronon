@@ -23,6 +23,13 @@ import org.apache.flink.streaming.api.windowing.triggers.Trigger
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow
 import org.slf4j.LoggerFactory
 
+import java.time.Duration
+
+object FlinkJob {
+  val DefaultTiledEventTimeOutOfOrderness: Duration = Duration.ofMinutes(5)
+  val DefaultTiledEventTimeIdlenessTimeout: Duration = Duration.ofSeconds(30)
+}
+
 /**
   * Flink job that processes a single streaming GroupBy and writes out the results to the KV store.
   *
@@ -34,13 +41,17 @@ import org.slf4j.LoggerFactory
   * @param groupByServingInfoParsed - The GroupBy we are working with
   * @param encoder - Spark Encoder for the input data type
   * @param parallelism - Parallelism to use for the Flink job
+  * @param tiledEventTimeOutOfOrderness - Out-of-orderness tolerance for tiled event-time watermarks
+  * @param tiledEventTimeIdlenessTimeout - Idleness timeout for tiled event-time watermark generation
   * @tparam T - The input data type
   */
 class FlinkJob[T](eventSrc: FlinkSource[T],
                   sinkFn: RichAsyncFunction[PutRequest, WriteResponse],
                   groupByServingInfoParsed: GroupByServingInfoParsed,
                   encoder: Encoder[T],
-                  parallelism: Int) {
+                  parallelism: Int,
+                  tiledEventTimeOutOfOrderness: Duration = FlinkJob.DefaultTiledEventTimeOutOfOrderness,
+                  tiledEventTimeIdlenessTimeout: Duration = FlinkJob.DefaultTiledEventTimeIdlenessTimeout) {
   private[this] val logger = LoggerFactory.getLogger(getClass)
 
   val featureGroupName: String = groupByServingInfoParsed.groupBy.getMetaData.getName
@@ -138,6 +149,18 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
       .name(s"Spark expression eval for $featureGroupName")
       .setParallelism(sourceStream.parallelism) // Use same parallelism as previous operator
 
+    val watermarkedSparkExprEvalDS: DataStream[Map[String, Any]] = sparkExprEvalDS
+      // Constants.TimeColumn is only available after Spark expression evaluation.
+      .assignTimestampsAndWatermarks(
+        ChrononWatermarkStrategies.sparkExpressionEvalWatermarkStrategy(
+          tiledEventTimeOutOfOrderness,
+          tiledEventTimeIdlenessTimeout
+        )
+      )
+      .uid(s"event-watermarked-spark-$featureGroupName")
+      .name(s"Watermark Spark rows for $featureGroupName")
+      .setParallelism(sourceStream.parallelism)
+
     val inputSchema: Seq[(String, DataType)] =
       exprEval.getOutputSchema.fields
         .map(field => (field.name, SparkConversions.toChrononType(field.name, field.dataType)))
@@ -161,7 +184,7 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
     //    - The only purpose of this window function is to mark tiles as closed so we can do client-side caching in SFS
     // 7. Output: TimestampedTile, containing the current IRs (Avro encoded) and the timestamp of the current element
     val tilingDS: DataStream[TimestampedTile] =
-      sparkExprEvalDS
+      watermarkedSparkExprEvalDS
         .keyBy(KeySelector.getKeySelectionFunction(groupByServingInfoParsed.groupBy))
         .window(window)
         .trigger(trigger)
