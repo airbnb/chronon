@@ -28,6 +28,14 @@ object FetcherModelUtils {
 
   @transient implicit lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
+  private def withRetry[T](maxRetries: Int)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
+    f.recoverWith {
+      case e: Throwable if maxRetries > 0 =>
+        logger.warn(s"Model inference failed, retrying ($maxRetries retries left): ${e.getMessage}")
+        withRetry(maxRetries - 1)(f)
+    }
+  }
+
   private case class ModelTransformContext(joinName: String, resultMap: mutable.HashMap[String, AnyRef])
   private case class ModelTransformInput(modelTransform: ModelTransform,
                                          inputs: Map[String, AnyRef],
@@ -109,8 +117,7 @@ object FetcherModelUtils {
         ctx.increment(Metrics.Name.RequestCount)
         ctx.increment(Metrics.Name.RequestBatchSize)
 
-        modelBackend
-          .runModelInference(mergedRequest)
+        withRetry(maxRetries = 2)(modelBackend.runModelInference(mergedRequest))
           .map { response =>
             assert(
               response.outputs.size == modelTransformContexts.size,
