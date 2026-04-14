@@ -149,8 +149,8 @@ class FlinkJob[T](eventSrc: FlinkSource[T],
       .name(s"Spark expression eval for $featureGroupName")
       .setParallelism(sourceStream.parallelism) // Use same parallelism as previous operator
 
+    // Constants.TimeColumn is only available after Spark expression evaluation.
     val watermarkedSparkExprEvalDS: DataStream[Map[String, Any]] = sparkExprEvalDS
-      // Constants.TimeColumn is only available after Spark expression evaluation.
       .assignTimestampsAndWatermarks(
         ChrononWatermarkStrategies.sparkExpressionEvalWatermarkStrategy(
           tiledEventTimeOutOfOrderness,

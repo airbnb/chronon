@@ -6,9 +6,8 @@ import org.apache.flink.api.common.eventtime.{SerializableTimestampAssigner, Wat
 import java.time.Duration
 
 object ChrononWatermarkStrategies {
-  def sparkExpressionEvalWatermarkStrategy(
-      allowedOutOfOrderness: Duration,
-      idlenessTimeout: Duration): WatermarkStrategy[Map[String, Any]] =
+  def sparkExpressionEvalWatermarkStrategy(allowedOutOfOrderness: Duration,
+                                           idlenessTimeout: Duration): WatermarkStrategy[Map[String, Any]] =
     WatermarkStrategy
       .forBoundedOutOfOrderness[Map[String, Any]](allowedOutOfOrderness)
       .withIdleness(idlenessTimeout)
