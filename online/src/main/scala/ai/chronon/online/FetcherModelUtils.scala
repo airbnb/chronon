@@ -28,6 +28,9 @@ object FetcherModelUtils {
 
   @transient implicit lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
+  private val modelInferenceMaxRetries: Int =
+    Option(System.getProperty("ai.chronon.model_inference.max_retries")).map(_.toInt).getOrElse(2)
+
   private def withRetry[T](maxRetries: Int)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
     f.recoverWith {
       case e: Throwable if maxRetries > 0 =>
@@ -117,7 +120,7 @@ object FetcherModelUtils {
         ctx.increment(Metrics.Name.RequestCount)
         ctx.increment(Metrics.Name.RequestBatchSize)
 
-        withRetry(maxRetries = 2)(modelBackend.runModelInference(mergedRequest))
+        withRetry(modelInferenceMaxRetries)(modelBackend.runModelInference(mergedRequest))
           .map { response =>
             assert(
               response.outputs.size == modelTransformContexts.size,
