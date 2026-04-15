@@ -313,17 +313,23 @@ def _find_chronon_jars(extra_jars: list[str] | None = None) -> str:
         # Walk up from this file to find the repo root
         current = Path(__file__).resolve()
         # Go up: local.py -> pyspark -> chronon -> ai -> py -> api -> <repo_root>
-        chronon_root = current.parents[5]
-        spark_target = chronon_root / "spark" / "target" / "scala-2.12"
+        chronon_root_from_file = current.parents[5]
 
-        # Prefer the assembly (fat) JAR — it bundles all transitive deps
-        assembly_candidates = [
-            j for j in spark_target.glob("spark_uber_2.12-*-assembly.jar")
-        ] if spark_target.exists() else []
+        # Also try cwd as fallback (e.g. when running via tox where
+        # local.py is installed into a virtualenv site-packages)
+        candidates_roots = [chronon_root_from_file, Path.cwd()]
+        for chronon_root in candidates_roots:
+            spark_target = chronon_root / "spark" / "target" / "scala-2.12"
 
-        if assembly_candidates:
-            jars.append(str(assembly_candidates[0]))
-        else:
+            # Prefer the assembly (fat) JAR — it bundles all transitive deps
+            assembly_candidates = [
+                j for j in spark_target.glob("spark_uber_2.12-*-assembly.jar")
+            ] if spark_target.exists() else []
+
+            if assembly_candidates:
+                jars.append(str(assembly_candidates[0]))
+                break
+
             # Fall back to individual thin JARs from publishLocal
             jar_configs = [
                 (chronon_root / "api" / "target" / "scala-2.12", "api"),
@@ -342,6 +348,9 @@ def _find_chronon_jars(extra_jars: list[str] | None = None) -> str:
                 ]
                 if candidates:
                     jars.append(str(candidates[0]))
+
+            if jars:
+                break
 
     if extra_jars:
         jars.extend(extra_jars)
