@@ -74,7 +74,6 @@ from ai.chronon.pyspark.constants import (
     LOCAL_NAME_PREFIX,
     LOCAL_OUTPUT_NAMESPACE,
     LOCAL_ROOT_DIR_FOR_IMPORTED_FEATURES,
-    PARTITION_COLUMN_FORMAT,
 )
 from ai.chronon.pyspark.executables import (
     GroupByExecutable,
@@ -315,24 +314,34 @@ def _find_chronon_jars(extra_jars: list[str] | None = None) -> str:
         current = Path(__file__).resolve()
         # Go up: local.py -> pyspark -> chronon -> ai -> py -> api -> <repo_root>
         chronon_root = current.parents[5]
+        spark_target = chronon_root / "spark" / "target" / "scala-2.12"
 
-        jar_configs = [
-            (chronon_root / "api" / "target" / "scala-2.12", "api"),
-            (chronon_root / "spark" / "target" / "scala-2.12", "spark_uber"),
-            (chronon_root / "aggregator" / "target" / "scala-2.12", "aggregator"),
-            (chronon_root / "online" / "target" / "scala-2.12", "online"),
-        ]
+        # Prefer the assembly (fat) JAR — it bundles all transitive deps
+        assembly_candidates = [
+            j for j in spark_target.glob("spark_uber_2.12-*-assembly.jar")
+        ] if spark_target.exists() else []
 
-        for target_dir, artifact_name in jar_configs:
-            if not target_dir.exists():
-                continue
-            pattern = f"{artifact_name}_2.12-*.jar"
-            candidates = [
-                j for j in target_dir.glob(pattern)
-                if not j.name.endswith(("-sources.jar", "-javadoc.jar"))
+        if assembly_candidates:
+            jars.append(str(assembly_candidates[0]))
+        else:
+            # Fall back to individual thin JARs from publishLocal
+            jar_configs = [
+                (chronon_root / "api" / "target" / "scala-2.12", "api"),
+                (spark_target, "spark_uber"),
+                (chronon_root / "aggregator" / "target" / "scala-2.12", "aggregator"),
+                (chronon_root / "online" / "target" / "scala-2.12", "online"),
             ]
-            if candidates:
-                jars.append(str(candidates[0]))
+
+            for target_dir, artifact_name in jar_configs:
+                if not target_dir.exists():
+                    continue
+                pattern = f"{artifact_name}_2.12-*.jar"
+                candidates = [
+                    j for j in target_dir.glob(pattern)
+                    if not j.name.endswith(("-sources.jar", "-javadoc.jar", "-assembly.jar"))
+                ]
+                if candidates:
+                    jars.append(str(candidates[0]))
 
     if extra_jars:
         jars.extend(extra_jars)
@@ -341,7 +350,7 @@ def _find_chronon_jars(extra_jars: list[str] | None = None) -> str:
         raise RuntimeError(
             "No Chronon JARs found. Set CHRONON_SPARK_JAR env var, "
             "run from within the Chronon repo "
-            "(after `sbt '++ 2.12.12 publishLocal'`), or pass extra_jars."
+            "(after `sbt '++ 2.12.12; spark_uber/assembly'`), or pass extra_jars."
         )
 
     return ":".join(jars)
@@ -509,7 +518,7 @@ class LocalTestingPlatform(PlatformInterface):
             print("*" * 10, f" END LOGS FOR {job_name} ", "*" * 10, "\n")
 
     @override
-    def get_table_utils(self) -> "JavaObject":
+    def get_table_utils(self) -> Any:
         # TableUtils was moved to the catalog subpackage
         return self.jvm.ai.chronon.spark.catalog.TableUtils(
             self.java_spark_session
