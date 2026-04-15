@@ -27,6 +27,7 @@ import ai.chronon.api.{
   DoubleType,
   IntType,
   LongType,
+  MetaData,
   Operation,
   Source,
   StringType,
@@ -1078,5 +1079,56 @@ class GroupByTest {
     val partitions = tableUtils.partitions(outputTable)
     assertEquals(s"Expected only 1 partition ($endPartition), got: $partitions", 1, partitions.size)
     assertEquals(endPartition, partitions.head)
+  }
+
+  @Test
+  def testHistoricalBackfillUnset(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_historical_backfill_unset_gb" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val tenDaysAgo = tableUtils.partitionSpec.minus(today, new Window(10, TimeUnit.DAYS))
+    val fiveDaysAgo = tableUtils.partitionSpec.minus(today, new Window(5, TimeUnit.DAYS))
+
+    val schema = List(
+      Column("item", StringType, 100),
+      Column("price", DoubleType, 500)
+    )
+    val sourceTable = s"$namespace.items_historical_backfill_unset"
+    DataFrameGen.entities(spark, schema, 1000, partitions = 100).save(sourceTable)
+
+    val source = Builders.Source.entities(
+      query = Builders.Query(selects = Builders.Selects("price"), startPartition = tenDaysAgo),
+      snapshotTable = sourceTable
+    )
+
+    val metaData = new MetaData()
+    metaData.setName("test.item_historical_backfill_unset")
+    metaData.setOutputNamespace(namespace)
+    metaData.setTeam("chronon")
+    assert(!metaData.isSetHistoricalBackfill, "historicalBackfill should not be set for this test")
+
+    val groupByConf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("item"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.AVERAGE, inputColumn = "price")),
+      metaData = metaData,
+      backfillStartDate = tenDaysAgo
+    )
+
+    GroupBy.computeBackfill(groupByConf, fiveDaysAgo, tableUtils)
+
+    val outputTable = groupByConf.metaData.outputTable
+    val partitions = tableUtils.partitions(outputTable)
+    assertTrue(
+      s"Expected multiple partitions from $tenDaysAgo when historicalBackfill is unset, got: $partitions",
+      partitions.size > 1
+    )
+    assertTrue(
+      s"Expected $tenDaysAgo in partitions when historicalBackfill is unset, got: $partitions",
+      partitions.contains(tenDaysAgo)
+    )
   }
 }

@@ -17,7 +17,7 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, SourceOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, SourceOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, ResponseWithContext}
 import ai.chronon.online.KVStore.PutRequest
@@ -71,6 +71,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
 
   val context: Metrics.Context = Metrics.Context(Metrics.Environment.GroupByStreaming, groupByConf)
+
+  private val notificationTopic: Option[String] = PushModeConfig.resolveNotificationTopic(groupByConf, session)
 
   private case class Schemas(joinCodec: JoinCodec,
                              leftStreamSchema: StructType,
@@ -590,10 +592,18 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
             // Report kvStore metrics
             val kvContext = egressCtx.withSuffix("put")
-            kvStore
-              .multiPut(putRequests)
+            val writeStartMillis = System.currentTimeMillis()
+            val writeFuture = notificationTopic match {
+              case Some(topic) =>
+                kvStore.multiPutWithNotification(putRequests, topic)
+              case None =>
+                kvStore.multiPut(putRequests)
+            }
+            writeFuture
               .andThen {
                 case Success(results) =>
+                  kvContext.distribution(Metrics.Name.WriteLatencyMillis, System.currentTimeMillis() - writeStartMillis)
+                  if (notificationTopic.isDefined) kvContext.count(Metrics.Name.PushNotificationCount, results.size)
                   results.foreach { result =>
                     if (result) {
                       kvContext.increment("success")
