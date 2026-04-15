@@ -241,6 +241,8 @@ jobs:
                        /chronon/api/thrift/api.thrift                 # Generate thrift files
                     cd /chronon/                                      # Go to Python module
                     pip install -r api/py/requirements/dev.txt        # Install latest requirements
+                    export CHRONON_SPARK_JAR=$(find /chronon/spark/target/scala-2.12 -name '*assembly*.jar' -not -name '*sources*' -not -name '*javadoc*' | head -1)
+                    echo "Using CHRONON_SPARK_JAR=$CHRONON_SPARK_JAR"
                     tox                                               # Run tests
                     popd
             - store_artifacts:

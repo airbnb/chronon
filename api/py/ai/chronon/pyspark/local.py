@@ -322,8 +322,11 @@ def _find_chronon_jars(extra_jars: list[str] | None = None) -> str:
             spark_target = chronon_root / "spark" / "target" / "scala-2.12"
 
             # Prefer the assembly (fat) JAR — it bundles all transitive deps
+            # SBT assembly names vary: spark_uber-assembly-VERSION.jar or
+            # spark_uber_2.12-VERSION-assembly.jar depending on config
             assembly_candidates = [
-                j for j in spark_target.glob("spark_uber_2.12-*-assembly.jar")
+                j for j in spark_target.glob("*assembly*.jar")
+                if not j.name.endswith(("-sources.jar", "-javadoc.jar"))
             ] if spark_target.exists() else []
 
             if assembly_candidates:
