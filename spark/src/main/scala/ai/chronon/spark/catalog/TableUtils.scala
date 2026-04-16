@@ -762,7 +762,11 @@ case class TableUtils(sparkSession: SparkSession) {
       // finalized shuffle parallelism
       val shuffleParallelism = Math.max(dailyFileCount * nonZeroTablePartitionCount, minWriteShuffleParallelism)
       val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * (dailyFileCount + 1)))
+      // Use deterministic hash instead of rand() to ensure retried Spark tasks produce
+      // the same file assignment. Non-deterministic rand() causes duplicate rows when
+      // executors fail during writes and shuffle partitions are recomputed.
+      val hashInputCols = df.columns.map(col(_))
+      val saltedDf = df.withColumn(saltCol, pmod(hash(hashInputCols: _*), lit(dailyFileCount + 1)))
 
       logger.info(
         s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
