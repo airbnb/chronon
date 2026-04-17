@@ -762,7 +762,16 @@ case class TableUtils(sparkSession: SparkSession) {
       // finalized shuffle parallelism
       val shuffleParallelism = Math.max(dailyFileCount * nonZeroTablePartitionCount, minWriteShuffleParallelism)
       val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * (dailyFileCount + 1)))
+      // Deterministic salt: rand() causes duplicate rows when Spark retries tasks during writes.
+      val hashInputCols = df.schema.fields
+        .filterNot(f =>
+          f.dataType.isInstanceOf[MapType] ||
+            f.dataType.isInstanceOf[ArrayType] || f.dataType.isInstanceOf[StructType])
+        .map(f => col(f.name))
+      require(hashInputCols.nonEmpty,
+              s"No hashable columns found for write salt in table $tableName. " +
+                s"All columns are complex types (Map/Array/Struct).")
+      val saltedDf = df.withColumn(saltCol, pmod(hash(hashInputCols: _*), lit(dailyFileCount + 1)))
 
       logger.info(
         s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
