@@ -764,12 +764,13 @@ case class TableUtils(sparkSession: SparkSession) {
       val saltCol = "random_partition_salt"
       // Deterministic salt: rand() causes duplicate rows when Spark retries tasks during writes.
       val hashInputCols = df.schema.fields
-        .filterNot(f => f.dataType.isInstanceOf[MapType] ||
-          f.dataType.isInstanceOf[ArrayType] || f.dataType.isInstanceOf[StructType])
+        .filterNot(f =>
+          f.dataType.isInstanceOf[MapType] ||
+            f.dataType.isInstanceOf[ArrayType] || f.dataType.isInstanceOf[StructType])
         .map(f => col(f.name))
       require(hashInputCols.nonEmpty,
-        s"No hashable columns found for write salt in table $tableName. " +
-          s"All columns are complex types (Map/Array/Struct).")
+              s"No hashable columns found for write salt in table $tableName. " +
+                s"All columns are complex types (Map/Array/Struct).")
       val saltedDf = df.withColumn(saltCol, pmod(hash(hashInputCols: _*), lit(dailyFileCount + 1)))
 
       logger.info(
