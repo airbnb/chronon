@@ -4,7 +4,10 @@
 # Download gcloud cli and unpack: https://cloud.google.com/sdk/docs/install-sdk#installing_the_latest_version
 # Install gcloud cli: ./google-cloud-sdk/install.sh
 # Connect your account: ./google-cloud-sdk/bin/gcloud init
-# Tell Nikhil to run this for permissions: gsutil iam ch user:<you email>@gmail.com:objectCreator,objectViewer gs://chronon
+# Tell Nikhil to run this for permissions:
+# gcloud storage buckets add-iam-policy-binding gs://chronon \
+#     --member=user:<your email> \
+#     --role=roles/storage.objectUser
 
 
 set -euxo pipefail
