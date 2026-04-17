@@ -100,6 +100,14 @@ class PoolMap[Key, Value](createFunc: Key => Value, maxSize: Int = 100, initialS
       pool.offer(value)
     }
   }
+
+  def warmup(key: Key, targetSize: Int): Unit = {
+    val pool = getPool(key)
+    val toCreate = Math.max(0, targetSize - pool.size())
+    (0 until toCreate).foreach { _ =>
+      pool.offer(createFunc(key))
+    }
+  }
 }
 
 class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSchema: StructType) {
@@ -125,6 +133,8 @@ class PooledCatalystUtil(expressions: collection.Seq[(String, String)], inputSch
     }
   def outputChrononSchema: Array[(String, DataType)] =
     poolMap.performWithValue(poolKey, cuPool) { _.outputChrononSchema }
+
+  def warmup(targetSize: Int): Unit = poolMap.warmup(poolKey, targetSize)
 }
 
 // This class by itself it not thread safe because of the transformBuffer
