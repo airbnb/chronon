@@ -668,6 +668,31 @@ class JoinTest {
   }
 
   @Test
+  def testChrononRunDsWithQueryRangeFlag(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    spark.conf.set("spark.chronon.group_by.use_query_range_for_run_ds", "true")
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+
+    val groupBy = getGroupByForIncrementalSourceTest()
+    val queryRange = PartitionRange("2021-01-02", "2021-01-02")(tableUtils)
+    val rendered = renderDataSourceQuery(
+      groupBy,
+      groupBy.sources.toScala.head,
+      Seq("id"),
+      queryRange,
+      tableUtils,
+      None,
+      groupBy.inferredAccuracy,
+      tableUtils.partitionColumn
+    )
+    assert(rendered.contains("'2021-01-02'"),
+      s"Expected rendered query to contain queryRange.start '2021-01-02' but got: $rendered")
+  }
+
+  @Test
   def testVersioning(): Unit = {
     val spark: SparkSession =
       SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
