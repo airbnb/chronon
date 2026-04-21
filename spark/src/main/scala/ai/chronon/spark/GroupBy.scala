@@ -662,17 +662,30 @@ object GroupBy {
     // chronon run ds macro is only supported for group bys
     // Use intersectedRange for validation when available, since it represents the actual data being scanned.
     // This allows bootstrap phase to work with multi-day queryRange as long as the intersectedRange is single day.
+    // When spark.chronon.group_by.use_query_range_for_run_ds is true and queryRange is a single day,
+    // resolve ChrononRunDs from queryRange.start instead of intersectedRange.
+    val useQueryRangeForRunDs = tableUtils.sparkSession.conf
+      .get("spark.chronon.group_by.use_query_range_for_run_ds", "false")
+      .toBoolean
     val selects = Option(source.query.selects)
       .map(_.toScala.map(keyValue => {
         if (keyValue._2.contains(Constants.ChrononRunDs)) {
-          assert(
-            intersectedRange.isDefined && intersectedRange.get.isSingleDay,
-            s"ChrononRunDs is only supported for single day queries. " +
-              s"intersectedRange: ${intersectedRange.map(r => s"${r.start} to ${r.end}").getOrElse("undefined")}, " +
-              s"queryRange: ${queryRange.start} to ${queryRange.end}"
-          )
-          // Python configs already have quotes around the macro, so no need for quotes here
-          val parametricMacro = ParametricMacro(Constants.ChrononRunDs, _ => intersectedRange.get.start)
+          val parametricMacro = if (useQueryRangeForRunDs) {
+            assert(
+              queryRange.isSingleDay,
+              s"ChrononRunDs with use_query_range_for_run_ds is only supported for single day queries. " +
+                s"queryRange: ${queryRange.start} to ${queryRange.end}"
+            )
+            ParametricMacro(Constants.ChrononRunDs, _ => s"'${queryRange.start}'")
+          } else {
+            assert(
+              intersectedRange.isDefined && intersectedRange.get.isSingleDay,
+              s"ChrononRunDs is only supported for single day queries. " +
+                s"intersectedRange: ${intersectedRange.map(r => s"${r.start} to ${r.end}").getOrElse("undefined")}, " +
+                s"queryRange: ${queryRange.start} to ${queryRange.end}"
+            )
+            ParametricMacro(Constants.ChrononRunDs, _ => intersectedRange.get.start)
+          }
           (keyValue._1, parametricMacro.replace(keyValue._2))
         } else {
           keyValue
