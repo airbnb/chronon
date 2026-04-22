@@ -159,6 +159,7 @@ This repository includes Claude Code commands for common tasks:
 **For Feature Authors (Data Scientists):**
 - `user/groupby` - Help writing GroupBy definitions
 - `user/join` - Help writing Join definitions
+- `user/local-test` - Test features locally with the LocalTestingPlatform (BYOD)
 - `user/debug` - Debug compilation and backfill errors
 - `user/staging-query` - Help with StagingQuery definitions
 

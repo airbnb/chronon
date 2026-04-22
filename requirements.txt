@@ -3,4 +3,6 @@ thrift==0.13
 pytest
 twine==6.1.0
 sqlglot==25.17.0
+pyspark==3.5.5
+typing-extensions
 # To update dependency run: bazel run //:pip.update
