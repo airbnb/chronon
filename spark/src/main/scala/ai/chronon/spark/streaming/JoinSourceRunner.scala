@@ -17,7 +17,7 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{DerivationOps, GroupByOps, JoinOps, MetadataOps, SourceOps}
+import ai.chronon.api.Extensions.{DerivationOps, GroupByOps, JoinOps, MetadataOps, QueryOps, SourceOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, ResponseWithContext}
 import ai.chronon.online.KVStore.PutRequest
@@ -646,7 +646,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     )
   }
 
-  private def applyQuery(df: DataFrame, query: api.Query, decoded: DataStream): DataFrame = {
+  private def applyQuery(df: DataFrame, query: api.Query, decoded: DataStream, viewSuffix: String): DataFrame = {
     val queryParts = groupByConf.buildQueryParts(query)
     logger.info(s"""
                    |decoded schema: ${decoded.df.schema.catalogString}
@@ -654,9 +654,29 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
                    |df schema: ${df.schema.prettyJson}
                    |""".stripMargin)
 
-    // apply left.query
-    val selected = queryParts.selects.map(_.toSeq).map(exprs => df.selectExpr(exprs: _*)).getOrElse(df)
-    selected.filter(queryParts.wheres.map("(" + _ + ")").mkString(" AND "))
+    // Use flat SQL (temp-view + session.sql) so that wheres evaluate against the pre-select input
+    // schema — consistent with offline backfill and non-JoinSource streaming. The two-stage
+    // selectExpr→filter approach previously used here allowed wheres to reference aliases from
+    // selects, which is not valid SQL and caused silent training-serving skew.
+    val viewName = s"${groupByConf.metaData.cleanName}_$viewSuffix"
+    df.createOrReplaceTempView(viewName)
+
+    val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
+    val fillIfAbsent = groupByConf.dataModel match {
+      case DataModel.Entities =>
+        Map(Constants.ReversalColumn -> Constants.ReversalColumn,
+            Constants.MutationTimeColumn -> Constants.MutationTimeColumn)
+      case DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
+    }
+
+    val sql = api.QueryUtils.build(
+      selects = Option(query.getQuerySelects).orNull,
+      from = viewName,
+      wheres = queryParts.wheres,
+      fillIfAbsent = fillIfAbsent
+    )
+    logger.info(s"applyQuery SQL for $viewName:\n$sql")
+    session.sql(sql)
   }
 
   private def writeToKVStore(
@@ -730,7 +750,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     val leftStreamingQuery = groupByConf.buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
 
-    val leftSource: Dataset[Row] = applyQuery(decoded.df, left.query, decoded)
+    val leftSource: Dataset[Row] = applyQuery(decoded.df, left.query, decoded, "left")
     // key format joins/<team>/join_name
     val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
     logger.info(s"Upstream join request name: $joinRequestName")
@@ -773,6 +793,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     )
 
     // Map to downstream chained GroupBy's inputs and write to KVStore
-    writeToKVStore(applyQuery(enriched, joinSource.query, decoded))
+    writeToKVStore(applyQuery(enriched, joinSource.query, decoded, "joinsource"))
   }
 }
