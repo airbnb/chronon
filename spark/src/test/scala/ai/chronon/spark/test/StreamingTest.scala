@@ -91,41 +91,68 @@ class StreamingTest extends TestCase {
     spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
     df.save(viewsTable)
 
-    // Verify flat-SQL wheres semantics used by JoinSourceRunner.applyQuery:
-    // wheres resolve against the pre-select (raw) input schema, matching offline backfill.
-    df.createOrReplaceTempView("streaming_test_wheres_view")
-    // (1) wheres on a raw column that selects renames — must resolve against the raw name
+    // Verify flat-SQL wheres semantics used by JoinSourceRunner.applyQuery.
+    // Use a small controlled dataset (not the random df) so row counts are deterministic.
+    // wheres must resolve against the pre-select (raw) input schema, matching offline backfill.
+    import spark.implicits._
+    Seq(
+      (1L, "alpha", "US"),
+      (0L, "beta",  "US"),  // raw_id = 0: the sentinel we want to filter
+      (2L, "gamma", "CA")
+    ).toDF("raw_id", "raw_name", "raw_country")
+      .createOrReplaceTempView("streaming_test_wheres_view")
+
+    // (1) wheres references the raw column name that selects renames → filter works correctly
     val sqlRename = QueryUtils.build(
-      selects = Map("item_alias" -> "item", "time_spent_ms" -> "time_spent_ms"),
+      selects = Map("id" -> "raw_id", "name" -> "raw_name"),
       from = "streaming_test_wheres_view",
-      wheres = Seq("item IS NOT NULL")
+      wheres = Seq("raw_id > 0")
     )
-    assert(spark.sql(sqlRename).count() > 0, "wheres on raw column before rename should return rows")
-    // (2) wheres on a column absent from selects — still resolves via flat SQL
+    val renameResult = spark.sql(sqlRename).collect()
+    assert(renameResult.length == 2, s"Expected 2 rows after filtering raw_id > 0, got ${renameResult.length}")
+    assert(renameResult.map(_.getAs[Long]("id")).toSet == Set(1L, 2L),
+      "Expected id values {1, 2} after filtering sentinel raw_id = 0")
+
+    // (2) wheres references a column absent from selects → flat SQL resolves it from the upstream view
     val sqlAbsent = QueryUtils.build(
-      selects = Map("item_alias" -> "item"),
+      selects = Map("id" -> "raw_id", "name" -> "raw_name"),
       from = "streaming_test_wheres_view",
-      wheres = Seq("user IS NOT NULL")
+      wheres = Seq("raw_country = 'US'")
     )
-    assert(spark.sql(sqlAbsent).count() > 0, "wheres on column absent from selects should return rows")
-    // (3) wheres on a select alias — must fail (WHERE evaluates before SELECT in standard SQL)
+    val absentResult = spark.sql(sqlAbsent).collect()
+    assert(absentResult.length == 2, s"Expected 2 US rows, got ${absentResult.length}")
+    assert(absentResult.map(_.getAs[String]("name")).toSet == Set("alpha", "beta"),
+      "Expected US rows {alpha, beta}")
+
+    // (3) wheres references a select alias → AnalysisException (WHERE evaluates before SELECT)
     val sqlAlias = QueryUtils.build(
-      selects = Map("item_alias" -> "item"),
+      selects = Map("id" -> "raw_id"),
       from = "streaming_test_wheres_view",
-      wheres = Seq("item_alias IS NOT NULL")
+      wheres = Seq("id > 0")  // "id" is a select alias, not a raw column on the view
     )
     try {
       spark.sql(sqlAlias).collect()
-      throw new AssertionError("Expected AnalysisException for alias reference in WHERE")
+      throw new AssertionError("Expected AnalysisException for select alias in WHERE, but query succeeded")
     } catch {
-      case _: org.apache.spark.sql.AnalysisException => // expected
+      case _: org.apache.spark.sql.AnalysisException => // expected: parity with offline backfill
     }
-    // (4) no selects (SELECT *) with wheres
-    val sqlNoSelects = QueryUtils.build(selects = null, from = "streaming_test_wheres_view", wheres = Seq("item IS NOT NULL"))
-    assert(spark.sql(sqlNoSelects).count() > 0, "SELECT * with wheres should return rows")
-    // (5) no wheres — all rows pass through
-    val sqlNoWheres = QueryUtils.build(selects = Map("item_alias" -> "item"), from = "streaming_test_wheres_view", wheres = Seq.empty)
-    assert(spark.sql(sqlNoWheres).count() == df.count(), "empty wheres should pass all rows through")
+
+    // (4) no selects (SELECT *) with a raw-column where → all columns projected, filter applied
+    val sqlNoSelects = QueryUtils.build(
+      selects = null,
+      from = "streaming_test_wheres_view",
+      wheres = Seq("raw_id > 0")
+    )
+    val noSelectsResult = spark.sql(sqlNoSelects).collect()
+    assert(noSelectsResult.length == 2, s"Expected 2 rows with SELECT * + where, got ${noSelectsResult.length}")
+
+    // (5) empty wheres → all rows pass through unchanged
+    val sqlNoWheres = QueryUtils.build(
+      selects = Map("id" -> "raw_id"),
+      from = "streaming_test_wheres_view",
+      wheres = Seq.empty
+    )
+    assert(spark.sql(sqlNoWheres).count() == 3, "Empty wheres should pass all 3 rows through")
 
     val gb = Builders.GroupBy(
       sources = Seq(viewsSource),
