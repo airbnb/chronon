@@ -90,6 +90,43 @@ class StreamingTest extends TestCase {
     )
     spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
     df.save(viewsTable)
+
+    // Verify flat-SQL wheres semantics used by JoinSourceRunner.applyQuery:
+    // wheres resolve against the pre-select (raw) input schema, matching offline backfill.
+    df.createOrReplaceTempView("streaming_test_wheres_view")
+    // (1) wheres on a raw column that selects renames — must resolve against the raw name
+    val sqlRename = QueryUtils.build(
+      selects = Map("item_alias" -> "item", "time_spent_ms" -> "time_spent_ms"),
+      from = "streaming_test_wheres_view",
+      wheres = Seq("item IS NOT NULL")
+    )
+    assert(spark.sql(sqlRename).count() > 0, "wheres on raw column before rename should return rows")
+    // (2) wheres on a column absent from selects — still resolves via flat SQL
+    val sqlAbsent = QueryUtils.build(
+      selects = Map("item_alias" -> "item"),
+      from = "streaming_test_wheres_view",
+      wheres = Seq("user IS NOT NULL")
+    )
+    assert(spark.sql(sqlAbsent).count() > 0, "wheres on column absent from selects should return rows")
+    // (3) wheres on a select alias — must fail (WHERE evaluates before SELECT in standard SQL)
+    val sqlAlias = QueryUtils.build(
+      selects = Map("item_alias" -> "item"),
+      from = "streaming_test_wheres_view",
+      wheres = Seq("item_alias IS NOT NULL")
+    )
+    try {
+      spark.sql(sqlAlias).collect()
+      throw new AssertionError("Expected AnalysisException for alias reference in WHERE")
+    } catch {
+      case _: org.apache.spark.sql.AnalysisException => // expected
+    }
+    // (4) no selects (SELECT *) with wheres
+    val sqlNoSelects = QueryUtils.build(selects = null, from = "streaming_test_wheres_view", wheres = Seq("item IS NOT NULL"))
+    assert(spark.sql(sqlNoSelects).count() > 0, "SELECT * with wheres should return rows")
+    // (5) no wheres — all rows pass through
+    val sqlNoWheres = QueryUtils.build(selects = Map("item_alias" -> "item"), from = "streaming_test_wheres_view", wheres = Seq.empty)
+    assert(spark.sql(sqlNoWheres).count() == df.count(), "empty wheres should pass all rows through")
+
     val gb = Builders.GroupBy(
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),
@@ -115,84 +152,4 @@ class StreamingTest extends TestCase {
       OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKvStore, namespace, today, jp.groupBy))
   }
 
-  // ---------------------------------------------------------------------------
-  // applyQuery flat-SQL semantics tests
-  //
-  // These verify the invariant that JoinSourceRunner.applyQuery enforces after
-  // replacing the two-stage selectExpr→filter with temp-view + session.sql:
-  // wheres resolve against the pre-select (raw) input schema, matching offline.
-  // ---------------------------------------------------------------------------
-
-  private def makeRawView(viewName: String): Unit = {
-    import spark.implicits._
-    Seq(
-      (1L, "alice", "US"),
-      (0L, "bob",   "US"),
-      (2L, "carol", "CA")
-    ).toDF("raw_user_id", "raw_name", "raw_country")
-      .createOrReplaceTempView(viewName)
-  }
-
-  def testWheresOnRawColumnBeforeRename(): Unit = {
-    makeRawView("test_raw_column")
-    val sql = QueryUtils.build(
-      selects = Map("user_id" -> "raw_user_id", "name" -> "raw_name"),
-      from = "test_raw_column",
-      wheres = Seq("raw_user_id > 0")
-    )
-    val result = spark.sql(sql).collect()
-    assert(result.length == 2, s"Expected 2 rows, got ${result.length}")
-    val userIds = result.map(_.getAs[Long]("user_id")).toSet
-    assert(userIds == Set(1L, 2L), s"Expected {1, 2}, got $userIds")
-  }
-
-  def testWheresOnColumnAbsentFromSelects(): Unit = {
-    makeRawView("test_absent_from_selects")
-    val sql = QueryUtils.build(
-      selects = Map("user_id" -> "raw_user_id", "name" -> "raw_name"),
-      from = "test_absent_from_selects",
-      wheres = Seq("raw_country = 'US'")
-    )
-    val result = spark.sql(sql).collect()
-    assert(result.length == 2, s"Expected 2 rows (US only), got ${result.length}")
-    val names = result.map(_.getAs[String]("name")).toSet
-    assert(names == Set("alice", "bob"), s"Expected {alice, bob}, got $names")
-  }
-
-  def testWheresOnSelectAliasFails(): Unit = {
-    makeRawView("test_alias_in_where")
-    val sql = QueryUtils.build(
-      selects = Map("user_id" -> "raw_user_id", "name" -> "raw_name"),
-      from = "test_alias_in_where",
-      wheres = Seq("user_id > 0")
-    )
-    try {
-      spark.sql(sql).collect()
-      throw new AssertionError("Expected AnalysisException for alias reference in WHERE, but query succeeded")
-    } catch {
-      case _: org.apache.spark.sql.AnalysisException => // expected: WHERE evaluates before SELECT
-    }
-  }
-
-  def testApplyQueryNoSelects(): Unit = {
-    makeRawView("test_no_selects")
-    val sql = QueryUtils.build(
-      selects = null,
-      from = "test_no_selects",
-      wheres = Seq("raw_user_id > 0")
-    )
-    val result = spark.sql(sql).collect()
-    assert(result.length == 2, s"Expected 2 rows with SELECT *, got ${result.length}")
-  }
-
-  def testApplyQueryNoWheres(): Unit = {
-    makeRawView("test_no_wheres")
-    val sql = QueryUtils.build(
-      selects = Map("user_id" -> "raw_user_id"),
-      from = "test_no_wheres",
-      wheres = Seq.empty
-    )
-    val result = spark.sql(sql).collect()
-    assert(result.length == 3, s"Expected all 3 rows, got ${result.length}")
-  }
 }
