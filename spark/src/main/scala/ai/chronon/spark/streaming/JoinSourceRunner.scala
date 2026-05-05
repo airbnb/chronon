@@ -314,16 +314,19 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           streamDecoder.decode(arr)
         } catch {
           case ex: Throwable =>
-            logger.info(s"Error while decoding streaming events from stream: ${dataStream.topicInfo.name}")
-            ex.printStackTrace()
+            logger.error(s"Error while decoding streaming events from stream: ${dataStream.topicInfo.name}", ex)
             ingressContext.incrementException(ex)
             null
         }
       }
       .filter { mutation =>
-        lazy val bothNull = mutation.before != null && mutation.after != null
-        lazy val bothSame = mutation.before sameElements mutation.after
-        (mutation != null) && (!bothNull || !bothSame)
+        if (mutation == null) {
+          false
+        } else {
+          lazy val bothNull = mutation.before != null && mutation.after != null
+          lazy val bothSame = mutation.before sameElements mutation.after
+          !bothNull || !bothSame
+        }
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
     val streamSchemaEncoder = EncoderUtil(streamSchema)
