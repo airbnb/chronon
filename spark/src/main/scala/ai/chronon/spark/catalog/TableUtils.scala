@@ -899,6 +899,15 @@ case class TableUtils(sparkSession: SparkSession) {
     }
     val fillablePartitions =
       if (skipFirstHole) {
+        val skipped = validPartitionRange.partitions.toSet.filter(_ < cutoffPartition)
+        if (skipped.nonEmpty) {
+          logger.warn(s"""
+                     |Skipping ${skipped.size} partition(s) earlier than the earliest existing output partition ($cutoffPartition).
+                     |Chronon assumes these were dropped by the retention policy.
+                     |Skipped partitions: ${skipped.toSeq.sorted.prettyInline}
+                     |To backfill these partitions, re-run with the --run-first-hole flag.
+                     |""".stripMargin)
+        }
         validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
       } else {
         validPartitionRange.partitions.toSet
