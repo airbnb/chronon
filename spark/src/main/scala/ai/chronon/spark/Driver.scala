@@ -144,7 +144,7 @@ object Driver {
     val runFirstHole: ScallopOption[Boolean] =
       opt[Boolean](required = false,
                    default = Some(false),
-                   descr = "Skip the first unfilled partition range if some future partitions have been populated.")
+                   descr = "By default, Chronon skips partitions earlier than your earliest existing output partition, assuming the gap is due to retention policy. Use this flag to override that behavior and backfill those earlier partitions.")
 
     val useDeltaCatalog: ScallopOption[Boolean] =
       opt[Boolean](required = false, default = Some(false), descr = "Enable the use of the delta lake catalog")
