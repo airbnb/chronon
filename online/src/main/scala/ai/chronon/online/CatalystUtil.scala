@@ -31,6 +31,7 @@ import org.apache.spark.sql.execution.{
   RDDScanExec,
   WholeStageCodegenExec
 }
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.{SparkSession, types}
 
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
@@ -49,6 +50,20 @@ object CatalystUtil {
   }
 
   lazy val session: SparkSession = {
+    // On executor JVMs, creating a new SparkSession via builder().master("local[*]").getOrCreate()
+    // starts a second SparkContext which registers a new BlockManager as "driver", overwriting
+    // the cluster's BlockManager routing table and causing broadcast fetch failures on all
+    // executors.
+    //
+    // SparkEnv.get is an AtomicReference set on both driver and executor JVMs during
+    // initialization — unlike getActiveSession()'s InheritableThreadLocal it is accessible
+    // from any thread including Spark task threads. SparkContext is NOT present on executors
+    // (only the driver creates one), so we cannot use SparkContext.getOrCreate().
+    //
+    // On executor JVMs we create a local[*] session but immediately restore the original
+    // SparkEnv so the new SparkContext's registration does not permanently overwrite it.
+    // The local session is used only for Catalyst planning/codegen and never submits tasks.
+    val savedEnv = SparkEnv.get
     val spark = SparkSession
       .builder()
       .appName(s"catalyst_test_${Thread.currentThread().toString}")
@@ -56,10 +71,15 @@ object CatalystUtil {
       // This serving path only uses Spark for Catalyst planning/codegen, not for long-lived RDD or shuffle cleanup.
       // Disabling reference tracking avoids the ContextCleaner thread's periodic System.gc() calls in the JVM.
       .config("spark.cleaner.referenceTracking", "false")
-      .config("spark.sql.session.timeZone", "UTC")
-      .config("spark.sql.adaptive.enabled", "false")
-      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
       .getOrCreate()
+    if (savedEnv != null && (SparkEnv.get ne savedEnv)) {
+      // A new local SparkContext replaced the executor's SparkEnv. Restore it immediately
+      // to prevent broadcast block routing corruption in the cluster.
+      SparkEnv.set(savedEnv)
+    }
+    spark.conf.set("spark.sql.adaptive.enabled", "false")
+    spark.conf.set("spark.sql.session.timeZone", "UTC")
+    spark.conf.set("spark.sql.legacy.timeParserPolicy", "LEGACY")
     assert(spark.sessionState.conf.wholeStageEnabled)
     spark
   }
