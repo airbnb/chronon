@@ -50,19 +50,10 @@ object CatalystUtil {
   }
 
   lazy val session: SparkSession = {
-    // On executor JVMs, creating a new SparkSession via builder().master("local[*]").getOrCreate()
-    // starts a second SparkContext which registers a new BlockManager as "driver", overwriting
-    // the cluster's BlockManager routing table and causing broadcast fetch failures on all
-    // executors.
-    //
-    // SparkEnv.get is an AtomicReference set on both driver and executor JVMs during
-    // initialization — unlike getActiveSession()'s InheritableThreadLocal it is accessible
-    // from any thread including Spark task threads. SparkContext is NOT present on executors
-    // (only the driver creates one), so we cannot use SparkContext.getOrCreate().
-    //
-    // On executor JVMs we create a local[*] session but immediately restore the original
-    // SparkEnv so the new SparkContext's registration does not permanently overwrite it.
-    // The local session is used only for Catalyst planning/codegen and never submits tasks.
+    // On executor JVMs, master("local[*]") starts a second SparkContext which overwrites the
+    // cluster's BlockManager routing table, causing broadcast fetch failures on all executors.
+    // Save and restore SparkEnv to undo that side effect while still using the local session
+    // for Catalyst planning/codegen. On driver/test JVMs savedEnv is null or unchanged — no-op.
     val savedEnv = SparkEnv.get
     val spark = SparkSession
       .builder()
@@ -73,8 +64,6 @@ object CatalystUtil {
       .config("spark.cleaner.referenceTracking", "false")
       .getOrCreate()
     if (savedEnv != null && (SparkEnv.get ne savedEnv)) {
-      // A new local SparkContext replaced the executor's SparkEnv. Restore it immediately
-      // to prevent broadcast block routing corruption in the cluster.
       SparkEnv.set(savedEnv)
     }
     spark.conf.set("spark.sql.adaptive.enabled", "false")
