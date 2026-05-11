@@ -31,6 +31,7 @@ import org.apache.spark.sql.execution.{
   RDDScanExec,
   WholeStageCodegenExec
 }
+import org.apache.spark.SparkEnv
 import org.apache.spark.sql.{SparkSession, types}
 
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
@@ -49,6 +50,11 @@ object CatalystUtil {
   }
 
   lazy val session: SparkSession = {
+    // On executor JVMs, master("local[*]") starts a second SparkContext which overwrites the
+    // cluster's BlockManager routing table, causing broadcast fetch failures on all executors.
+    // Save and restore SparkEnv to undo that side effect while still using the local session
+    // for Catalyst planning/codegen. On driver/test JVMs savedEnv is null or unchanged — no-op.
+    val savedEnv = SparkEnv.get
     val spark = SparkSession
       .builder()
       .appName(s"catalyst_test_${Thread.currentThread().toString}")
@@ -56,10 +62,13 @@ object CatalystUtil {
       // This serving path only uses Spark for Catalyst planning/codegen, not for long-lived RDD or shuffle cleanup.
       // Disabling reference tracking avoids the ContextCleaner thread's periodic System.gc() calls in the JVM.
       .config("spark.cleaner.referenceTracking", "false")
-      .config("spark.sql.session.timeZone", "UTC")
-      .config("spark.sql.adaptive.enabled", "false")
-      .config("spark.sql.legacy.timeParserPolicy", "LEGACY")
       .getOrCreate()
+    if (savedEnv != null && (SparkEnv.get ne savedEnv)) {
+      SparkEnv.set(savedEnv)
+    }
+    spark.conf.set("spark.sql.adaptive.enabled", "false")
+    spark.conf.set("spark.sql.session.timeZone", "UTC")
+    spark.conf.set("spark.sql.legacy.timeParserPolicy", "LEGACY")
     assert(spark.sessionState.conf.wholeStageEnabled)
     spark
   }
