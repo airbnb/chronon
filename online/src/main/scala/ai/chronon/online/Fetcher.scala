@@ -45,6 +45,7 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
+import scala.util.control.ControlThrowable
 import scala.util.{Failure, Random, Success, Try}
 
 object Fetcher {
@@ -453,6 +454,24 @@ class Fetcher(val kvStore: KVStore,
   }
 
   private def logResponse(resp: ResponseWithContext): ResponseWithContext = {
+    // Wrapping logging with try catch to separate logging failure from the user-facing fetch response.
+    try {
+      logResponseInternal(resp)
+    } catch {
+      case e: VirtualMachineError  => throw e
+      case e: ThreadDeath          => throw e
+      case e: InterruptedException => throw e
+      case e: LinkageError         => throw e
+      case e: ControlThrowable     => throw e
+      case e: Throwable =>
+        val loggingContext = resp.request.context.getOrElse(resp.ctx).withSuffix("logging_request")
+        loggingContext.incrementException(e)(logger)
+        logger.error(s"Logging failed for ${resp.request.name} due to: ${e.traceString}")
+        resp
+    }
+  }
+
+  private def logResponseInternal(resp: ResponseWithContext): ResponseWithContext = {
     val loggingStartTs = System.currentTimeMillis()
     val loggingContext = resp.request.context.getOrElse(resp.ctx).withSuffix("logging_request")
     val loggingTs = resp.request.atMillis.getOrElse(resp.requestStartTs)
