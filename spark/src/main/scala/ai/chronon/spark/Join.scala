@@ -546,7 +546,9 @@ class Join(joinConf: api.Join,
         val enrichedDf = padExternalFields(joinedDf, bootstrapInfo)
 
         // set autoExpand = true since log table could be a bootstrap part
-        enrichedDf.save(bootstrapTable, tableProps, autoExpand = true)
+        enrichedDf.save(bootstrapTable,
+                        tableProps + (Constants.ChrononTableType -> Constants.TableType.Bootstrap),
+                        autoExpand = true)
       })
 
     val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)

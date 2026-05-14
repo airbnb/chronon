@@ -103,8 +103,12 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         rightTable = outputLabelTable,
         joinKeys = labelJoinConf.rowIdentifier(joinConf.rowIds, tableUtils.partitionColumn),
         tableUtils = tableUtils,
-        viewProperties = Map(Constants.LabelViewPropertyKeyLabelTable -> outputLabelTable,
-                             Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable)
+        viewProperties = Map(
+          Constants.LabelViewPropertyKeyLabelTable -> outputLabelTable,
+          Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable,
+          Constants.ChrononGenerated -> "true",
+          Constants.ChrononTableType -> Constants.TableType.LabelView
+        )
       )
       logger.info(s"Final labeled view created: ${joinConf.metaData.outputFinalView}")
       JoinUtils.createLatestLabelView(joinConf.metaData.outputLatestLabelView,
@@ -133,7 +137,10 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           computeRange(leftDfInRange, range, sanitizedLabelDs)
             .save(outputLabelTable,
-                  confTableProps,
+                  confTableProps ++ Map(
+                    Constants.ChrononGenerated -> "true",
+                    Constants.ChrononTableType -> Constants.TableType.Label
+                  ),
                   Seq(Constants.LabelPartitionColumn, tableUtils.partitionColumn),
                   true)
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)

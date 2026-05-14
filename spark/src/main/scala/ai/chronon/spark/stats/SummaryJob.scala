@@ -81,10 +81,18 @@ class SummaryJob(session: SparkSession, joinConf: Join, endDate: String) extends
           // Build upload table for stats store.
           summaryKvRdd.toAvroDf
             .withTimeBasedColumn(tableUtils.partitionColumn)
-            .save(uploadTable, tableProps)
+            .save(uploadTable,
+                  Option(tableProps).getOrElse(Map.empty) ++ Map(
+                    Constants.ChrononGenerated -> "true",
+                    Constants.ChrononTableType -> Constants.TableType.DailyStatsUpload
+                  ))
           stats
             .addDerivedMetrics(summaryKvRdd.toFlatDf, aggregator)
-            .save(outputTable, tableProps)
+            .save(outputTable,
+                  Option(tableProps).getOrElse(Map.empty) ++ Map(
+                    Constants.ChrononGenerated -> "true",
+                    Constants.ChrononTableType -> Constants.TableType.DailyStats
+                  ))
           logger.info(s"Finished range [${index + 1}/${stepRanges.size}].")
       }
     }

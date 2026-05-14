@@ -35,7 +35,10 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     s"${stagingQueryConf.metaData.outputNamespace}.${StagingQuery.SIGNAL_PARTITIONS_TABLE_NAME}"
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
     .map(_.toScala.toMap)
-    .orNull
+    .getOrElse(Map.empty) ++ Map(
+    Constants.ChrononGenerated -> "true",
+    Constants.ChrononTableType -> Constants.TableType.StagingQuery
+  )
 
   private val partitionCols: Seq[String] = Seq(tableUtils.partitionColumn) ++
     Option(stagingQueryConf.metaData.customJsonLookUp(key = "additional_partition_cols"))
@@ -138,6 +141,10 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
 
     val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS $processedQuery"
     tableUtils.sql(createViewSql)
+    tableUtils.alterTableProperties(
+      outputTable,
+      tableProps + (Constants.ChrononTableType -> Constants.TableType.StagingQueryView)
+    )
     logger.info(s"Created staging query view: $outputTable")
 
     writeSignalPartitionMetadata(outputTable)

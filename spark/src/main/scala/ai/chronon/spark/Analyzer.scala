@@ -776,7 +776,10 @@ class Analyzer(tableUtils: TableUtils,
                  analyzeGroupByResult.valueSchema,
                  groupByConf.metaData.schemaTable,
                  partition,
-                 groupByConf.metaData.tableProps)
+                 Option(groupByConf.metaData.tableProps).getOrElse(Map.empty) ++ Map(
+                   Constants.ChrononGenerated -> "true",
+                   Constants.ChrononTableType -> Constants.TableType.Schema
+                 ))
   }
 
   private def exportJoinSchema(analyzeJoinResult: AnalyzeJoinResult, joinConf: api.Join, partition: String): Unit = {
@@ -784,7 +787,10 @@ class Analyzer(tableUtils: TableUtils,
                  analyzeJoinResult.finalOutputSchema,
                  joinConf.metaData.schemaTable,
                  partition,
-                 joinConf.metaData.tableProps)
+                 Option(joinConf.metaData.tableProps).getOrElse(Map.empty) ++ Map(
+                   Constants.ChrononGenerated -> "true",
+                   Constants.ChrononTableType -> Constants.TableType.Schema
+                 ))
   }
 
   private def exportSchema(keySchema: Seq[(String, DataType)],

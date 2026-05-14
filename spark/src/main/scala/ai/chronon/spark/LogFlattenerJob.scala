@@ -232,8 +232,11 @@ class LogFlattenerJob(session: SparkSession,
       logger.info(flattenedDf.schema.pretty)
       tableUtils.insertPartitions(flattenedDf,
                                   joinConf.metaData.loggedTable,
-                                  tableProperties =
-                                    joinTblProps ++ schemaTblProps ++ Map(Constants.ChrononLogTable -> true.toString),
+                                  tableProperties = joinTblProps ++ schemaTblProps ++ Map(
+                                    Constants.ChrononLogTable -> true.toString,
+                                    Constants.ChrononGenerated -> "true",
+                                    Constants.ChrononTableType -> Constants.TableType.Logged
+                                  ),
                                   autoExpand = true)
 
       val inputRowCount = rawDf.count()

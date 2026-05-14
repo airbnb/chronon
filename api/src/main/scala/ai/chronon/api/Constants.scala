@@ -67,4 +67,29 @@ object Constants {
   val chrononArchiveFlag: String = "chronon_archived"
   val ChainingRequestTs: String = "chaining_request_ts"
   val ChainingFetchTs: String = "chaining_fetch_ts"
+
+  // Table tagging: every Chronon-generated table/view carries these two properties.
+  val ChrononGenerated: String = "chronon_generated"
+  val ChrononTableType: String = "chronon_table_type"
+
+  // Values for ChrononTableType
+  object TableType {
+    val GroupBy: String = "group_by"
+    val Join: String = "join"
+    val JoinPart: String = "join_part"
+    val Bootstrap: String = "bootstrap"
+    val Upload: String = "upload"
+    val Logged: String = "logged"
+    val Consistency: String = "consistency"
+    val ConsistencyUpload: String = "consistency_upload"
+    val DailyStats: String = "daily_stats"
+    val DailyStatsUpload: String = "daily_stats_upload"
+    val Schema: String = "schema"
+    val Label: String = "label"
+    val LabelView: String = "label_view"
+    val StagingQuery: String = "staging_query"
+    val StagingQueryView: String = "staging_query_view"
+    val Comparison: String = "comparison"
+    val ComparisonStats: String = "comparison_stats"
+  }
 }
