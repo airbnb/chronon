@@ -136,13 +136,15 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         logger.info(s"Computing label join for range: $range  Label DS: ${labelDS.getOrElse(today)} $progress")
         JoinUtils.leftDf(joinConf, range, tableUtils).map { leftDfInRange =>
           computeRange(leftDfInRange, range, sanitizedLabelDs)
-            .save(outputLabelTable,
-                  confTableProps ++ Map(
-                    Constants.ChrononGenerated -> "true",
-                    Constants.ChrononTableType -> Constants.TableType.Label
-                  ),
-                  Seq(Constants.LabelPartitionColumn, tableUtils.partitionColumn),
-                  true)
+            .save(
+              outputLabelTable,
+              confTableProps ++ Map(
+                Constants.ChrononGenerated -> "true",
+                Constants.ChrononTableType -> Constants.TableType.Label
+              ),
+              Seq(Constants.LabelPartitionColumn, tableUtils.partitionColumn),
+              true
+            )
           val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
           metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
           metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)

@@ -772,25 +772,29 @@ class Analyzer(tableUtils: TableUtils,
   private def exportGroupBySchema(analyzeGroupByResult: AnalyzeGroupByResult,
                                   groupByConf: api.GroupBy,
                                   partition: String): Unit = {
-    exportSchema(analyzeGroupByResult.keySchema,
-                 analyzeGroupByResult.valueSchema,
-                 groupByConf.metaData.schemaTable,
-                 partition,
-                 Option(groupByConf.metaData.tableProps).getOrElse(Map.empty) ++ Map(
-                   Constants.ChrononGenerated -> "true",
-                   Constants.ChrononTableType -> Constants.TableType.Schema
-                 ))
+    exportSchema(
+      analyzeGroupByResult.keySchema,
+      analyzeGroupByResult.valueSchema,
+      groupByConf.metaData.schemaTable,
+      partition,
+      Option(groupByConf.metaData.tableProps).getOrElse(Map.empty) ++ Map(
+        Constants.ChrononGenerated -> "true",
+        Constants.ChrononTableType -> Constants.TableType.Schema
+      )
+    )
   }
 
   private def exportJoinSchema(analyzeJoinResult: AnalyzeJoinResult, joinConf: api.Join, partition: String): Unit = {
-    exportSchema(analyzeJoinResult.keySchema,
-                 analyzeJoinResult.finalOutputSchema,
-                 joinConf.metaData.schemaTable,
-                 partition,
-                 Option(joinConf.metaData.tableProps).getOrElse(Map.empty) ++ Map(
-                   Constants.ChrononGenerated -> "true",
-                   Constants.ChrononTableType -> Constants.TableType.Schema
-                 ))
+    exportSchema(
+      analyzeJoinResult.keySchema,
+      analyzeJoinResult.finalOutputSchema,
+      joinConf.metaData.schemaTable,
+      partition,
+      Option(joinConf.metaData.tableProps).getOrElse(Map.empty) ++ Map(
+        Constants.ChrononGenerated -> "true",
+        Constants.ChrononTableType -> Constants.TableType.Schema
+      )
+    )
   }
 
   private def exportSchema(keySchema: Seq[(String, DataType)],

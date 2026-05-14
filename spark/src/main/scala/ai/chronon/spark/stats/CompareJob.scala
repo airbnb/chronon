@@ -75,25 +75,29 @@ class CompareJob(
     logger.info("Saving comparison output..")
     logger.info(
       s"Comparison schema ${compareDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
-    tableUtils.insertUnPartitioned(compareDf,
-                                   comparisonTableName,
-                                   Option(tableProps).getOrElse(Map.empty) ++ Map(
-                                     Constants.ChrononGenerated -> "true",
-                                     Constants.ChrononTableType -> Constants.TableType.Comparison
-                                   ),
-                                   saveMode = SaveMode.Overwrite)
+    tableUtils.insertUnPartitioned(
+      compareDf,
+      comparisonTableName,
+      Option(tableProps).getOrElse(Map.empty) ++ Map(
+        Constants.ChrononGenerated -> "true",
+        Constants.ChrononTableType -> Constants.TableType.Comparison
+      ),
+      saveMode = SaveMode.Overwrite
+    )
 
     // Save the metrics table
     logger.info("Saving metrics output..")
     val metricsDf = metricsTimedKvRdd.toFlatDf
     logger.info(s"Metrics schema ${metricsDf.schema.fields.map(sb => (sb.name, sb.dataType)).toMap.mkString("\n - ")}")
-    tableUtils.insertUnPartitioned(metricsDf,
-                                   metricsTableName,
-                                   Option(tableProps).getOrElse(Map.empty) ++ Map(
-                                     Constants.ChrononGenerated -> "true",
-                                     Constants.ChrononTableType -> Constants.TableType.ComparisonStats
-                                   ),
-                                   saveMode = SaveMode.Overwrite)
+    tableUtils.insertUnPartitioned(
+      metricsDf,
+      metricsTableName,
+      Option(tableProps).getOrElse(Map.empty) ++ Map(
+        Constants.ChrononGenerated -> "true",
+        Constants.ChrononTableType -> Constants.TableType.ComparisonStats
+      ),
+      saveMode = SaveMode.Overwrite
+    )
 
     logger.info("Printing basic comparison results..")
     logger.info("(Note: This is just an estimation and not a detailed analysis of results)")
