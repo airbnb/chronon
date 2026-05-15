@@ -86,9 +86,7 @@ object Constants {
     val DailyStatsUpload: String = "daily_stats_upload"
     val Schema: String = "schema"
     val Label: String = "label"
-    val LabelView: String = "label_view"
     val StagingQuery: String = "staging_query"
-    val StagingQueryView: String = "staging_query_view"
     val Comparison: String = "comparison"
     val ComparisonStats: String = "comparison_stats"
   }

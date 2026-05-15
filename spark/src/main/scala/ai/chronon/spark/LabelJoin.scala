@@ -105,9 +105,7 @@ class LabelJoin(joinConf: api.Join, tableUtils: TableUtils, labelDS: String) {
         tableUtils = tableUtils,
         viewProperties = Map(
           Constants.LabelViewPropertyKeyLabelTable -> outputLabelTable,
-          Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable,
-          Constants.ChrononGenerated -> "true",
-          Constants.ChrononTableType -> Constants.TableType.LabelView
+          Constants.LabelViewPropertyFeatureTable -> joinConf.metaData.outputTable
         )
       )
       logger.info(s"Final labeled view created: ${joinConf.metaData.outputFinalView}")

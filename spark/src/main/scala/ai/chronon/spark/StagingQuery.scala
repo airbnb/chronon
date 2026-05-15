@@ -140,12 +140,7 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     // Process macros but not start_date/end_date since they're not in query
     val processedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, null, null, endPartition)
 
-    val viewProps = tableProps + (Constants.ChrononTableType -> Constants.TableType.StagingQueryView)
-    val propertiesFragment = viewProps
-      .map { case (k, v) => s"'$k' = '$v'" }
-      .mkString(", ")
-    val createViewSql =
-      s"CREATE OR REPLACE VIEW $outputTable TBLPROPERTIES ($propertiesFragment) AS $processedQuery"
+    val createViewSql = s"CREATE OR REPLACE VIEW $outputTable AS $processedQuery"
     tableUtils.sql(createViewSql)
     logger.info(s"Created staging query view: $outputTable")
 
