@@ -17,6 +17,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
+import ai.chronon.api.Constants
 import ai.chronon.api.Extensions._
 import ai.chronon.api.ParametricMacro
 import ai.chronon.spark.Extensions._
