@@ -710,8 +710,11 @@ object GroupBy {
     val overrideStart = effectiveOverrideStartPartition.getOrElse(groupByConf.backfillStartDate)
     val outputTable = groupByConf.metaData.outputTable
     val tableProps = Option(groupByConf.metaData.tableProperties)
-      .map(_.toScala)
-      .orNull
+      .map(_.toScala.toMap)
+      .getOrElse(Map.empty) ++ Map(
+      Constants.ChrononGenerated -> "true",
+      Constants.ChrononTableType -> Constants.TableType.GroupBy
+    )
     val inputTables = groupByConf.getSources.toScala.map(_.table)
     val inputPartitionColumns = groupByConf.getSources.toScala
       .map(s => s.table -> Option(s.query.partitionColumn))
