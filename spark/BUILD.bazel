@@ -107,6 +107,12 @@ jvm_binary(
     runtime_deps = [":spark"],
 )
 
+filegroup(
+    name = "spark-assembly-jar",
+    srcs = [":spark-assembly_deploy.jar"],
+    visibility = ["//visibility:public"],
+)
+
 genrule(
     name = "generate_pom",
     srcs = ["//:pom.xml.tpl"],
