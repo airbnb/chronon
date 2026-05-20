@@ -481,10 +481,10 @@ class Fetcher(val kvStore: KVStore,
       .map(_._1)
       .map(codec => {
         val metaData = codec.conf.join.metaData
-        val samplePercent = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0
+        val samplePercent: Double = if (metaData.isSetSamplePercent) metaData.getSamplePercent else 0.0
 
         // Exit early if sample percent is 0
-        if (samplePercent == 0) {
+        if (samplePercent == 0.0) {
           return resp
         }
 
