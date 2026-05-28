@@ -282,12 +282,13 @@ class Join(joinConf: api.Join,
     // info to filter records that need backfills vs can be waived from backfills
     val bootstrapCoveringSets = findBootstrapSetCoverings(bootstrapDf, bootstrapInfo, leftRange)
 
-    val leftTimeRangeOpt = if (leftTaggedDf.schema.fieldNames.contains(Constants.TimePartitionColumn)) {
-      val leftTimePartitionMinMax = leftTaggedDf.range[String](Constants.TimePartitionColumn)
-      Some(PartitionRange(leftTimePartitionMinMax._1, leftTimePartitionMinMax._2)(tableUtils))
-    } else {
-      None
-    }
+    val leftTimeRangeOpt =
+      if (tableUtils.checkLeftTimeRange && leftTaggedDf.schema.fieldNames.contains(Constants.TimePartitionColumn)) {
+        val leftTimePartitionMinMax = leftTaggedDf.range[String](Constants.TimePartitionColumn)
+        Some(PartitionRange(leftTimePartitionMinMax._1, leftTimePartitionMinMax._2)(tableUtils))
+      } else {
+        None
+      }
 
     implicit val executionContext: ExecutionContextExecutorService =
       ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(tableUtils.joinPartParallelism))
