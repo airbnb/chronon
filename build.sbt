@@ -91,26 +91,26 @@ lazy val releaseSettings = Seq(
 
 enablePlugins(GitVersioning, GitBranchPrompt)
 
-// Force Hadoop 3.4.3 over Spark's older transitive 3.2.0. Hadoop versions before 3.4.3
-// fail at startup on Java 25 because Subject.getSubject(AccessControlContext) was
-// removed by JEP 486; 3.4.3 uses Subject.current() instead.
-//
-// Hadoop 3.4.3 changes two transitives that Spark 3.1.1 relies on, so we counter-pin
-// them back to versions Spark 3.1.1 expects:
-//   - commons-collections 3.x (added explicitly on the online module): Hadoop 3.4
-//     dropped its commons-collections transitive in favor of commons-collections4,
-//     but Spark Catalyst's CodeGenerator uses 3.x ReferenceMap.
-//   - jackson-databind / jackson-core pinned to 2.10.0: Hadoop 3.4.3 ships Jackson
-//     2.14, but Spark 3.1.1 bundles jackson-module-scala 2.10.0 with a strict
-//     `[2.10, 2.11)` databind constraint that throws JsonMappingException at
-//     SparkContext init when the bound is violated.
-ThisBuild / dependencyOverrides ++= Seq(
+// The Hadoop 3.4.3 + Jackson 2.10 overrides for Java 25 live on the `online` module
+// only (see `onlineJava25Overrides` below). Applying them at ThisBuild scope leaks
+// into spark_embedded / spark_uber / service, where the Spark 3.5 row's
+// `jackson-module-scala 2.12.3` requires databind in `[2.12, 2.13)` and would throw
+// a JsonMappingException at SparkContext init. Scoping to `online` keeps batch
+// modules unaffected.
+val onlineJava25Overrides: Seq[ModuleID] = Seq(
+  // Hadoop 3.4.3 replaces Subject.getSubject(AccessControlContext) (removed by
+  // JEP 486 in Java 25) with Subject.current(), so the Fetcher's UGI init no
+  // longer throws UnsupportedOperationException at startup.
   "org.apache.hadoop" % "hadoop-common" % hadoopVersion,
   "org.apache.hadoop" % "hadoop-client" % hadoopVersion,
   "org.apache.hadoop" % "hadoop-mapreduce-client-core" % hadoopVersion,
   "org.apache.hadoop" % "hadoop-hdfs-client" % hadoopVersion,
   "org.apache.hadoop" % "hadoop-auth" % hadoopVersion,
   "org.apache.hadoop" % "hadoop-annotations" % hadoopVersion,
+  // Hadoop 3.4.3 transitively pulls Jackson 2.14, but Spark 3.1.1 bundles
+  // jackson-module-scala 2.10.0 with a strict `[2.10, 2.11)` databind constraint
+  // that throws JsonMappingException at SparkContext init. Pin databind back to
+  // 2.10.0 to satisfy that bound.
   "com.fasterxml.jackson.core" % "jackson-databind" % "2.10.0",
   "com.fasterxml.jackson.core" % "jackson-core" % "2.10.0",
   "com.fasterxml.jackson.core" % "jackson-annotations" % "2.10.0"
@@ -412,6 +412,9 @@ lazy val online = project
       "commons-collections" % "commons-collections" % "3.2.2"
     ),
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer"),
+    // See `onlineJava25Overrides` declaration above. Scoped to this module so the
+    // Jackson 2.10 pin doesn't leak into spark_embedded / spark_uber / service.
+    dependencyOverrides ++= onlineJava25Overrides,
     version := git.versionProperty.value
   )
 
