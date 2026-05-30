@@ -883,6 +883,57 @@ class FetcherTest extends TestCase {
     exceptionKeys.foreach(k => assertTrue(responseMap.contains(k)))
   }
 
+  def testTemporalGroupByStreamingFailurePropagates(): Unit = {
+    val namespace = "test_temporal_group_by_streaming_failure"
+    val spark: SparkSession = createSparkSession()
+    val joinConf = generateMutationData(namespace, Some(spark))
+    val groupByConf = joinConf.joinParts.toScala.head.groupBy
+    val endDs = "2021-04-10"
+    val tableUtils = TableUtils(spark)
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#testTemporalGroupByStreamingFailure")
+    val inMemoryKvStore = kvStoreFunc()
+    OnlineUtils.serve(tableUtils, inMemoryKvStore, kvStoreFunc, namespace, endDs, groupByConf, dropDsOnWrite = true)
+
+    val spyKvStore = spy(inMemoryKvStore)
+
+    @transient var spyRef = spyKvStore
+    val kvStoreWrapper = new KVStore with Serializable {
+      override def multiGet(requests: collection.Seq[KVStore.GetRequest]): Future[collection.Seq[KVStore.GetResponse]] =
+        spyRef.multiGet(requests)
+      override def multiPut(putRequests: collection.Seq[KVStore.PutRequest]): Future[collection.Seq[Boolean]] =
+        spyRef.multiPut(putRequests)
+      override def bulkPut(sourceOfflineTable: String, destinationOnlineDataSet: String, partition: String): Unit =
+        spyRef.bulkPut(sourceOfflineTable, destinationOnlineDataSet, partition)
+      override def create(dataset: String): Unit =
+        spyRef.create(dataset)
+    }
+
+    val mockApi = new MockApi(() => kvStoreWrapper, namespace)
+    @transient lazy val fetcher = mockApi.buildFetcher()
+
+    assertTrue(fetcher.getGroupByServingInfo(groupByConf.metaData.name).isSuccess)
+
+    when(spyKvStore.multiGet(any()))
+      .thenAnswer((invocation: org.mockito.invocation.InvocationOnMock) => {
+        val requests = invocation.getArgument[Seq[KVStore.GetRequest]](0)
+        Future.successful(
+          requests.map { req =>
+            if (req.afterTsMillis.isDefined) {
+              KVStore.GetResponse(req, Failure(new RuntimeException("kvstore error")))
+            } else {
+              Await.result(inMemoryKvStore.multiGet(Seq(req)), Duration(10, SECONDS)).head
+            }
+          }
+        )
+      })
+
+    val request = Seq(Request(groupByConf.metaData.name, Map("listing_id" -> 1L.asInstanceOf[AnyRef])))
+    val response = Await.result(fetcher.fetchGroupBys(request), Duration(10, SECONDS)).head
+
+    assertTrue(response.values.isFailure)
+    assertEquals("kvstore error", response.values.failed.get.getMessage)
+  }
+
   def testGroupByServingInfoTtlCacheRefresh(): Unit = {
     val namespace = "test_group_by_serving_info_ttl_cache_refresh"
     val spark: SparkSession = createSparkSession()
