@@ -783,7 +783,8 @@ object GroupBy {
       groupByConf: api.GroupBy,
       range: PartitionRange,
       tableUtils: TableUtils,
-      incrementalOutputTable: String
+      incrementalOutputTable: String,
+      stepDays: Option[Int] = None
   ): (PartitionRange, Seq[api.AggregationPart]) = {
 
     val tableProps: Map[String, String] = Option(groupByConf.metaData.tableProperties)
@@ -810,12 +811,20 @@ object GroupBy {
 
     val aggregationParts = groupByConf.getAggregations.toScala.flatMap(_.unWindowed)
 
+    // Daily IRs are independent per ds, so each hole can be filled in stepped
+    // sub-ranges. Each sub-range commits separately - making the (potentially
+    // large) cold/full-recompute build restartable via unfilledRanges and
+    // bounding the per-write shuffle/memory footprint. stepDays = None keeps the
+    // original single-write behavior.
     partitionRangeHoles.foreach { holes =>
       holes.foreach { hole =>
-        logger.info(s"Filling hole in incremental table: $hole")
-        val incrementalGroupByBackfill =
-          from(groupByConf, hole, tableUtils, computeDependency = true, incrementalMode = true)
-        incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, hole, tableProps)
+        val subRanges = stepDays.map(hole.steps).getOrElse(Seq(hole))
+        subRanges.foreach { subRange =>
+          logger.info(s"Filling hole in incremental table: $subRange")
+          val incrementalGroupByBackfill =
+            from(groupByConf, subRange, tableUtils, computeDependency = true, incrementalMode = true)
+          incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, subRange, tableProps)
+        }
       }
     }
 
@@ -885,7 +894,15 @@ object GroupBy {
           (keyBuilder(row), hopIr)
         }
       }
-      .groupByKey()
+      // Use aggregateByKey (map-side combine) instead of groupByKey to stay
+      // resilient to key skew: a hot key's daily hops are accumulated/merged
+      // incrementally rather than all shuffled to one task and materialized as a
+      // single Iterable. There is one IR row per (key, ds), so each buffer holds
+      // at most one hop per active day for the key.
+      .aggregateByKey(mutable.ArrayBuffer.empty[HopIr])(
+        seqOp = (buf, hop) => buf += hop,
+        combOp = (a, b) => a ++= b
+      )
       .mapValues { hopIrs =>
         //Convert to HopsAggregator.OutputArrayType: Array[Array[HopIr]]
         val sortedHops = hopIrs.toArray.sortBy(_.last.asInstanceOf[Long])
@@ -896,7 +913,8 @@ object GroupBy {
   def fromIncrementalDf(
       groupByConf: api.GroupBy,
       range: PartitionRange,
-      tableUtils: TableUtils
+      tableUtils: TableUtils,
+      stepDays: Option[Int] = None
   ): GroupBy = {
 
     val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
@@ -904,7 +922,7 @@ object GroupBy {
            s"incrementalOutputTable is not set for GroupBy: ${groupByConf.metaData.name}")
 
     val (incrementalQueryableRange, aggregationParts) =
-      computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable)
+      computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable, stepDays)
 
     val (_, incrementalDf: DataFrame) = incrementalQueryableRange.scanQueryStringAndDf(null, incrementalOutputTable)
 
@@ -1003,7 +1021,7 @@ object GroupBy {
             case (range, index) =>
               logger.info(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
               val groupByBackfill: GroupBy = if (incrementalMode) {
-                fromIncrementalDf(groupByConf, range, tableUtils)
+                fromIncrementalDf(groupByConf, range, tableUtils, stepDays)
               } else {
                 from(groupByConf, range, tableUtils, computeDependency = true)
               }
