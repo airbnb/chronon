@@ -979,6 +979,15 @@ object GroupBy {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
+    // Incremental mode currently only supports SNAPSHOT accuracy with event sources.
+    // (Temporal accuracy and entity sources may be supported later.)
+    require(
+      !incrementalMode ||
+        (groupByConf.inferredAccuracy == Accuracy.SNAPSHOT && groupByConf.dataModel == Events),
+      s"GroupBy:${groupByConf.metaData.name} has incremental mode enabled, which is only supported for " +
+        s"SNAPSHOT accuracy with event sources (found accuracy=${groupByConf.inferredAccuracy}, " +
+        s"dataModel=${groupByConf.dataModel})."
+    )
     groupByConf.setups.foreach(tableUtils.sql)
     val historicalBackfill = !groupByConf.metaData.isSetHistoricalBackfill || groupByConf.metaData.historicalBackfill
     val effectiveOverrideStartPartition = if (historicalBackfill) {
