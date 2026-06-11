@@ -17,6 +17,7 @@
 package ai.chronon.spark
 
 import ai.chronon.api
+import ai.chronon.api.Constants
 import ai.chronon.api.Extensions._
 import ai.chronon.api.ParametricMacro
 import ai.chronon.spark.Extensions._
@@ -35,7 +36,10 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     s"${stagingQueryConf.metaData.outputNamespace}.${StagingQuery.SIGNAL_PARTITIONS_TABLE_NAME}"
   private val tableProps = Option(stagingQueryConf.metaData.tableProperties)
     .map(_.toScala.toMap)
-    .orNull
+    .getOrElse(Map.empty) ++ Map(
+    Constants.ChrononGenerated -> "true",
+    Constants.ChrononTableType -> Constants.TableType.StagingQuery
+  )
 
   private val partitionCols: Seq[String] = Seq(tableUtils.partitionColumn) ++
     Option(stagingQueryConf.metaData.customJsonLookUp(key = "additional_partition_cols"))

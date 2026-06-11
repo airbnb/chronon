@@ -68,7 +68,9 @@ abstract class JoinBase(joinConf: api.Join,
       Constants.SemanticHashOptionsKey -> gson.toJson(
         Map(
           Constants.SemanticHashExcludeTopic -> "true"
-        ).toJava)
+        ).toJava),
+      Constants.ChrononGenerated -> "true",
+      Constants.ChrononTableType -> Constants.TableType.Join
     )
 
   def joinWithLeft(leftDf: DataFrame, rightDf: DataFrame, joinPart: JoinPart): DataFrame = {
@@ -206,7 +208,9 @@ abstract class JoinBase(joinConf: api.Join,
             // Cache join part data into intermediate table
             if (filledDf.isDefined) {
               logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
-              filledDf.get.save(partTable, tableProps, sortByCols = joinPart.groupBy.keyColumns.toScala)
+              filledDf.get.save(partTable,
+                                tableProps + (Constants.ChrononTableType -> Constants.TableType.JoinPart),
+                                sortByCols = joinPart.groupBy.keyColumns.toScala)
             } else {
               logger.info(s"Skipping $partTable because no data in computed joinPart.")
             }

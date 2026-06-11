@@ -388,6 +388,8 @@ case class TableUtils(sparkSession: SparkSession) {
       None
   }.get
 
+  val checkLeftTimeRange: Boolean =
+    sparkSession.conf.get("spark.chronon.join.backfill.left_time_range.enabled", "true").toBoolean
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
   val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
   val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
@@ -762,7 +764,16 @@ case class TableUtils(sparkSession: SparkSession) {
       // finalized shuffle parallelism
       val shuffleParallelism = Math.max(dailyFileCount * nonZeroTablePartitionCount, minWriteShuffleParallelism)
       val saltCol = "random_partition_salt"
-      val saltedDf = df.withColumn(saltCol, round(rand() * (dailyFileCount + 1)))
+      // Deterministic salt: rand() causes duplicate rows when Spark retries tasks during writes.
+      val hashInputCols = df.schema.fields
+        .filterNot(f =>
+          f.dataType.isInstanceOf[MapType] ||
+            f.dataType.isInstanceOf[ArrayType] || f.dataType.isInstanceOf[StructType])
+        .map(f => col(f.name))
+      require(hashInputCols.nonEmpty,
+              s"No hashable columns found for write salt in table $tableName. " +
+                s"All columns are complex types (Map/Array/Struct).")
+      val saltedDf = df.withColumn(saltCol, pmod(hash(hashInputCols: _*), lit(dailyFileCount + 1)))
 
       logger.info(
         s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
@@ -890,6 +901,15 @@ case class TableUtils(sparkSession: SparkSession) {
     }
     val fillablePartitions =
       if (skipFirstHole) {
+        val skipped = validPartitionRange.partitions.toSet.filter(_ < cutoffPartition)
+        if (skipped.nonEmpty) {
+          logger.warn(s"""
+                     |Skipping ${skipped.size} partition(s) earlier than the earliest existing output partition ($cutoffPartition).
+                     |Chronon assumes these were dropped by the retention policy.
+                     |Skipped partitions: ${skipped.toSeq.sorted.prettyInline}
+                     |To backfill these partitions, re-run with the --run-first-hole flag.
+                     |""".stripMargin)
+        }
         validPartitionRange.partitions.toSet.filter(_ >= cutoffPartition)
       } else {
         validPartitionRange.partitions.toSet

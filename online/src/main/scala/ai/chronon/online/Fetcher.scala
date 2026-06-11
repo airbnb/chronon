@@ -45,6 +45,7 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.{Seq, mutable}
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.ScalaJavaConversions.{IteratorOps, JListOps, JMapOps}
+import scala.util.control.NonFatal
 import scala.util.{Failure, Random, Success, Try}
 
 object Fetcher {
@@ -452,7 +453,21 @@ class Fetcher(val kvStore: KVStore,
     tryOnce(null, tries, totalTries = tries)
   }
 
-  private def logResponse(resp: ResponseWithContext): ResponseWithContext = {
+  private[online] def logResponse(resp: ResponseWithContext): ResponseWithContext = {
+    // Wrapping logging with try catch to separate logging failure from the user-facing fetch response.
+    // NonFatal also catches AssertionError (Error subclass) while letting true fatals propagate.
+    try {
+      logResponseInternal(resp)
+    } catch {
+      case NonFatal(e) =>
+        val loggingContext = resp.request.context.getOrElse(resp.ctx).withSuffix("logging_request")
+        loggingContext.incrementException(e)(logger)
+        logger.error(s"Logging failed for ${resp.request.name} due to: ${e.traceString}")
+        resp
+    }
+  }
+
+  protected def logResponseInternal(resp: ResponseWithContext): ResponseWithContext = {
     val loggingStartTs = System.currentTimeMillis()
     val loggingContext = resp.request.context.getOrElse(resp.ctx).withSuffix("logging_request")
     val loggingTs = resp.request.atMillis.getOrElse(resp.requestStartTs)

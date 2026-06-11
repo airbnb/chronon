@@ -165,6 +165,29 @@ object Row {
               dataType,
               schemaTraverser.map(_.currentNode)
             )
+          case map: collection.Map[_, _] =>
+            // Struct values can arrive as a Map keyed by field name (e.g. nested rows surfaced
+            // through Spark SQL transforms). Look up each declared field by name so the values
+            // are emitted in struct-declared order; missing keys are emitted as null.
+            composer(
+              fields.iterator.map { f =>
+                edit(map.asInstanceOf[collection.Map[String, Any]].getOrElse(f.name, null),
+                     f.fieldType,
+                     getFieldSchema(f))
+              },
+              dataType,
+              schemaTraverser.map(_.currentNode)
+            )
+          case map: util.Map[_, _] =>
+            val jmap = map.asInstanceOf[util.Map[String, Any]]
+            composer(
+              fields.iterator.map { f =>
+                val v = if (jmap.containsKey(f.name)) jmap.get(f.name) else null
+                edit(v, f.fieldType, getFieldSchema(f))
+              },
+              dataType,
+              schemaTraverser.map(_.currentNode)
+            )
           case value: Any =>
             assert(extraneousRecord != null, s"No handler for $value of class ${value.getClass}")
             composer(

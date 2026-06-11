@@ -45,13 +45,16 @@ object KafkaStreamBuilder extends StreamBuilder {
         logger.info("Query made progress: " + queryProgress.progress)
       }
     })
-    val df = session.readStream
+    val maxOffsetsPerTrigger = session.conf.getOption("spark.chronon.stream.chain.max_offsets_per_trigger")
+    val baseReader = session.readStream
       .format("kafka")
       .option("kafka.bootstrap.servers", bootstrap)
       .option("subscribe", topicInfo.name)
       .option("enable.auto.commit", "true")
-      .load()
-      .selectExpr("value")
+    val reader = maxOffsetsPerTrigger
+      .map(v => baseReader.option("maxOffsetsPerTrigger", v))
+      .getOrElse(baseReader)
+    val df = reader.load().selectExpr("value")
     DataStream(df, partitions = TopicChecker.getPartitions(topicInfo.name, bootstrap = bootstrap), topicInfo)
   }
 }

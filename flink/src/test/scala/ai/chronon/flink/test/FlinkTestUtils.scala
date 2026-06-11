@@ -45,6 +45,21 @@ class WatermarkedE2EEventSource(mockEvents: Seq[E2ETestEvent]) extends FlinkSour
   }
 }
 
+class ShiftedWatermarkedE2EEventSource(mockEvents: Seq[E2ETestEvent], shiftMillis: Long)
+    extends FlinkSource[E2ETestEvent] {
+  def watermarkStrategy: WatermarkStrategy[E2ETestEvent] =
+    WatermarkStrategy
+      .forBoundedOutOfOrderness[E2ETestEvent](Duration.ofSeconds(5))
+      .withTimestampAssigner(new SerializableTimestampAssigner[E2ETestEvent] {
+        override def extractTimestamp(event: E2ETestEvent, previousElementTimestamp: Long): Long =
+          event.created + shiftMillis
+      })
+  override def getDataStream(topic: String, groupName: String)(env: StreamExecutionEnvironment,
+                                                               parallelism: Int): DataStream[E2ETestEvent] = {
+    env.fromCollection(mockEvents).assignTimestampsAndWatermarks(watermarkStrategy)
+  }
+}
+
 class MockAsyncKVStoreWriter(mockResults: Seq[Boolean], onlineImpl: Api, featureGroup: String)
     extends AsyncKVStoreWriter(onlineImpl, featureGroup) {
   override def getKVStore: KVStore = {
@@ -106,7 +121,9 @@ object FlinkTestUtils {
       PartitionSpec(format = "yyyy-MM-dd", spanMillis = WindowUtils.Day.millis)
     )
   }
-  def makeGroupBy(keyColumns: Seq[String], filters: Seq[String] = Seq.empty): GroupBy =
+  def makeGroupBy(keyColumns: Seq[String],
+                  filters: Seq[String] = Seq.empty,
+                  windows: Seq[Window] = Seq(new Window(1, TimeUnit.DAYS))): GroupBy =
     Builders.GroupBy(
       sources = Seq(
         Builders.Source.events(
@@ -129,9 +146,7 @@ object FlinkTestUtils {
         Builders.Aggregation(
           operation = Operation.SUM,
           inputColumn = "double_val",
-          windows = Seq(
-            new Window(1, TimeUnit.DAYS)
-          )
+          windows = windows
         )
       ),
       metaData = Builders.MetaData(

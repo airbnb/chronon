@@ -17,7 +17,8 @@
 package ai.chronon.online.test
 
 import ai.chronon.api._
-import ai.chronon.online.{CatalystUtil, PooledCatalystUtil}
+import ai.chronon.online.{CatalystUtil, PoolMap, PooledCatalystUtil}
+import ai.chronon.online.CatalystUtil.PoolKey
 import junit.framework.TestCase
 import org.junit.Assert.{assertArrayEquals, assertEquals, assertTrue}
 import org.junit.Test
@@ -654,6 +655,22 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     "key" -> "test_key_1",
     "value" -> Array(Array(1L, "data1"), Array(2L, "data2"))
   )
+
+  @Test
+  def testPoolMapWarmupPrePopulatesPool(): Unit = {
+    val selects = Seq("int32_x" -> "int32_x")
+    val key = PoolKey(selects, CommonScalarsStruct)
+    val poolMap = new PoolMap[PoolKey, CatalystUtil](pi => new CatalystUtil(pi.expressions, pi.inputSchema))
+    // pool starts with initialSize=2 after first getPool call
+    poolMap.getPool(key)
+    assertEquals(2, poolMap.map.get(key).size())
+    // warmup to targetSize=5 adds 3 more
+    poolMap.warmup(key, 5)
+    assertEquals(5, poolMap.map.get(key).size())
+    // warmup below current size is a no-op
+    poolMap.warmup(key, 3)
+    assertEquals(5, poolMap.map.get(key).size())
+  }
 
   def testPooledCatalystUtil(): Unit = {
     val selects = Seq(

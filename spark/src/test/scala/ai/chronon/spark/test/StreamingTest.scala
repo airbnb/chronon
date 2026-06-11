@@ -21,6 +21,7 @@ import ai.chronon.api
 import ai.chronon.api.{Accuracy, Builders, Constants, Operation, TimeUnit, Window}
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions._
+import ai.chronon.api.QueryUtils
 import ai.chronon.spark.test.StreamingTest.buildInMemoryKvStore
 import ai.chronon.online.MetadataStore
 import ai.chronon.spark.Extensions._
@@ -89,6 +90,70 @@ class StreamingTest extends TestCase {
     )
     spark.sql(s"DROP TABLE IF EXISTS $viewsTable")
     df.save(viewsTable)
+
+    // Verify flat-SQL wheres semantics used by JoinSourceRunner.applyQuery.
+    // Use a small controlled dataset (not the random df) so row counts are deterministic.
+    // wheres must resolve against the pre-select (raw) input schema, matching offline backfill.
+    import spark.implicits._
+    Seq(
+      (1L, "alpha", "US"),
+      (0L, "beta",  "US"),  // raw_id = 0: the sentinel we want to filter
+      (2L, "gamma", "CA")
+    ).toDF("raw_id", "raw_name", "raw_country")
+      .createOrReplaceTempView("streaming_test_wheres_view")
+
+    // (1) wheres references the raw column name that selects renames → filter works correctly
+    val sqlRename = QueryUtils.build(
+      selects = Map("id" -> "raw_id", "name" -> "raw_name"),
+      from = "streaming_test_wheres_view",
+      wheres = Seq("raw_id > 0")
+    )
+    val renameResult = spark.sql(sqlRename).collect()
+    assert(renameResult.length == 2, s"Expected 2 rows after filtering raw_id > 0, got ${renameResult.length}")
+    assert(renameResult.map(_.getAs[Long]("id")).toSet == Set(1L, 2L),
+      "Expected id values {1, 2} after filtering sentinel raw_id = 0")
+
+    // (2) wheres references a column absent from selects → flat SQL resolves it from the upstream view
+    val sqlAbsent = QueryUtils.build(
+      selects = Map("id" -> "raw_id", "name" -> "raw_name"),
+      from = "streaming_test_wheres_view",
+      wheres = Seq("raw_country = 'US'")
+    )
+    val absentResult = spark.sql(sqlAbsent).collect()
+    assert(absentResult.length == 2, s"Expected 2 US rows, got ${absentResult.length}")
+    assert(absentResult.map(_.getAs[String]("name")).toSet == Set("alpha", "beta"),
+      "Expected US rows {alpha, beta}")
+
+    // (3) wheres references a select alias → AnalysisException (WHERE evaluates before SELECT)
+    val sqlAlias = QueryUtils.build(
+      selects = Map("id" -> "raw_id"),
+      from = "streaming_test_wheres_view",
+      wheres = Seq("id > 0")  // "id" is a select alias, not a raw column on the view
+    )
+    try {
+      spark.sql(sqlAlias).collect()
+      throw new AssertionError("Expected AnalysisException for select alias in WHERE, but query succeeded")
+    } catch {
+      case _: org.apache.spark.sql.AnalysisException => // expected: parity with offline backfill
+    }
+
+    // (4) no selects (SELECT *) with a raw-column where → all columns projected, filter applied
+    val sqlNoSelects = QueryUtils.build(
+      selects = null,
+      from = "streaming_test_wheres_view",
+      wheres = Seq("raw_id > 0")
+    )
+    val noSelectsResult = spark.sql(sqlNoSelects).collect()
+    assert(noSelectsResult.length == 2, s"Expected 2 rows with SELECT * + where, got ${noSelectsResult.length}")
+
+    // (5) empty wheres → all rows pass through unchanged
+    val sqlNoWheres = QueryUtils.build(
+      selects = Map("id" -> "raw_id"),
+      from = "streaming_test_wheres_view",
+      wheres = Seq.empty
+    )
+    assert(spark.sql(sqlNoWheres).count() == 3, "Empty wheres should pass all 3 rows through")
+
     val gb = Builders.GroupBy(
       sources = Seq(viewsSource),
       keyColumns = Seq("item"),
@@ -113,4 +178,5 @@ class StreamingTest extends TestCase {
     joinConf.joinParts.toScala.foreach(jp =>
       OnlineUtils.serve(tableUtils, inMemoryKvStore, buildInMemoryKvStore, namespace, today, jp.groupBy))
   }
+
 }

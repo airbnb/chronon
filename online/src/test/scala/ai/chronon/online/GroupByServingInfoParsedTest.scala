@@ -35,16 +35,20 @@ class GroupByServingInfoParsedTest {
     */
   @Test
   def testSelectedChrononSchemaStripsRepeatedNameSuffix(): Unit = {
-    val filterDataStruct = StructType("FilterData", Array(
-      StructField("session_id", StringType),
-      StructField("category", StringType),
-      StructField("timestamp", LongType) // inner field that collides with the outer column
-    ))
+    val filterDataStruct = StructType(
+      "FilterData",
+      Array(
+        StructField("session_id", StringType),
+        StructField("category", StringType),
+        StructField("timestamp", LongType) // inner field that collides with the outer column
+      )
+    )
 
-    val selectedChrononType = StructType("Value", Array(
-      StructField("filter_data", filterDataStruct),
-      StructField("timestamp", LongType)
-    ))
+    val selectedChrononType = StructType("Value",
+                                         Array(
+                                           StructField("filter_data", filterDataStruct),
+                                           StructField("timestamp", LongType)
+                                         ))
 
     // Serialize to Avro — the shared nameSet causes the outer "timestamp" to be renamed.
     val selectedAvroSchemaStr = AvroConversions.fromChrononSchema(selectedChrononType).toString()

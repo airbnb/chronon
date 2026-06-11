@@ -200,6 +200,11 @@
      margin: 0 auto;
  }
 
+ .logo-row-break {
+     flex-basis: 100%;
+     height: 0;
+ }
+
  .company-logo {
      height: 40px;
      width: auto;

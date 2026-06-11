@@ -252,15 +252,17 @@ class ExtensionsTest {
   @Test
   def leftKeyColsIncludesExternalPartKeyMappings(): Unit = {
     val metadata = Builders.MetaData(name = "test", team = "team")
-    val groupBy = Builders.GroupBy(
-      sources = Seq(Builders.Source.events(query = null, table = "db.gb_table")),
-      keyColumns = Seq("right_key"),
-      metaData = metadata)
-    val externalSource = Builders.ExternalSource(metadata, keySchema = IntType, valueSchema = LongType, offlineGroupBy = groupBy)
+    val groupBy = Builders.GroupBy(sources = Seq(Builders.Source.events(query = null, table = "db.gb_table")),
+                                   keyColumns = Seq("right_key"),
+                                   metaData = metadata)
+    val externalSource =
+      Builders.ExternalSource(metadata, keySchema = IntType, valueSchema = LongType, offlineGroupBy = groupBy)
 
     val join = Builders.Join(
       left = Builders.Source.events(query = null, table = "db.join_table"),
-      externalParts = Seq(Builders.ExternalPart(externalSource = externalSource, keyMapping = Map("left_key" -> "right_key"), prefix = "ext"))
+      externalParts = Seq(
+        Builders
+          .ExternalPart(externalSource = externalSource, keyMapping = Map("left_key" -> "right_key"), prefix = "ext"))
     )
 
     assertTrue(join.leftKeyCols.contains("left_key"))

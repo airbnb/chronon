@@ -17,7 +17,7 @@
 package ai.chronon.spark.streaming
 
 import ai.chronon.api
-import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, SourceOps}
+import ai.chronon.api.Extensions.{DerivationOps, GroupByOps, JoinOps, MetadataOps, QueryOps, SourceOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, ResponseWithContext}
 import ai.chronon.online.KVStore.PutRequest
@@ -38,7 +38,7 @@ import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
 import java.{lang, util}
-import scala.concurrent.duration.DurationInt
+import scala.concurrent.duration.{Duration, DurationInt, MILLISECONDS}
 import scala.concurrent.{Await, Future}
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
 import scala.util.{Failure, Success}
@@ -48,6 +48,8 @@ import scala.util.{Failure, Success}
 object LocalIOCache {
   private var fetcher: Fetcher = null
   private var kvStore: KVStore = null
+  @volatile var fetcherWarmedUp: Boolean = false
+
   def getOrSetFetcher(builderFunc: () => Fetcher): Fetcher = {
     if (fetcher == null) {
       fetcher = builderFunc()
@@ -120,6 +122,18 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
   // Micro batch repartition size - when set to 0, we won't do the repartition
   private val microBatchRepartition: Int = getProp("batch_repartition", "0").toInt
+
+  // Warm-up: pre-initialize lazy components and JIT warm-up using real requests before real processing
+  private val warmupEnabled: Boolean = getProp("warmup.enabled", "true").toBoolean
+  private val warmupPoolSize: Int = getProp("warmup.pool_size", "4").toInt
+  private val warmupRequestCount: Int = getProp("warmup.request_count", "10").toInt
+  // Longer timeout for warm-up: absorbs cold-start cost (KV connections, CatalystUtil.session,
+  // Janino codegen) which can exceed the normal 5s production timeout on first request.
+  private val warmupTimeoutSeconds: Int = getProp("warmup.timeout_seconds", "60").toInt
+
+  // Timeout for async chain operations (KV fetch and model transforms). Can be tuned when
+  // external inference services have higher latency (e.g. large model backends).
+  private val chainTimeoutMillis: Long = getProp("timeout_millis", "5000").toLong
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
@@ -300,16 +314,19 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           streamDecoder.decode(arr)
         } catch {
           case ex: Throwable =>
-            logger.info(s"Error while decoding streaming events from stream: ${dataStream.topicInfo.name}")
-            ex.printStackTrace()
+            logger.error(s"Error while decoding streaming events from stream: ${dataStream.topicInfo.name}", ex)
             ingressContext.incrementException(ex)
             null
         }
       }
       .filter { mutation =>
-        lazy val bothNull = mutation.before != null && mutation.after != null
-        lazy val bothSame = mutation.before sameElements mutation.after
-        (mutation != null) && (!bothNull || !bothSame)
+        if (mutation == null) {
+          false
+        } else {
+          lazy val bothNull = mutation.before != null && mutation.after != null
+          lazy val bothSame = mutation.before sameElements mutation.after
+          !bothNull || !bothSame
+        }
       }
     val streamSchema = SparkConversions.fromChrononSchema(streamDecoder.schema)
     val streamSchemaEncoder = EncoderUtil(streamSchema)
@@ -377,6 +394,54 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     }
   }
 
+  private def warmupDriver(schemas: Schemas, joinSource: JoinSource): Unit = {
+    if (!warmupEnabled) return
+    val startMs = System.currentTimeMillis()
+    logger.info("Starting driver-side warm-up for join derivations...")
+    try {
+      // 1. Force CatalystUtil.session (JVM singleton SparkSession, most expensive)
+      CatalystUtil.session
+
+      // 2. Initialize Fetcher + KV store
+      val fetcher = getOrCreateFetcher()
+      LocalIOCache.getOrSetKvStore { () => apiImpl.genKvStore }
+
+      // 3. Pre-populate TTLCache: GroupByServingInfo for all join parts
+      val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
+      joinSource.join.joinPartOps.foreach { part =>
+        fetcher.getGroupByServingInfo(part.groupBy.metaData.getName)
+      }
+
+      // 4. Pre-populate JoinCodec TTLCache
+      fetcher.getJoinCodecs(joinRequestName)
+
+      // 5. Force JoinCodec.deriveFunc to trigger PooledCatalystUtil creation + Catalyst codegen
+      schemas.joinCodec.deriveFunc
+
+      // 6. Pre-populate CatalystUtil pool beyond default initialSize=2
+      if (warmupPoolSize > 2) {
+        val derivationsScala = schemas.joinCodec.conf.derivationsScala
+        if (
+          derivationsScala != null && !derivationsScala.isEmpty &&
+          !derivationsScala.areDerivationsRenameOnly
+        ) {
+          val pcu = DerivationUtils.buildCatalystUtil(derivationsScala,
+                                                      schemas.joinCodec.keySchema,
+                                                      schemas.joinCodec.baseValueSchema)
+          pcu.warmup(warmupPoolSize)
+        }
+      }
+
+      val elapsed = System.currentTimeMillis() - startMs
+      logger.info(s"Driver-side warm-up completed in ${elapsed}ms")
+      context.distribution("warmup.driver.latency_ms", elapsed)
+    } catch {
+      case ex: Throwable =>
+        logger.warn(s"Driver-side warm-up failed (non-fatal): ${ex.getMessage}", ex)
+        context.increment("warmup.driver.failure")
+    }
+  }
+
   private def arrayToRow(values: Any, schema: StructType): Row = {
     val genericRow = SparkConversions
       .toSparkRowSparkType(values, schema)
@@ -398,6 +463,41 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
           // Convert left rows to fetcher requests
           val rowsScala = rows.toScala.toArray
+
+          // Executor-side JIT warm-up
+          if (warmupEnabled && !LocalIOCache.fetcherWarmedUp && rowsScala.nonEmpty) {
+            val warmupRows = rowsScala.take(warmupRequestCount)
+            val warmupRequests = warmupRows.map { row =>
+              val keyMap = row.getValuesMap[AnyRef](schemas.leftSourceSchema.fieldNames)
+              val eventTs = row.getAs[Long](eventTimeColumn)
+              val ts = if (useEventTimeForQuery) Some(eventTs) else None
+              Request(joinRequestName, keyMap, atMillis = ts.map(_ + queryShiftMs))
+            }
+            val warmupStartMs = System.currentTimeMillis()
+            try {
+              val warmupFuture = fetcher.fetchBaseJoin(warmupRequests, Option(joinSource.join))
+              val warmupResponses = Await.result(warmupFuture, warmupTimeoutSeconds.seconds)
+
+              val deriveFunc = schemas.joinCodec.deriveFunc
+              warmupResponses.foreach { response =>
+                try { deriveFunc(response.request.keys, response.baseValues) }
+                catch { case _: Throwable => }
+              }
+
+              logger.info(
+                s"Executor-side warm-up complete with ${warmupRows.length} requests in " +
+                  s"${System.currentTimeMillis() - warmupStartMs}ms")
+              context.distribution("warmup.executor.latency_ms", System.currentTimeMillis() - warmupStartMs)
+            } catch {
+              case ex: Throwable =>
+                logger.warn(s"Executor-side warm-up failed (non-fatal): ${ex.getMessage}", ex)
+                context.increment("warmup.executor.failure")
+                try { schemas.joinCodec.deriveFunc }
+                catch { case _: Throwable => }
+            }
+            LocalIOCache.fetcherWarmedUp = true
+          }
+
           val requests = rowsScala.map { row =>
             val keyMap = row.getValuesMap[AnyRef](schemas.leftSourceSchema.fieldNames)
             val eventTs = row.getAs[Long](eventTimeColumn)
@@ -440,7 +540,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           val responsesFuture = fetcher.fetchBaseJoin(requests, Option(joinSource.join))
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects
-          val responses = Await.result(responsesFuture, 5.second)
+          val responses = Await.result(responsesFuture, Duration(chainTimeoutMillis, MILLISECONDS))
 
           // debug print payload for requests and responses
           if (debug && shouldSample) {
@@ -514,7 +614,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           // Apply model transforms if necessary and then logging
           val modelTransformsF = fetcher.fetchModelTransforms(Future.successful(derivedValues.toSeq))
           val responsesF = fetcher.instrumentAndLog(modelTransformsF)
-          val responses = Await.result(responsesF, 5.second)
+          val responses = Await.result(responsesF, Duration(chainTimeoutMillis, MILLISECONDS))
 
           // debug print payload for requests and responses
           if (debug && shouldSample) {
@@ -549,7 +649,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     )
   }
 
-  private def applyQuery(df: DataFrame, query: api.Query, decoded: DataStream): DataFrame = {
+  private def applyQuery(df: DataFrame, query: api.Query, decoded: DataStream, viewSuffix: String): DataFrame = {
     val queryParts = groupByConf.buildQueryParts(query)
     logger.info(s"""
                    |decoded schema: ${decoded.df.schema.catalogString}
@@ -557,9 +657,29 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
                    |df schema: ${df.schema.prettyJson}
                    |""".stripMargin)
 
-    // apply left.query
-    val selected = queryParts.selects.map(_.toSeq).map(exprs => df.selectExpr(exprs: _*)).getOrElse(df)
-    selected.filter(queryParts.wheres.map("(" + _ + ")").mkString(" AND "))
+    // Use flat SQL (temp-view + session.sql) so that wheres evaluate against the pre-select input
+    // schema — consistent with offline backfill and non-JoinSource streaming. The two-stage
+    // selectExpr→filter approach previously used here allowed wheres to reference aliases from
+    // selects, which is not valid SQL and caused silent training-serving skew.
+    val viewName = s"${groupByConf.metaData.cleanName}_$viewSuffix"
+    df.createOrReplaceTempView(viewName)
+
+    val timeColumn = Option(query.timeColumn).getOrElse(Constants.TimeColumn)
+    val fillIfAbsent = groupByConf.dataModel match {
+      case DataModel.Entities =>
+        Map(Constants.ReversalColumn -> Constants.ReversalColumn,
+            Constants.MutationTimeColumn -> Constants.MutationTimeColumn)
+      case DataModel.Events => Map(Constants.TimeColumn -> timeColumn)
+    }
+
+    val sql = api.QueryUtils.build(
+      selects = Option(query.getQuerySelects).orNull,
+      from = viewName,
+      wheres = queryParts.wheres,
+      fillIfAbsent = fillIfAbsent
+    )
+    logger.info(s"applyQuery SQL for $viewName:\n$sql")
+    session.sql(sql)
   }
 
   private def writeToKVStore(
@@ -633,7 +753,7 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     val leftStreamingQuery = groupByConf.buildLeftStreamingQuery(left.query, decoded.df.schema.fieldNames.toSeq)
 
-    val leftSource: Dataset[Row] = applyQuery(decoded.df, left.query, decoded)
+    val leftSource: Dataset[Row] = applyQuery(decoded.df, left.query, decoded, "left")
     // key format joins/<team>/join_name
     val joinRequestName = joinSource.join.metaData.getName.replaceFirst("\\.", "/")
     logger.info(s"Upstream join request name: $joinRequestName")
@@ -644,6 +764,9 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
     // Build schemas for each stages of the chaining transformation
     val schemas = buildSchemas(decoded, reqColumns)
+
+    // Driver-side warm-up: pre-initialize CatalystUtil, TTLCaches, and derivation codegen
+    warmupDriver(schemas, joinSource)
 
     // Enrich each left source rows with base columns (pre-derivations) of the join source
     val enrichedBase = enrichBaseJoin(
@@ -673,6 +796,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     )
 
     // Map to downstream chained GroupBy's inputs and write to KVStore
-    writeToKVStore(applyQuery(enriched, joinSource.query, decoded))
+    writeToKVStore(applyQuery(enriched, joinSource.query, decoded, "joinsource"))
   }
 }

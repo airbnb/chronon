@@ -250,7 +250,13 @@ object GroupByUpload {
     kvDf
       .union(metaDf)
       .withColumn("ds", lit(endDs))
-      .saveUnPartitioned(groupByConf.metaData.uploadTable, groupByConf.metaData.tableProps)
+      .saveUnPartitioned(
+        groupByConf.metaData.uploadTable,
+        Option(groupByConf.metaData.tableProps).getOrElse(Map.empty) ++ Map(
+          Constants.ChrononGenerated -> "true",
+          Constants.ChrononTableType -> Constants.TableType.Upload
+        )
+      )
 
     val kvDfReloaded = tableUtils.sparkSession
       .table(groupByConf.metaData.uploadTable)
