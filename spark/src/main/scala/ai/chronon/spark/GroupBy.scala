@@ -438,7 +438,12 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
     val hops = hopsAggregate(range.toTimePoints.min, DailyResolution)
     val hopsDf: DataFrame = convertHopsToDf(hops, incrementalSchema)
-    hopsDf.save(incrementalOutputTable, tableProps)
+    // The source scan for `range` is widened by the query window (getIntersectedRange), so
+    // hopsAggregate emits daily hops for days outside `range` too. With dynamic partition
+    // overwrite, saving those would clobber neighboring partitions with window-truncated
+    // (incomplete) data. Clamp the write to exactly the partitions we were asked to fill.
+    val clampedDf = hopsDf.filter(hopsDf.col(tableUtils.partitionColumn).between(range.start, range.end))
+    clampedDf.save(incrementalOutputTable, tableProps)
   }
 }
 

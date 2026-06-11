@@ -364,6 +364,56 @@ class GroupByIncrementalTest {
   }
 
   /**
+   * Regression test: the per-day IR write must be clamped to the requested range.
+   *
+   * hopsAggregate runs over the GroupBy's full input DataFrame and emits daily hops for
+   * every day with events, not just the requested range. With dynamic partition overwrite,
+   * an unclamped save would write ALL those partitions - so filling one day's hole would
+   * (re)write and clobber neighboring partitions. computeIncrementalDf must clamp the write
+   * to exactly the requested range, writing only those partitions.
+   *
+   * Calls the instance computeIncrementalDf directly (as testIncrementalBasicAggregations
+   * does) with a single-day range over a 30-day input: without the clamp this writes ~30
+   * partitions; with it, exactly one.
+   */
+  @Test
+  def testIncrementalWriteIsClampedToRange(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTestClamp" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace = s"incremental_clamp_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+    val schema = List(
+      Column("user", StringType, 100),
+      Column("price", DoubleType, 100)
+    )
+    // 30 partitions of events -> hopsAggregate will produce hops spanning ~30 days.
+    val df = DataFrameGen.events(spark, schema, count = 20000, partitions = 30)
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.SUM, "price", Seq(new Window(10, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "user", Seq(new Window(10, TimeUnit.DAYS)))
+    )
+    val tableProps: Map[String, String] = Map("source" -> "chronon")
+    val outputTable = s"$namespace.clamp_daily_inc"
+
+    val groupBy = new GroupBy(aggregations, Seq("user"), df)
+
+    // Request a single day; hopsAggregate still sees all 30 days of input.
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val targetDay = tableUtils.partitionSpec.minus(today, new Window(15, TimeUnit.DAYS))
+    groupBy.computeIncrementalDf(outputTable, PartitionRange(targetDay, targetDay), tableProps)
+
+    val writtenPartitions = tableUtils.partitions(outputTable).toSet
+    assertEquals(
+      s"computeIncrementalDf for a single day must write only that partition; wrote ${writtenPartitions.toSeq.sorted}",
+      Set(targetDay),
+      writtenPartitions
+    )
+  }
+
+  /**
    * Unit test for FIRST and LAST aggregations with incremental IR
    * FIRST/LAST use TimeTuple IR: struct {epochMillis: Long, payload: Value}
    * FIRST keeps the value with the earliest timestamp
