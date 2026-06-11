@@ -831,6 +831,32 @@ object GroupBy {
     (incrementalQueryableRange, aggregationParts)
   }
 
+  // Recursively convert Spark types to the Java types that RowAggregator.denormalize() expects.
+  // Handles nested structures (e.g. FIRST_K: Array<Struct> -> ArrayList[Array]).
+  // Defined at object level (not as a per-row closure) so it is not re-allocated for every row.
+  private def convertSparkToJava(value: Any): Any =
+    value match {
+      case null   => null
+      case r: Row =>
+        // Struct -> Array[Any], recursively convert nested values
+        r.toSeq.map(convertSparkToJava).toArray
+      case arr: scala.collection.mutable.WrappedArray[_] =>
+        // Array -> ArrayList, recursively convert elements
+        val converted = arr.map(convertSparkToJava)
+        new java.util.ArrayList[Any](converted.toSeq.asJava)
+      case map: scala.collection.Map[_, _] =>
+        // Map -> HashMap, recursively convert values
+        val javaMap = new java.util.HashMap[Any, Any]()
+        map.foreach {
+          case (k, v) =>
+            javaMap.put(k, convertSparkToJava(v))
+        }
+        javaMap
+      case other =>
+        // Scalars (Long, Double, String, byte arrays, etc.) pass through
+        other
+    }
+
   private def convertIncrementalDfToHops(
       incrementalDf: DataFrame,
       aggregationParts: Seq[api.AggregationPart],
@@ -842,6 +868,14 @@ object GroupBy {
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, incrementalDf.schema)
 
+    // Resolve column indices once on the driver (capturing the DataFrame schema, not the
+    // DataFrame itself, in the executor closure) instead of per row.
+    val partitionSpec = tableUtils.partitionSpec
+    val partitionColIndex = incrementalDf.schema.fieldIndex(tableUtils.partitionColumn)
+    val irColIndices: Array[Int] =
+      aggregationParts.map(part => incrementalDf.schema.fieldIndex(part.incrementalOutputColumnName)).toArray
+    val numParts = aggregationParts.length
+
     incrementalDf.rdd
       .mapPartitions { rows =>
         // Reconstruct RowAggregator once per partition on executor
@@ -849,41 +883,16 @@ object GroupBy {
         val rowAggregator = new RowAggregator(inputSchema, aggregationParts)
 
         rows.map { row =>
-          //Extract timestamp from partition column
-          val ds = row.getAs[String](tableUtils.partitionColumn)
-          val ts = tableUtils.partitionSpec.epochMillis(ds)
+          // Extract timestamp from partition column
+          val ds = row.getString(partitionColIndex)
+          val ts = partitionSpec.epochMillis(ds)
 
-          // Extract normalized IRs from the row
-          // Recursively convert Spark types to Java types that denormalize() expects
-          // This handles nested structures (e.g., FIRST_K: Array<Struct> → ArrayList[Array])
-          def convertSparkToJava(value: Any): Any =
-            value match {
-              case null   => null
-              case r: Row =>
-                // Struct → Array[Any], recursively convert nested values
-                r.toSeq.map(convertSparkToJava).toArray
-              case arr: scala.collection.mutable.WrappedArray[_] =>
-                // Array → ArrayList, recursively convert elements
-                val converted = arr.map(convertSparkToJava)
-                new java.util.ArrayList[Any](converted.toSeq.asJava)
-              case map: scala.collection.Map[_, _] =>
-                // Map → HashMap, recursively convert values
-                val javaMap = new java.util.HashMap[Any, Any]()
-                map.foreach {
-                  case (k, v) =>
-                    javaMap.put(k, convertSparkToJava(v))
-                }
-                javaMap
-              case other =>
-                // Scalars (Long, Double, String, byte arrays, etc.) pass through
-                other
-            }
-
-          val normalizedIrs = new Array[Any](aggregationParts.length)
-          aggregationParts.zipWithIndex.foreach {
-            case (part, idx) =>
-              val value = row.get(row.fieldIndex(part.incrementalOutputColumnName))
-              normalizedIrs(idx) = convertSparkToJava(value)
+          // Extract normalized IRs from the row (Spark types -> Java types denormalize() expects).
+          val normalizedIrs = new Array[Any](numParts)
+          var idx = 0
+          while (idx < numParts) {
+            normalizedIrs(idx) = convertSparkToJava(row.get(irColIndices(idx)))
+            idx += 1
           }
 
           // Denormalize IRs to in-memory format (e.g., ArrayList -> HashSet)
