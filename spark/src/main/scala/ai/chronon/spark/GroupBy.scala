@@ -777,14 +777,22 @@ object GroupBy {
   }
 
   /**
-    * Computes and saves the output of hopsAggregation.
-    * HopsAggregate computes event level data to daily aggregates and saves the output in IR format
+    * The "build" / producer half of incremental mode: fills the per-day IR table
+    * (`<table>_daily_inc`) for the range needed to serve `range` (i.e. `[range.start - maxWindow,
+    * range.end]`). Idempotent - unfilledRanges makes it a no-op when the table is already complete,
+    * so it doubles as both the standalone producer node (production) and the ensure step of an ad
+    * hoc consumer (see `fromIncrementalDf`).
+    *
+    * Returns the queryable range (the window-expanded range a reader must scan) and the unwindowed
+    * aggregation parts, so a subsequent read does not recompute them.
     *
     * @param groupByConf
-    * @param range
+    * @param range the output range to serve
     * @param tableUtils
+    * @param incrementalOutputTable the `_daily_inc` table to fill
+    * @param stepDays optional chunking of each hole into stepped sub-ranges (restartable, bounded memory)
     */
-  def computeIncrementalDf(
+  def materializeIncrementalDf(
       groupByConf: api.GroupBy,
       range: PartitionRange,
       tableUtils: TableUtils,
@@ -806,7 +814,7 @@ object GroupBy {
       range.end
     )(tableUtils)
 
-    logger.info(s"Writing incremental df to $incrementalOutputTable")
+    logger.info(s"Materializing incremental df to $incrementalOutputTable for queryable range $incrementalQueryableRange")
 
     val partitionRangeHoles: Option[Seq[PartitionRange]] = tableUtils.unfilledRanges(
       incrementalOutputTable,
@@ -924,11 +932,23 @@ object GroupBy {
       }
   }
 
+  /**
+    * The "read" / consumer half of incremental mode: builds a GroupBy backed by the per-day IR
+    * table (`<table>_daily_inc`), overriding hopsAggregate to return the precomputed hops instead
+    * of scanning raw events. Any snapshot-events consumer (backfill, upload, later join) routes
+    * through hopsAggregate, so this is a mode-agnostic adapter - keep it free of consumer-specific
+    * logic.
+    *
+    * @param buildIfMissing when true (ad hoc / standalone), ensure the table is materialized first
+    *        (ensure-then-read). When false (production behind a dedicated producer node), only read;
+    *        the producer is the sole writer and consumers run as pure readers.
+    */
   def fromIncrementalDf(
       groupByConf: api.GroupBy,
       range: PartitionRange,
       tableUtils: TableUtils,
-      stepDays: Option[Int] = None
+      stepDays: Option[Int] = None,
+      buildIfMissing: Boolean = true
   ): GroupBy = {
 
     val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
@@ -936,7 +956,23 @@ object GroupBy {
            s"incrementalOutputTable is not set for GroupBy: ${groupByConf.metaData.name}")
 
     val (incrementalQueryableRange, aggregationParts) =
-      computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable, stepDays)
+      if (buildIfMissing) {
+        // ensure-then-read: fill any holes (no-op if already complete), then read.
+        materializeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable, stepDays)
+      } else {
+        // read-only: derive the same queryable range / parts without writing. Assumes an upstream
+        // producer node has already materialized the table; if holes remain, the read below simply
+        // reflects what is present (callers relying on this path depend on the producer).
+        val maxWindow = groupByConf.maxWindow.getOrElse(
+          throw new IllegalArgumentException(
+            s"GroupBy ${groupByConf.metaData.name} has no windowed aggregations. " +
+              "Incremental mode requires at least one windowed aggregation."))
+        val queryableRange = PartitionRange(
+          tableUtils.partitionSpec.minus(range.start, maxWindow),
+          range.end
+        )(tableUtils)
+        (queryableRange, groupByConf.getAggregations.toScala.flatMap(_.unWindowed))
+      }
 
     val (_, incrementalDf: DataFrame) = incrementalQueryableRange.scanQueryStringAndDf(null, incrementalOutputTable)
 
