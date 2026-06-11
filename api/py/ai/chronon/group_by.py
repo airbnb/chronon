@@ -255,6 +255,16 @@ def validate_group_by(group_by: ttypes.GroupBy):
             if contains_windowed_aggregation(aggregations):
                 assert query.timeColumn, "Please specify timeColumn for entity source with windowed aggregations"
 
+    # is_incremental currently only supports SNAPSHOT accuracy with event sources.
+    # (Temporal accuracy and entity sources may be supported later.)
+    if group_by.isIncremental:
+        assert group_by.accuracy == Accuracy.SNAPSHOT, (
+            "is_incremental is only supported for SNAPSHOT accuracy group bys"
+        )
+        assert all([s.events for s in sources]), (
+            "is_incremental is only supported for event sources"
+        )
+
     column_set = None
     # all sources should select the same columns
     for i, source in enumerate(sources[1:]):
