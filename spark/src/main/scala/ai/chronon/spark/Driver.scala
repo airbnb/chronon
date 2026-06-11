@@ -470,8 +470,7 @@ object Driver {
         tableUtils,
         args.stepDays.toOption,
         args.startPartitionOverride.toOption,
-        !args.runFirstHole(),
-        Option(args.groupByConf.isIncremental).getOrElse(false)
+        !args.runFirstHole()
       )
 
       if (args.shouldExport()) {
