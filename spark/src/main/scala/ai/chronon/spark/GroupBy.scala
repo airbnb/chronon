@@ -801,7 +801,8 @@ object GroupBy {
       range.end
     )(tableUtils)
 
-    logger.info(s"Materializing incremental df to $incrementalOutputTable for queryable range $incrementalQueryableRange")
+    logger.info(
+      s"Materializing incremental df to $incrementalOutputTable for queryable range $incrementalQueryableRange")
 
     val partitionRangeHoles: Option[Seq[PartitionRange]] = tableUtils.unfilledRanges(
       incrementalOutputTable,
