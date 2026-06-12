@@ -989,10 +989,15 @@ object GroupBy {
       sourceDf,
       () => null
     ) {
-      // Serve the precomputed daily IRs instead of aggregating raw events.
+      // Serve the precomputed daily IRs instead of aggregating raw events. The cached IRs are daily,
+      // so reject any non-daily resolution (e.g. a TEMPORAL consumer passing FiveMinuteResolution)
+      // rather than silently returning daily hops as if finer-grained.
       override def hopsAggregate(minQueryTs: Long,
-                                 resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] =
+                                 resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+        require(resolution == DailyResolution,
+                s"Incremental hops are daily; hopsAggregate requires DailyResolution, got $resolution")
         incrementalHops
+      }
     }
   }
 
