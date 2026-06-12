@@ -103,12 +103,9 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   @transient lazy val flattenedAgg: RowAggregator =
     new RowAggregator(selectedSchema, aggregations.flatMap(_.unWindowed))
 
-  // The incremental (daily) IR column name drops the window suffix, since daily IRs are
-  // window-independent. So aggregations sharing the same (operation, input_column, bucket) but
-  // differing only by window collapse to the same column - e.g. SUM(price, 7d) and SUM(price, 30d)
-  // both -> price_sum, with identical IR values. We persist one column per distinct name; the read
-  // path (convertIncrementalDfToHops) looks up each part by name, so the collapsed windows all map
-  // back to that single column. These are the indices of the first occurrence of each name.
+  // The incremental column name drops the window suffix, so aggregations differing only by window
+  // collapse to one column with identical IR values (e.g. SUM(price,7d)/SUM(price,30d) -> price_sum).
+  // Keep the first occurrence of each name; the read path looks up by name and maps them all back.
   lazy val uniqueIncrementalIndices: Array[Int] = {
     val seen = mutable.HashSet.empty[String]
     flattenedAgg.incrementalOutputSchema.zipWithIndex.collect {
@@ -391,9 +388,7 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
             dailyHops.map { hopIr =>
               val timestamp = hopIr.last.asInstanceOf[Long]
               val normalizedIR = flattenedAgg.normalize(hopIr.dropRight(1))
-              // Keep only one value per distinct incremental column name (duplicates are identical),
-              // matching incrementalSchema.
-              val dedupedIR = uniqueIncrementalIndices.map(normalizedIR)
+              val dedupedIR = uniqueIncrementalIndices.map(normalizedIR) // match incrementalSchema
               ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), dedupedIR)
             }
           case None => Iterator.empty
@@ -446,7 +441,6 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     }
 
   // Per-hole worker: aggregates `range` into daily IRs and writes them to the incremental table.
-  // Daily IRs are window-independent, so the resolution must be daily.
   def computeIncrementalDf(incrementalOutputTable: String,
                            range: PartitionRange,
                            tableProps: Map[String, String],
@@ -456,9 +450,8 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
     val hops = hopsAggregate(range.toTimePoints.min, resolution)
     val hopsDf: DataFrame = convertHopsToDf(hops, incrementalSchema)
-    // hopsAggregate emits daily hops for days outside `range` (the source scan is widened by the
-    // query window). Clamp the write to `range` so dynamic partition overwrite cannot clobber
-    // neighboring partitions with window-truncated data.
+    // hopsAggregate emits hops outside `range` (the source scan is window-widened); clamp the write
+    // so dynamic partition overwrite cannot clobber neighbors with window-truncated data.
     val clampedDf = hopsDf.filter(hopsDf.col(tableUtils.partitionColumn).between(range.start, range.end))
     val incrementalTableProps = Option(tableProps).getOrElse(Map.empty) ++ Map(
       Constants.ChrononGenerated -> "true",
@@ -788,22 +781,11 @@ object GroupBy {
   }
 
   /**
-    * The "build" / producer half of incremental mode: fills the per-day IR table
-    * (`<table>_daily_inc`) for the range needed to serve `range` (i.e. `[range.start - maxWindow,
-    * range.end]`). Idempotent - unfilledRanges makes it a no-op when the table is already complete,
-    * so it doubles as both the standalone producer node (production) and the ensure step of an ad
-    * hoc consumer (see `fromIncrementalDf`).
+    * Producer: idempotently fills the per-day IR table (`<table>_daily_inc`) for `[range.start -
+    * maxWindow, range.end]` (no-op when already complete, via unfilledRanges). Returns the queryable
+    * range a reader must scan and the unwindowed aggregation parts. Distinct from the instance-level
+    * `computeIncrementalDf`, which is the per-hole worker that writes a single sub-range.
     *
-    * Returns the queryable range (the window-expanded range a reader must scan) and the unwindowed
-    * aggregation parts, so a subsequent read does not recompute them.
-    *
-    * (Object-level "producer" build; distinct from the instance-level `computeIncrementalDf` which
-    * is the per-hole worker that aggregates and writes a single sub-range.)
-    *
-    * @param groupByConf
-    * @param range the output range to serve
-    * @param tableUtils
-    * @param incrementalOutputTable the `_daily_inc` table to fill
     * @param stepDays optional chunking of each hole into stepped sub-ranges (restartable, bounded memory)
     */
   def computeIncrementalDf(
@@ -839,11 +821,8 @@ object GroupBy {
 
     val aggregationParts = groupByConf.getAggregations.toScala.flatMap(_.unWindowed)
 
-    // Daily IRs are independent per ds, so each hole can be filled in stepped
-    // sub-ranges. Each sub-range commits separately - making the (potentially
-    // large) cold/full-recompute build restartable via unfilledRanges and
-    // bounding the per-write shuffle/memory footprint. stepDays = None keeps the
-    // original single-write behavior.
+    // Daily IRs are independent per ds, so fill each hole in stepped sub-ranges: each commits
+    // separately, making a large build restartable and bounding per-write memory. None = single write.
     partitionRangeHoles.foreach { holes =>
       holes.foreach { hole =>
         val subRanges = stepDays.map(hole.steps).getOrElse(Seq(hole))
@@ -887,8 +866,7 @@ object GroupBy {
     val keyBuilder: Row => KeyWithHash =
       FastHashing.generateKeyBuilder(keyColumns.toArray, incrementalDf.schema)
 
-    // Resolve column indices once on the driver (capturing the DataFrame schema, not the
-    // DataFrame itself, in the executor closure) instead of per row.
+    // Resolve column indices once on the driver (capture the schema, not the DataFrame).
     val partitionSpec = tableUtils.partitionSpec
     val partitionColIndex = incrementalDf.schema.fieldIndex(tableUtils.partitionColumn)
     val irColIndices: Array[Int] =
@@ -929,15 +907,12 @@ object GroupBy {
   }
 
   /**
-    * The "read" / consumer half of incremental mode: builds a GroupBy backed by the per-day IR
-    * table (`<table>_daily_inc`), overriding hopsAggregate to return the precomputed hops instead
-    * of scanning raw events. Any snapshot-events consumer (backfill, upload, later join) routes
-    * through hopsAggregate, so this is a mode-agnostic adapter - keep it free of consumer-specific
-    * logic.
+    * Consumer: builds a GroupBy backed by the per-day IR table, overriding hopsAggregate to return
+    * the cached hops instead of scanning raw events. Mode-agnostic adapter (backfill/upload/join all
+    * route through hopsAggregate) - keep it free of consumer-specific logic.
     *
-    * @param buildIfMissing when true (ad hoc / standalone), ensure the table is materialized first
-    *        (ensure-then-read). When false (production behind a dedicated producer node), only read;
-    *        the producer is the sole writer and consumers run as pure readers.
+    * @param buildIfMissing true = ensure-then-read (ad hoc); false = read-only (production, behind a
+    *        producer node that is the sole writer).
     */
   def fromIncrementalDf(
       groupByConf: api.GroupBy,
@@ -956,9 +931,8 @@ object GroupBy {
         // ensure-then-read: fill any holes (no-op if already complete), then read.
         computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable, stepDays)
       } else {
-        // read-only: derive the same queryable range / parts without writing. Assumes an upstream
-        // producer node has already materialized the table; if holes remain, the read below simply
-        // reflects what is present (callers relying on this path depend on the producer).
+        // read-only: derive the queryable range / parts without writing (assumes an upstream
+        // producer node already materialized the table).
         val maxWindow = groupByConf.maxWindow.getOrElse(
           throw new IllegalArgumentException(
             s"GroupBy ${groupByConf.metaData.name} has no windowed aggregations. " +
@@ -989,9 +963,8 @@ object GroupBy {
       sourceDf,
       () => null
     ) {
-      // Serve the precomputed daily IRs instead of aggregating raw events. The cached IRs are daily,
-      // so reject any non-daily resolution (e.g. a TEMPORAL consumer passing FiveMinuteResolution)
-      // rather than silently returning daily hops as if finer-grained.
+      // Serve the precomputed daily IRs instead of aggregating raw events. Reject non-daily
+      // resolutions (e.g. a TEMPORAL consumer passing FiveMinuteResolution) rather than mis-serving.
       override def hopsAggregate(minQueryTs: Long,
                                  resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
         require(resolution == DailyResolution,

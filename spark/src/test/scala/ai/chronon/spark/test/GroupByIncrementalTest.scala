@@ -360,8 +360,6 @@ class GroupByIncrementalTest {
       diff.show(100, truncate = false)
     }
     assertEquals(0, diff.count())
-
-    spark.stop()
   }
 
   /**
@@ -611,9 +609,6 @@ class GroupByIncrementalTest {
     println("✓ LAST_K: Array[TimeTuple] - stores timestamps")
     println("✓ TOP_K: Array[Double] - stores only values")
     println("✓ BOTTOM_K: Array[Double] - stores only values")
-
-    // Cleanup
-    spark.stop()
   }
 
   @Test
@@ -663,8 +658,5 @@ class GroupByIncrementalTest {
       diff.show(100, truncate = false)
     }
     assertEquals(0, diff.count())
-
-    // Cleanup
-    spark.stop()
   }
 }
