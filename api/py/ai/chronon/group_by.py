@@ -255,6 +255,19 @@ def validate_group_by(group_by: ttypes.GroupBy):
             if contains_windowed_aggregation(aggregations):
                 assert query.timeColumn, "Please specify timeColumn for entity source with windowed aggregations"
 
+    # is_incremental currently only supports SNAPSHOT accuracy with event sources.
+    # (Temporal accuracy and entity sources may be supported later.)
+    if group_by.isIncremental:
+        assert all([s.events for s in sources]), (
+            "is_incremental is only supported for event sources"
+        )
+        # accuracy is optional: when unset it is inferred as SNAPSHOT unless a streaming
+        # source is present (which infers TEMPORAL). Accept the inferred-SNAPSHOT case.
+        is_snapshot = group_by.accuracy == Accuracy.SNAPSHOT or (
+            group_by.accuracy is None and not any([utils.is_streaming(s) for s in sources])
+        )
+        assert is_snapshot, "is_incremental is only supported for SNAPSHOT accuracy group bys"
+
     column_set = None
     # all sources should select the same columns
     for i, source in enumerate(sources[1:]):
@@ -390,6 +403,7 @@ def GroupBy(
     historical_backfill: Optional[bool] = None,
     deprecation_date: Optional[str] = None,
     description: Optional[str] = None,
+    is_incremental: Optional[bool] = None,
     **kwargs,
 ) -> ttypes.GroupBy:
     """
@@ -608,6 +622,7 @@ def GroupBy(
         backfillStartDate=backfill_start_date,
         accuracy=accuracy,
         derivations=derivations,
+        isIncremental=is_incremental,
     )
     validate_group_by(group_by)
     return group_by

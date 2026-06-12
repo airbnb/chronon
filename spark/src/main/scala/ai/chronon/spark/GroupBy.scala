@@ -18,11 +18,12 @@ package ai.chronon.spark
 
 import ai.chronon.aggregator.base.TimeTuple
 import ai.chronon.aggregator.row.RowAggregator
+import ai.chronon.aggregator.windowing.HopsAggregator.HopIr
 import ai.chronon.aggregator.windowing._
 import ai.chronon.api
 import ai.chronon.api.DataModel.{Entities, Events}
 import ai.chronon.api.Extensions._
-import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro}
+import ai.chronon.api.{Accuracy, Constants, DataModel, ParametricMacro, TimeUnit, Window}
 import ai.chronon.online.serde.{RowWrapper, SparkConversions}
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
@@ -32,6 +33,8 @@ import org.apache.spark.sql.types._
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.apache.spark.util.sketch.BloomFilter
 import org.slf4j.LoggerFactory
+
+import scala.jdk.CollectionConverters._
 
 import java.util
 import scala.collection.{Seq, mutable}
@@ -89,9 +92,28 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   lazy val aggPartWithSchema = aggregationParts.zip(columnAggregators.map(_.outputType))
 
   lazy val postAggSchema: StructType = {
-    val valueChrononSchema = if (finalize) windowAggregator.outputSchema else windowAggregator.irSchema
+    val valueChrononSchema = if (finalize) {
+      windowAggregator.outputSchema
+    } else {
+      windowAggregator.irSchema
+    }
     SparkConversions.fromChrononSchema(valueChrononSchema)
   }
+
+  @transient lazy val flattenedAgg: RowAggregator =
+    new RowAggregator(selectedSchema, aggregations.flatMap(_.unWindowed))
+
+  // The incremental column name drops the window suffix, so aggregations differing only by window
+  // collapse to one column with identical IR values (e.g. SUM(price,7d)/SUM(price,30d) -> price_sum).
+  // Keep the first occurrence of each name; the read path looks up by name and maps them all back.
+  lazy val uniqueIncrementalIndices: Array[Int] = {
+    val seen = mutable.HashSet.empty[String]
+    flattenedAgg.incrementalOutputSchema.zipWithIndex.collect {
+      case ((name, _), idx) if seen.add(name) => idx
+    }
+  }
+  lazy val incrementalSchema: Array[(String, api.DataType)] =
+    uniqueIncrementalIndices.map(flattenedAgg.incrementalOutputSchema)
 
   @transient
   protected[spark] lazy val windowAggregator: RowAggregator =
@@ -357,6 +379,31 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     toDf(outputRdd, Seq(Constants.TimeColumn -> LongType, tableUtils.partitionColumn -> StringType))
   }
 
+  def flattenOutputArrayType(
+      hopsArrays: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)]): RDD[(Array[Any], Array[Any])] = {
+    hopsArrays.flatMap {
+      case (keyWithHash: KeyWithHash, hopsArray: HopsAggregator.OutputArrayType) =>
+        hopsArray.headOption match {
+          case Some(dailyHops) =>
+            dailyHops.map { hopIr =>
+              val timestamp = hopIr.last.asInstanceOf[Long]
+              val normalizedIR = flattenedAgg.normalize(hopIr.dropRight(1))
+              val dedupedIR = uniqueIncrementalIndices.map(normalizedIR) // match incrementalSchema
+              ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), dedupedIR)
+            }
+          case None => Iterator.empty
+        }
+    }
+  }
+
+  def convertHopsToDf(hops: RDD[(KeyWithHash, HopsAggregator.OutputArrayType)],
+                      schema: Array[(String, ai.chronon.api.DataType)]): DataFrame = {
+    val hopsDf = flattenOutputArrayType(hops)
+    toDf(hopsDf,
+         Seq(tableUtils.partitionColumn -> StringType, Constants.TimeColumn -> LongType),
+         Some(SparkConversions.fromChrononSchema(schema)))
+  }
+
   // convert raw data into IRs, collected by hopSizes
   // TODO cache this into a table: interface below
   // Class HopsCacher(keySchema, irSchema, resolution) extends RddCacher[(KeyWithHash, HopsOutput)]
@@ -380,9 +427,10 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
   }
 
   protected[spark] def toDf(aggregateRdd: RDD[(Array[Any], Array[Any])],
-                            additionalFields: Seq[(String, DataType)]): DataFrame = {
+                            additionalFields: Seq[(String, DataType)],
+                            schema: Option[StructType] = None): DataFrame = {
     val finalKeySchema = StructType(keySchema ++ additionalFields.map { case (name, typ) => StructField(name, typ) })
-    KvRdd(aggregateRdd, finalKeySchema, postAggSchema).toFlatDf
+    KvRdd(aggregateRdd, finalKeySchema, schema.getOrElse(postAggSchema)).toFlatDf
   }
 
   private def normalizeOrFinalize(ir: Array[Any]): Array[Any] =
@@ -392,6 +440,25 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
       windowAggregator.normalize(ir)
     }
 
+  // Per-hole worker: aggregates `range` into daily IRs and writes them to the incremental table.
+  def computeIncrementalDf(incrementalOutputTable: String,
+                           range: PartitionRange,
+                           tableProps: Map[String, String],
+                           resolution: Resolution = DailyResolution) = {
+    require(resolution == DailyResolution,
+            s"Incremental IRs are daily; computeIncrementalDf requires DailyResolution, got $resolution")
+
+    val hops = hopsAggregate(range.toTimePoints.min, resolution)
+    val hopsDf: DataFrame = convertHopsToDf(hops, incrementalSchema)
+    // hopsAggregate emits hops outside `range` (the source scan is window-widened); clamp the write
+    // so dynamic partition overwrite cannot clobber neighbors with window-truncated data.
+    val clampedDf = hopsDf.filter(hopsDf.col(tableUtils.partitionColumn).between(range.start, range.end))
+    val incrementalTableProps = Option(tableProps).getOrElse(Map.empty) ++ Map(
+      Constants.ChrononGenerated -> "true",
+      Constants.ChrononTableType -> Constants.TableType.GroupByIncremental
+    )
+    clampedDf.save(incrementalOutputTable, incrementalTableProps)
+  }
 }
 
 // TODO: truncate queryRange for caching
@@ -463,31 +530,16 @@ object GroupBy {
            bloomMapOpt: Option[util.Map[String, BloomFilter]] = None,
            skewFilter: Option[String] = None,
            finalize: Boolean = true,
-           showDf: Boolean = false): GroupBy = {
+           showDf: Boolean = false,
+           incrementalMode: Boolean = false): GroupBy = {
     logger.info(s"\n----[Processing GroupBy: ${groupByConfOld.metaData.name}]----")
     val groupByConf = replaceJoinSource(groupByConfOld, queryRange, tableUtils, computeDependency, showDf)
-    val inputDf = groupByConf.sources.toScala
-      .map { source =>
-        val partitionColumn = tableUtils.getPartitionColumn(source.query)
-        tableUtils.sqlWithDefaultPartitionColumn(
-          renderDataSourceQuery(
-            groupByConf,
-            source,
-            groupByConf.getKeyColumns.toScala,
-            queryRange,
-            tableUtils,
-            groupByConf.maxWindow,
-            groupByConf.inferredAccuracy,
-            partitionColumn = partitionColumn
-          ),
-          existingPartitionColumn = partitionColumn
-        )
-      }
-      .reduce { (df1, df2) =>
-        // align the columns by name - when one source has select * the ordering might not be aligned
-        val columns1 = df1.schema.fields.map(_.name)
-        df1.union(df2.selectExpr(columns1: _*))
-      }
+    val sourceQueryWindow: Option[Window] =
+      if (incrementalMode) Some(new Window(queryRange.daysBetween, TimeUnit.DAYS)) else groupByConf.maxWindow
+    val backfillQueryRange: PartitionRange =
+      if (incrementalMode) PartitionRange(queryRange.end, queryRange.end)(tableUtils) else queryRange
+    val inputDf =
+      buildSourceDataFrame(groupByConf, backfillQueryRange, sourceQueryWindow, tableUtils, schemaOnly = false)
 
     def doesNotNeedTime = !Option(groupByConf.getAggregations).exists(_.toScala.needsTimestamp)
     def hasValidTimeColumn = inputDf.schema.find(_.name == Constants.TimeColumn).exists(_.dataType == LongType)
@@ -553,15 +605,17 @@ object GroupBy {
         logger.info(s"printing mutation data for groupBy: ${groupByConf.metaData.name}")
         df.prettyPrint()
       }
-
       df
     }
+
+    // incremental mode stores un-finalized IRs in the table, so never finalize here.
+    val finalizeValue = if (incrementalMode) false else finalize
 
     new GroupBy(Option(groupByConf.getAggregations).map(_.toScala).orNull,
                 keyColumns,
                 nullFiltered,
                 mutationDfFn,
-                finalize = finalize)
+                finalize = finalizeValue)
   }
 
   def getIntersectedRange(source: api.Source,
@@ -688,15 +742,257 @@ object GroupBy {
     query
   }
 
+  /**
+    * Unions all of the GroupBy's sources into one schema-aligned input DataFrame.
+    *
+    * @param window query window (None uses the config's maxWindow)
+    * @param schemaOnly if true, returns an empty (limit 0) DataFrame with just the schema
+    */
+  private def buildSourceDataFrame(
+      groupByConf: api.GroupBy,
+      range: PartitionRange,
+      window: Option[Window],
+      tableUtils: TableUtils,
+      schemaOnly: Boolean = false
+  ): DataFrame = {
+    groupByConf.sources.toScala
+      .map { source =>
+        val partitionColumn = tableUtils.getPartitionColumn(source.query)
+        val df = tableUtils.sqlWithDefaultPartitionColumn(
+          renderDataSourceQuery(
+            groupByConf,
+            source,
+            groupByConf.getKeyColumns.toScala,
+            range,
+            tableUtils,
+            window.orElse(groupByConf.maxWindow),
+            groupByConf.inferredAccuracy,
+            partitionColumn = partitionColumn
+          ),
+          existingPartitionColumn = partitionColumn
+        )
+        if (schemaOnly) df.limit(0) else df
+      }
+      .reduce { (df1, df2) =>
+        // align the columns by name - when one source has select * the ordering might not be aligned
+        val columns1 = df1.schema.fields.map(_.name)
+        df1.union(df2.selectExpr(columns1: _*))
+      }
+  }
+
+  /**
+    * Producer: idempotently fills the per-day IR table (`<table>_daily_inc`) for `[range.start -
+    * maxWindow, range.end]` (no-op when already complete, via unfilledRanges). Returns the queryable
+    * range a reader must scan and the unwindowed aggregation parts. Distinct from the instance-level
+    * `computeIncrementalDf`, which is the per-hole worker that writes a single sub-range.
+    *
+    * @param stepDays optional chunking of each hole into stepped sub-ranges (restartable, bounded memory)
+    */
+  def computeIncrementalDf(
+      groupByConf: api.GroupBy,
+      range: PartitionRange,
+      tableUtils: TableUtils,
+      incrementalOutputTable: String,
+      stepDays: Option[Int] = None
+  ): (PartitionRange, Seq[api.AggregationPart]) = {
+
+    val tableProps: Map[String, String] = Option(groupByConf.metaData.tableProperties)
+      .map(_.toScala)
+      .orNull
+
+    val maxWindow = groupByConf.maxWindow.getOrElse(
+      throw new IllegalArgumentException(
+        s"GroupBy ${groupByConf.metaData.name} has no windowed aggregations. " +
+          "Incremental mode requires at least one windowed aggregation."))
+
+    val incrementalQueryableRange = PartitionRange(
+      tableUtils.partitionSpec.minus(range.start, maxWindow),
+      range.end
+    )(tableUtils)
+
+    logger.info(
+      s"Materializing incremental df to $incrementalOutputTable for queryable range $incrementalQueryableRange")
+
+    val partitionRangeHoles: Option[Seq[PartitionRange]] = tableUtils.unfilledRanges(
+      incrementalOutputTable,
+      incrementalQueryableRange,
+      skipFirstHole = false
+    )
+
+    val aggregationParts = groupByConf.getAggregations.toScala.flatMap(_.unWindowed)
+
+    // Daily IRs are independent per ds, so fill each hole in stepped sub-ranges: each commits
+    // separately, making a large build restartable and bounding per-write memory. None = single write.
+    partitionRangeHoles.foreach { holes =>
+      holes.foreach { hole =>
+        val subRanges = stepDays.map(hole.steps).getOrElse(Seq(hole))
+        subRanges.foreach { subRange =>
+          logger.info(s"Filling hole in incremental table: $subRange")
+          val incrementalGroupByBackfill =
+            from(groupByConf, subRange, tableUtils, computeDependency = true, incrementalMode = true)
+          incrementalGroupByBackfill.computeIncrementalDf(incrementalOutputTable, subRange, tableProps)
+        }
+      }
+    }
+
+    (incrementalQueryableRange, aggregationParts)
+  }
+
+  // Recursively convert Spark types to the Java types that RowAggregator.denormalize() expects
+  // (e.g. FIRST_K's Array<Struct> -> ArrayList[Array]). Object-level (not a per-row closure) so it
+  // is not re-allocated for every row.
+  private def convertSparkToJava(value: Any): Any =
+    value match {
+      case null => null
+      case r: Row =>
+        r.toSeq.map(convertSparkToJava).toArray
+      case arr: scala.collection.mutable.WrappedArray[_] =>
+        new java.util.ArrayList[Any](arr.map(convertSparkToJava).toSeq.asJava)
+      case map: scala.collection.Map[_, _] =>
+        val javaMap = new java.util.HashMap[Any, Any]()
+        map.foreach { case (k, v) => javaMap.put(k, convertSparkToJava(v)) }
+        javaMap
+      case other => other
+    }
+
+  private def convertIncrementalDfToHops(
+      incrementalDf: DataFrame,
+      aggregationParts: Seq[api.AggregationPart],
+      groupByConf: api.GroupBy,
+      tableUtils: TableUtils,
+      inputSchema: Seq[(String, api.DataType)]): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+
+    val keyColumns = groupByConf.getKeyColumns.toScala
+    val keyBuilder: Row => KeyWithHash =
+      FastHashing.generateKeyBuilder(keyColumns.toArray, incrementalDf.schema)
+
+    // Resolve column indices once on the driver (capture the schema, not the DataFrame).
+    val partitionSpec = tableUtils.partitionSpec
+    val partitionColIndex = incrementalDf.schema.fieldIndex(tableUtils.partitionColumn)
+    val irColIndices: Array[Int] =
+      aggregationParts.map(part => incrementalDf.schema.fieldIndex(part.incrementalOutputColumnName)).toArray
+    val numParts = aggregationParts.length
+
+    incrementalDf.rdd
+      .mapPartitions { rows =>
+        // Reconstruct RowAggregator per partition (avoids serializing TimedDispatcher).
+        val rowAggregator = new RowAggregator(inputSchema, aggregationParts)
+
+        rows.map { row =>
+          val ts = partitionSpec.epochMillis(row.getString(partitionColIndex))
+
+          val normalizedIrs = new Array[Any](numParts)
+          var idx = 0
+          while (idx < numParts) {
+            normalizedIrs(idx) = convertSparkToJava(row.get(irColIndices(idx)))
+            idx += 1
+          }
+          val irs = rowAggregator.denormalize(normalizedIrs)
+
+          // HopIR is [IR1, ..., IRn, ts]
+          val hopIr: HopIr = irs :+ ts
+          (keyBuilder(row), hopIr)
+        }
+      }
+      // aggregateByKey (map-side combine) over groupByKey for skew resilience: a hot key's hops are
+      // merged incrementally instead of shuffled to one task as a single Iterable.
+      .aggregateByKey(mutable.ArrayBuffer.empty[HopIr])(
+        seqOp = (buf, hop) => buf += hop,
+        combOp = (a, b) => a ++= b
+      )
+      .mapValues { hopIrs =>
+        val sortedHops = hopIrs.toArray.sortBy(_.last.asInstanceOf[Long])
+        Array(sortedHops)
+      }
+  }
+
+  /**
+    * Consumer: builds a GroupBy backed by the per-day IR table, overriding hopsAggregate to return
+    * the cached hops instead of scanning raw events. Mode-agnostic adapter (backfill/upload/join all
+    * route through hopsAggregate) - keep it free of consumer-specific logic.
+    *
+    * @param buildIfMissing true = ensure-then-read (ad hoc); false = read-only (production, behind a
+    *        producer node that is the sole writer).
+    */
+  def fromIncrementalDf(
+      groupByConf: api.GroupBy,
+      range: PartitionRange,
+      tableUtils: TableUtils,
+      stepDays: Option[Int] = None,
+      buildIfMissing: Boolean = true
+  ): GroupBy = {
+
+    val incrementalOutputTable = groupByConf.metaData.incrementalOutputTable
+    assert(incrementalOutputTable != null,
+           s"incrementalOutputTable is not set for GroupBy: ${groupByConf.metaData.name}")
+
+    val (incrementalQueryableRange, aggregationParts) =
+      if (buildIfMissing) {
+        // ensure-then-read: fill any holes (no-op if already complete), then read.
+        computeIncrementalDf(groupByConf, range, tableUtils, incrementalOutputTable, stepDays)
+      } else {
+        // read-only: derive the queryable range / parts without writing (assumes an upstream
+        // producer node already materialized the table).
+        val maxWindow = groupByConf.maxWindow.getOrElse(
+          throw new IllegalArgumentException(
+            s"GroupBy ${groupByConf.metaData.name} has no windowed aggregations. " +
+              "Incremental mode requires at least one windowed aggregation."))
+        val queryableRange = PartitionRange(
+          tableUtils.partitionSpec.minus(range.start, maxWindow),
+          range.end
+        )(tableUtils)
+        (queryableRange, groupByConf.getAggregations.toScala.flatMap(_.unWindowed))
+      }
+
+    val (_, incrementalDf: DataFrame) = incrementalQueryableRange.scanQueryStringAndDf(null, incrementalOutputTable)
+
+    // Empty DF carrying the raw source schema - the GroupBy needs inputDf's schema to match the
+    // aggregation input columns; it is never read (hopsAggregate is overridden below).
+    val sourceDf = buildSourceDataFrame(groupByConf, range, None, tableUtils, schemaOnly = true)
+
+    // Pass the lightweight schema (not a RowAggregator) so executors rebuild it without serializing
+    // the TimedDispatcher.
+    val chrononSchema = SparkConversions.toChrononSchema(sourceDf.schema)
+
+    val incrementalHops =
+      convertIncrementalDfToHops(incrementalDf, aggregationParts, groupByConf, tableUtils, chrononSchema)
+
+    new GroupBy(
+      groupByConf.getAggregations.toScala,
+      groupByConf.getKeyColumns.toScala,
+      sourceDf,
+      () => null
+    ) {
+      // Serve the precomputed daily IRs instead of aggregating raw events. Reject non-daily
+      // resolutions (e.g. a TEMPORAL consumer passing FiveMinuteResolution) rather than mis-serving.
+      override def hopsAggregate(minQueryTs: Long,
+                                 resolution: Resolution): RDD[(KeyWithHash, HopsAggregator.OutputArrayType)] = {
+        require(resolution == DailyResolution,
+                s"Incremental hops are daily; hopsAggregate requires DailyResolution, got $resolution")
+        incrementalHops
+      }
+    }
+  }
+
   def computeBackfill(groupByConf: api.GroupBy,
                       endPartition: String,
                       tableUtils: TableUtils,
                       stepDays: Option[Int] = None,
                       overrideStartPartition: Option[String] = None,
-                      skipFirstHole: Boolean = true): Unit = {
+                      skipFirstHole: Boolean = true,
+                      incrementalMode: Boolean = false): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
+    // Incremental mode currently only supports SNAPSHOT accuracy with event sources.
+    // (Temporal accuracy and entity sources may be supported later.)
+    require(
+      !incrementalMode ||
+        (groupByConf.inferredAccuracy == Accuracy.SNAPSHOT && groupByConf.dataModel == Events),
+      s"GroupBy:${groupByConf.metaData.name} has incremental mode enabled, which is only supported for " +
+        s"SNAPSHOT accuracy with event sources (found accuracy=${groupByConf.inferredAccuracy}, " +
+        s"dataModel=${groupByConf.dataModel})."
+    )
     groupByConf.setups.foreach(tableUtils.sql)
     val historicalBackfill = !groupByConf.metaData.isSetHistoricalBackfill || groupByConf.metaData.historicalBackfill
     val effectiveOverrideStartPartition = if (historicalBackfill) {
@@ -754,7 +1050,11 @@ object GroupBy {
           stepRanges.zipWithIndex.foreach {
             case (range, index) =>
               logger.info(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
-              val groupByBackfill = from(groupByConf, range, tableUtils, computeDependency = true)
+              val groupByBackfill: GroupBy = if (incrementalMode) {
+                fromIncrementalDf(groupByConf, range, tableUtils, stepDays)
+              } else {
+                from(groupByConf, range, tableUtils, computeDependency = true)
+              }
               val outputDf = groupByConf.dataModel match {
                 // group by backfills have to be snapshot only
                 case Entities => groupByBackfill.snapshotEntities
