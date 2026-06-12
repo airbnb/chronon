@@ -429,15 +429,25 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
     }
 
   // Per-hole worker: aggregates `range` into daily IRs and writes them to the incremental table.
-  def computeIncrementalDf(incrementalOutputTable: String, range: PartitionRange, tableProps: Map[String, String]) = {
+  // Daily IRs are window-independent, so the resolution must be daily.
+  def computeIncrementalDf(incrementalOutputTable: String,
+                           range: PartitionRange,
+                           tableProps: Map[String, String],
+                           resolution: Resolution = DailyResolution) = {
+    require(resolution == DailyResolution,
+            s"Incremental IRs are daily; computeIncrementalDf requires DailyResolution, got $resolution")
 
-    val hops = hopsAggregate(range.toTimePoints.min, DailyResolution)
+    val hops = hopsAggregate(range.toTimePoints.min, resolution)
     val hopsDf: DataFrame = convertHopsToDf(hops, incrementalSchema)
     // hopsAggregate emits daily hops for days outside `range` (the source scan is widened by the
     // query window). Clamp the write to `range` so dynamic partition overwrite cannot clobber
     // neighboring partitions with window-truncated data.
     val clampedDf = hopsDf.filter(hopsDf.col(tableUtils.partitionColumn).between(range.start, range.end))
-    clampedDf.save(incrementalOutputTable, tableProps)
+    val incrementalTableProps = Option(tableProps).getOrElse(Map.empty) ++ Map(
+      Constants.ChrononGenerated -> "true",
+      Constants.ChrononTableType -> Constants.TableType.GroupByIncremental
+    )
+    clampedDf.save(incrementalOutputTable, incrementalTableProps)
   }
 }
 

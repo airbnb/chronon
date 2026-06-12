@@ -21,6 +21,7 @@ import ai.chronon.api.Extensions._
 import ai.chronon.api.{
   Aggregation,
   Builders,
+  Constants,
   DoubleType,
   IntType,
   LongType,
@@ -411,6 +412,11 @@ class GroupByIncrementalTest {
       Set(targetDay),
       writtenPartitions
     )
+
+    // The _daily_inc table is tagged as a Chronon-generated incremental table.
+    val props = tableUtils.getTableProperties(outputTable).getOrElse(Map.empty)
+    assertEquals(Constants.TableType.GroupByIncremental, props.get(Constants.ChrononTableType).orNull)
+    assertEquals("true", props.get(Constants.ChrononGenerated).orNull)
   }
 
   /**
@@ -431,19 +437,23 @@ class GroupByIncrementalTest {
       Column("value", DoubleType, 100)
     )
 
-    // Generate events and add random milliseconds to ts for unique timestamps
-    import org.apache.spark.sql.functions.{rand, col}
-    import org.apache.spark.sql.types.{LongType => SparkLongType}
+    // FIRST/LAST tie-break is ambiguous when two events for the same (user, day) share a ts, so
+    // make ts unique WITHIN each day deterministically: snap to the day's midnight and add a
+    // per-day row number as a millisecond offset. With << 86.4M rows/day the offset stays within
+    // the day (ds unchanged) and no two rows in a day collide -> FIRST/LAST is well-defined and the
+    // test is deterministic (no rand()).
+    import org.apache.spark.sql.functions.{col, monotonically_increasing_id, row_number}
+    import org.apache.spark.sql.expressions.{Window => SparkWindow}
+    val dayMs = 86400000L
 
-    val dfWithRandom = DataFrameGen.events(spark, schema, count = 10000, partitions = 20)
-      .withColumn("ts", col("ts") + (rand() * 86400000).cast(SparkLongType))  // Add 0-24h random millis
-      .cache()  // Mark for caching
+    val dfUnique = DataFrameGen.events(spark, schema, count = 10000, partitions = 20)
+      .withColumn("_day_ms", (col("ts") / dayMs).cast("long") * dayMs)
+      .withColumn("_rn", row_number().over(SparkWindow.partitionBy("_day_ms").orderBy(monotonically_increasing_id())))
+      .withColumn("ts", col("_day_ms") + col("_rn"))
+      .drop("_day_ms", "_rn")
 
-    // Force materialization - computes and caches the random values
-    dfWithRandom.count()
-
-    // Write the CACHED data to table - writes already-materialized values
-    dfWithRandom.write.mode("overwrite").saveAsTable(s"${namespace}.test_first_last_input")
+    // Materialize by writing to a table and reading back, so the row numbering is frozen.
+    dfUnique.write.mode("overwrite").saveAsTable(s"${namespace}.test_first_last_input")
 
     // Read back from table - guaranteed same data as what was written
     val df = spark.table(s"${namespace}.test_first_last_input")
