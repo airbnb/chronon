@@ -420,6 +420,66 @@ class GroupByIncrementalTest {
   }
 
   /**
+   * Aggregations sharing the same (operation, input_column, bucket) but differing only by window
+   * collapse to the same daily IR column (the window suffix is dropped) - e.g. SUM(price, 7d) and
+   * SUM(price, 30d) both -> price_sum, with identical IR values. The incremental schema dedups them
+   * to a single column rather than writing duplicates; this verifies one column is written and the
+   * windowed output still matches the non-incremental path.
+   */
+  @Test
+  def testIncrementalDedupsSharedColumns(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTestDupCols" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val namespace = s"incremental_dupcols_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+    val maxWindowDays = 10
+    // Same (SUM, price) split across two aggregations differing only by window -> both collapse to
+    // the daily IR column "price_sum". Include COUNT so there is a second, non-colliding column.
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.SUM, "price", Seq(new Window(5, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.SUM, "price", Seq(new Window(maxWindowDays, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "user", Seq(new Window(maxWindowDays, TimeUnit.DAYS)))
+    )
+
+    val (source, _) =
+      createTestSourceIncremental(windowSize = 30, suffix = "_dedup", partitionColOpt = Some(tableUtils.partitionColumn))
+    def mkConf(name: String): ai.chronon.api.GroupBy =
+      Builders.GroupBy(
+        sources = Seq(source),
+        keyColumns = Seq("item"),
+        aggregations = aggregations,
+        metaData = Builders.MetaData(name = name, namespace = namespace, team = "chronon"),
+        backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
+          new Window(5, TimeUnit.DAYS))
+      )
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val incConf = mkConf("dedup_incremental")
+    GroupBy.computeBackfill(incConf, today, tableUtils, stepDays = Some(1), incrementalMode = true)
+
+    // The _daily_inc table writes exactly one price_sum column (the two windows collapsed).
+    val incCols = spark.table(incConf.metaData.incrementalOutputTable).columns.toSeq
+    assertEquals(s"expected a single price_sum daily-IR column, got: $incCols", 1, incCols.count(_ == "price_sum"))
+
+    // The final windowed output still matches the non-incremental path (both price_sum_5d and
+    // price_sum_10d are correctly reconstructed from the single shared daily IR).
+    val normalConf = mkConf("dedup_normal")
+    GroupBy.computeBackfill(normalConf, today, tableUtils, stepDays = Some(1), incrementalMode = false)
+
+    val diff = Comparison.sideBySide(
+      spark.read.table(normalConf.metaData.outputTable),
+      spark.read.table(incConf.metaData.outputTable),
+      List("item", tableUtils.partitionColumn))
+    if (diff.count() > 0) {
+      println("=== dedup incremental vs normal diff ===")
+      diff.show(50, truncate = false)
+    }
+    assertEquals(0, diff.count())
+  }
+
+  /**
    * Unit test for FIRST and LAST aggregations with incremental IR
    * FIRST/LAST use TimeTuple IR: struct {epochMillis: Long, payload: Value}
    * FIRST keeps the value with the earliest timestamp

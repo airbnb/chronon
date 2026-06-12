@@ -102,7 +102,21 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
 
   @transient lazy val flattenedAgg: RowAggregator =
     new RowAggregator(selectedSchema, aggregations.flatMap(_.unWindowed))
-  lazy val incrementalSchema: Array[(String, api.DataType)] = flattenedAgg.incrementalOutputSchema
+
+  // The incremental (daily) IR column name drops the window suffix, since daily IRs are
+  // window-independent. So aggregations sharing the same (operation, input_column, bucket) but
+  // differing only by window collapse to the same column - e.g. SUM(price, 7d) and SUM(price, 30d)
+  // both -> price_sum, with identical IR values. We persist one column per distinct name; the read
+  // path (convertIncrementalDfToHops) looks up each part by name, so the collapsed windows all map
+  // back to that single column. These are the indices of the first occurrence of each name.
+  lazy val uniqueIncrementalIndices: Array[Int] = {
+    val seen = mutable.HashSet.empty[String]
+    flattenedAgg.incrementalOutputSchema.zipWithIndex.collect {
+      case ((name, _), idx) if seen.add(name) => idx
+    }
+  }
+  lazy val incrementalSchema: Array[(String, api.DataType)] =
+    uniqueIncrementalIndices.map(flattenedAgg.incrementalOutputSchema)
 
   @transient
   protected[spark] lazy val windowAggregator: RowAggregator =
@@ -377,7 +391,10 @@ class GroupBy(val aggregations: Seq[api.Aggregation],
             dailyHops.map { hopIr =>
               val timestamp = hopIr.last.asInstanceOf[Long]
               val normalizedIR = flattenedAgg.normalize(hopIr.dropRight(1))
-              ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), normalizedIR)
+              // Keep only one value per distinct incremental column name (duplicates are identical),
+              // matching incrementalSchema.
+              val dedupedIR = uniqueIncrementalIndices.map(normalizedIR)
+              ((keyWithHash.data :+ tableUtils.partitionSpec.at(timestamp) :+ timestamp), dedupedIR)
             }
           case None => Iterator.empty
         }
