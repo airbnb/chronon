@@ -682,6 +682,35 @@ object Driver {
     }
   }
 
+  // Producer node for incremental mode: fills the `<table>_daily_inc` IR table for
+  // [start - maxWindow, end] so backfill and upload consumers can read it (idempotent; no-op when
+  // already complete). Running this as a dedicated upstream task makes it the sole writer, so the
+  // two consumers can run in parallel as pure readers without racing on the write.
+  object GroupByIncrementalBuild {
+    @transient lazy val logger = LoggerFactory.getLogger(getClass)
+    class Args extends Subcommand("group-by-incremental-build") with OfflineSubcommand {
+      lazy val groupByConf: api.GroupBy = parseConf[api.GroupBy](confPath())
+      override def subcommandName() = s"groupBy_${groupByConf.metaData.name}_incremental_build"
+    }
+
+    def run(args: Args): Unit = {
+      val tableUtils = args.buildTableUtils()
+      val conf = args.groupByConf
+      require(
+        Option(conf.isIncremental).getOrElse(false),
+        s"GroupBy:${conf.metaData.name} is not incremental; group-by-incremental-build requires is_incremental=true."
+      )
+      val start = args.startPartitionOverride.toOption.getOrElse(conf.backfillStartDate)
+      GroupBy.computeIncrementalDf(
+        conf,
+        PartitionRange(start, args.endDate())(tableUtils),
+        tableUtils,
+        conf.metaData.incrementalOutputTable,
+        args.stepDays.toOption
+      )
+    }
+  }
+
   object ConsistencyMetricsCompute {
     class Args extends Subcommand("consistency-metrics-compute") with OfflineSubcommand {
       override def subcommandName() = "consistency-metrics-compute"
@@ -1101,6 +1130,8 @@ object Driver {
     addSubcommand(StagingQueryBackfillArgs)
     object GroupByUploadArgs extends GroupByUploader.Args
     addSubcommand(GroupByUploadArgs)
+    object GroupByIncrementalBuildArgs extends GroupByIncrementalBuild.Args
+    addSubcommand(GroupByIncrementalBuildArgs)
     object FetcherCliArgs extends FetcherCli.Args
     addSubcommand(FetcherCliArgs)
     object MetadataUploaderArgs extends MetadataUploader.Args
@@ -1144,25 +1175,26 @@ object Driver {
     args.subcommand match {
       case Some(x) =>
         x match {
-          case args.JoinBackFillArgs         => JoinBackfill.run(args.JoinBackFillArgs)
-          case args.GroupByBackfillArgs      => GroupByBackfill.run(args.GroupByBackfillArgs)
-          case args.StagingQueryBackfillArgs => StagingQueryBackfill.run(args.StagingQueryBackfillArgs)
-          case args.GroupByUploadArgs        => GroupByUploader.run(args.GroupByUploadArgs)
-          case args.GroupByStreamingArgs     => GroupByStreaming.run(args.GroupByStreamingArgs)
-          case args.MetadataUploaderArgs     => MetadataUploader.run(args.MetadataUploaderArgs)
-          case args.FetcherCliArgs           => FetcherCli.run(args.FetcherCliArgs)
-          case args.LogFlattenerArgs         => LogFlattener.run(args.LogFlattenerArgs)
-          case args.ConsistencyMetricsArgs   => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
-          case args.CompareJoinQueryArgs     => CompareJoinQuery.run(args.CompareJoinQueryArgs)
-          case args.AnalyzerArgs             => Analyzer.run(args.AnalyzerArgs)
-          case args.DailyStatsArgs           => DailyStats.run(args.DailyStatsArgs)
-          case args.LogStatsArgs             => LogStats.run(args.LogStatsArgs)
-          case args.MetadataExportArgs       => MetadataExport.run(args.MetadataExportArgs)
-          case args.LabelJoinArgs            => LabelJoin.run(args.LabelJoinArgs)
-          case args.JoinBackfillLeftArgs     => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
-          case args.JoinBackfillFinalArgs    => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
-          case args.ModelTransformBatchArgs  => ModelTransformBatch.run(args.ModelTransformBatchArgs)
-          case _                             => logger.info(s"Unknown subcommand: $x")
+          case args.JoinBackFillArgs            => JoinBackfill.run(args.JoinBackFillArgs)
+          case args.GroupByBackfillArgs         => GroupByBackfill.run(args.GroupByBackfillArgs)
+          case args.StagingQueryBackfillArgs    => StagingQueryBackfill.run(args.StagingQueryBackfillArgs)
+          case args.GroupByUploadArgs           => GroupByUploader.run(args.GroupByUploadArgs)
+          case args.GroupByIncrementalBuildArgs => GroupByIncrementalBuild.run(args.GroupByIncrementalBuildArgs)
+          case args.GroupByStreamingArgs        => GroupByStreaming.run(args.GroupByStreamingArgs)
+          case args.MetadataUploaderArgs        => MetadataUploader.run(args.MetadataUploaderArgs)
+          case args.FetcherCliArgs              => FetcherCli.run(args.FetcherCliArgs)
+          case args.LogFlattenerArgs            => LogFlattener.run(args.LogFlattenerArgs)
+          case args.ConsistencyMetricsArgs      => ConsistencyMetricsCompute.run(args.ConsistencyMetricsArgs)
+          case args.CompareJoinQueryArgs        => CompareJoinQuery.run(args.CompareJoinQueryArgs)
+          case args.AnalyzerArgs                => Analyzer.run(args.AnalyzerArgs)
+          case args.DailyStatsArgs              => DailyStats.run(args.DailyStatsArgs)
+          case args.LogStatsArgs                => LogStats.run(args.LogStatsArgs)
+          case args.MetadataExportArgs          => MetadataExport.run(args.MetadataExportArgs)
+          case args.LabelJoinArgs               => LabelJoin.run(args.LabelJoinArgs)
+          case args.JoinBackfillLeftArgs        => JoinBackfillLeft.run(args.JoinBackfillLeftArgs)
+          case args.JoinBackfillFinalArgs       => JoinBackfillFinal.run(args.JoinBackfillFinalArgs)
+          case args.ModelTransformBatchArgs     => ModelTransformBatch.run(args.ModelTransformBatchArgs)
+          case _                                => logger.info(s"Unknown subcommand: $x")
         }
       case None => logger.info(s"specify a subcommand please")
     }

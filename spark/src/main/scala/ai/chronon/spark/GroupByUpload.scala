@@ -216,14 +216,30 @@ object GroupByUpload {
     // for mutations I need the snapshot from the previous day, but a batch end date of ds +1
     lazy val otherGroupByUpload = new GroupByUpload(batchEndDate, groupBy)
 
+    // Incremental mode (SNAPSHOT + events only) serves the snapshot-events upload from the cached
+    // daily IR table instead of re-scanning raw events. ensure-then-read (buildIfMissing=true) so an
+    // ad hoc upload builds any missing partitions itself; a production producer node can pre-fill.
+    val isIncremental = Option(groupByConf.isIncremental).getOrElse(false)
+    require(
+      !isIncremental ||
+        (groupByConf.inferredAccuracy == Accuracy.SNAPSHOT && groupByConf.dataModel == DataModel.Events),
+      s"GroupBy:${groupByConf.metaData.name} has incremental mode enabled, which upload only supports for " +
+        s"SNAPSHOT accuracy with event sources (found accuracy=${groupByConf.inferredAccuracy}, " +
+        s"dataModel=${groupByConf.dataModel})."
+    )
+    lazy val incrementalGroupByUpload =
+      new GroupByUpload(endDs, GroupBy.fromIncrementalDf(groupByConf, PartitionRange(endDs, endDs), tableUtils))
+
     logger.info(s"""
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
          |Accuracy: ${groupByConf.inferredAccuracy}
          |Data Model: ${groupByConf.dataModel}
+         |Incremental: $isIncremental
          |""".stripMargin)
 
     val kvRdd = (groupByConf.inferredAccuracy, groupByConf.dataModel) match {
-      case (Accuracy.SNAPSHOT, DataModel.Events)   => groupByUpload.snapshotEvents
+      case (Accuracy.SNAPSHOT, DataModel.Events) =>
+        if (isIncremental) incrementalGroupByUpload.snapshotEvents else groupByUpload.snapshotEvents
       case (Accuracy.SNAPSHOT, DataModel.Entities) => groupByUpload.snapshotEntities
       case (Accuracy.TEMPORAL, DataModel.Events)   => shiftedGroupByUpload.temporalEvents()
       case (Accuracy.TEMPORAL, DataModel.Entities) => otherGroupByUpload.temporalEvents()
