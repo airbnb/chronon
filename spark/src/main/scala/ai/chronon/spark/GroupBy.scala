@@ -980,7 +980,8 @@ object GroupBy {
                       stepDays: Option[Int] = None,
                       overrideStartPartition: Option[String] = None,
                       skipFirstHole: Boolean = true,
-                      incrementalMode: Boolean = false): Unit = {
+                      incrementalMode: Boolean = false,
+                      incrementalReadOnly: Boolean = false): Unit = {
     assert(
       groupByConf.backfillStartDate != null,
       s"GroupBy:${groupByConf.metaData.name} has null backfillStartDate. This needs to be set for offline backfilling.")
@@ -1051,7 +1052,7 @@ object GroupBy {
             case (range, index) =>
               logger.info(s"Computing group by for range: $range [${index + 1}/${stepRanges.size}]")
               val groupByBackfill: GroupBy = if (incrementalMode) {
-                fromIncrementalDf(groupByConf, range, tableUtils, stepDays)
+                fromIncrementalDf(groupByConf, range, tableUtils, stepDays, buildIfMissing = !incrementalReadOnly)
               } else {
                 from(groupByConf, range, tableUtils, computeDependency = true)
               }

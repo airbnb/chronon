@@ -91,11 +91,21 @@ class GroupByUploadTest {
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
     val endDs = tableUtils.partitionSpec.before(today)
     val eventsTable = "incremental_upload_events"
-    val eventSchema = List(
-      Column("user", StringType, 50),
-      Column("price", DoubleType, 100)
-    )
-    DataFrameGen.events(spark, eventSchema, count = 5000, partitions = 30).save(s"$namespace.$eventsTable")
+
+    // Deterministic data: 3 users x 15 days, one event per (user, day) at noon, so the incremental
+    // vs normal comparison is not subject to random window-edge coincidences.
+    import spark.implicits._
+    val partitionCol = tableUtils.partitionColumn
+    val days = (0 until 15).map(i => tableUtils.partitionSpec.minus(endDs, new Window(i, TimeUnit.DAYS)))
+    val users = Seq("u1", "u2", "u3")
+    val rows = for {
+      ds <- days
+      u <- users
+    } yield {
+      val ts = tableUtils.partitionSpec.epochMillis(ds) + 12 * 3600 * 1000L
+      (u, 1.0 + ds.hashCode % 5, ts, ds)
+    }
+    rows.toDF("user", "price", "ts", partitionCol).save(s"$namespace.$eventsTable", partitionColumns = Seq(partitionCol))
 
     val aggregations: Seq[Aggregation] = Seq(
       Builders.Aggregation(Operation.SUM, "price", Seq(new Window(7, TimeUnit.DAYS))),
@@ -104,7 +114,7 @@ class GroupByUploadTest {
 
     def conf(name: String, incremental: Boolean): GroupBy = {
       val gb = Builders.GroupBy(
-        sources = Seq(Builders.Source.events(Builders.Query(selects = Builders.Selects("user", "price")),
+        sources = Seq(Builders.Source.events(Builders.Query(selects = Builders.Selects("user", "price", "ts")),
                                              table = eventsTable)),
         keyColumns = Seq("user"),
         aggregations = aggregations,

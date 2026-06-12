@@ -81,6 +81,64 @@ class GroupByIncrementalTest {
   }
 
   /**
+   * Diagnostic: the daily IR table must contain a complete hop for EVERY day with source events,
+   * including the boundary days of the queryable range. Builds a controlled source with exactly one
+   * event per day for a single user, fills _daily_inc over the full range, and asserts every day's
+   * IR count == 1 (a missing/under-counted boundary day exposes the build-side window filter bug).
+   */
+  @Test
+  def testIncrementalBuildCoversBoundaryDays(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTestBoundary" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    import spark.implicits._
+    val namespace = s"incremental_boundary_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+    val partitionCol = tableUtils.partitionColumn
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    // 15 consecutive days; one event for user "u1" on each day, at noon of that day.
+    val numDays = 15
+    val days = (0 until numDays).map(i => tableUtils.partitionSpec.minus(today, new Window(i, TimeUnit.DAYS))).sorted
+    val rows = days.map { ds =>
+      val ts = tableUtils.partitionSpec.epochMillis(ds) + 12 * 3600 * 1000L // noon of ds
+      ("u1", 1.0, ts, ds)
+    }
+    val sourceTable = s"$namespace.boundary_input"
+    rows.toDF("user", "price", "ts", partitionCol).save(sourceTable, partitionColumns = Seq(partitionCol))
+
+    val source = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("ts", "user", "price"), partitionColumn = partitionCol),
+      table = sourceTable)
+    val conf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = Seq(Builders.Aggregation(Operation.COUNT, "price", Seq(new Window(7, TimeUnit.DAYS)))),
+      metaData = Builders.MetaData(name = "boundary_incremental", namespace = namespace, team = "chronon"),
+      backfillStartDate = days.head
+    )
+    val incrementalTable = conf.metaData.incrementalOutputTable
+
+    // Fill the IR table for the full output range [days.head, days.last].
+    GroupBy.computeIncrementalDf(conf, PartitionRange(days.head, days.last), tableUtils, incrementalTable)
+
+    // Every day with an event must have an IR row with count == 1.
+    val irByDay = spark
+      .table(incrementalTable)
+      .where("user = 'u1'")
+      .selectExpr(partitionCol, "price_count")
+      .collect()
+      .map(r => r.getString(0) -> r.getLong(1))
+      .toMap
+    val missingOrWrong = days.filter(d => irByDay.get(d) != Some(1L))
+    assertTrue(
+      s"daily IR must cover every event day with count 1; offending days (day -> count): " +
+        s"${missingOrWrong.map(d => d -> irByDay.get(d)).mkString(", ")}",
+      missingOrWrong.isEmpty
+    )
+  }
+
+  /**
    * Tests basic aggregations in incremental mode by comparing Chronon's output against SQL.
    *
    * Operations: SUM, COUNT, AVERAGE, MIN, MAX, VARIANCE, UNIQUE_COUNT, HISTOGRAM, BOUNDED_UNIQUE_COUNT
@@ -279,6 +337,64 @@ class GroupByIncrementalTest {
     if (diff.count() > 0) {
       diff.show()
       println("=== Diff result rows ===")
+    }
+    assertEquals(0, diff.count())
+  }
+
+  /**
+   * Data-quality: at the window tail boundary, incremental snapshot output must exactly match the
+   * non-incremental path for every output day. One event per day at noon for a single user; COUNT
+   * over a 7-day window. Compares incremental vs normal snapshotEvents day-by-day so any tail
+   * off-by-one (a day whose count differs, or a dropped key) surfaces deterministically.
+   */
+  @Test
+  def testIncrementalWindowTailBoundaryMatchesNormal(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTestTail" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    import spark.implicits._
+    val namespace = s"incremental_tail_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+    val partitionCol = tableUtils.partitionColumn
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    // 25 consecutive days, one event/day at noon for user u1.
+    val allDays = (0 until 25).map(i => tableUtils.partitionSpec.minus(today, new Window(i, TimeUnit.DAYS))).sorted
+    val rows = allDays.map { ds =>
+      ("u1", 1.0, tableUtils.partitionSpec.epochMillis(ds) + 12 * 3600 * 1000L, ds)
+    }
+    val sourceTable = s"$namespace.tail_input"
+    rows.toDF("user", "price", "ts", partitionCol).save(sourceTable, partitionColumns = Seq(partitionCol))
+
+    val aggregations =
+      Seq(Builders.Aggregation(Operation.COUNT, "price", Seq(new Window(7, TimeUnit.DAYS))))
+    val source = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("ts", "user", "price"), partitionColumn = partitionCol),
+      table = sourceTable)
+    val conf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = aggregations,
+      metaData = Builders.MetaData(name = "tail_incremental", namespace = namespace, team = "chronon"),
+      backfillStartDate = allDays.head
+    )
+
+    // Output range = the second half (so every output day has a full 7-day lookback available).
+    val outStart = allDays(10)
+    val outEnd = allDays.last
+    val outputRange = PartitionRange(outStart, outEnd)(tableUtils)
+
+    val rawDf = spark.read.table(sourceTable)
+    val normalGroupBy = new GroupBy(aggregations, Seq("user"), rawDf)
+    val normalDf = normalGroupBy.snapshotEvents(outputRange)
+
+    val incrementalGroupBy = GroupBy.fromIncrementalDf(conf, outputRange, tableUtils)
+    val incrementalDf = incrementalGroupBy.snapshotEvents(outputRange)
+
+    val diff = Comparison.sideBySide(normalDf, incrementalDf, List("user", partitionCol))
+    if (diff.count() > 0) {
+      println("=== tail-boundary incremental vs normal diff (a_=normal, b_=incremental) ===")
+      diff.show(100, truncate = false)
     }
     assertEquals(0, diff.count())
   }

@@ -183,7 +183,8 @@ object GroupByUpload {
           endDs: String,
           tableUtilsOpt: Option[TableUtils] = None,
           showDf: Boolean = false,
-          jsonPercent: Int = 1): Unit = {
+          jsonPercent: Int = 1,
+          incrementalReadOnly: Boolean = false): Unit = {
     val context = Metrics.Context(Metrics.Environment.GroupByUpload, groupByConf)
     val startTs = System.currentTimeMillis()
     implicit val tableUtils: TableUtils =
@@ -228,7 +229,11 @@ object GroupByUpload {
         s"dataModel=${groupByConf.dataModel})."
     )
     lazy val incrementalGroupByUpload =
-      new GroupByUpload(endDs, GroupBy.fromIncrementalDf(groupByConf, PartitionRange(endDs, endDs), tableUtils))
+      new GroupByUpload(endDs,
+                        GroupBy.fromIncrementalDf(groupByConf,
+                                                  PartitionRange(endDs, endDs),
+                                                  tableUtils,
+                                                  buildIfMissing = !incrementalReadOnly))
 
     logger.info(s"""
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}

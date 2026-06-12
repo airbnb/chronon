@@ -157,6 +157,16 @@ object Driver {
                descr = "Runs offline backfill in steps, step-days at a time. Default is 30 days",
                default = Option(30))
 
+    val incrementalReadOnly: ScallopOption[Boolean] =
+      opt[Boolean](
+        required = false,
+        default = Some(false),
+        descr =
+          "For incremental GroupBys: read the daily IR table without filling missing partitions, " +
+            "assuming an upstream group-by-incremental-build producer is the sole writer. " +
+            "Default false = ensure-then-read (fill any holes, then read)."
+      )
+
     val startPartitionOverride: ScallopOption[String] =
       opt[String](required = false,
                   descr =
@@ -471,7 +481,8 @@ object Driver {
         args.stepDays.toOption,
         args.startPartitionOverride.toOption,
         !args.runFirstHole(),
-        Option(args.groupByConf.isIncremental).getOrElse(false)
+        Option(args.groupByConf.isIncremental).getOrElse(false),
+        args.incrementalReadOnly()
       )
 
       if (args.shouldExport()) {
@@ -678,7 +689,9 @@ object Driver {
     }
 
     def run(args: Args): Unit = {
-      GroupByUpload.run(parseConf[api.GroupBy](args.confPath()), args.endDate())
+      GroupByUpload.run(parseConf[api.GroupBy](args.confPath()),
+                        args.endDate(),
+                        incrementalReadOnly = args.incrementalReadOnly())
     }
   }
 
