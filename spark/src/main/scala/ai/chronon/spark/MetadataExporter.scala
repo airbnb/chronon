@@ -135,15 +135,16 @@ object MetadataExporter {
           val stagingQuery = ThriftJsonCodec.fromJsonFile[api.StagingQuery](path, check = false)
           try {
             val outputSchema =
-              analyzer.analyzeStagingQuery(stagingQuery).outputSchema.map { case (name, dataType) =>
-                Map(
-                  "name" -> name,
-                  "columnType" -> DataType.toString(dataType),
-                  "operation" -> "StagingQuery",
-                  "window" -> null,
-                  "inputColumn" -> null,
-                  "groupBy" -> null
-                )
+              analyzer.analyzeStagingQuery(stagingQuery).outputSchema.map {
+                case (name, dataType) =>
+                  Map(
+                    "name" -> name,
+                    "columnType" -> DataType.toString(dataType),
+                    "operation" -> "StagingQuery",
+                    "window" -> null,
+                    "inputColumn" -> null,
+                    "groupBy" -> null
+                  )
               }
             configData + ("features" -> outputSchema)
           } catch {
