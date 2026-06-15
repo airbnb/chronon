@@ -75,6 +75,7 @@ object Constants {
   // Values for ChrononTableType
   object TableType {
     val GroupBy: String = "group_by"
+    val GroupByIncremental: String = "group_by_incremental"
     val Join: String = "join"
     val JoinPart: String = "join_part"
     val Bootstrap: String = "bootstrap"
