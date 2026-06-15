@@ -101,7 +101,8 @@ class MetadataExporterTest extends TestCase {
       Column("a", api.StringType, 10),
       Column("b", api.StringType, 10),
       Column("c", api.LongType, 100),
-      Column("d", api.LongType, 100)
+      Column("d", api.LongType, 100),
+      Column("e", api.LongType, 100)
     )
     DataFrameGen.events(spark, sampleData, 10000, partitions = 30).save(s"$namespace.$tablename")
 

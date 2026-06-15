@@ -4,6 +4,6 @@
     "outputNamespace": "example_namespace",
     "team": "team"
   },
-  "query": "SELECT a, b, c, d FROM example_namespace.table WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
+  "query": "SELECT a, b, c, d, e FROM example_namespace.table WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
   "startPartition": "2021-06-01"
 }
