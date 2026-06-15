@@ -93,6 +93,39 @@ class MetadataExporterTest extends TestCase {
     assertEquals(jsonNode.get("metaData").get("name").asText(), "team.example_join.v1")
   }
 
+  def testStagingQueryMetadataExport(): Unit = {
+    val namespace = "example_namespace"
+    val tablename = "table"
+    tableUtils.createDatabase(namespace)
+    val sampleData = List(
+      Column("a", api.StringType, 10),
+      Column("b", api.StringType, 10),
+      Column("c", api.LongType, 100),
+      Column("d", api.LongType, 100)
+    )
+    DataFrameGen.events(spark, sampleData, 10000, partitions = 30).save(s"$namespace.$tablename")
+
+    val confResource = getClass.getResource("/")
+    val tmpDir: File = Files.createTempDir()
+    MetadataExporter.run(confResource.getPath, Some(tmpDir.getAbsolutePath))
+
+    val stagingQueryFile = new File(s"${tmpDir.getAbsolutePath}/staging_queries/example_staging_query.v1")
+    assertTrue(s"Expected staging query output at ${stagingQueryFile.getAbsolutePath}", stagingQueryFile.exists())
+
+    val source = Source.fromFile(stagingQueryFile)
+    val jsonString = source.getLines().mkString("\n")
+    source.close()
+    val objectMapper = new ObjectMapper()
+    objectMapper.registerModule(DefaultScalaModule)
+    val jsonNode = objectMapper.readTree(jsonString)
+    assertEquals("team.example_staging_query.v1", jsonNode.get("metaData").get("name").asText())
+    assertTrue("Expected features array in staging query output", jsonNode.has("features"))
+    val features = jsonNode.get("features")
+    assertTrue("Expected non-empty features array", features.size() > 0)
+    val firstFeature = features.get(0)
+    assertEquals("StagingQuery", firstFeature.get("operation").asText())
+  }
+
   def testEmbeddedGroupByExport(): Unit = {
     // Create the table used by both the Join left side and embedded GroupBy sources.
     val namespace = "example_namespace"

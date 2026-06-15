@@ -36,6 +36,7 @@ object Metrics {
     val StagingQueryOffline = "staging_query.offline"
     val groupByMetadataExport = "group_by.metadata_export"
     val joinMetadataExport = "join.metadata_export"
+    val stagingQueryMetadataExport = "staging_query.metadata_export"
     val JoinLogFlatten = "join.log_flatten"
     val LabelJoin = "label_join"
     val ModelTransform = "model_transform"
