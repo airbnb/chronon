@@ -183,8 +183,7 @@ object GroupByUpload {
           endDs: String,
           tableUtilsOpt: Option[TableUtils] = None,
           showDf: Boolean = false,
-          jsonPercent: Int = 1,
-          incrementalReadOnly: Boolean = false): Unit = {
+          jsonPercent: Int = 1): Unit = {
     val context = Metrics.Context(Metrics.Environment.GroupByUpload, groupByConf)
     val startTs = System.currentTimeMillis()
     implicit val tableUtils: TableUtils =
@@ -218,8 +217,8 @@ object GroupByUpload {
     lazy val otherGroupByUpload = new GroupByUpload(batchEndDate, groupBy)
 
     // Incremental mode (SNAPSHOT + events only) serves the snapshot-events upload from the cached
-    // daily IR table instead of re-scanning raw events. ensure-then-read (buildIfMissing=true) so an
-    // ad hoc upload builds any missing partitions itself; a production producer node can pre-fill.
+    // daily IR table instead of re-scanning raw events (ensure-then-read: builds any missing
+    // partitions, then reads).
     val isIncremental = Option(groupByConf.isIncremental).getOrElse(false)
     require(
       !isIncremental ||
@@ -229,11 +228,7 @@ object GroupByUpload {
         s"dataModel=${groupByConf.dataModel})."
     )
     lazy val incrementalGroupByUpload =
-      new GroupByUpload(endDs,
-                        GroupBy.fromIncrementalDf(groupByConf,
-                                                  PartitionRange(endDs, endDs),
-                                                  tableUtils,
-                                                  buildIfMissing = !incrementalReadOnly))
+      new GroupByUpload(endDs, GroupBy.fromIncrementalDf(groupByConf, PartitionRange(endDs, endDs), tableUtils))
 
     logger.info(s"""
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
