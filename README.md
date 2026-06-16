@@ -178,7 +178,7 @@ Next, we need the features that we previously defined backfilled in a single tab
 
 For our use case, it's very important that features are computed as of the correct timestamp. Because our model runs when the checkout flow begins, we'll want to be sure to use the corresponding timestamp in our backfill, such that features values for model training logically match what the model will see in online inference.
 
-`Join` is the API that drives feature backfills for training data. It primarilly performs the following functions:
+`Join` is the API that drives feature backfills for training data. It primarily performs the following functions:
 
 1. Combines many features together into a wide view (hence the name `Join`).
 2. Defines the primary keys and timestamps for which feature backfills should be performed. Chronon can then guarantee that feature values are correct as of this timestamp.
