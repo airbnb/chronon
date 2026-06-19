@@ -813,4 +813,26 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertEquals(2147483648L, result.get("struct_id"))
     assertEquals("10", result.get("struct_amount"))
   }
+
+  // A numeric value may arrive boxed narrower than the schema declares (e.g. a small integer as
+  // java.lang.Integer for a LongType field, as JSON parsers produce). The converter must coerce it
+  // to the schema's type so Catalyst's typed accessors (getLong, ...) don't throw at read time.
+  @Test
+  def testNarrowNumericValuesAreCoercedToSchemaType(): Unit = {
+    val nested = new util.LinkedHashMap[String, Any]()
+    nested.put("inner_long", 7) // Integer in a LongType slot
+    val data: Map[String, Any] = Map("a_long" -> 5, "nested" -> nested)
+    val schema = StructType.from(
+      "NumericCoercionStruct",
+      Array(
+        ("a_long", LongType),
+        ("nested", StructType.from("Nested", Array(("inner_long", LongType))))
+      )
+    )
+    val selects = Seq("a_long" -> "a_long", "inner_long" -> "nested.inner_long")
+    val result = new PooledCatalystUtil(selects, schema).applyDerivations(data)
+    assertEquals(2, result.get.size)
+    assertEquals(5L, result.get("a_long"))
+    assertEquals(7L, result.get("inner_long")) // nested coercion — the case castTo never reaches
+  }
 }
