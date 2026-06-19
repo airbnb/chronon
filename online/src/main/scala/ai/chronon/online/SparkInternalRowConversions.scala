@@ -149,22 +149,59 @@ object SparkInternalRowConversions {
         val names = fields.map { _.name }
 
         def mapConverter(structMap: Any): Any = {
-          val map = structMap.asInstanceOf[Map[Any, Any]]
-          val valueArr =
-            names.iterator
-              .zip(funcs.iterator)
-              .map { case (name, func) => map.get(name).map(func).orNull }
-              .toArray
+          val getValue: Any => Any = structMap match {
+            case scalaMap: Map[_, _]          => (name: Any) => scalaMap.asInstanceOf[Map[Any, Any]].get(name).orNull
+            case javaMap: java.util.Map[_, _] => (name: Any) => javaMap.asInstanceOf[java.util.Map[Any, Any]].get(name)
+            case _                            => throw new ClassCastException(s"Cannot cast ${structMap.getClass.getName} to Map")
+          }
+
+          val valueArr = names.iterator
+            .zip(funcs.iterator)
+            .map {
+              case (name, func) =>
+                val value = getValue(name)
+                if (value != null) func(value) else null
+            }
+            .toArray
           new GenericInternalRow(valueArr)
         }
 
-        def arrayConverter(structArr: Any): Any = {
-          val valueArr = structArr
-            .asInstanceOf[Array[Any]]
-            .iterator
-            .zip(funcs.iterator)
-            .map { case (value, func) => if (value != null) func(value) else null }
-            .toArray
+        def arrayConverter(structData: Any): Any = {
+          val valueArr = structData match {
+            case listValue: java.util.List[_] =>
+              listValue
+                .iterator()
+                .toScala
+                .zip(funcs.iterator)
+                .map { case (value, func) => if (value != null) func(value) else null }
+                .toArray
+            case arrayValue: Array[_] =>
+              arrayValue.iterator
+                .zip(funcs.iterator)
+                .map { case (value, func) => if (value != null) func(value) else null }
+                .toArray
+            case javaMap: java.util.Map[_, _] =>
+              val map = javaMap.asInstanceOf[java.util.Map[Any, Any]]
+              names.iterator
+                .zip(funcs.iterator)
+                .map {
+                  case (name, func) =>
+                    val value = map.get(name)
+                    if (value != null) func(value) else null
+                }
+                .toArray
+            case scalaMap: Map[_, _] =>
+              val map = scalaMap.asInstanceOf[Map[Any, Any]]
+              names.iterator
+                .zip(funcs.iterator)
+                .map {
+                  case (name, func) =>
+                    val value = map.get(name).orNull
+                    if (value != null) func(value) else null
+                }
+                .toArray
+            case _ => throw new ClassCastException(s"Cannot cast ${structData.getClass.getName} to Array, List, or Map")
+          }
           new GenericInternalRow(valueArr)
         }
 
