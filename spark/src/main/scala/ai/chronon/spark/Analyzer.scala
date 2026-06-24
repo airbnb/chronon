@@ -585,7 +585,7 @@ class Analyzer(tableUtils: TableUtils,
 
     val baseStart = "2000-01-01"
     val baseEnd = "2000-01-02"
-    val renderedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, dummyStart, dummyEnd, dummyEnd)
+    val renderedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, baseStart, baseEnd, baseEnd)
     val outputSchema = SparkConversions.toChrononSchema(tableUtils.sql(renderedQuery).schema)
 
     if (!silenceMode) {
