@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory
 
 import java.io.{BufferedWriter, File, FileWriter}
 import ai.chronon.api
-import ai.chronon.api.ThriftJsonCodec
+import ai.chronon.api.{DataType, ThriftJsonCodec}
 import ai.chronon.online.Metrics
 import ai.chronon.online.Metrics.Environment
 import ai.chronon.spark.catalog.TableUtils
@@ -46,7 +46,7 @@ object MetadataExporter {
 
   val mapper = new ObjectMapper()
   mapper.registerModule(DefaultScalaModule)
-  val sparkSession = SparkSessionBuilder.build("metadata_exporter")
+  val sparkSession = SparkSessionBuilder.build("metadata_exporter", enforceKryoSerializer = false)
   val tableUtils = TableUtils(sparkSession)
   private val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
   private val yesterday = tableUtils.partitionSpec.before(today)
@@ -128,6 +128,34 @@ object MetadataExporter {
         } catch {
           // Unable to parse join file
           case exception: Throwable => handleException(exception, "join")
+        }
+
+      case p if p.contains(STAGING_QUERY_PATH_SUFFIX) =>
+        try {
+          val stagingQuery = ThriftJsonCodec.fromJsonFile[api.StagingQuery](path, check = false)
+          try {
+            val outputSchema =
+              analyzer.analyzeStagingQuery(stagingQuery).outputSchema.map {
+                case (name, dataType) =>
+                  Map(
+                    "name" -> name,
+                    "columnType" -> DataType.toString(dataType),
+                    "operation" -> "StagingQuery",
+                    "window" -> null,
+                    "inputColumn" -> null,
+                    "groupBy" -> null
+                  )
+              }
+            configData + ("features" -> outputSchema)
+          } catch {
+            case exception: Throwable =>
+              val context =
+                Metrics.Context(environment = Environment.stagingQueryMetadataExport, stagingQuery = stagingQuery)
+              context.incrementException(exception)
+              handleException(exception, "staging_query")
+          }
+        } catch {
+          case exception: Throwable => handleException(exception, "staging_query")
         }
 
       case _ =>
@@ -261,6 +289,8 @@ object MetadataExporter {
           writeOutputToFile(data, path, outputPath + GROUPBY_PATH_SUFFIX)
         } else if (path.contains(JOIN_PATH_SUFFIX)) {
           writeOutputToFile(data, path, outputPath + JOIN_PATH_SUFFIX)
+        } else if (path.contains(STAGING_QUERY_PATH_SUFFIX)) {
+          writeOutputToFile(data, path, outputPath + STAGING_QUERY_PATH_SUFFIX)
         }
         (path, true, None)
       } catch {

@@ -338,6 +338,8 @@ class Analyzer(tableUtils: TableUtils,
                                finalOutputSchema: Seq[(String, DataType)],
                                finalOutputMetadata: ListBuffer[AggregationMetadata])
 
+  case class AnalyzeStagingQueryResult(outputSchema: Seq[(String, DataType)])
+
   def analyzeJoin(joinConf: api.Join,
                   enableHitter: Boolean = false,
                   validateTablePermission: Boolean = validateTablePermission,
@@ -573,6 +575,28 @@ class Analyzer(tableUtils: TableUtils,
       finalOutputSchema,
       finalOutputMetadata
     )
+  }
+
+  def analyzeStagingQuery(stagingQueryConf: api.StagingQuery): AnalyzeStagingQueryResult = {
+    val name = "staging_queries/" + stagingQueryConf.metaData.name
+    logger.info(s"Running StagingQuery analysis for $name ...")
+
+    Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
+
+    val baseStart = "2000-01-01"
+    val baseEnd = "2000-01-02"
+    val renderedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, baseStart, baseEnd, baseEnd)
+    val outputSchema = SparkConversions.toChrononSchema(tableUtils.sql(renderedQuery).schema)
+
+    if (!silenceMode) {
+      logger.info(s"""
+           |----- OUTPUT SCHEMA -----
+           |${stringifySchema(outputSchema)}
+           |------ END --------------
+           |""".stripMargin)
+    }
+
+    AnalyzeStagingQueryResult(outputSchema)
   }
 
   // validate the schema of the left and right side of the join and make sure the types match
