@@ -583,8 +583,8 @@ class Analyzer(tableUtils: TableUtils,
 
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
 
-    val dummyStart = "2000-01-01"
-    val dummyEnd = "2000-01-02"
+    val baseStart = "2000-01-01"
+    val baseEnd = "2000-01-02"
     val renderedQuery = StagingQuery.substitute(tableUtils, stagingQueryConf.query, dummyStart, dummyEnd, dummyEnd)
     val outputSchema = SparkConversions.toChrononSchema(tableUtils.sql(renderedQuery).schema)
 
