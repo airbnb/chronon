@@ -24,3 +24,10 @@ DATABRICKS_ROOT_DIR_FOR_IMPORTED_FEATURES: str = "src"
 JUPYTER_OUTPUT_NAMESPACE: Optional[str] = None
 JUPYTER_JVM_LOG_FILE: str = "/tmp/chronon_logfile.log"
 JUPYTER_ROOT_DIR_FOR_IMPORTED_FEATURES: str = "src"
+
+# --------------------------------------------------------------------------
+# Local Testing Constants
+# --------------------------------------------------------------------------
+LOCAL_OUTPUT_NAMESPACE: str = "local_test"
+LOCAL_ROOT_DIR_FOR_IMPORTED_FEATURES: str = "src"
+LOCAL_NAME_PREFIX: str = "local"

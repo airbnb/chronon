@@ -117,7 +117,7 @@ class PySparkExecutable(Generic[T], ABC):
 
         for group_by in group_bys:
             group_by_join_sources: list[JoinSource] = [
-                s.joinSource for s in cast(list[Source], group_by.sources)
+                s.joinSource for s in group_by.sources
                 if s.joinSource and not s.joinSource.outputTableNameOverride
             ]
 
