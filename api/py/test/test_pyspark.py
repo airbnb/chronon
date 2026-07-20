@@ -23,6 +23,7 @@ Requirements:
     - PySpark with py4j
 """
 
+import os
 from pathlib import Path
 
 import pytest
@@ -111,6 +112,16 @@ def spark() -> SparkSession:
         .setMaster("local[2]")
         .setAppName("chronon-pyspark-tests")
     )
+
+    # On JDK 8 running under cgroup v2, CgroupV2Subsystem.getInstance NPEs during
+    # ManagementFactory.getPlatformMBeanServer(), aborting registration of the java.nio BufferPool
+    # MBeans. Spark's ExecutorMetricType init then fails looking them up and takes down the
+    # SparkContext (Py4JJavaError constructing JavaSparkContext). Disable container support so the
+    # cgroup path is skipped and platform-MBean registration completes. Set via _JAVA_OPTIONS
+    # because the driver JVM is launched (by py4j) before this SparkConf is applied.
+    java_opts = os.environ.get("_JAVA_OPTIONS", "")
+    if "UseContainerSupport" not in java_opts:
+        os.environ["_JAVA_OPTIONS"] = (java_opts + " -XX:-UseContainerSupport").strip()
 
     spark = SparkSession.builder.config(conf=spark_conf).getOrCreate()
 
