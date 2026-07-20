@@ -415,7 +415,7 @@ Cons:
 
 **The Chronon approach** 
 
-With Chronon you can use any data available in your organization, including everything in the data warehouse, any streaming source, service calls, etc, with guaranteed consistency between online and offline environments. It abstracts away the infrastructure complexity of orchestrating and maintining this data plumbing, so that users can simply define features in a simple API, and trust Chronon to handle the rest.
+With Chronon you can use any data available in your organization, including everything in the data warehouse, any streaming source, service calls, etc, with guaranteed consistency between online and offline environments. It abstracts away the infrastructure complexity of orchestrating and maintaining this data plumbing, so that users can simply define features in a simple API, and trust Chronon to handle the rest.
 
 # Contributing
 
