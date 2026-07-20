@@ -786,7 +786,8 @@ object GroupBy {
     * range a reader must scan and the unwindowed aggregation parts. Distinct from the instance-level
     * `computeIncrementalDf`, which is the per-hole worker that writes a single sub-range.
     *
-    * @param stepDays optional chunking of each hole into stepped sub-ranges (restartable, bounded memory)
+    * @param stepDays chunk size for filling holes. Supplied by the CLI --step-days (default 30, see
+    *                 OfflineSubcommand in Driver.scala); None (caller omits it) fills in one write.
     */
   def computeIncrementalDf(
       groupByConf: api.GroupBy,
@@ -813,16 +814,31 @@ object GroupBy {
     logger.info(
       s"Materializing incremental df to $incrementalOutputTable for queryable range $incrementalQueryableRange")
 
-    val partitionRangeHoles: Option[Seq[PartitionRange]] = tableUtils.unfilledRanges(
-      incrementalOutputTable,
-      incrementalQueryableRange,
-      skipFirstHole = false
-    )
+    // Source-aware hole detection: a day only counts as a hole if the source has data for it, so
+    // days before the source's first partition are not treated as (unfillable) holes. Cumulative
+    // sources carry all history in the latest partition, so they opt out of input intersection.
+    val inputTables = groupByConf.getSources.toScala.map(_.table)
+    val inputPartitionColumns = groupByConf.getSources.toScala
+      .map(s => s.table -> Option(s.query.partitionColumn))
+      .collect { case (tbName, Some(partitionCol)) => tbName -> partitionCol }
+      .toMap
+    val isAnySourceCumulative =
+      groupByConf.getSources.toScala.exists(s => s.isSetEvents() && s.getEvents().isCumulative)
+    val partitionRangeHoles: Option[Seq[PartitionRange]] =
+      tableUtils.unfilledRanges(
+        incrementalOutputTable,
+        incrementalQueryableRange,
+        inputTables = if (isAnySourceCumulative) None else Some(inputTables),
+        inputTableToPartitionColumnsMap = inputPartitionColumns,
+        skipFirstHole = false
+      )
 
     val aggregationParts = groupByConf.getAggregations.toScala.flatMap(_.unWindowed)
 
-    // Daily IRs are independent per ds, so fill each hole in stepped sub-ranges: each commits
-    // separately, making a large build restartable and bounding per-write memory. None = single write.
+    // Daily IRs are independent per ds, so fill each hole in stepped sub-ranges (each commits
+    // separately -> restartable, bounded memory). stepDays is the caller's --step-days, which
+    // defaults to 30 (OfflineSubcommand in Driver.scala); the CLI backfill/upload paths thread it
+    // through. None (only when a programmatic caller omits it) fills the hole in a single write.
     partitionRangeHoles.foreach { holes =>
       holes.foreach { hole =>
         val subRanges = stepDays.map(hole.steps).getOrElse(Seq(hole))

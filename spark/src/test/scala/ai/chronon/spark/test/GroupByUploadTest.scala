@@ -24,7 +24,7 @@ import ai.chronon.api._
 import ai.chronon.online.Fetcher
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.catalog.TableUtils
-import ai.chronon.spark.{GroupByUpload, SparkSessionBuilder}
+import ai.chronon.spark.{Comparison, GroupByUpload, SparkSessionBuilder}
 import com.google.gson.Gson
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.assertEquals
@@ -76,6 +76,78 @@ class GroupByUploadTest {
   }
   @Test
   def temporalEventsLastKTest(): Unit = testSimpleGroupByUpload(false)
+
+  // SNAPSHOT + events upload in incremental mode (reads the _daily_inc IR table, ensure-then-read)
+  // must produce the same KV upload rows as a non-incremental upload of the same data.
+  @Test
+  def incrementalSnapshotEventsUploadMatchesNonIncremental(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByUploadTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "group_by_upload_incremental_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    tableUtils.sql(s"USE $namespace")
+
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    val endDs = tableUtils.partitionSpec.before(today)
+    val eventsTable = "incremental_upload_events"
+
+    // Deterministic data: 3 users x 15 days, one event per (user, day) at noon, so the incremental
+    // vs normal comparison is not subject to random window-edge coincidences.
+    import spark.implicits._
+    val partitionCol = tableUtils.partitionColumn
+    val days = (0 until 15).map(i => tableUtils.partitionSpec.minus(endDs, new Window(i, TimeUnit.DAYS)))
+    val users = Seq("u1", "u2", "u3")
+    val rows = for {
+      ds <- days
+      u <- users
+    } yield {
+      val ts = tableUtils.partitionSpec.epochMillis(ds) + 12 * 3600 * 1000L
+      (u, 1.0 + ds.hashCode % 5, ts, ds)
+    }
+    rows
+      .toDF("user", "price", "ts", partitionCol)
+      .save(s"$namespace.$eventsTable", partitionColumns = Seq(partitionCol))
+
+    val aggregations: Seq[Aggregation] = Seq(
+      Builders.Aggregation(Operation.SUM, "price", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "price", Seq(new Window(7, TimeUnit.DAYS)))
+    )
+
+    def conf(name: String, incremental: Boolean): GroupBy = {
+      val gb = Builders.GroupBy(
+        sources = Seq(
+          Builders.Source.events(Builders.Query(selects = Builders.Selects("user", "price", "ts")),
+                                 table = eventsTable)),
+        keyColumns = Seq("user"),
+        aggregations = aggregations,
+        metaData = Builders.MetaData(namespace = namespace, name = name),
+        accuracy = Accuracy.SNAPSHOT,
+        backfillStartDate = tableUtils.partitionSpec.minus(today, new Window(20, TimeUnit.DAYS))
+      )
+      gb.setIsIncremental(incremental)
+      gb
+    }
+
+    val normalConf = conf("upload_normal", incremental = false)
+    val incConf = conf("upload_incremental", incremental = true)
+
+    GroupByUpload.run(normalConf, endDs)
+    GroupByUpload.run(incConf, endDs) // ensure-then-read: builds _daily_inc, then serves the upload
+
+    // Compare the KV upload rows (excluding the GroupByServingInfo metadata row).
+    def uploadRows(c: GroupBy) =
+      spark
+        .table(c.metaData.uploadTable)
+        .where(s"key_json != '${Constants.GroupByServingInfoKey}'")
+        .selectExpr("key_json", "value_json")
+    val diff = Comparison.sideBySide(uploadRows(normalConf), uploadRows(incConf), List("key_json"))
+    if (diff.count() > 0) {
+      println("=== incremental vs normal upload diff ===")
+      diff.show(50, truncate = false)
+    }
+    assertEquals(0, diff.count())
+  }
 
   @Test
   def handleEmptyTable(): Unit = testSimpleGroupByUpload(true)
