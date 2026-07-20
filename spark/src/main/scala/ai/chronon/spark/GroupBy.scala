@@ -835,10 +835,6 @@ object GroupBy {
 
     val aggregationParts = groupByConf.getAggregations.toScala.flatMap(_.unWindowed)
 
-    // Daily IRs are independent per ds, so fill each hole in stepped sub-ranges (each commits
-    // separately -> restartable, bounded memory). stepDays is the caller's --step-days, which
-    // defaults to 30 (OfflineSubcommand in Driver.scala); the CLI backfill/upload paths thread it
-    // through. None (only when a programmatic caller omits it) fills the hole in a single write.
     partitionRangeHoles.foreach { holes =>
       holes.foreach { hole =>
         val subRanges = stepDays.map(hole.steps).getOrElse(Seq(hole))

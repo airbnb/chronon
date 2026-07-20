@@ -218,7 +218,7 @@ object GroupByUpload {
     lazy val otherGroupByUpload = new GroupByUpload(batchEndDate, groupBy)
 
     // Incremental mode (SNAPSHOT + events only) serves the upload from the cached daily IR table
-    // instead of re-scanning raw events (ensure-then-read).
+    // instead of re-scanning raw events
     val isIncremental = Option(groupByConf.isIncremental).getOrElse(false)
     require(
       !isIncremental ||
@@ -228,7 +228,8 @@ object GroupByUpload {
         s"dataModel=${groupByConf.dataModel})."
     )
     lazy val incrementalGroupByUpload =
-      new GroupByUpload(endDs, GroupBy.fromIncrementalDf(groupByConf, PartitionRange(endDs, endDs), tableUtils, stepDays))
+      new GroupByUpload(endDs,
+                        GroupBy.fromIncrementalDf(groupByConf, PartitionRange(endDs, endDs), tableUtils, stepDays))
 
     logger.info(s"""
          |GroupBy upload for: ${groupByConf.metaData.team}.${groupByConf.metaData.name}
