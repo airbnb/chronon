@@ -46,8 +46,8 @@ import scala.util.Random
 class GroupByIncrementalTest {
 
   private def createTestSourceIncremental(windowSize: Int = 365,
-                               suffix: String = "",
-                               partitionColOpt: Option[String] = None): (Source, String) = {
+                                          suffix: String = "",
+                                          partitionColOpt: Option[String] = None): (Source, String) = {
     lazy val spark: SparkSession =
       SparkSessionBuilder.build("GroupByIncrementalTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
@@ -73,24 +73,84 @@ class GroupByIncrementalTest {
 
     val source = Builders.Source.events(
       query = Builders.Query(selects = Builders.Selects("ts", "user", "time_spent_ms", "price", "item"),
-        startPartition = startPartition,
-        partitionColumn = partitionColOpt.orNull),
+                             startPartition = startPartition,
+                             partitionColumn = partitionColOpt.orNull),
       table = sourceTable
     )
     (source, endPartition)
   }
 
   /**
-   * Tests basic aggregations in incremental mode by comparing Chronon's output against SQL.
-   *
-   * Operations: SUM, COUNT, AVERAGE, MIN, MAX, VARIANCE, UNIQUE_COUNT, HISTOGRAM, BOUNDED_UNIQUE_COUNT
-   *
-   * Actual:   Chronon computes daily IRs using computeIncrementalDf, storing intermediate results
-   * Expected: SQL query computes the same aggregations directly on the input data for the same date
-   */
+    * Diagnostic: the daily IR table must contain a complete hop for EVERY day with source events,
+    * including the boundary days of the queryable range. Builds a controlled source with exactly one
+    * event per day for a single user, fills _daily_inc over the full range, and asserts every day's
+    * IR count == 1 (a missing/under-counted boundary day exposes the build-side window filter bug).
+    */
+  @Test
+  def testIncrementalBuildCoversBoundaryDays(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTestBoundary" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    import spark.implicits._
+    val namespace = s"incremental_boundary_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+    val partitionCol = tableUtils.partitionColumn
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    // 15 consecutive days; one event for user "u1" on each day, at noon of that day.
+    val numDays = 15
+    val days = (0 until numDays).map(i => tableUtils.partitionSpec.minus(today, new Window(i, TimeUnit.DAYS))).sorted
+    val rows = days.map { ds =>
+      val ts = tableUtils.partitionSpec.epochMillis(ds) + 12 * 3600 * 1000L // noon of ds
+      ("u1", 1.0, ts, ds)
+    }
+    val sourceTable = s"$namespace.boundary_input"
+    rows.toDF("user", "price", "ts", partitionCol).save(sourceTable, partitionColumns = Seq(partitionCol))
+
+    val source = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("ts", "user", "price"), partitionColumn = partitionCol),
+      table = sourceTable)
+    val conf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = Seq(Builders.Aggregation(Operation.COUNT, "price", Seq(new Window(7, TimeUnit.DAYS)))),
+      metaData = Builders.MetaData(name = "boundary_incremental", namespace = namespace, team = "chronon"),
+      backfillStartDate = days.head
+    )
+    val incrementalTable = conf.metaData.incrementalOutputTable
+
+    // Fill the IR table for the full output range [days.head, days.last].
+    GroupBy.computeIncrementalDf(conf, PartitionRange(days.head, days.last), tableUtils, incrementalTable)
+
+    // Every day with an event must have an IR row with count == 1.
+    val irByDay = spark
+      .table(incrementalTable)
+      .where("user = 'u1'")
+      .selectExpr(partitionCol, "price_count")
+      .collect()
+      .map(r => r.getString(0) -> r.getLong(1))
+      .toMap
+    val missingOrWrong = days.filter(d => irByDay.get(d) != Some(1L))
+    assertTrue(
+      s"daily IR must cover every event day with count 1; offending days (day -> count): " +
+        s"${missingOrWrong.map(d => d -> irByDay.get(d)).mkString(", ")}",
+      missingOrWrong.isEmpty
+    )
+  }
+
+  /**
+    * Tests basic aggregations in incremental mode by comparing Chronon's output against SQL.
+    *
+    * Operations: SUM, COUNT, AVERAGE, MIN, MAX, VARIANCE, UNIQUE_COUNT, HISTOGRAM, BOUNDED_UNIQUE_COUNT
+    *
+    * Actual:   Chronon computes daily IRs using computeIncrementalDf, storing intermediate results
+    * Expected: SQL query computes the same aggregations directly on the input data for the same date
+    */
   @Test
   def testIncrementalBasicAggregations(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestIncrementalBasic" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession = SparkSessionBuilder.build(
+      "GroupByTestIncrementalBasic" + "_" + Random.alphanumeric.take(6).mkString,
+      local = true)
     implicit val tableUtils = TableUtils(spark)
     val namespace = s"incremental_basic_aggs_${Random.alphanumeric.take(6).mkString}"
     tableUtils.createDatabase(namespace)
@@ -99,7 +159,7 @@ class GroupByIncrementalTest {
       Column("user", StringType, 10),
       Column("price", DoubleType, 100),
       Column("quantity", IntType, 50),
-      Column("product_id", StringType, 20),  // Low cardinality for UNIQUE_COUNT, HISTOGRAM, BOUNDED_UNIQUE_COUNT
+      Column("product_id", StringType, 20), // Low cardinality for UNIQUE_COUNT, HISTOGRAM, BOUNDED_UNIQUE_COUNT
       Column("rating", DoubleType, 2000)
     )
 
@@ -109,25 +169,25 @@ class GroupByIncrementalTest {
       // Simple aggregations
       Builders.Aggregation(Operation.SUM, "price", Seq(new Window(7, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.COUNT, "quantity", Seq(new Window(7, TimeUnit.DAYS))),
-
       // Complex aggregation - AVERAGE (struct IR with sum/count)
       Builders.Aggregation(Operation.AVERAGE, "rating", Seq(new Window(7, TimeUnit.DAYS))),
-
       // Min/Max
       Builders.Aggregation(Operation.MIN, "price", Seq(new Window(7, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.MAX, "quantity", Seq(new Window(7, TimeUnit.DAYS))),
-
       // Variance (struct IR with count/mean/m2)
       Builders.Aggregation(Operation.VARIANCE, "price", Seq(new Window(7, TimeUnit.DAYS))),
-
       // UNIQUE_COUNT (array IR): IR = array<double> of distinct values
       Builders.Aggregation(Operation.UNIQUE_COUNT, "price", Seq(new Window(7, TimeUnit.DAYS))),
-
       // HISTOGRAM (map IR)
-      Builders.Aggregation(Operation.HISTOGRAM, "product_id", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "0")),
-
+      Builders.Aggregation(Operation.HISTOGRAM,
+                           "product_id",
+                           Seq(new Window(7, TimeUnit.DAYS)),
+                           argMap = Map("k" -> "0")),
       // BOUNDED_UNIQUE_COUNT (array IR with bound): IR = array<string> of bounded distinct values (MD5-hashed)
-      Builders.Aggregation(Operation.BOUNDED_UNIQUE_COUNT, "product_id", Seq(new Window(7, TimeUnit.DAYS)), argMap = Map("k" -> "100"))
+      Builders.Aggregation(Operation.BOUNDED_UNIQUE_COUNT,
+                           "product_id",
+                           Seq(new Window(7, TimeUnit.DAYS)),
+                           argMap = Map("k" -> "100"))
     )
 
     val tableProps: Map[String, String] = Map("source" -> "chronon")
@@ -141,7 +201,8 @@ class GroupByIncrementalTest {
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     groupBy.computeIncrementalDf(s"${namespace}.testIncrementalBasicAggsOutput", partitionRange, tableProps)
 
-    val actualIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalBasicAggsOutput where ds='$today_minus_7_date'")
+    val actualIncrementalDf =
+      spark.sql(s"select * from ${namespace}.testIncrementalBasicAggsOutput where ds='$today_minus_7_date'")
     df.createOrReplaceTempView("test_basic_aggs_input")
 
     // Compare against SQL computation
@@ -206,25 +267,27 @@ class GroupByIncrementalTest {
   }
 
   /**
-   * This test verifies that the incremental snapshotEvents output matches the non-incremental output.
-   *
-   * 1. Computes snapshotEvents using the standard GroupBy on the full input data.
-   * 2. Computes snapshotEvents using GroupBy in incremental mode over the same date range.
-   * 3. Compares the two outputs to ensure they are identical.
-   */
+    * This test verifies that the incremental snapshotEvents output matches the non-incremental output.
+    *
+    * 1. Computes snapshotEvents using the standard GroupBy on the full input data.
+    * 2. Computes snapshotEvents using GroupBy in incremental mode over the same date range.
+    * 3. Compares the two outputs to ensure they are identical.
+    */
   @Test
   def testSnapshotIncrementalEvents(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
-    val namespace =  s"incremental_groupBy_snapshot_${Random.alphanumeric.take(6).mkString}"
+    val namespace = s"incremental_groupBy_snapshot_${Random.alphanumeric.take(6).mkString}"
     tableUtils.createDatabase(namespace)
-
 
     val outputDates = CStream.genPartitions(10, tableUtils.partitionSpec)
 
     val aggregations: Seq[Aggregation] = Seq(
       // Basic
-      Builders.Aggregation(Operation.SUM, "time_spent_ms", Seq(new Window(10, TimeUnit.DAYS), new Window(5, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.SUM,
+                           "time_spent_ms",
+                           Seq(new Window(10, TimeUnit.DAYS), new Window(5, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.SUM, "price", Seq(new Window(10, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.COUNT, "user", Seq(new Window(10, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.AVERAGE, "price", Seq(new Window(10, TimeUnit.DAYS))),
@@ -234,8 +297,10 @@ class GroupByIncrementalTest {
       Builders.Aggregation(Operation.VARIANCE, "price", Seq(new Window(10, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.SKEW, "price", Seq(new Window(10, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.KURTOSIS, "price", Seq(new Window(10, TimeUnit.DAYS))),
-      Builders.Aggregation(Operation.APPROX_PERCENTILE, "price", Seq(new Window(10, TimeUnit.DAYS)),
-        argMap = Map("percentiles" -> "[0.5, 0.25, 0.75]")),
+      Builders.Aggregation(Operation.APPROX_PERCENTILE,
+                           "price",
+                           Seq(new Window(10, TimeUnit.DAYS)),
+                           argMap = Map("percentiles" -> "[0.5, 0.25, 0.75]")),
       // Temporal
       Builders.Aggregation(Operation.FIRST, "price", Seq(new Window(10, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.LAST, "price", Seq(new Window(10, TimeUnit.DAYS))),
@@ -249,17 +314,22 @@ class GroupByIncrementalTest {
       Builders.Aggregation(Operation.BOUNDED_UNIQUE_COUNT, "user", Seq(new Window(10, TimeUnit.DAYS))),
       // Distribution
       Builders.Aggregation(Operation.HISTOGRAM, "user", Seq(new Window(10, TimeUnit.DAYS))),
-      Builders.Aggregation(Operation.APPROX_HISTOGRAM_K, "user", Seq(new Window(10, TimeUnit.DAYS)), argMap = Map("k" -> "10"))
+      Builders.Aggregation(Operation.APPROX_HISTOGRAM_K,
+                           "user",
+                           Seq(new Window(10, TimeUnit.DAYS)),
+                           argMap = Map("k" -> "10"))
     )
 
-    val (source, endPartition) = createTestSourceIncremental(windowSize = 30, suffix = "_snapshot_events", partitionColOpt = Some(tableUtils.partitionColumn))
+    val (source, endPartition) = createTestSourceIncremental(windowSize = 30,
+                                                             suffix = "_snapshot_events",
+                                                             partitionColOpt = Some(tableUtils.partitionColumn))
     val groupByConf = Builders.GroupBy(
       sources = Seq(source),
       keyColumns = Seq("item"),
       aggregations = aggregations,
       metaData = Builders.MetaData(name = "testSnapshotIncremental", namespace = namespace, team = "chronon"),
       backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
-        new Window(20, TimeUnit.DAYS))
+                                                         new Window(20, TimeUnit.DAYS))
     )
 
     val df = spark.read.table(source.table)
@@ -267,7 +337,8 @@ class GroupByIncrementalTest {
     val groupBy = new GroupBy(aggregations, Seq("item"), df.filter("item is not null"))
     val actualDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
 
-    val  groupByIncremental = GroupBy.fromIncrementalDf(groupByConf, PartitionRange(outputDates.min, outputDates.max), tableUtils)
+    val groupByIncremental =
+      GroupBy.fromIncrementalDf(groupByConf, PartitionRange(outputDates.min, outputDates.max), tableUtils)
     val incrementalExpectedDf = groupByIncremental.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
 
     val outputDatesRdd: RDD[Row] = spark.sparkContext.parallelize(outputDates.map(Row(_)))
@@ -284,17 +355,75 @@ class GroupByIncrementalTest {
   }
 
   /**
-   * Verifies the chunked incremental IR build (stepDays-driven hole filling).
-   *
-   * Runs the full GroupBy.computeBackfill path in incremental mode with a small
-   * stepDays so the daily-IR hole is filled in several stepped sub-ranges rather
-   * than a single write. Asserts:
-   *   1. The _daily_inc table accumulates IR partitions across the full
-   *      [start - maxWindow, end] queryable range (i.e. the stepped writes
-   *      committed every expected day).
-   *   2. The final GroupBy output is identical to a non-incremental
-   *      computeBackfill over the same range (stepped IR build changes nothing).
-   */
+    * Data-quality: at the window tail boundary, incremental snapshot output must exactly match the
+    * non-incremental path for every output day. One event per day at noon for a single user; COUNT
+    * over a 7-day window. Compares incremental vs normal snapshotEvents day-by-day so any tail
+    * off-by-one (a day whose count differs, or a dropped key) surfaces deterministically.
+    */
+  @Test
+  def testIncrementalWindowTailBoundaryMatchesNormal(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTestTail" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    import spark.implicits._
+    val namespace = s"incremental_tail_${Random.alphanumeric.take(6).mkString}"
+    tableUtils.createDatabase(namespace)
+
+    val partitionCol = tableUtils.partitionColumn
+    val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    // 25 consecutive days, one event/day at noon for user u1.
+    val allDays = (0 until 25).map(i => tableUtils.partitionSpec.minus(today, new Window(i, TimeUnit.DAYS))).sorted
+    val rows = allDays.map { ds =>
+      ("u1", 1.0, tableUtils.partitionSpec.epochMillis(ds) + 12 * 3600 * 1000L, ds)
+    }
+    val sourceTable = s"$namespace.tail_input"
+    rows.toDF("user", "price", "ts", partitionCol).save(sourceTable, partitionColumns = Seq(partitionCol))
+
+    val aggregations =
+      Seq(Builders.Aggregation(Operation.COUNT, "price", Seq(new Window(7, TimeUnit.DAYS))))
+    val source = Builders.Source.events(
+      query = Builders.Query(selects = Builders.Selects("ts", "user", "price"), partitionColumn = partitionCol),
+      table = sourceTable)
+    val conf = Builders.GroupBy(
+      sources = Seq(source),
+      keyColumns = Seq("user"),
+      aggregations = aggregations,
+      metaData = Builders.MetaData(name = "tail_incremental", namespace = namespace, team = "chronon"),
+      backfillStartDate = allDays.head
+    )
+
+    // Output range = the second half (so every output day has a full 7-day lookback available).
+    val outStart = allDays(10)
+    val outEnd = allDays.last
+    val outputRange = PartitionRange(outStart, outEnd)(tableUtils)
+
+    val rawDf = spark.read.table(sourceTable)
+    val normalGroupBy = new GroupBy(aggregations, Seq("user"), rawDf)
+    val normalDf = normalGroupBy.snapshotEvents(outputRange)
+
+    val incrementalGroupBy = GroupBy.fromIncrementalDf(conf, outputRange, tableUtils)
+    val incrementalDf = incrementalGroupBy.snapshotEvents(outputRange)
+
+    val diff = Comparison.sideBySide(normalDf, incrementalDf, List("user", partitionCol))
+    if (diff.count() > 0) {
+      println("=== tail-boundary incremental vs normal diff (a_=normal, b_=incremental) ===")
+      diff.show(100, truncate = false)
+    }
+    assertEquals(0, diff.count())
+  }
+
+  /**
+    * Verifies the chunked incremental IR build (stepDays-driven hole filling).
+    *
+    * Runs the full GroupBy.computeBackfill path in incremental mode with a small
+    * stepDays so the daily-IR hole is filled in several stepped sub-ranges rather
+    * than a single write. Asserts:
+    *   1. The _daily_inc table accumulates IR partitions across the full
+    *      [start - maxWindow, end] queryable range (i.e. the stepped writes
+    *      committed every expected day).
+    *   2. The final GroupBy output is identical to a non-incremental
+    *      computeBackfill over the same range (stepped IR build changes nothing).
+    */
   @Test
   def testIncrementalChunkedBuild(): Unit = {
     lazy val spark: SparkSession =
@@ -309,8 +438,10 @@ class GroupByIncrementalTest {
       Builders.Aggregation(Operation.COUNT, "user", Seq(new Window(maxWindowDays, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.AVERAGE, "price", Seq(new Window(maxWindowDays, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.LAST, "price", Seq(new Window(maxWindowDays, TimeUnit.DAYS))),
-      Builders.Aggregation(Operation.APPROX_PERCENTILE, "price", Seq(new Window(maxWindowDays, TimeUnit.DAYS)),
-        argMap = Map("percentiles" -> "[0.5, 0.75]")),
+      Builders.Aggregation(Operation.APPROX_PERCENTILE,
+                           "price",
+                           Seq(new Window(maxWindowDays, TimeUnit.DAYS)),
+                           argMap = Map("percentiles" -> "[0.5, 0.75]")),
       Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "user", Seq(new Window(maxWindowDays, TimeUnit.DAYS)))
     )
 
@@ -320,7 +451,9 @@ class GroupByIncrementalTest {
     // Single shared source so the incremental and normal backfills read identical
     // data (createTestSourceIncremental generates random data per call).
     val (source, _) =
-      createTestSourceIncremental(windowSize = 30, suffix = "_chunked", partitionColOpt = Some(tableUtils.partitionColumn))
+      createTestSourceIncremental(windowSize = 30,
+                                  suffix = "_chunked",
+                                  partitionColOpt = Some(tableUtils.partitionColumn))
 
     def mkConf(name: String): ai.chronon.api.GroupBy =
       Builders.GroupBy(
@@ -363,18 +496,18 @@ class GroupByIncrementalTest {
   }
 
   /**
-   * Regression test: the per-day IR write must be clamped to the requested range.
-   *
-   * hopsAggregate runs over the GroupBy's full input DataFrame and emits daily hops for
-   * every day with events, not just the requested range. With dynamic partition overwrite,
-   * an unclamped save would write ALL those partitions - so filling one day's hole would
-   * (re)write and clobber neighboring partitions. computeIncrementalDf must clamp the write
-   * to exactly the requested range, writing only those partitions.
-   *
-   * Calls the instance computeIncrementalDf directly (as testIncrementalBasicAggregations
-   * does) with a single-day range over a 30-day input: without the clamp this writes ~30
-   * partitions; with it, exactly one.
-   */
+    * Regression test: the per-day IR write must be clamped to the requested range.
+    *
+    * hopsAggregate runs over the GroupBy's full input DataFrame and emits daily hops for
+    * every day with events, not just the requested range. With dynamic partition overwrite,
+    * an unclamped save would write ALL those partitions - so filling one day's hole would
+    * (re)write and clobber neighboring partitions. computeIncrementalDf must clamp the write
+    * to exactly the requested range, writing only those partitions.
+    *
+    * Calls the instance computeIncrementalDf directly (as testIncrementalBasicAggregations
+    * does) with a single-day range over a 30-day input: without the clamp this writes ~30
+    * partitions; with it, exactly one.
+    */
   @Test
   def testIncrementalWriteIsClampedToRange(): Unit = {
     lazy val spark: SparkSession =
@@ -418,12 +551,12 @@ class GroupByIncrementalTest {
   }
 
   /**
-   * Aggregations sharing the same (operation, input_column, bucket) but differing only by window
-   * collapse to the same daily IR column (the window suffix is dropped) - e.g. SUM(price, 7d) and
-   * SUM(price, 30d) both -> price_sum, with identical IR values. The incremental schema dedups them
-   * to a single column rather than writing duplicates; this verifies one column is written and the
-   * windowed output still matches the non-incremental path.
-   */
+    * Aggregations sharing the same (operation, input_column, bucket) but differing only by window
+    * collapse to the same daily IR column (the window suffix is dropped) - e.g. SUM(price, 7d) and
+    * SUM(price, 30d) both -> price_sum, with identical IR values. The incremental schema dedups them
+    * to a single column rather than writing duplicates; this verifies one column is written and the
+    * windowed output still matches the non-incremental path.
+    */
   @Test
   def testIncrementalDedupsSharedColumns(): Unit = {
     lazy val spark: SparkSession =
@@ -442,7 +575,9 @@ class GroupByIncrementalTest {
     )
 
     val (source, _) =
-      createTestSourceIncremental(windowSize = 30, suffix = "_dedup", partitionColOpt = Some(tableUtils.partitionColumn))
+      createTestSourceIncremental(windowSize = 30,
+                                  suffix = "_dedup",
+                                  partitionColOpt = Some(tableUtils.partitionColumn))
     def mkConf(name: String): ai.chronon.api.GroupBy =
       Builders.GroupBy(
         sources = Seq(source),
@@ -450,7 +585,7 @@ class GroupByIncrementalTest {
         aggregations = aggregations,
         metaData = Builders.MetaData(name = name, namespace = namespace, team = "chronon"),
         backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
-          new Window(5, TimeUnit.DAYS))
+                                                           new Window(5, TimeUnit.DAYS))
       )
 
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
@@ -466,10 +601,9 @@ class GroupByIncrementalTest {
     val normalConf = mkConf("dedup_normal")
     GroupBy.computeBackfill(normalConf, today, tableUtils, stepDays = Some(1), incrementalMode = false)
 
-    val diff = Comparison.sideBySide(
-      spark.read.table(normalConf.metaData.outputTable),
-      spark.read.table(incConf.metaData.outputTable),
-      List("item", tableUtils.partitionColumn))
+    val diff = Comparison.sideBySide(spark.read.table(normalConf.metaData.outputTable),
+                                     spark.read.table(incConf.metaData.outputTable),
+                                     List("item", tableUtils.partitionColumn))
     if (diff.count() > 0) {
       println("=== dedup incremental vs normal diff ===")
       diff.show(50, truncate = false)
@@ -478,14 +612,15 @@ class GroupByIncrementalTest {
   }
 
   /**
-   * Unit test for FIRST and LAST aggregations with incremental IR
-   * FIRST/LAST use TimeTuple IR: struct {epochMillis: Long, payload: Value}
-   * FIRST keeps the value with the earliest timestamp
-   * LAST keeps the value with the latest timestamp
-   */
+    * Unit test for FIRST and LAST aggregations with incremental IR
+    * FIRST/LAST use TimeTuple IR: struct {epochMillis: Long, payload: Value}
+    * FIRST keeps the value with the earliest timestamp
+    * LAST keeps the value with the latest timestamp
+    */
   @Test
   def testIncrementalFirstLast(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestFirstLast" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTestFirstLast" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val namespace = s"incremental_first_last_${Random.alphanumeric.take(6).mkString}"
     tableUtils.createDatabase(namespace)
@@ -504,10 +639,16 @@ class GroupByIncrementalTest {
     import org.apache.spark.sql.expressions.{Window => SparkWindow}
     val dayMs = 86400000L
 
-    val dfUnique = DataFrameGen.events(spark, schema, count = 10000, partitions = 20)
+    val dfUnique = DataFrameGen
+      .events(spark, schema, count = 10000, partitions = 20)
       .withColumn("_day_ms", (col("ts") / dayMs).cast("long") * dayMs)
       .withColumn("_rn", row_number().over(SparkWindow.partitionBy("_day_ms").orderBy(monotonically_increasing_id())))
       .withColumn("ts", col("_day_ms") + col("_rn"))
+      // value ties make TOP_K/BOTTOM_K ambiguous: the incremental aggregator orders by value only,
+      // while the comparison SQL sorts by (value, ts) — so on tied values they keep different
+      // elements. Derive a globally unique value from the unique ts so every selection is
+      // well-defined and the comparison is deterministic.
+      .withColumn("value", col("ts").cast("double"))
       .drop("_day_ms", "_rn")
 
     // Materialize by writing to a table and reading back, so the row numbering is frozen.
@@ -534,7 +675,8 @@ class GroupByIncrementalTest {
     val groupBy = new GroupBy(aggregations, Seq("user"), df)
     groupBy.computeIncrementalDf(s"${namespace}.testIncrementalFirstLastOutput", partitionRange, tableProps)
 
-    val rawIncrementalDf = spark.sql(s"select * from ${namespace}.testIncrementalFirstLastOutput where ds='$today_minus_7_date'")
+    val rawIncrementalDf =
+      spark.sql(s"select * from ${namespace}.testIncrementalFirstLastOutput where ds='$today_minus_7_date'")
 
     println("=== Incremental FIRST/LAST IR Schema ===")
     rawIncrementalDf.printSchema()
@@ -613,7 +755,8 @@ class GroupByIncrementalTest {
 
   @Test
   def testIncrementalStatisticalAggregations(): Unit = {
-    lazy val spark: SparkSession = SparkSessionBuilder.build("GroupByTestStatistical" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTestStatistical" + "_" + Random.alphanumeric.take(6).mkString, local = true)
     implicit val tableUtils = TableUtils(spark)
     val namespace = s"incremental_stats_${Random.alphanumeric.take(6).mkString}"
     tableUtils.createDatabase(namespace)
@@ -625,31 +768,37 @@ class GroupByIncrementalTest {
       Builders.Aggregation(Operation.SKEW, "price", Seq(new Window(10, TimeUnit.DAYS))),
       Builders.Aggregation(Operation.KURTOSIS, "price", Seq(new Window(10, TimeUnit.DAYS))),
       // Sketch-based (IR = binary KLL sketch); finalized to Array[Float]
-      Builders.Aggregation(Operation.APPROX_PERCENTILE, "price", Seq(new Window(10, TimeUnit.DAYS)),
-        argMap = Map("percentiles" -> "[0.5, 0.25, 0.75]")),
+      Builders.Aggregation(Operation.APPROX_PERCENTILE,
+                           "price",
+                           Seq(new Window(10, TimeUnit.DAYS)),
+                           argMap = Map("percentiles" -> "[0.5, 0.25, 0.75]")),
       // Sketch-based (IR = binary CPC sketch); finalized to Long
       Builders.Aggregation(Operation.APPROX_UNIQUE_COUNT, "user", Seq(new Window(10, TimeUnit.DAYS))),
       // Sketch-based (IR = binary); finalized to Map[String, Long]
-      Builders.Aggregation(Operation.APPROX_HISTOGRAM_K, "user", Seq(new Window(10, TimeUnit.DAYS)),
-        argMap = Map("k" -> "10"))
+      Builders.Aggregation(Operation.APPROX_HISTOGRAM_K,
+                           "user",
+                           Seq(new Window(10, TimeUnit.DAYS)),
+                           argMap = Map("k" -> "10"))
     )
 
-    val (source, _) = createTestSourceIncremental(windowSize = 30, suffix = "_stats_events",
-      partitionColOpt = Some(tableUtils.partitionColumn))
+    val (source, _) = createTestSourceIncremental(windowSize = 30,
+                                                  suffix = "_stats_events",
+                                                  partitionColOpt = Some(tableUtils.partitionColumn))
     val groupByConf = Builders.GroupBy(
       sources = Seq(source),
       keyColumns = Seq("item"),
       aggregations = aggregations,
       metaData = Builders.MetaData(name = "testIncrementalStats", namespace = namespace, team = "chronon"),
       backfillStartDate = tableUtils.partitionSpec.minus(tableUtils.partitionSpec.at(System.currentTimeMillis()),
-        new Window(20, TimeUnit.DAYS))
+                                                         new Window(20, TimeUnit.DAYS))
     )
 
     val df = spark.read.table(source.table)
     val groupBy = new GroupBy(aggregations, Seq("item"), df.filter("item is not null"))
     val nonIncrementalDf = groupBy.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
 
-    val groupByIncremental = GroupBy.fromIncrementalDf(groupByConf, PartitionRange(outputDates.min, outputDates.max), tableUtils)
+    val groupByIncremental =
+      GroupBy.fromIncrementalDf(groupByConf, PartitionRange(outputDates.min, outputDates.max), tableUtils)
     val incrementalDf = groupByIncremental.snapshotEvents(PartitionRange(outputDates.min, outputDates.max))
 
     val diff = Comparison.sideBySide(nonIncrementalDf, incrementalDf, List("item", tableUtils.partitionColumn))
