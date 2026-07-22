@@ -25,6 +25,7 @@ import ai.chronon.spark.{StagingQuery, _}
 import org.apache.spark.sql.SparkSession
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
+import org.scalatest.Assertions.intercept
 import org.slf4j.LoggerFactory
 
 import scala.util.Random
@@ -293,6 +294,28 @@ class StagingQueryTest {
       diff.show()
     }
     assertEquals(0, diff.count())
+
+    // Unpartitioned-input path (no startPartition) must also resolve max_date rather than
+    // run `{{ max_date(...) }}` literally (which would match nothing / write empty data).
+    val noStartConf = Builders.StagingQuery(
+      query = s"SELECT ds, '{{ max_date(table=$viewName) }}' AS latest_ds FROM $viewName",
+      metaData = Builders.MetaData(name = "test.staging_max_date_no_start", namespace = namespace)
+    )
+    new StagingQuery(noStartConf, today, tableUtils).computeStagingQuery()
+    assertEquals(
+      Seq(maxDate),
+      tableUtils
+        .sql(s"SELECT DISTINCT latest_ds FROM ${noStartConf.metaData.outputTable}")
+        .collect()
+        .map(_.getString(0))
+        .toSeq
+    )
+
+    // substitute() must fail loudly on an unresolved macro instead of passing it through.
+    val ex = intercept[IllegalStateException] {
+      StagingQuery.substitute(tableUtils, "SELECT '{{ bogus_macro }}'", ninetyDaysAgo, today, today)
+    }
+    assertTrue(ex.getMessage.contains("Unresolved template macro"))
   }
 
   @Test

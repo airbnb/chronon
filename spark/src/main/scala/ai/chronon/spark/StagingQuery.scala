@@ -56,7 +56,10 @@ class StagingQuery(stagingQueryConf: api.StagingQuery, endPartition: String, tab
     Option(stagingQueryConf.setups).foreach(_.toScala.foreach(tableUtils.sql))
     // the input table is not partitioned, usually for data testing or for kaggle demos
     if (stagingQueryConf.startPartition == null) {
-      tableUtils.sql(stagingQueryConf.query).save(outputTable)
+      // Still run macro substitution so range-independent macros
+      val renderedQuery =
+        StagingQuery.substitute(tableUtils, stagingQueryConf.query, null, null, endPartition)
+      tableUtils.sql(renderedQuery).save(outputTable)
       return
     }
     val historicalBackfill =
@@ -207,7 +210,15 @@ object StagingQuery {
       )
     )
 
-    macros.foldLeft(query) { case (q, m) => m.replace(q) }
+    val rendered = macros.foldLeft(query) { case (q, m) => m.replace(q) }
+
+    val unresolved = """\{\{\s*\w+.*?}}""".r.findAllIn(rendered).toList.distinct
+    if (unresolved.nonEmpty) {
+      throw new IllegalStateException(
+        s"Unresolved template macro(s) after substitution: ${unresolved.mkString(", ")}. " +
+          "Supported macros: start_date, end_date, latest_date, max_date(table=...).")
+    }
+    rendered
   }
 
   def main(args: Array[String]): Unit = {
