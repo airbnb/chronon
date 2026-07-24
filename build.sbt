@@ -15,6 +15,10 @@ lazy val spark3_2_1 = "3.2.1"
 lazy val spark3_5_3 = "3.5.3"
 lazy val tmp_warehouse = "/tmp/chronon/"
 lazy val icebergVersion = "1.1.0"
+// Hadoop 3.4.3 is the first release that calls Subject.current() instead of the
+// removed-in-Java-25 Subject.getSubject(AccessControlContext). Pinning here forces it
+// over Spark's older transitive Hadoop so the Fetcher can initialize on Java 25.
+lazy val hadoopVersion = "3.4.3"
 
 ThisBuild / organization := "ai.chronon"
 ThisBuild / organizationName := "chronon"
@@ -86,6 +90,31 @@ lazy val releaseSettings = Seq(
 )
 
 enablePlugins(GitVersioning, GitBranchPrompt)
+
+// The Hadoop 3.4.3 + Jackson 2.10 overrides for Java 25 live on the `online` module
+// only (see `onlineJava25Overrides` below). Applying them at ThisBuild scope leaks
+// into spark_embedded / spark_uber / service, where the Spark 3.5 row's
+// `jackson-module-scala 2.12.3` requires databind in `[2.12, 2.13)` and would throw
+// a JsonMappingException at SparkContext init. Scoping to `online` keeps batch
+// modules unaffected.
+val onlineJava25Overrides: Seq[ModuleID] = Seq(
+  // Hadoop 3.4.3 replaces Subject.getSubject(AccessControlContext) (removed by
+  // JEP 486 in Java 25) with Subject.current(), so the Fetcher's UGI init no
+  // longer throws UnsupportedOperationException at startup.
+  "org.apache.hadoop" % "hadoop-common" % hadoopVersion,
+  "org.apache.hadoop" % "hadoop-client" % hadoopVersion,
+  "org.apache.hadoop" % "hadoop-mapreduce-client-core" % hadoopVersion,
+  "org.apache.hadoop" % "hadoop-hdfs-client" % hadoopVersion,
+  "org.apache.hadoop" % "hadoop-auth" % hadoopVersion,
+  "org.apache.hadoop" % "hadoop-annotations" % hadoopVersion,
+  // Hadoop 3.4.3 transitively pulls Jackson 2.14, but Spark 3.1.1 bundles
+  // jackson-module-scala 2.10.0 with a strict `[2.10, 2.11)` databind constraint
+  // that throws JsonMappingException at SparkContext init. Pin databind back to
+  // 2.10.0 to satisfy that bound.
+  "com.fasterxml.jackson.core" % "jackson-databind" % "2.10.0",
+  "com.fasterxml.jackson.core" % "jackson-core" % "2.10.0",
+  "com.fasterxml.jackson.core" % "jackson-annotations" % "2.10.0"
+)
 
 lazy val supportedVersions = List(scala211, scala212, scala213)
 
@@ -241,6 +270,23 @@ val VersionMatrix: Map[String, VersionDependency] = Map(
     None,
     None,
     Some("4.1.68.Final")
+  ),
+  // hadoop-common carries UserGroupInformation, which is the class that fails on Java 25
+  // when the bundled Hadoop is < 3.4.3 (calls removed Subject.getSubject(AccessControlContext)).
+  // hadoop-client / hadoop-mapreduce-client-core / hadoop-hdfs-client are listed alongside so
+  // the whole hadoop set stays at one version after the override below.
+  "hadoop" -> VersionDependency(
+    Seq(
+      "org.apache.hadoop" % "hadoop-common",
+      "org.apache.hadoop" % "hadoop-client",
+      "org.apache.hadoop" % "hadoop-mapreduce-client-core",
+      "org.apache.hadoop" % "hadoop-hdfs-client",
+      "org.apache.hadoop" % "hadoop-auth",
+      "org.apache.hadoop" % "hadoop-annotations"
+    ),
+    None,
+    Some(hadoopVersion),
+    Some(hadoopVersion)
   )
 )
 
@@ -359,9 +405,16 @@ lazy val online = project
       "com.datadoghq" % "java-dogstatsd-client" % "2.7",
       "org.rogach" %% "scallop" % "4.0.1",
       "net.jodah" % "typetools" % "0.4.1",
-      "com.github.ben-manes.caffeine" % "caffeine" % "2.8.5"
+      "com.github.ben-manes.caffeine" % "caffeine" % "2.8.5",
+      // Spark 3.1.1's Catalyst CodeGenerator uses commons-collections 3.x ReferenceMap.
+      // The Hadoop 3.4.3 pin (added for Java 25 compatibility) drops the transitive
+      // commons-collections 3.x in favor of commons-collections4, so we add it back.
+      "commons-collections" % "commons-collections" % "3.2.2"
     ),
     libraryDependencies ++= fromMatrix(scalaVersion.value, "spark-all", "scala-parallel-collections", "netty-buffer"),
+    // See `onlineJava25Overrides` declaration above. Scoped to this module so the
+    // Jackson 2.10 pin doesn't leak into spark_embedded / spark_uber / service.
+    dependencyOverrides ++= onlineJava25Overrides,
     version := git.versionProperty.value
   )
 

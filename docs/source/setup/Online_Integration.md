@@ -8,6 +8,23 @@ This integration gives Chronon the ability to:
 2. Perform streaming updates to those features
 3. Fetch features via the `Fetcher` API
 
+## Java Runtime Compatibility
+
+Chronon's `online` module bundles Spark 3.1.1 for Catalyst-based SQL derivation evaluation in the `Fetcher`. Spark 3.1.1 has two incompatibilities with Java 25:
+
+- **Hadoop UGI startup failure (fixed):** Spark 3.1.1's transitive Hadoop 3.2.0 calls `Subject.getSubject(AccessControlContext)`, which JEP 486 removed in Java 25. Chronon now pins Hadoop 3.4.3 (which uses `Subject.current()` instead), so the `Fetcher` initializes cleanly on Java 25.
+- **SQL derivation codegen failure (unfixed upstream):** Spark 3.1.1 ships Janino 3.0.16, which cannot generate or load Java 25 (class file version 69) bytecode. Janino 3.1.12+ supports Java 25 but is not API-compatible with Spark 3.1.1's internal codegen.
+
+What this means for `Fetcher` consumers running on **Java 25**:
+
+| GroupBy / Join shape | Java 25 status |
+|---|---|
+| No derivations | Safe |
+| Rename-only derivations | Safe |
+| SQL derivations (`CASE WHEN`, arithmetic, UDFs) | **Silent failure**: `FetcherBase` catches the codegen exception and returns a `derivation_fetch_exception` (or `derivation_rename_exception`) key in the response map instead of feature values. |
+
+If you must run on Java 25 today, audit your `GroupBy` and `Join` configs to ensure all `Derivation` entries are rename-only (no SQL expressions beyond column references). For `--add-opens` flags required by Spark on newer JVMs, follow Spark upstream's documentation.
+
 ## Example
 
 If you'd to start with an example, please refer to the [MongoDB Implementation in the Quickstart Guide](https://github.com/airbnb/chronon/tree/main/quickstart/mongo-online-impl/src/main/scala/ai/chronon/quickstart/online). This provides a complete working example of how to integrate Chronon with MongoDB. 
