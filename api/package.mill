@@ -1,0 +1,105 @@
+package build.api
+
+import mill._
+import mill.javalib._
+import mill.javalib.publish._
+import mill.scalalib.SbtModule
+
+object `package` extends SbtModule with PublishModule {
+
+  def scalaVersion = "2.12.12"
+
+  def mvnDeps = Seq(
+    mvn"org.apache.thrift:libthrift:0.13.0",
+    mvn"org.scala-lang.modules::scala-collection-compat:2.6.0",
+    mvn"org.scala-lang:scala-reflect:2.12.12"
+  )
+
+  def compileMvnDeps = Seq(
+    mvn"org.apache.spark::spark-core:3.1.1",
+    mvn"org.apache.spark::spark-sql:3.1.1"
+  )
+
+  def pomSettings = PomSettings(
+    "Chronon is a feature engineering platform",
+    "ai.chronon",
+    "https://github.com/airbnb/chronon",
+    Seq(License(
+      "Apache 2",
+      "Apache 2",
+      "http://www.apache.org/licenses/LICENSE-2.0.txt",
+      false,
+      false,
+      "repo"
+    )),
+    VersionControl(
+      Some("https://github.com/airbnb/chronon"),
+      Some("scm:git@github.com:airbnb/chronon.git"),
+      None,
+      None
+    ),
+    Seq(Developer(
+      "nikhilsimha",
+      "Nikhil Simha",
+      "http://nikhilsimha.com",
+      None,
+      None
+    ))
+  )
+
+  def publishVersion = "awhittier-mill-0.0.110-SNAPSHOT"
+
+  /**
+   * Prepare Scala version-specific sources for Mill compilation.
+   *
+   * Mill's security model prevents reading from scala-2.12/ during Task execution,
+   * so we copy version-specific sources to the main scala/ directory before compilation.
+   *
+   * This is a one-time setup command - run it once per clean build:
+   *   ./mill api.prepareScalaSources
+   *
+   * SBT users don't need this - sbt automatically picks up scala-2.12/ directories.
+   */
+  def prepareScalaSources() = Task.Command {
+    val scala212Dir = millSourcePath0 / "src" / "main" / "scala-2.12"
+    val scalaDir = millSourcePath0 / "src" / "main" / "scala"
+
+    os.walk(scala212Dir)
+      .filter(_.ext == "scala")
+      .foreach { sourceFile =>
+        val relativePath = sourceFile.relativeTo(scala212Dir)
+        val targetFile = scalaDir / relativePath
+        os.makeDir.all(targetFile / os.up)
+        os.copy.over(sourceFile, targetFile, createFolders = true)
+        println(s"✓ Copied: ${sourceFile.last}")
+      }
+    println(s"✓ Scala 2.12 sources prepared for Mill compilation")
+    ()
+  }
+
+  // Generate Java sources from Thrift
+  def generatedSources = Task {
+    val thriftFile = millSourcePath0 / "thrift" / "api.thrift"
+    val outDir = Task.dest / "java"
+    os.remove.all(outDir)
+    os.makeDir.all(outDir)
+    os.proc("thrift", "--gen", "java", "-out", outDir, thriftFile)
+      .call(stdout = os.Inherit)
+
+    os.walk(outDir).filter(_.ext == "java").map(PathRef(_))
+  }
+
+  object test extends SbtTests with TestModule.Junit4 {
+
+    def mvnDeps = Seq(
+      mvn"com.novocode:junit-interface:0.11",
+      mvn"junit:junit:4.13.2",
+      mvn"org.scalatest::scalatest:3.2.15",
+      mvn"org.scalatestplus::mockito-3-4:3.2.10.0"
+    )
+
+    def testSandboxWorkingDir = false
+    def testParallelism = false
+
+  }
+}
