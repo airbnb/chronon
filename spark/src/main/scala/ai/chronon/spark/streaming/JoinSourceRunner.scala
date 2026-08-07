@@ -685,7 +685,12 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   private def writeToKVStore(
       joinSourceDf: DataFrame
   ): DataStreamWriter[Row] = {
-    val writer = joinSourceDf.writeStream.outputMode("append").trigger(Trigger.ProcessingTime(microBatchIntervalMillis))
+    val baseWriter = joinSourceDf.writeStream
+      .outputMode("append")
+      .trigger(Trigger.ProcessingTime(microBatchIntervalMillis))
+    val writer = CheckpointConfig
+      .location(groupByConf, session)
+      .foldLeft(baseWriter) { case (w, checkpointLocation) => w.option("checkpointLocation", checkpointLocation) }
     val putRequestHelper = PutRequestHelper(joinSourceDf.schema)
 
     def emitRequestMetric(request: PutRequest, context: Metrics.Context): Unit = {
