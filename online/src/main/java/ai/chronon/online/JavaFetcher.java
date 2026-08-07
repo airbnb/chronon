@@ -18,6 +18,7 @@ package ai.chronon.online;
 
 import ai.chronon.online.Fetcher.Request;
 import ai.chronon.online.Fetcher.Response;
+import ai.chronon.online.Fetcher.StructuredResponse;
 import ai.chronon.online.FutureConverters;
 
 import scala.Some;
@@ -156,6 +157,19 @@ public class JavaFetcher {
         });
     }
 
+    public static List<JavaStructuredResponse> toJavaStructuredResponses(Seq<StructuredResponse> responseSeq) {
+        List<JavaStructuredResponse> result = new ArrayList<>(responseSeq.size());
+        Iterator<StructuredResponse> it = responseSeq.iterator();
+        while (it.hasNext()) {
+            result.add(new JavaStructuredResponse(it.next()));
+        }
+        return result;
+    }
+
+    private CompletableFuture<List<JavaStructuredResponse>> convertStructuredResponses(Future<Seq<StructuredResponse>> responses) {
+        return FutureConverters.toJava(responses).toCompletableFuture().thenApply(JavaFetcher::toJavaStructuredResponses);
+    }
+
     public static List<JavaStatsResponse> toJavaStatsResponses(Seq<Fetcher.StatsResponse> responseSeq) {
         List<JavaStatsResponse> result = new ArrayList<>(responseSeq.size());
         Iterator<Fetcher.StatsResponse> it = responseSeq.iterator();
@@ -209,6 +223,34 @@ public class JavaFetcher {
         Future<FetcherResponseWithTs> scalaResponses = this.fetcher.withTs(this.fetcher.fetchJoin(scalaRequests, Option.empty()));
         // Convert responses to CompletableFuture
         return convertResponsesWithTs(scalaResponses, false, startTs);
+    }
+
+    /**
+     * Like {@link #fetchGroupBys}, but names struct-typed values (and lists of structs) at every
+     * nesting level instead of returning them as bare positional arrays.
+     */
+    public CompletableFuture<List<JavaStructuredResponse>> fetchGroupBysStructured(List<JavaRequest> requests) {
+        long startTs = System.currentTimeMillis();
+        // Convert java requests to scala requests
+        Seq<Request> scalaRequests = convertJavaRequestList(requests, true, startTs);
+        // Get responses from the fetcher
+        Future<Seq<StructuredResponse>> scalaResponses = this.fetcher.fetchGroupByStructured(scalaRequests);
+        // Convert responses to CompletableFuture
+        return convertStructuredResponses(scalaResponses);
+    }
+
+    /**
+     * Like {@link #fetchJoin}, but names struct-typed values (and lists of structs) at every
+     * nesting level instead of returning them as bare positional arrays.
+     */
+    public CompletableFuture<List<JavaStructuredResponse>> fetchJoinStructured(List<JavaRequest> requests) {
+        long startTs = System.currentTimeMillis();
+        // Convert java requests to scala requests
+        Seq<Request> scalaRequests = convertJavaRequestList(requests, false, startTs);
+        // Get responses from the fetcher
+        Future<Seq<StructuredResponse>> scalaResponses = this.fetcher.fetchJoinStructured(scalaRequests, Option.empty());
+        // Convert responses to CompletableFuture
+        return convertStructuredResponses(scalaResponses);
     }
 
     public List<CompletableFuture<List<JavaResponse>>> fetchJoinChunked(List<JavaRequest> requests, int chunkSizeOverride) {
