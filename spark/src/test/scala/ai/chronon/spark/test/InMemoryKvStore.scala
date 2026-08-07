@@ -59,6 +59,9 @@ class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset:
             .filter {
               case (version, _) => req.afterTsMillis.forall(version >= _)
             } // filter version
+            // Real KV stores return time-ordered results; multiPut() appends in whatever order
+            // Spark's writer tasks happen to run in, which isn't guaranteed to match version order.
+            .sortBy { case (version, _) => version }
             .map { case (version, bytes) => TimedValue(bytes, version) }
         }
         KVStore.GetResponse(req, values)
