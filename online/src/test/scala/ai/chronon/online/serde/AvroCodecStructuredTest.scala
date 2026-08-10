@@ -28,18 +28,17 @@ class AvroCodecStructuredTest {
   // Mirrors the review_quality_insight_validation example from the structured-data design doc:
   // a struct field ("review_quality_insight_validation") containing a list of structs ("items"),
   // each of which contains a nested list of structs ("contents").
-  private val contentSchema = StructType("Content", Array(StructField("kind", StringType), StructField("text", StringType)))
-  private val itemSchema = StructType(
-    "Item",
-    Array(StructField("id_action", StringType),
-          StructField("id_source", StringType),
-          StructField("contents", ListType(contentSchema))))
+  private val contentSchema =
+    StructType("Content", Array(StructField("kind", StringType), StructField("text", StringType)))
+  private val itemSchema = StructType("Item",
+                                      Array(StructField("id_action", StringType),
+                                            StructField("id_source", StringType),
+                                            StructField("contents", ListType(contentSchema))))
   private val insightSchema = StructType("Insight", Array(StructField("items", ListType(itemSchema))))
-  private val rootSchema = StructType(
-    "Root",
-    Array(StructField("content_type", StringType),
-          StructField("id_review", LongType),
-          StructField("review_quality_insight_validation", insightSchema)))
+  private val rootSchema = StructType("Root",
+                                      Array(StructField("content_type", StringType),
+                                            StructField("id_review", LongType),
+                                            StructField("review_quality_insight_validation", insightSchema)))
 
   @Test
   def testDecodeStructuredNamesNestedStructsAndListsOfStructs(): Unit = {

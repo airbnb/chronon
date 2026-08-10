@@ -69,9 +69,10 @@ class FetcherStructuredTest extends MockitoSugar with MockitoHelper {
   private def groupByFetcher(schema: StructType, values: Try[Map[String, AnyRef]]): FetcherBase =
     new FetcherBase(kvStore) {
       override lazy val getGroupByServingInfo: TTLCache[String, Try[GroupByServingInfoParsed]] =
-        new TTLCache[String, Try[GroupByServingInfoParsed]](
-          { _: String => Success(servingInfoWith(schema)) },
-          { name: String => Metrics.Context(environment = "test", groupBy = name) })
+        new TTLCache[String, Try[GroupByServingInfoParsed]]({ _: String => Success(servingInfoWith(schema)) },
+                                                            { name: String =>
+                                                              Metrics.Context(environment = "test", groupBy = name)
+                                                            })
 
       override def fetchGroupBys(requests: Seq[Request]): Future[Seq[Response]] =
         Future.successful(requests.map(r => Response(r, values)))
@@ -97,8 +98,7 @@ class FetcherStructuredTest extends MockitoSugar with MockitoHelper {
 
   @Test
   def fetchGroupByStructuredNamesNestedStructs(): Unit = {
-    val schema = StructType("GbValue",
-                            Array(StructField("count", LongType), StructField("insight", insightSchema)))
+    val schema = StructType("GbValue", Array(StructField("count", LongType), StructField("insight", insightSchema)))
     val values: Map[String, AnyRef] =
       Map("count" -> Long.box(7L), "insight" -> positionalInsight("looks good", Seq("clean", "quiet")))
 
@@ -187,8 +187,8 @@ class FetcherStructuredTest extends MockitoSugar with MockitoHelper {
   def fetchJoinStructuredNarrowsSupersetSchema(): Unit = {
     // JoinCodec.valueSchema spans base and derived fields while a response holds only one set;
     // the record's schema should describe what is actually there.
-    val schema = StructType("JoinValue",
-                            Array(StructField("base_count", LongType), StructField("derived_count", LongType)))
+    val schema =
+      StructType("JoinValue", Array(StructField("base_count", LongType), StructField("derived_count", LongType)))
     val fetcher = joinFetcher(schema, Success(Map("derived_count" -> Long.box(9L))))
 
     val record =

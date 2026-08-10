@@ -41,8 +41,7 @@ case class FeatureRecord(schema: StructType, values: Map[String, Any]) {
     value match {
       case n: Number => n
       case other =>
-        throw new IllegalArgumentException(
-          s"Field '$field' holds a ${other.getClass.getName}, which is not numeric")
+        throw new IllegalArgumentException(s"Field '$field' holds a ${other.getClass.getName}, which is not numeric")
     }
 
   private def asString(value: Any): String =

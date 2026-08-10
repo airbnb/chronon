@@ -25,18 +25,17 @@ import java.util
 
 class FeatureRecordTest {
 
-  private val contentSchema = StructType("Content", Array(StructField("kind", StringType), StructField("text", StringType)))
-  private val itemSchema = StructType(
-    "Item",
-    Array(StructField("id_action", StringType),
-          StructField("id_source", StringType),
-          StructField("contents", ListType(contentSchema))))
+  private val contentSchema =
+    StructType("Content", Array(StructField("kind", StringType), StructField("text", StringType)))
+  private val itemSchema = StructType("Item",
+                                      Array(StructField("id_action", StringType),
+                                            StructField("id_source", StringType),
+                                            StructField("contents", ListType(contentSchema))))
   private val insightSchema = StructType("Insight", Array(StructField("items", ListType(itemSchema))))
-  private val rootSchema = StructType(
-    "Root",
-    Array(StructField("content_type", StringType),
-          StructField("id_review", LongType),
-          StructField("review_quality_insight_validation", insightSchema)))
+  private val rootSchema = StructType("Root",
+                                      Array(StructField("content_type", StringType),
+                                            StructField("id_review", LongType),
+                                            StructField("review_quality_insight_validation", insightSchema)))
 
   @Test
   def testFlatValuesPassThrough(): Unit = {
@@ -174,10 +173,11 @@ class FeatureRecordTest {
                                   StructField("l", LongType),
                                   StructField("f", FloatType),
                                   StructField("d", DoubleType)))
-    val record = FeatureRecord.fromValueMap(
-      schema,
-      Map("i" -> Integer.valueOf(5), "l" -> java.lang.Long.valueOf(6L), "f" -> java.lang.Float.valueOf(1.5f),
-        "d" -> java.lang.Double.valueOf(2.5d)))
+    val record = FeatureRecord.fromValueMap(schema,
+                                            Map("i" -> Integer.valueOf(5),
+                                                "l" -> java.lang.Long.valueOf(6L),
+                                                "f" -> java.lang.Float.valueOf(1.5f),
+                                                "d" -> java.lang.Double.valueOf(2.5d)))
 
     assertEquals(5L, record.getLong("i"))
     assertEquals(Some(5L), record.getLongOpt("i"))
@@ -204,9 +204,9 @@ class FeatureRecordTest {
     javaMapShape.put("kind", "HIGHLIGHT")
     javaMapShape.put("text", "Spotless")
 
-    val schema = StructType("Outer",
-                            Array(StructField("from_scala_map", contentSchema),
-                                  StructField("from_java_map", contentSchema)))
+    val schema = StructType(
+      "Outer",
+      Array(StructField("from_scala_map", contentSchema), StructField("from_java_map", contentSchema)))
     val record =
       FeatureRecord.fromValueMap(schema, Map("from_scala_map" -> scalaMapShape, "from_java_map" -> javaMapShape))
 
