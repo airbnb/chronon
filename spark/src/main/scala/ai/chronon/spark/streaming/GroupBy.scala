@@ -172,7 +172,7 @@ class GroupBy(inputStream: DataFrame,
     val valueToBytes = AvroConversions.encodeBytes(valueZSchema, GenericRowHandler.func)
 
     val dataWriter = new DataWriter(onlineImpl, context.withSuffix("egress"), 120, debug, notificationTopic)
-    selectedDf
+    val writer = selectedDf
       .map { row =>
         val keys = keyIndices.map(row.get)
         val values = valueIndices.map(row.get)
@@ -198,6 +198,10 @@ class GroupBy(inputStream: DataFrame,
       .writeStream
       .outputMode("append")
       .trigger(Trigger.Continuous(2.minute))
+
+    CheckpointConfig
+      .location(groupByConf, session)
+      .foldLeft(writer) { case (w, checkpointLocation) => w.option("checkpointLocation", checkpointLocation) }
       .foreach(dataWriter)
   }
 }

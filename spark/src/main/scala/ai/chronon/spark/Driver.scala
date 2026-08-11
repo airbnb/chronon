@@ -29,12 +29,14 @@ import org.apache.commons.io.FileUtils
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.SparkFiles
+import org.apache.spark.sql.execution.streaming.continuous.ContinuousTaskRetryException
 import org.apache.spark.sql.streaming.StreamingQueryListener
 import org.apache.spark.sql.streaming.StreamingQueryListener.{
   QueryProgressEvent,
   QueryStartedEvent,
   QueryTerminatedEvent
 }
+import org.apache.spark.sql.streaming.{StreamingQuery, StreamingQueryException}
 import org.apache.spark.sql.{DataFrame, SparkSession, SparkSessionExtensions}
 import org.apache.thrift.TBase
 import org.rogach.scallop.{ScallopConf, ScallopOption, Subcommand}
@@ -1018,6 +1020,42 @@ object Driver {
       statuses.find(_._2 == true).map(_._1)
     }
 
+    // Walks the cause chain of `t` looking for an instance of `T` - task failures surface wrapped
+    // in layers of SparkException, so the ContinuousTaskRetryException we care about is rarely the top-level cause.
+    private def isCausedBy[T <: Throwable](t: Throwable)(implicit tag: ClassTag[T]): Boolean = {
+      var cause = t
+      while (cause != null) {
+        if (tag.runtimeClass.isInstance(cause)) return true
+        cause = cause.getCause
+      }
+      false
+    }
+
+    // Continuous-trigger streaming queries (see streaming.GroupBy) abort with a
+    // ContinuousTaskRetryException on any task-level retry, since continuous mode doesn't support
+    // task retries itself - see org.apache.spark.sql.execution.streaming.continuous.ContinuousTaskRetryException.
+    // We treat that as a query-level failure and restart the whole query, up to maxRetries times.
+    // package-private so it can be exercised directly (with a fake startQuery) in tests, without a real SparkSession.
+    private[spark] def runWithRetries(maxRetries: Int)(startQuery: () => StreamingQuery): Unit = {
+      var attempt = 0
+      var succeeded = false
+      while (!succeeded) {
+        if (attempt > 0)
+          logger.info(s"Restarting streaming query, attempt $attempt/$maxRetries")
+        val query = startQuery()
+        try {
+          query.awaitTermination()
+          succeeded = true
+        } catch {
+          case e: StreamingQueryException if attempt < maxRetries && isCausedBy[ContinuousTaskRetryException](e) =>
+            attempt += 1
+            logger.warn(
+              s"Streaming query failed with ContinuousTaskRetryException, restarting (attempt $attempt/$maxRetries)",
+              e)
+        }
+      }
+    }
+
     def run(args: Args): Unit = {
       // session needs to be initialized before we can call find file.
       implicit val session: SparkSession = SparkSessionBuilder.buildStreaming(args.debug())
@@ -1031,26 +1069,34 @@ object Driver {
       if (args.debug())
         onlineJar.foreach(session.sparkContext.addJar)
       implicit val apiImpl = args.impl(args.serializableProps)
-      val query = if (groupByConf.streamingSource.get.isSetJoinSource) {
-        new JoinSourceRunner(groupByConf,
-                             args.serializableProps,
-                             args.debug(),
-                             args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start()
-      } else {
-        val streamingSource = groupByConf.streamingSource
-        assert(streamingSource.isDefined,
-               "There is no valid streaming source - with a valid topic, and endDate < today")
-        lazy val host = streamingSource.get.topicTokens.get("host")
-        lazy val port = streamingSource.get.topicTokens.get("port")
-        if (!args.kafkaBootstrap.isDefined)
-          assert(
-            host.isDefined && port.isDefined,
-            "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
-        val inputStream: DataFrame =
-          dataStream(session, args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"), streamingSource.get.cleanTopic)
-        new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug()).run()
+
+      def startQuery(): StreamingQuery = {
+        if (groupByConf.streamingSource.get.isSetJoinSource) {
+          new JoinSourceRunner(groupByConf,
+                               args.serializableProps,
+                               args.debug(),
+                               args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start()
+        } else {
+          val streamingSource = groupByConf.streamingSource
+          assert(streamingSource.isDefined,
+                 "There is no valid streaming source - with a valid topic, and endDate < today")
+          lazy val host = streamingSource.get.topicTokens.get("host")
+          lazy val port = streamingSource.get.topicTokens.get("port")
+          if (!args.kafkaBootstrap.isDefined)
+            assert(
+              host.isDefined && port.isDefined,
+              "Either specify a kafkaBootstrap url or provide host and port in your topic definition as topic/host=host/port=port")
+          val inputStream: DataFrame =
+            dataStream(session,
+                       args.kafkaBootstrap.getOrElse(s"${host.get}:${port.get}"),
+                       streamingSource.get.cleanTopic)
+          new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
+            .run()
+        }
       }
-      query.awaitTermination()
+
+      val maxRetries: Int = session.conf.get("spark.chronon.stream.max_retries", "0").toInt
+      runWithRetries(maxRetries)(startQuery)
     }
   }
 
