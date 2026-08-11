@@ -31,10 +31,14 @@ class DataStreamBuilderTest {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   lazy val spark: SparkSession = {
     System.setSecurityManager(null)
+    // Spark allows only one SparkContext per JVM, so whichever test's getOrCreate() runs first in this
+    // process wins and everyone else just gets that session back - including its config. Set the same
+    // spark.cleaner.referenceTracking value CatalystUtil.session requests, so it doesn't matter who wins.
     val spark = SparkSession
       .builder()
       .appName("DataStreamBuilderTest")
       .master("local")
+      .config("spark.cleaner.referenceTracking", "false")
       .getOrCreate()
     spark
   }
