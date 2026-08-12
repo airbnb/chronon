@@ -16,7 +16,7 @@
 
 package ai.chronon.online.serde
 
-import ai.chronon.api.{DataType, Row}
+import ai.chronon.api.{DataType, Row, StructType}
 import org.apache.avro.Schema
 import org.apache.avro.Schema.Field
 import org.apache.avro.file.SeekableByteArrayInput
@@ -108,6 +108,15 @@ class AvroCodec(val schemaStr: String) extends Serializable {
       .toChrononRow(decode(bytes), chrononSchema)
       .asInstanceOf[Array[Any]]
     fieldNames.iterator.zip(output.iterator.map(_.asInstanceOf[AnyRef])).toMap
+  }
+
+  /** Like `decodeMap`, but names fields at every nesting level instead of just the top level, so
+    * struct-typed values (and lists of structs) come back as [[FeatureRecord]]s rather than bare
+    * positional arrays.
+    */
+  def decodeStructured(bytes: Array[Byte]): FeatureRecord = {
+    if (bytes == null) return null
+    FeatureRecord.fromValueMap(chrononSchema.asInstanceOf[StructType], decodeMap(bytes))
   }
 }
 

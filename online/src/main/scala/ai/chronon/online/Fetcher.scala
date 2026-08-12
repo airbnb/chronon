@@ -33,7 +33,7 @@ import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildDerivedFields}
 import ai.chronon.online.Fetcher._
 import ai.chronon.online.KVStore.GetRequest
 import ai.chronon.online.Metrics.Environment
-import ai.chronon.online.serde.{AvroCodec, AvroConversions}
+import ai.chronon.online.serde.{AvroCodec, AvroConversions, FeatureRecord}
 import com.google.gson.Gson
 import com.timgroup.statsd.Event
 import com.timgroup.statsd.Event.AlertType
@@ -59,6 +59,7 @@ object Fetcher {
   case class StatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]], millis: Long)
   case class SeriesStatsResponse(request: StatsRequest, values: Try[Map[String, AnyRef]])
   case class Response(request: Request, values: Try[Map[String, AnyRef]])
+  case class StructuredResponse(request: Request, values: Try[FeatureRecord])
   case class ResponseWithContext(request: Request,
                                  ctx: Metrics.Context,
                                  requestStartTs: Long,
@@ -260,6 +261,33 @@ class Fetcher(val kvStore: KVStore,
     val batchFutures: Seq[Future[Seq[Response]]] =
       batches.map(batch => doFetchJoin(batch, joinConf))
     batchFutures
+  }
+
+  /** Like `fetchJoin`, but names struct-typed values (and lists of structs) at every nesting
+    * level instead of returning them as bare positional arrays. This is purely an alternative
+    * view of the values `fetchJoin` already returns, resolved against the same
+    * `JoinCodec.valueSchema`.
+    *
+    * That schema spans base, derived and model-transform fields while any single response holds
+    * only one of those sets, so `FeatureRecord` narrows it to the fields actually present.
+    */
+  def fetchJoinStructured(requests: scala.collection.Seq[Request],
+                          joinConf: Option[Join] = None): Future[scala.collection.Seq[StructuredResponse]] = {
+    // Resolved at most once per call rather than once per response: building a join codec walks
+    // every join part's serving info.
+    lazy val localSchema: Try[StructType] = Try(buildJoinCodec(joinConf.get, refreshOnFail = false)._1.valueSchema)
+    fetchJoin(requests, joinConf).map { responses =>
+      responses.map { response =>
+        val schemaTry: Try[StructType] =
+          if (joinConf.isDefined) localSchema
+          else getJoinCodecs(response.request.name).map(_._1.valueSchema)
+        val featureRecordTry: Try[FeatureRecord] = for {
+          schema <- schemaTry
+          values <- response.values
+        } yield FeatureRecord.fromValueMap(schema, values)
+        StructuredResponse(response.request, featureRecordTry)
+      }
+    }
   }
 
   def fetchBaseJoin(requests: scala.collection.Seq[Request],

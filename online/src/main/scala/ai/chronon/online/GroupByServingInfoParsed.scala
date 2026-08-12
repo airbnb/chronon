@@ -52,13 +52,24 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
     StructType.from(s"${groupBy.metaData.cleanName}_IR", aggregator.batchIrSchema)
 
   @transient lazy val deriveFunc: DerivationFunc = {
-    val keySchema = keyCodec.chrononSchema.asInstanceOf[StructType]
-    val baseValueSchema = if (groupBy.aggregations == null) {
-      selectedChrononSchema
-    } else {
-      outputChrononSchema
-    }
-    buildDerivationFunction(groupBy.derivationsScala, keySchema, baseValueSchema)
+    buildDerivationFunction(groupBy.derivationsScala, keyChrononSchema, baseValueChrononSchema)
+  }
+
+  @transient lazy val baseValueChrononSchema: StructType = if (groupBy.aggregations == null) {
+    selectedChrononSchema
+  } else {
+    outputChrononSchema
+  }
+
+  /** Schema of the value map returned by `FetcherBase.fetchGroupBys`: the derived schema when the
+    * groupBy declares derivations, otherwise the base value schema. Cached because resolving
+    * derived fields can involve Catalyst, which is far too expensive to redo per request.
+    */
+  @transient lazy val responseChrononSchema: StructType = if (groupBy.hasDerivations) {
+    val derivedFields = buildDerivedFields(groupBy.derivationsScala, keyChrononSchema, baseValueChrononSchema)
+    StructType(s"${groupBy.metaData.cleanName}_RESPONSE", derivedFields.toArray)
+  } else {
+    baseValueChrononSchema
   }
 
   def keyCodec: AvroCodec = AvroCodec.of(keyAvroSchema)

@@ -22,12 +22,12 @@ import ai.chronon.aggregator.windowing.{FinalBatchIr, SawtoothOnlineAggregator, 
 import ai.chronon.api.Constants.ChrononMetadataKey
 import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps, ThrowableOps, WindowOps}
 import ai.chronon.api._
-import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response}
+import ai.chronon.online.Fetcher.{ColumnSpec, PrefixedRequest, Request, Response, StructuredResponse}
 import ai.chronon.online.FetcherCache.{BatchResponses, CachedBatchResponse, KvStoreBatchResponse}
 import ai.chronon.online.KVStore.{GetRequest, GetResponse, TimedValue}
 import ai.chronon.online.Metrics.Name
 import ai.chronon.online.DerivationUtils.{applyDeriveFunc, buildRenameOnlyDerivationFunction}
-import ai.chronon.online.serde.AvroConversions
+import ai.chronon.online.serde.{AvroConversions, FeatureRecord}
 import com.google.gson.Gson
 
 import java.util
@@ -562,6 +562,24 @@ class FetcherBase(kvStore: KVStore,
         }.toList
         responses
       }
+  }
+
+  /** Like `fetchGroupBys`, but names struct-typed values (and lists of structs) at every nesting
+    * level instead of returning them as bare positional arrays. Resolves the same value schema
+    * that the classic map response is already shaped by - derivations included - so this is
+    * purely an alternative view of the same values.
+    */
+  def fetchGroupByStructured(
+      requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[StructuredResponse]] = {
+    fetchGroupBys(requests).map { responses =>
+      responses.map { response =>
+        val featureRecordTry: Try[FeatureRecord] = for {
+          servingInfo <- getGroupByServingInfo(response.request.name)
+          values <- response.values
+        } yield FeatureRecord.fromValueMap(servingInfo.responseChrononSchema, values)
+        StructuredResponse(response.request, featureRecordTry)
+      }
+    }
   }
 
   /**
