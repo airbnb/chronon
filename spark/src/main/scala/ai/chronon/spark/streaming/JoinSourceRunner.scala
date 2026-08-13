@@ -696,7 +696,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     def emitRequestMetric(request: PutRequest, context: Metrics.Context): Unit = {
       request.tsMillis.foreach { ts: Long =>
         context.distribution(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
-        context.increment(Metrics.Name.RowCount)
         context.distribution(Metrics.Name.ValueBytes, request.valueBytes.length)
         context.distribution(Metrics.Name.KeyBytes, request.keyBytes.length)
       }
@@ -714,6 +713,12 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
           } else {
             val egressCtx = context.withSuffix("egress")
             putRequests.foreach(request => emitRequestMetric(request, egressCtx))
+            // RowCount is a plain sum, so emit it once per batch instead of once per row. The StatsD
+            // client is a single JVM-wide instance draining one queue to one UDP socket, and the
+            // version in use has no client-side aggregation, so per-row emission puts thousands of
+            // messages per batch ahead of every other metric sharing that client. Matches the
+            // per-batch pattern PushNotificationCount already uses below.
+            egressCtx.count(Metrics.Name.RowCount, putRequests.count(_.tsMillis.isDefined))
 
             // Report kvStore metrics
             val kvContext = egressCtx.withSuffix("put")
@@ -729,13 +734,12 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
                 case Success(results) =>
                   kvContext.distribution(Metrics.Name.WriteLatencyMillis, System.currentTimeMillis() - writeStartMillis)
                   if (notificationTopic.isDefined) kvContext.count(Metrics.Name.PushNotificationCount, results.size)
-                  results.foreach { result =>
-                    if (result) {
-                      kvContext.increment("success")
-                    } else {
-                      kvContext.increment("failure")
-                    }
-                  }
+                  // Aggregate per-batch for the same reason as RowCount above: the StatsD client is a
+                  // single JVM-wide instance, so per-row increments from one batch queue thousands of
+                  // messages ahead of every other metric sharing that client.
+                  val successCount = results.count(identity)
+                  if (successCount > 0) kvContext.count("success", successCount)
+                  if (successCount < results.size) kvContext.count("failure", results.size - successCount)
                 case Failure(exception) => kvContext.incrementException(exception)
               }(kvStore.executionContext)
           }
