@@ -30,6 +30,17 @@ object SparkInternalRowConversions {
   // the identity function
   private def id(x: Any): Any = x
 
+  // Coerce a numeric value to the exact JVM type Catalyst expects for a given numeric DataType.
+  // JSON deserializers (e.g. Jackson) infer a number's type from its literal - `5` becomes an Integer,
+  // `1.5` a Double - regardless of the target schema. Spark's typed row accessors (getLong, getInt, ...)
+  // unbox to a fixed primitive, so an Integer sitting in a LongType slot throws a ClassCastException at
+  // read time. Normalising every java.lang.Number to the schema's type here makes the conversion robust
+  // to that mismatch; values that are already the right type are coerced idempotently.
+  private def numericConverter(coerce: java.lang.Number => Any): Any => Any = {
+    case n: java.lang.Number => coerce(n)
+    case other               => other
+  }
+
   // recursively convert sparks byte array based internal row to chronon's fetcher result type (map[string, any])
   // The purpose of this class is to be used on fetcher output in a fetching context
   // we take a data type and build a function that operates on actual value
@@ -149,26 +160,69 @@ object SparkInternalRowConversions {
         val names = fields.map { _.name }
 
         def mapConverter(structMap: Any): Any = {
-          val map = structMap.asInstanceOf[Map[Any, Any]]
-          val valueArr =
-            names.iterator
-              .zip(funcs.iterator)
-              .map { case (name, func) => map.get(name).map(func).orNull }
-              .toArray
-          new GenericInternalRow(valueArr)
-        }
+          val getValue: Any => Any = structMap match {
+            case scalaMap: Map[_, _]          => (name: Any) => scalaMap.asInstanceOf[Map[Any, Any]].get(name).orNull
+            case javaMap: java.util.Map[_, _] => (name: Any) => javaMap.asInstanceOf[java.util.Map[Any, Any]].get(name)
+            case _                            => throw new ClassCastException(s"Cannot cast ${structMap.getClass.getName} to Map")
+          }
 
-        def arrayConverter(structArr: Any): Any = {
-          val valueArr = structArr
-            .asInstanceOf[Array[Any]]
-            .iterator
+          val valueArr = names.iterator
             .zip(funcs.iterator)
-            .map { case (value, func) => if (value != null) func(value) else null }
+            .map {
+              case (name, func) =>
+                val value = getValue(name)
+                if (value != null) func(value) else null
+            }
             .toArray
           new GenericInternalRow(valueArr)
         }
 
+        def arrayConverter(structData: Any): Any = {
+          val valueArr = structData match {
+            case listValue: java.util.List[_] =>
+              listValue
+                .iterator()
+                .toScala
+                .zip(funcs.iterator)
+                .map { case (value, func) => if (value != null) func(value) else null }
+                .toArray
+            case arrayValue: Array[_] =>
+              arrayValue.iterator
+                .zip(funcs.iterator)
+                .map { case (value, func) => if (value != null) func(value) else null }
+                .toArray
+            case javaMap: java.util.Map[_, _] =>
+              val map = javaMap.asInstanceOf[java.util.Map[Any, Any]]
+              names.iterator
+                .zip(funcs.iterator)
+                .map {
+                  case (name, func) =>
+                    val value = map.get(name)
+                    if (value != null) func(value) else null
+                }
+                .toArray
+            case scalaMap: Map[_, _] =>
+              val map = scalaMap.asInstanceOf[Map[Any, Any]]
+              names.iterator
+                .zip(funcs.iterator)
+                .map {
+                  case (name, func) =>
+                    val value = map.get(name).orNull
+                    if (value != null) func(value) else null
+                }
+                .toArray
+            case _ => throw new ClassCastException(s"Cannot cast ${structData.getClass.getName} to Array, List, or Map")
+          }
+          new GenericInternalRow(valueArr)
+        }
+
         if (structToMap) mapConverter else arrayConverter
+      case types.ByteType    => numericConverter(_.byteValue())
+      case types.ShortType   => numericConverter(_.shortValue())
+      case types.IntegerType => numericConverter(_.intValue())
+      case types.LongType    => numericConverter(_.longValue())
+      case types.FloatType   => numericConverter(_.floatValue())
+      case types.DoubleType  => numericConverter(_.doubleValue())
       case types.StringType =>
         def stringConvertor(x: Any): Any = { UTF8String.fromString(x.asInstanceOf[String]) }
 
