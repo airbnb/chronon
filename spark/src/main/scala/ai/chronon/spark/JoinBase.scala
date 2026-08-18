@@ -45,6 +45,13 @@ abstract class JoinBase(joinConf: api.Join,
                         unsetSemanticHash: Boolean) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
+  require(
+    tableUtils.materializeJoinParts || selectedJoinParts.isEmpty,
+    "spark.chronon.join.part.materialize=false is not compatible with the parallelized join flow. " +
+      "That flow hands joinPart results between separate Spark jobs through the join part tables, so it needs " +
+      "them materialized. Either drop --selected-join-parts and run the monolithic backfill, or leave " +
+      "spark.chronon.join.part.materialize at its default of true."
+  )
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   val outputTable = if (!joinConf.hasModelTransforms) {
     joinConf.metaData.outputTable
@@ -169,8 +176,29 @@ abstract class JoinBase(joinConf: api.Join,
          |Shift days $shiftDays
          |Missing left partitions $leftRange
          |Range of timestamps within missing left partitions $leftTimeRangeOpt
-         |Right range $rightRange""".stripMargin)
+         |Right range $rightRange
+         |Materialize join part table: ${tableUtils.materializeJoinParts}""".stripMargin)
 
+    if (tableUtils.materializeJoinParts) {
+      materializeRightTable(leftDf, joinPart, partTable, rightRange, shiftDays, bloomMapOpt, partMetrics, smallMode)
+    } else {
+      computeRightTableInMemory(leftDf, joinPart, partTable, rightRange, shiftDays, bloomMapOpt, partMetrics)
+    }
+  }
+
+  /*
+   * Computes the joinPart over the unfilled portion of `rightRange`, writes the result to `partTable` and
+   * returns a scan of that table. The table doubles as a per-joinPart checkpoint: a rerun only computes the
+   * partitions that are still missing, and a failure downstream of this point does not lose the work.
+   */
+  private def materializeRightTable(leftDf: Option[DfWithStats],
+                                    joinPart: JoinPart,
+                                    partTable: String,
+                                    rightRange: PartitionRange,
+                                    shiftDays: Int,
+                                    bloomMapOpt: Option[util.Map[String, BloomFilter]],
+                                    partMetrics: Metrics.Context,
+                                    smallMode: Boolean): Option[DataFrame] = {
     try {
       val unfilledRanges = tableUtils
         .unfilledRanges(
@@ -232,6 +260,47 @@ abstract class JoinBase(joinConf: api.Join,
       // Happens when everything is handled by bootstrap
       None
     }
+  }
+
+  /*
+   * Computes the joinPart over `rightRange` and hands the DataFrame straight to the final merge, without
+   * writing `partTable`.
+   *
+   * There is no unfilled-range check here on purpose. Without the part table there is no record of what an
+   * earlier run already computed, so the full `rightRange` is computed every time. This is also what keeps
+   * the events-left <> snapshot-accuracy case correct: there `rightRange` is derived from the left time range
+   * and the materialized path reads back a wider range than the one it just wrote.
+   */
+  private def computeRightTableInMemory(leftDf: Option[DfWithStats],
+                                        joinPart: JoinPart,
+                                        partTable: String,
+                                        rightRange: PartitionRange,
+                                        shiftDays: Int,
+                                        bloomMapOpt: Option[util.Map[String, BloomFilter]],
+                                        partMetrics: Metrics.Context): Option[DataFrame] = {
+    val result =
+      try {
+        val prunedLeft = leftDf.flatMap(_.prunePartitions(rightRange.shift(-shiftDays)))
+        computeJoinPart(prunedLeft, joinPart, bloomMapOpt)
+      } catch {
+        case e: Exception =>
+          logger.error(
+            s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
+          throw e
+      }
+
+    // LatencyMinutes is deliberately not gauged here. Without the write there is no action, so the
+    // aggregation is evaluated later as part of the final merge and any duration measured at this point
+    // would understate the real cost of the joinPart.
+    partMetrics.gauge(Metrics.Name.PartitionCount, rightRange.partitions.length)
+
+    if (result.isEmpty) {
+      // Happens when everything is handled by bootstrap
+      logger.info(s"Skipping $partTable because no data in computed joinPart.")
+    } else {
+      logger.info(s"Computed joinPart for range $rightRange in memory, skipping the write to $partTable")
+    }
+    result
   }
 
   def computeJoinPart(leftDfWithStats: Option[DfWithStats],
@@ -463,6 +532,11 @@ abstract class JoinBase(joinConf: api.Join,
   def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit
 
   def computeFinal(overrideStartPartition: Option[String] = None): Unit = {
+    require(
+      tableUtils.materializeJoinParts,
+      "backfill-final reads each joinPart from its join part table, so it requires " +
+        "spark.chronon.join.part.materialize=true."
+    )
 
     // Utilizes the same tablesToRecompute check as the monolithic spark job, because if any joinPart changes, then so does the output table
     val (tablesChanged, autoArchive) = tablesToRecompute(joinConf, outputTable, tableUtils, unsetSemanticHash)
