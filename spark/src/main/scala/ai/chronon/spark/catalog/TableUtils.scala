@@ -391,17 +391,7 @@ case class TableUtils(sparkSession: SparkSession) {
   val checkLeftTimeRange: Boolean =
     sparkSession.conf.get("spark.chronon.join.backfill.left_time_range.enabled", "true").toBoolean
 
-  // whether or not to materialize the per-joinPart intermediate tables during join backfill.
-  // when true (the default), each joinPart is written to `<join_output_table>_<prefix>_<group_by_name>` and
-  // read back before the final merge. The table doubles as a checkpoint, so a rerun only computes the
-  // partitions that are still unfilled.
-  // when false, the joinPart DataFrame is handed straight to the final merge and no intermediate table is
-  // written. This saves a write plus a read, at the cost of losing the checkpoint: the full right range is
-  // recomputed on every run, and a failure in the merge step re-runs every joinPart.
-  // NOTE: not compatible with the parallelized join flow (`--selected-join-parts`, `backfill-left` /
-  // `backfill-final`), which hands results between Spark jobs through these tables. Also do not set this to
-  // false for a join whose joinPart tables are consumed downstream, e.g. by a GroupBy chained onto one via
-  // `join_part_output_table_name`.
+  // flag for whether or not to materialize the per-joinPart intermediate tables during join backfill
   val materializeJoinParts: Boolean =
     sparkSession.conf.get("spark.chronon.join.part.materialize", "true").toBoolean
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
