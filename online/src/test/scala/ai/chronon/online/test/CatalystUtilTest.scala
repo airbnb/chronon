@@ -685,4 +685,154 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     assertEquals("test_key_1", result.get("key"))
     assertArrayEquals(Array(1L, 2L), result.get("ids").asInstanceOf[java.util.List[Long]].toScala.toArray)
   }
+
+  // Tests for JSON-deserialized types (LinkedHashMap, ArrayList) in nested structs.
+  // These simulate what happens when contextual values arrive via the online HTTP API,
+  // where Java's JSON parser produces LinkedHashMap for objects and ArrayList for arrays.
+
+  @Test
+  def testSelectWithNestedJavaMapShouldWork(): Unit = {
+    val javaMapInner1 = new util.LinkedHashMap[String, Any]()
+    javaMapInner1.put("int32_req", 12)
+    javaMapInner1.put("int32_opt", 34)
+    val javaMapInner2 = new util.LinkedHashMap[String, Any]()
+    javaMapInner2.put("int32_req", 56)
+    javaMapInner2.put("int32_opt", 78)
+
+    val nestedJavaMapRow: Map[String, Any] = Map(
+      "inner_req" -> javaMapInner1,
+      "inner_opt" -> javaMapInner2
+    )
+
+    val selects = Seq(
+      "inner_req_int32_req" -> "inner_req.int32_req",
+      "inner_req_int32_opt" -> "inner_req.int32_opt",
+      "inner_opt_int32_req" -> "inner_opt.int32_req",
+      "inner_opt_int32_opt" -> "inner_opt.int32_opt"
+    )
+    val cu = new CatalystUtil(selects, NestedOuterStruct)
+    val res = cu.sqlTransform(nestedJavaMapRow)
+    assertEquals(res.get.size, 4)
+    assertEquals(res.get("inner_req_int32_req"), 12)
+    assertEquals(res.get("inner_req_int32_opt"), 34)
+    assertEquals(res.get("inner_opt_int32_req"), 56)
+    assertEquals(res.get("inner_opt_int32_opt"), 78)
+  }
+
+  @Test
+  def testPooledCatalystUtilWithJavaMapStructs(): Unit = {
+    val javaMapStruct1 = new util.LinkedHashMap[String, Any]()
+    javaMapStruct1.put("id", 1L)
+    javaMapStruct1.put("data", "data1")
+    val javaMapStruct2 = new util.LinkedHashMap[String, Any]()
+    javaMapStruct2.put("id", 2L)
+    javaMapStruct2.put("data", "data2")
+
+    val structListDataWithJavaMaps: Map[String, Any] = Map(
+      "ts" -> 1000L,
+      "key" -> "test_key_1",
+      "value" -> makeArrayList(javaMapStruct1, javaMapStruct2)
+    )
+
+    val selects = Seq(
+      "ts" -> "ts",
+      "key" -> "key",
+      "ids" -> "transform(value, v -> v.id)"
+    )
+    val pooledCatalystUtil = new PooledCatalystUtil(selects, structListType)
+    val result = pooledCatalystUtil.applyDerivations(structListDataWithJavaMaps)
+    assertEquals(3, result.get.size)
+    assertEquals(1000L, result.get("ts"))
+    assertEquals("test_key_1", result.get("key"))
+    assertArrayEquals(Array(1L, 2L), result.get("ids").asInstanceOf[java.util.List[Long]].toScala.toArray)
+  }
+
+  @Test
+  def testPooledCatalystUtilWithJavaListStructs(): Unit = {
+    val javaListStruct1 = new util.ArrayList[Any](util.Arrays.asList(1L, "data1"))
+    val javaListStruct2 = new util.ArrayList[Any](util.Arrays.asList(2L, "data2"))
+
+    val structListDataWithJavaLists: Map[String, Any] = Map(
+      "ts" -> 1000L,
+      "key" -> "test_key_1",
+      "value" -> makeArrayList(javaListStruct1, javaListStruct2)
+    )
+
+    val selects = Seq(
+      "ts" -> "ts",
+      "key" -> "key",
+      "ids" -> "transform(value, v -> v.id)"
+    )
+    val pooledCatalystUtil = new PooledCatalystUtil(selects, structListType)
+    val result = pooledCatalystUtil.applyDerivations(structListDataWithJavaLists)
+    assertEquals(3, result.get.size)
+    assertEquals(1000L, result.get("ts"))
+    assertEquals("test_key_1", result.get("key"))
+    assertArrayEquals(Array(1L, 2L), result.get("ids").asInstanceOf[java.util.List[Long]].toScala.toArray)
+  }
+
+  @Test
+  def testPooledCatalystUtilWithNestedJavaMapContextualValues(): Unit = {
+    val contextualStruct: StructType = StructType.from(
+      "ContextualStruct",
+      Array(
+        ("account_id", StringType),
+        ("transaction_amount", LongType),
+        ("transaction_struct",
+         StructType.from(
+           "TxnStruct",
+           Array(
+             ("id", LongType),
+             ("amount", StringType)
+           )
+         ))
+      )
+    )
+
+    val javaMapTxnStruct = new util.LinkedHashMap[String, Any]()
+    javaMapTxnStruct.put("id", 2147483648L)
+    javaMapTxnStruct.put("amount", "10")
+
+    val contextualData: Map[String, Any] = Map(
+      "account_id" -> "acc_123",
+      "transaction_amount" -> 2147483648L,
+      "transaction_struct" -> javaMapTxnStruct
+    )
+
+    val selects = Seq(
+      "account_id_echo" -> "account_id",
+      "amount_doubled" -> "ABS(CAST(transaction_amount AS LONG)) * 2",
+      "struct_id" -> "CAST(transaction_struct.id AS LONG)",
+      "struct_amount" -> "CAST(transaction_struct.amount AS STRING)"
+    )
+    val pooledCatalystUtil = new PooledCatalystUtil(selects, contextualStruct)
+    val result = pooledCatalystUtil.applyDerivations(contextualData)
+    assertEquals(4, result.get.size)
+    assertEquals("acc_123", result.get("account_id_echo"))
+    assertEquals(2147483648L * 2, result.get("amount_doubled"))
+    assertEquals(2147483648L, result.get("struct_id"))
+    assertEquals("10", result.get("struct_amount"))
+  }
+
+  // A numeric value may arrive boxed narrower than the schema declares (e.g. a small integer as
+  // java.lang.Integer for a LongType field, as JSON parsers produce). The converter must coerce it
+  // to the schema's type so Catalyst's typed accessors (getLong, ...) don't throw at read time.
+  @Test
+  def testNarrowNumericValuesAreCoercedToSchemaType(): Unit = {
+    val nested = new util.LinkedHashMap[String, Any]()
+    nested.put("inner_long", 7) // Integer in a LongType slot
+    val data: Map[String, Any] = Map("a_long" -> 5, "nested" -> nested)
+    val schema = StructType.from(
+      "NumericCoercionStruct",
+      Array(
+        ("a_long", LongType),
+        ("nested", StructType.from("Nested", Array(("inner_long", LongType))))
+      )
+    )
+    val selects = Seq("a_long" -> "a_long", "inner_long" -> "nested.inner_long")
+    val result = new PooledCatalystUtil(selects, schema).applyDerivations(data)
+    assertEquals(2, result.get.size)
+    assertEquals(5L, result.get("a_long"))
+    assertEquals(7L, result.get("inner_long")) // nested coercion — the case castTo never reaches
+  }
 }

@@ -787,6 +787,78 @@ class FetcherTest extends TestCase {
     logger.info(s"✅ Fetcher correctly returns ONLY derived columns (no wildcard): ${responseKeys.mkString(", ")}")
   }
 
+  // Mirrors a Join with a ContextualSource that has a struct-typed field, read back online through
+  // derivations (e.g. ext_contextual_transaction_struct.id). When contextual values arrive via the
+  // online HTTP API, Jackson deserializes the nested struct as a java.util.LinkedHashMap - which
+  // previously blew up the StructType converter in SparkInternalRowConversions.to(). This exercises
+  // that path end-to-end through the fetcher and its derivations.
+  def testFetchJoinContextualStruct(): Unit = {
+    val spark: SparkSession = createSparkSession()
+    val namespace = "contextual_struct_fetch"
+    val tableUtils = TableUtils(spark)
+    tableUtils.createDatabase(namespace)
+    implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
+
+    val txnStruct = StructType(
+      "transaction_struct",
+      Array(StructField("id", LongType), StructField("amount", StringType))
+    )
+
+    val contextualSource = Builders.ContextualSource(
+      fields = Array(
+        StructField("transaction_amount_demo", LongType),
+        StructField("transaction_id", StringType),
+        StructField("transaction_struct", txnStruct)
+      )
+    )
+
+    val joinConf = Builders.Join(
+      // left doesn't matter for a fetch-only test - contextual keys come from the request
+      left = Builders.Source.events(
+        Builders.Query(selects = Builders.Selects("account_id")),
+        table = "non_existent_table"
+      ),
+      externalParts = Seq(Builders.ExternalPart(contextualSource)),
+      derivations = Seq(
+        Builders.Derivation(name = "txn_amount", expression = "ext_contextual_transaction_amount_demo"),
+        Builders.Derivation(name = "txn_id", expression = "ext_contextual_transaction_id"),
+        Builders.Derivation(name = "struct_id", expression = "ext_contextual_transaction_struct.id"),
+        Builders.Derivation(name = "struct_amount", expression = "ext_contextual_transaction_struct.amount")
+      ),
+      metaData =
+        Builders.MetaData(name = "unit_test/fetcher_contextual_struct_join", namespace = namespace, team = "chronon")
+    )
+
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("FetcherTest#contextual_struct")
+    val mockApi = new MockApi(kvStoreFunc, namespace)
+    val fetcher = mockApi.buildFetcher(debug = false)
+    fetcher.kvStore.create(ChrononMetadataKey)
+    fetcher.putJoinConf(joinConf)
+
+    // Mirror the online HTTP path: Jackson deserializes the nested JSON struct as a LinkedHashMap.
+    val jacksonStruct = new java.util.LinkedHashMap[String, AnyRef]()
+    jacksonStruct.put("id", java.lang.Long.valueOf(2147483648L))
+    jacksonStruct.put("amount", "10")
+
+    val request = Request(
+      joinConf.metaData.name,
+      Map(
+        "account_id" -> "1",
+        "transaction_amount_demo" -> java.lang.Long.valueOf(2147483648L),
+        "transaction_id" -> "txn_1",
+        "transaction_struct" -> jacksonStruct
+      )
+    )
+
+    val response = Await.result(fetcher.fetchJoin(Seq(request)), Duration(10, SECONDS)).head
+    assertTrue(response.values.isSuccess)
+    val values = response.values.get
+    assertEquals(2147483648L, values("txn_amount"))
+    assertEquals("txn_1", values("txn_id"))
+    assertEquals(2147483648L, values("struct_id"))
+    assertEquals("10", values("struct_amount"))
+  }
+
   def testTemporalFetchJoinGenerated(): Unit = {
     val namespace = "generated_fetch"
     val joinConf = generateRandomData(namespace)
