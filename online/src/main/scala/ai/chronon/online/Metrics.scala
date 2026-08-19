@@ -18,8 +18,10 @@ package ai.chronon.online
 
 import ai.chronon.api.Extensions._
 import ai.chronon.api._
-import com.timgroup.statsd.{Event, NonBlockingStatsDClient}
+import com.timgroup.statsd.{Event, NonBlockingStatsDClient, StatsDClientErrorHandler}
+import org.slf4j.LoggerFactory
 
+import java.util.concurrent.atomic.AtomicLong
 import scala.util.ScalaJavaConversions.ListOps
 
 object Metrics {
@@ -147,7 +149,24 @@ object Metrics {
       ttlMillis = 5 * 24 * 60 * 60 * 1000 // 5 days
     )
 
-    val statsClient: NonBlockingStatsDClient = new NonBlockingStatsDClient("ai.zipline", statsHost, statsPort)
+    // The client is non-blocking by design and swallows every internal failure, so without a
+    // handler a broken metrics pipeline is completely invisible to the job. This does not catch
+    // datagrams the kernel discards - a full socket buffer raises no exception - it only surfaces
+    // errors the client itself reports.
+    private val statsLogger = LoggerFactory.getLogger("ai.chronon.online.Metrics")
+    private val statsErrorCount = new AtomicLong(0)
+    private val statsErrorHandler: StatsDClientErrorHandler = new StatsDClientErrorHandler {
+      override def handle(exception: Exception): Unit = {
+        val occurrence = statsErrorCount.incrementAndGet()
+        // Log the first error and then every 1000th, so a persistent failure cannot flood the log.
+        if (occurrence == 1 || occurrence % 1000 == 0) {
+          statsLogger.warn(s"StatsD client error (occurrence $occurrence): ${exception.getMessage}", exception)
+        }
+      }
+    }
+
+    val statsClient: NonBlockingStatsDClient =
+      new NonBlockingStatsDClient("ai.zipline", statsHost, statsPort, Array.empty[String], statsErrorHandler)
   }
 
   case class Context(environment: Environment,
@@ -213,6 +232,12 @@ object Metrics {
 
     def distribution(metric: String, value: Long): Unit =
       stats.distribution(prefix(metric), value, Context.sampleRate, tags)
+
+    // Explicit sample rate, for call sites that emit per row and need to bound how many messages a
+    // single batch hands to the JVM-wide client. The rate is carried in the message, so the backend
+    // still reconstructs count and sum; only percentile resolution drops.
+    def distribution(metric: String, value: Long, sampleRate: Double): Unit =
+      stats.distribution(prefix(metric), value, sampleRate, tags)
 
     def count(metric: String, value: Long): Unit = stats.count(prefix(metric), value, tags)
 

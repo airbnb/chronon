@@ -693,11 +693,26 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       .foldLeft(baseWriter) { case (w, checkpointLocation) => w.option("checkpointLocation", checkpointLocation) }
     val putRequestHelper = PutRequestHelper(joinSourceDf.schema)
 
-    def emitRequestMetric(request: PutRequest, context: Metrics.Context): Unit = {
+    // Per-row metrics are emitted from the driver, where a whole micro-batch is collected, so the
+    // number of messages one batch hands to the JVM-wide StatsD client grows with traffic. Cap the
+    // messages per batch instead of the fraction of rows: pick the sample rate so that roughly
+    // `cap` rows are emitted regardless of batch size, and never sample more than the default rate.
+    // The rate is carried in each message, so the backend still reconstructs count and sum.
+    //
+    // FreshnessMillis is left uncapped - its percentiles are actively alerted on, and reducing the
+    // sample count for it would make those percentiles noisier during large batches. Key and value
+    // sizes are near-constant for a given GroupBy, so they can afford a much smaller sample budget.
+    def batchSampleRate(cap: Int, batchSize: Int): Double =
+      if (batchSize <= 0) Metrics.Context.sampleRate
+      else math.min(Metrics.Context.sampleRate, cap.toDouble / batchSize)
+
+    val bytesSampleCap = 10
+
+    def emitRequestMetric(request: PutRequest, context: Metrics.Context, bytesRate: Double): Unit = {
       request.tsMillis.foreach { ts: Long =>
         context.distribution(Metrics.Name.FreshnessMillis, System.currentTimeMillis() - ts)
-        context.distribution(Metrics.Name.ValueBytes, request.valueBytes.length)
-        context.distribution(Metrics.Name.KeyBytes, request.keyBytes.length)
+        context.distribution(Metrics.Name.ValueBytes, request.valueBytes.length, bytesRate)
+        context.distribution(Metrics.Name.KeyBytes, request.keyBytes.length, bytesRate)
       }
     }
 
@@ -712,7 +727,8 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             logger.info(s" Size of putRequests to kv store- ${putRequests.length}")
           } else {
             val egressCtx = context.withSuffix("egress")
-            putRequests.foreach(request => emitRequestMetric(request, egressCtx))
+            val bytesRate = batchSampleRate(bytesSampleCap, putRequests.length)
+            putRequests.foreach(request => emitRequestMetric(request, egressCtx, bytesRate))
             // RowCount is a plain sum, so emit it once per batch instead of once per row. The StatsD
             // client is a single JVM-wide instance draining one queue to one UDP socket, and the
             // version in use has no client-side aggregation, so per-row emission puts thousands of
