@@ -1070,13 +1070,13 @@ object Driver {
         onlineJar.foreach(session.sparkContext.addJar)
       implicit val apiImpl = args.impl(args.serializableProps)
 
-      def startQuery(): StreamingQuery = {
-        if (groupByConf.streamingSource.get.isSetJoinSource) {
-          new JoinSourceRunner(groupByConf,
-                               args.serializableProps,
-                               args.debug(),
-                               args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start()
-        } else {
+      if (groupByConf.streamingSource.get.isSetJoinSource) {
+        new JoinSourceRunner(groupByConf,
+                             args.serializableProps,
+                             args.debug(),
+                             args.lagMillis.getOrElse(2000)).chainedStreamingQuery.start().awaitTermination()
+      } else {
+        def startQuery(): StreamingQuery = {
           val streamingSource = groupByConf.streamingSource
           assert(streamingSource.isDefined,
                  "There is no valid streaming source - with a valid topic, and endDate < today")
@@ -1093,10 +1093,9 @@ object Driver {
           new streaming.GroupBy(inputStream, session, groupByConf, args.impl(args.serializableProps), args.debug())
             .run()
         }
+        val maxRetries: Int = session.conf.get("spark.chronon.stream.max_retries", "0").toInt
+        runWithRetries(maxRetries)(startQuery)
       }
-
-      val maxRetries: Int = session.conf.get("spark.chronon.stream.max_retries", "0").toInt
-      runWithRetries(maxRetries)(startQuery)
     }
   }
 
