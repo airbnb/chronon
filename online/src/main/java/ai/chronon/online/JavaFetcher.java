@@ -234,7 +234,7 @@ public class JavaFetcher {
         // Convert java requests to scala requests
         Seq<Request> scalaRequests = convertJavaRequestList(requests, true, startTs);
         // Get responses from the fetcher
-        Future<Seq<StructuredResponse>> scalaResponses = this.fetcher.fetchGroupByStructured(scalaRequests);
+        Future<Seq<StructuredResponse>> scalaResponses = this.fetcher.fetchGroupBysStructured(scalaRequests);
         // Convert responses to CompletableFuture
         return convertStructuredResponses(scalaResponses);
     }

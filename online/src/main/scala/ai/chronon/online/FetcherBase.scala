@@ -569,7 +569,7 @@ class FetcherBase(kvStore: KVStore,
     * that the classic map response is already shaped by - derivations included - so this is
     * purely an alternative view of the same values.
     */
-  def fetchGroupByStructured(
+  def fetchGroupBysStructured(
       requests: scala.collection.Seq[Request]): Future[scala.collection.Seq[StructuredResponse]] = {
     fetchGroupBys(requests).map { responses =>
       responses.map { response =>
