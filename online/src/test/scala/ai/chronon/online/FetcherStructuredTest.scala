@@ -97,13 +97,13 @@ class FetcherStructuredTest extends MockitoSugar with MockitoHelper {
   private def await[T](f: Future[T]): T = Await.result(f, 5.seconds)
 
   @Test
-  def fetchGroupByStructuredNamesNestedStructs(): Unit = {
+  def fetchGroupBysStructuredNamesNestedStructs(): Unit = {
     val schema = StructType("GbValue", Array(StructField("count", LongType), StructField("insight", insightSchema)))
     val values: Map[String, AnyRef] =
       Map("count" -> Long.box(7L), "insight" -> positionalInsight("looks good", Seq("clean", "quiet")))
 
     val fetcher = groupByFetcher(schema, Success(values))
-    val responses = await(fetcher.fetchGroupByStructured(Seq(Request(GroupByName, Map("listing" -> Long.box(1L))))))
+    val responses = await(fetcher.fetchGroupBysStructured(Seq(Request(GroupByName, Map("listing" -> Long.box(1L))))))
 
     assertEquals(1, responses.size)
     val record = responses.head.values.get
@@ -118,33 +118,33 @@ class FetcherStructuredTest extends MockitoSugar with MockitoHelper {
   }
 
   @Test
-  def fetchGroupByStructuredPreservesRequests(): Unit = {
+  def fetchGroupBysStructuredPreservesRequests(): Unit = {
     val schema = StructType("GbValue", Array(StructField("count", LongType)))
     val fetcher = groupByFetcher(schema, Success(Map("count" -> Long.box(1L))))
     val request = Request(GroupByName, Map("listing" -> Long.box(42L)))
 
-    val responses = await(fetcher.fetchGroupByStructured(Seq(request)))
+    val responses = await(fetcher.fetchGroupBysStructured(Seq(request)))
     assertEquals(request, responses.head.request)
   }
 
   @Test
-  def fetchGroupByStructuredSurfacesFetchFailure(): Unit = {
+  def fetchGroupBysStructuredSurfacesFetchFailure(): Unit = {
     val schema = StructType("GbValue", Array(StructField("count", LongType)))
     val boom = new RuntimeException("kv store exploded")
     val fetcher = groupByFetcher(schema, scala.util.Failure(boom))
 
-    val responses = await(fetcher.fetchGroupByStructured(Seq(Request(GroupByName, Map("listing" -> Long.box(1L))))))
+    val responses = await(fetcher.fetchGroupBysStructured(Seq(Request(GroupByName, Map("listing" -> Long.box(1L))))))
     assertTrue(responses.head.values.isFailure)
     assertEquals(boom, responses.head.values.failed.get)
   }
 
   @Test
-  def fetchGroupByStructuredHandlesNullValueMap(): Unit = {
+  def fetchGroupBysStructuredHandlesNullValueMap(): Unit = {
     // fetchGroupBys returns a null value map when the key is absent from the KV store.
     val schema = StructType("GbValue", Array(StructField("count", LongType)))
     val fetcher = groupByFetcher(schema, Success(null))
 
-    val responses = await(fetcher.fetchGroupByStructured(Seq(Request(GroupByName, Map("listing" -> Long.box(1L))))))
+    val responses = await(fetcher.fetchGroupBysStructured(Seq(Request(GroupByName, Map("listing" -> Long.box(1L))))))
     assertEquals(null, responses.head.values.get)
   }
 
