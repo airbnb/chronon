@@ -45,13 +45,19 @@ abstract class JoinBase(joinConf: api.Join,
                         unsetSemanticHash: Boolean) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   assert(Option(joinConf.metaData.outputNamespace).nonEmpty, s"output namespace could not be empty or null")
-  require(
-    tableUtils.materializeJoinParts || selectedJoinParts.isEmpty,
-    "spark.chronon.join.part.materialize=false is not compatible with the parallelized join flow. " +
-      "That flow hands joinPart results between separate Spark jobs through the join part tables, so it needs " +
-      "them materialized. Either drop --selected-join-parts and run the monolithic backfill, or leave " +
-      "spark.chronon.join.part.materialize at its default of true."
-  )
+
+  // The parallelized join flow hands joinPart results between separate Spark jobs through the join part tables,
+  // so those tables have to exist for it to work at all. When that flow is in use we materialize regardless of
+  // the flag instead of failing the job: the flag is typically set once for a cluster, while the flow is chosen
+  // per run, so a job that cannot honor the flag should still produce correct output.
+  private val parallelizedJoinPartFlow: Boolean = selectedJoinParts.isDefined
+  val materializeJoinParts: Boolean = tableUtils.materializeJoinParts || parallelizedJoinPartFlow
+  if (parallelizedJoinPartFlow && !tableUtils.materializeJoinParts) {
+    logger.warn(
+      "spark.chronon.join.part.materialize=false is not supported by the parallelized join flow, which hands " +
+        "joinPart results between separate Spark jobs through the join part tables. Falling back to writing " +
+        "them. Drop --selected-join-parts to run the monolithic backfill with the flag honored.")
+  }
   val metrics: Metrics.Context = Metrics.Context(Metrics.Environment.JoinOffline, joinConf)
   val outputTable = if (!joinConf.hasModelTransforms) {
     joinConf.metaData.outputTable
@@ -177,9 +183,9 @@ abstract class JoinBase(joinConf: api.Join,
          |Missing left partitions $leftRange
          |Range of timestamps within missing left partitions $leftTimeRangeOpt
          |Right range $rightRange
-         |Materialize join part table: ${tableUtils.materializeJoinParts}""".stripMargin)
+         |Materialize join part table: $materializeJoinParts""".stripMargin)
 
-    if (tableUtils.materializeJoinParts) {
+    if (materializeJoinParts) {
       materializeRightTable(leftDf, joinPart, partTable, rightRange, shiftDays, bloomMapOpt, partMetrics, smallMode)
     } else {
       computeRightTableInMemory(leftDf, joinPart, partTable, rightRange, shiftDays, bloomMapOpt, partMetrics)
@@ -532,11 +538,13 @@ abstract class JoinBase(joinConf: api.Join,
   def computeFinalJoin(leftDf: DataFrame, leftRange: PartitionRange, bootstrapInfo: BootstrapInfo): Unit
 
   def computeFinal(overrideStartPartition: Option[String] = None): Unit = {
-    require(
-      tableUtils.materializeJoinParts,
-      "backfill-final reads each joinPart from its join part table, so it requires " +
-        "spark.chronon.join.part.materialize=true."
-    )
+    // Same fallback as the constructor: this is the last step of the parallelized join flow and reads each
+    // joinPart from its join part table, which the joinPart jobs of that flow wrote for the same reason.
+    if (!tableUtils.materializeJoinParts) {
+      logger.warn(
+        "spark.chronon.join.part.materialize=false is not supported by backfill-final, which reads each joinPart " +
+          "from its join part table. Proceeding with the join part tables written by the joinPart jobs.")
+    }
 
     // Utilizes the same tablesToRecompute check as the monolithic spark job, because if any joinPart changes, then so does the output table
     val (tablesChanged, autoArchive) = tablesToRecompute(joinConf, outputTable, tableUtils, unsetSemanticHash)

@@ -456,6 +456,7 @@ class JoinBasicTests {
     * with it set to false, and checks that:
     *   - the two output tables agree row for row
     *   - the non-materialized run writes no join part tables
+    *   - the parallelized join flow overrides the flag and writes the tables it needs
     * The join covers both right-range shapes: a SNAPSHOT joinPart, whose right range is derived from the left
     * time range and is therefore shifted, and a TEMPORAL joinPart, whose right range is already aligned.
     */
@@ -552,13 +553,20 @@ class JoinBasicTests {
       }
       assertEquals(0, diffCount)
 
-      // 3 - the flag is rejected in the parallelized join flow, which needs the tables to hand results between jobs
-      intercept[IllegalArgumentException] {
-        new Join(joinConf("selected"),
-                 today,
-                 noMatTableUtils,
-                 selectedJoinParts = Some(List("snap_unit_test_views_snapshot")))
-      }
+      // 3 - the parallelized join flow needs the tables to hand results between separate jobs, so with the flag
+      //     off it falls back to materializing them instead of failing the job
+      val selectedConf = joinConf("selected")
+      val selectedPart = selectedConf.joinParts.toScala.head
+      val selectedJob =
+        new Join(selectedConf, today, noMatTableUtils, selectedJoinParts = Some(List(selectedPart.fullPrefix)))
+      assertTrue("expected the parallelized flow to override the flag", selectedJob.materializeJoinParts)
+      selectedJob.computeJoinOpt()
+      assertTrue(s"expected ${selectedConf.partOutputTable(selectedPart)} to be written by the fallback",
+                 noMatTableUtils.tableExists(selectedConf.partOutputTable(selectedPart)))
+      // the joinPart that was not selected stays absent
+      val unselectedPart = selectedConf.joinParts.toScala.last
+      assertFalse(s"expected ${selectedConf.partOutputTable(unselectedPart)} to be absent",
+                  noMatTableUtils.tableExists(selectedConf.partOutputTable(unselectedPart)))
     } finally {
       originalSetting match {
         case Some(value) => spark.conf.set(materializeConf, value)
