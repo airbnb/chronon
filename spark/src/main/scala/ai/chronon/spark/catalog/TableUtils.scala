@@ -392,8 +392,9 @@ case class TableUtils(sparkSession: SparkSession) {
     sparkSession.conf.get("spark.chronon.join.backfill.left_time_range.enabled", "true").toBoolean
 
   // flag for whether or not to materialize the per-joinPart intermediate tables during join backfill
+  // TODO: value is for testing jar only - set to false to test on no materialization of intermediate tables
   val materializeJoinParts: Boolean =
-    sparkSession.conf.get("spark.chronon.join.part.materialize", "true").toBoolean
+    sparkSession.conf.get("spark.chronon.join.part.materialize", "false").toBoolean
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
   val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
   val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
