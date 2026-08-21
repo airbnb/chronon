@@ -496,8 +496,15 @@ class FetcherBase(kvStore: KVStore,
                   case Some(cachedResponse: CachedBatchResponse) => cachedResponse
                 }
 
-              val streamingResponsesOpt =
-                streamingRequestOpt.map(responsesMap.getOrElse(_, Success(Seq.empty)).getOrElse(Seq.empty))
+              val streamingResponsesOpt = streamingRequestOpt.map { streamingRequest =>
+                responsesMap
+                  .getOrElse(
+                    streamingRequest,
+                    Failure(new IllegalStateException(
+                      s"Couldn't find corresponding response for $streamingRequest in responseMap"))
+                  )
+                  .get
+              }
               val queryTs = request.atMillis.getOrElse(System.currentTimeMillis())
               val groupByResponse: Option[Map[String, AnyRef]] =
                 try {
