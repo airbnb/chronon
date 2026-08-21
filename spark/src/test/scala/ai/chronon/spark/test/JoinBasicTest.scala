@@ -451,4 +451,128 @@ class JoinBasicTests {
     assertEquals(diffCount, 0)
   }
 
+  /**
+    * Runs the same join twice, once with `spark.chronon.join.part.materialize` at its default of true and once
+    * with it set to false, and checks that:
+    *   - the two output tables agree row for row
+    *   - the non-materialized run writes no join part tables
+    *   - the parallelized join flow overrides the flag and writes the tables it needs
+    * The join covers both right-range shapes: a SNAPSHOT joinPart, whose right range is derived from the left
+    * time range and is therefore shifted, and a TEMPORAL joinPart, whose right range is already aligned.
+    */
+  @Test
+  def testJoinPartMaterializationFlag(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("JoinTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val namespace = "test_namespace_jointest" + "_" + Random.alphanumeric.take(6).mkString
+    val materializeConf = "spark.chronon.join.part.materialize"
+    val originalSetting = spark.conf.getOption(materializeConf)
+
+    try {
+      val tableUtils = TableUtils(spark)
+      tableUtils.createDatabase(namespace)
+
+      // Left - events
+      val itemQueries = List(Column("item", api.StringType, 100), Column("value", api.LongType, 100))
+      val itemQueriesTable = s"$namespace.item_queries_materialize_flag"
+      DataFrameGen.events(spark, itemQueries, 3000, partitions = 20).save(itemQueriesTable)
+
+      // Right - events
+      val viewsSchema = List(
+        Column("user", api.StringType, 1000),
+        Column("item", api.StringType, 100),
+        Column("value", api.LongType, 100)
+      )
+      val viewsTable = s"$namespace.views_materialize_flag"
+      DataFrameGen.events(spark, viewsSchema, count = 3000, partitions = 30).save(viewsTable)
+
+      // start late enough inside the generated data that the 7 day window on the right has history to read
+      val start = tableUtils.partitionSpec.minus(today, new Window(10, TimeUnit.DAYS))
+      def viewsSource = Builders.Source.events(table = viewsTable, query = Builders.Query(startPartition = start))
+
+      // the GroupBy names are shared by both joins so the two output tables have identical value columns
+      val snapshotGroupBy = Builders.GroupBy(
+        sources = Seq(viewsSource),
+        keyColumns = Seq("item"),
+        aggregations = Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "value")),
+        metaData = Builders.MetaData(name = "unit_test.views_snapshot", namespace = namespace, team = "item_team"),
+        accuracy = Accuracy.SNAPSHOT
+      )
+
+      val temporalGroupBy = Builders.GroupBy(
+        sources = Seq(viewsSource),
+        keyColumns = Seq("item"),
+        aggregations = Seq(
+          Builders.Aggregation(operation = Operation.COUNT,
+                               inputColumn = "value",
+                               windows = Seq(new Window(7, TimeUnit.DAYS)))),
+        metaData = Builders.MetaData(name = "unit_test.views_temporal", namespace = namespace, team = "item_team"),
+        accuracy = Accuracy.TEMPORAL
+      )
+
+      // The two joins differ only by name, so they write to different output tables but produce the same values.
+      def joinConf(suffix: String) =
+        Builders.Join(
+          left = Builders.Source.events(Builders.Query(startPartition = start), table = itemQueriesTable),
+          joinParts = Seq(
+            Builders.JoinPart(groupBy = snapshotGroupBy, prefix = "snap"),
+            Builders.JoinPart(groupBy = temporalGroupBy, prefix = "temp")
+          ),
+          metaData = Builders.MetaData(name = s"unit_test.item_features_materialize_$suffix",
+                                       namespace = namespace,
+                                       team = "item_team")
+        )
+
+      // 1 - default behavior: join part tables are written
+      val materializedConf = joinConf("materialized")
+      assertTrue(tableUtils.materializeJoinParts)
+      val materialized = new Join(materializedConf, today, tableUtils).computeJoin()
+      materializedConf.joinParts.toScala.foreach { jp =>
+        assertTrue(s"expected ${materializedConf.partOutputTable(jp)} to be written",
+                   tableUtils.tableExists(materializedConf.partOutputTable(jp)))
+      }
+
+      // 2 - flag off: no join part tables, but the same output
+      spark.conf.set(materializeConf, "false")
+      val noMatTableUtils = TableUtils(spark)
+      assertFalse(noMatTableUtils.materializeJoinParts)
+      val unmaterializedConf = joinConf("unmaterialized")
+      val unmaterialized = new Join(unmaterializedConf, today, noMatTableUtils).computeJoin()
+      unmaterializedConf.joinParts.toScala.foreach { jp =>
+        assertFalse(s"expected ${unmaterializedConf.partOutputTable(jp)} to be absent",
+                    noMatTableUtils.tableExists(unmaterializedConf.partOutputTable(jp)))
+      }
+      // the bootstrap table is out of scope for this flag and is still written
+      assertTrue(noMatTableUtils.tableExists(unmaterializedConf.metaData.bootstrapTable))
+
+      val diff = Comparison.sideBySide(materialized, unmaterialized, List("item", "ts", "ds"))
+      val diffCount = diff.count()
+      if (diffCount > 0) {
+        logger.warn(s"Diff count: $diffCount")
+        diff.show()
+      }
+      assertEquals(0, diffCount)
+
+      // 3 - the parallelized join flow needs the tables to hand results between separate jobs, so with the flag
+      //     off it falls back to materializing them instead of failing the job
+      val selectedConf = joinConf("selected")
+      val selectedPart = selectedConf.joinParts.toScala.head
+      val selectedJob =
+        new Join(selectedConf, today, noMatTableUtils, selectedJoinParts = Some(List(selectedPart.fullPrefix)))
+      assertTrue("expected the parallelized flow to override the flag", selectedJob.materializeJoinParts)
+      selectedJob.computeJoinOpt()
+      assertTrue(s"expected ${selectedConf.partOutputTable(selectedPart)} to be written by the fallback",
+                 noMatTableUtils.tableExists(selectedConf.partOutputTable(selectedPart)))
+      // the joinPart that was not selected stays absent
+      val unselectedPart = selectedConf.joinParts.toScala.last
+      assertFalse(s"expected ${selectedConf.partOutputTable(unselectedPart)} to be absent",
+                  noMatTableUtils.tableExists(selectedConf.partOutputTable(unselectedPart)))
+    } finally {
+      originalSetting match {
+        case Some(value) => spark.conf.set(materializeConf, value)
+        case None        => spark.conf.unset(materializeConf)
+      }
+    }
+  }
+
 }
