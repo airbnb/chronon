@@ -201,7 +201,7 @@ def test_generic_collector():
 def test_select_sanitization():
     gb = group_by.GroupBy(
         sources=[
-            ttypes.EventSource(  # No selects are spcified
+            ttypes.EventSource(  # No selects are specified
                 table="event_table1",
                 query=query.Query(
                     selects=None,
