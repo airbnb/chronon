@@ -1,0 +1,150 @@
+package build.online
+
+import mill._
+import mill.javalib._
+import mill.javalib.publish._
+import mill.scalalib.SbtModule
+
+// online: default shaded build with embedded dependencies
+object `package` extends SbtModule with PublishModule {
+
+  def scalaVersion = "2.12.12"
+
+  def mvnDeps = Seq(
+    mvn"com.datadoghq:java-dogstatsd-client:2.7",
+    mvn"com.github.ben-manes.caffeine:caffeine:2.8.5",
+    mvn"io.netty:netty-buffer:4.1.68.Final",
+    mvn"net.jodah:typetools:0.4.1",
+    mvn"org.apache.spark::spark-core:3.1.1",
+    mvn"org.apache.spark::spark-hive:3.1.1",
+    mvn"org.apache.spark::spark-sql-kafka-0-10:3.1.1",
+    mvn"org.apache.spark::spark-sql:3.1.1",
+    mvn"org.apache.spark::spark-streaming:3.1.1",
+    mvn"org.rogach::scallop:4.0.1",
+    mvn"org.scala-lang.modules::scala-java8-compat:0.9.0"
+  )
+
+  def moduleDeps = super.moduleDeps ++ Seq(build.aggregator)
+
+  def pomSettings = PomSettings(
+    "Chronon is a feature engineering platform",
+    "ai.chronon",
+    "https://github.com/airbnb/chronon",
+    Seq(License(
+      "Apache 2",
+      "Apache 2",
+      "http://www.apache.org/licenses/LICENSE-2.0.txt",
+      false,
+      false,
+      "repo"
+    )),
+    VersionControl(
+      Some("https://github.com/airbnb/chronon"),
+      Some("scm:git@github.com:airbnb/chronon.git"),
+      None,
+      None
+    ),
+    Seq(Developer(
+      "nikhilsimha",
+      "Nikhil Simha",
+      "http://nikhilsimha.com",
+      None,
+      None
+    ))
+  )
+
+  def publishVersion = "awhittier-mill-0.0.110-SNAPSHOT"
+
+  object test extends SbtTests with TestModule.Junit4 {
+
+    def mvnDeps = Seq(
+      mvn"junit:junit:4.13.2",
+      mvn"com.novocode:junit-interface:0.11",
+      mvn"org.scalatest::scalatest:3.2.15"
+    )
+
+    def moduleDeps = super.moduleDeps ++ Seq(build.aggregator.test)
+
+    def testSandboxWorkingDir = false
+    def testParallelism = false
+
+  }
+
+  // online_unshaded: unshaded build with provided dependencies
+  object unshaded extends SbtModule with PublishModule {
+
+  def artifactName = "online_unshaded"
+
+  def scalaVersion = "2.12.12"
+
+  // Use same source directory as online (parent directory)
+  def millSourcePath: os.Path = os.pwd / "online"
+
+  def mvnDeps = Seq(
+    mvn"com.datadoghq:java-dogstatsd-client:2.7",
+    mvn"com.github.ben-manes.caffeine:caffeine:2.8.5",
+    mvn"io.netty:netty-buffer:4.1.68.Final",
+    mvn"net.jodah:typetools:0.4.1",
+    mvn"org.rogach::scallop:4.0.1",
+    mvn"org.scala-lang.modules::scala-java8-compat:0.9.0"
+  )
+
+  def compileMvnDeps = Seq(
+    mvn"com.fasterxml.jackson.core:jackson-core:2.10.0",
+    mvn"com.fasterxml.jackson.core:jackson-databind:2.10.0",
+    mvn"com.fasterxml.jackson.module::jackson-module-scala:2.10.0",
+    mvn"org.apache.avro:avro:1.8.2",
+    mvn"org.apache.spark::spark-core:3.1.1",
+    mvn"org.apache.spark::spark-hive:3.1.1",
+    mvn"org.apache.spark::spark-sql-kafka-0-10:3.1.1",
+    mvn"org.apache.spark::spark-sql:3.1.1",
+    mvn"org.apache.spark::spark-streaming:3.1.1"
+  )
+
+  def moduleDeps = super.moduleDeps ++ Seq(build.aggregator)
+
+  def pomSettings = PomSettings(
+    "Chronon is a feature engineering platform",
+    "ai.chronon",
+    "https://github.com/airbnb/chronon",
+    Seq(License(
+      "Apache 2",
+      "Apache 2",
+      "http://www.apache.org/licenses/LICENSE-2.0.txt",
+      false,
+      false,
+      "repo"
+    )),
+    VersionControl(
+      Some("https://github.com/airbnb/chronon"),
+      Some("scm:git@github.com:airbnb/chronon.git"),
+      None,
+      None
+    ),
+    Seq(Developer(
+      "nikhilsimha",
+      "Nikhil Simha",
+      "http://nikhilsimha.com",
+      None,
+      None
+    ))
+  )
+
+  def publishVersion = "awhittier-mill-0.0.110-SNAPSHOT"
+
+  object test extends SbtTests with TestModule.Junit4 {
+
+    def mvnDeps = Seq(
+      mvn"junit:junit:4.13.2",
+      mvn"com.novocode:junit-interface:0.11",
+      mvn"org.scalatest::scalatest:3.2.15"
+    )
+
+    def moduleDeps = super.moduleDeps ++ Seq(build.aggregator.test)
+
+    def testSandboxWorkingDir = false
+    def testParallelism = false
+
+    }
+  }
+}
