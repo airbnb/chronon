@@ -53,3 +53,7 @@ releases
 
 # bazel
 bazel-*
+out/
+venv/
+.ijwb/
+.envrc
