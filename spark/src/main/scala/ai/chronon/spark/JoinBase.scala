@@ -284,9 +284,21 @@ abstract class JoinBase(joinConf: api.Join,
                                         shiftDays: Int,
                                         bloomMapOpt: Option[util.Map[String, BloomFilter]],
                                         partMetrics: Metrics.Context): Option[DataFrame] = {
+    val leftRangeForPart = rightRange.shift(-shiftDays)
+    logger.info(s"""
+         |Computing joinPart in memory - no join part table will be written
+         |  joinPart      : ${joinPart.groupBy.metaData.name}
+         |  skipped table : $partTable
+         |  right range   : $rightRange (${rightRange.partitions.length} partitions)
+         |  left range    : $leftRangeForPart
+         |  the full right range is recomputed on every run: without the part table there is no record
+         |  of what an earlier run already filled, so there is no unfilled-range check to skip work
+         |""".stripMargin)
+
+    val start = System.currentTimeMillis()
     val result =
       try {
-        val prunedLeft = leftDf.flatMap(_.prunePartitions(rightRange.shift(-shiftDays)))
+        val prunedLeft = leftDf.flatMap(_.prunePartitions(leftRangeForPart))
         computeJoinPart(prunedLeft, joinPart, bloomMapOpt)
       } catch {
         case e: Exception =>
@@ -294,17 +306,28 @@ abstract class JoinBase(joinConf: api.Join,
             s"Error while processing groupBy: ${joinConf.metaData.name}/${joinPart.groupBy.getMetaData.getName}")
           throw e
       }
+    val planMillis = System.currentTimeMillis() - start
 
     // LatencyMinutes is deliberately not gauged here. Without the write there is no action, so the
     // aggregation is evaluated later as part of the final merge and any duration measured at this point
     // would understate the real cost of the joinPart.
     partMetrics.gauge(Metrics.Name.PartitionCount, rightRange.partitions.length)
 
-    if (result.isEmpty) {
-      // Happens when everything is handled by bootstrap
-      logger.info(s"Skipping $partTable because no data in computed joinPart.")
-    } else {
-      logger.info(s"Computed joinPart for range $rightRange in memory, skipping the write to $partTable")
+    result match {
+      case None =>
+        // Happens when everything is handled by bootstrap
+        logger.info(
+          s"Skipping $partTable because no data in computed joinPart ${joinPart.groupBy.metaData.name}, " +
+            s"nothing is handed to the final merge for range $rightRange")
+      case Some(df) =>
+        logger.info(s"""
+             |Built joinPart plan in memory for ${joinPart.groupBy.metaData.name} in $planMillis ms
+             |  skipped write to : $partTable
+             |  right range      : $rightRange
+             |  output columns   : ${df.columns.length} -> ${df.columns.mkString(", ")}
+             |  the plan is lazy - the aggregation runs when the final join merge is materialized, so the
+             |  real cost of this joinPart is reported there and not by the duration above
+             |""".stripMargin)
     }
     result
   }
