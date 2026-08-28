@@ -39,8 +39,8 @@ class CheckpointConfigTest {
   @Test
   def locationIsDerivedFromBaseDirAndGroupByNameWhenConfigured(): Unit = {
     spark.conf.set("spark.chronon.stream.checkpoint_base_dir", "s3://bucket/checkpoints")
-    assertEquals(Some("s3://bucket/checkpoints/unit_test/checkpoint_config_gb/"),
-                 CheckpointConfig.location(groupByConf, spark))
+    val expected = s"s3://bucket/checkpoints/unit_test/checkpoint_config_gb/${spark.sparkContext.applicationId}/"
+    assertEquals(Some(expected), CheckpointConfig.location(groupByConf, spark))
     spark.conf.unset("spark.chronon.stream.checkpoint_base_dir")
   }
 }
