@@ -25,7 +25,7 @@ import ai.chronon.online._
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.{EncoderUtil, GenericRowHandler}
 import com.google.gson.Gson
-import org.apache.spark.api.java.function.{ForeachPartitionFunction, MapPartitionsFunction, VoidFunction2}
+import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.streaming.{DataStreamWriter, Trigger}
@@ -76,6 +76,18 @@ object LocalIOCache {
     }
     kvStore
   }
+}
+
+// Result of writing one partition of a micro-batch, aggregated on the driver so that the
+// batch-level metrics keep the shape they had when the whole batch was written from the driver.
+// writeLatencyMillis is -1 when the partition attempted no write (empty partition, or debug mode).
+private[streaming] case class PartitionWriteSummary(rowCount: Long,
+                                                    resultCount: Long,
+                                                    successCount: Long,
+                                                    writeLatencyMillis: Long)
+
+private[streaming] object PartitionWriteSummary {
+  val notAttempted: PartitionWriteSummary = PartitionWriteSummary(0, 0, 0, -1)
 }
 
 class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map.empty, debug: Boolean, lagMillis: Int)(
@@ -151,6 +163,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   // Timeout for the KV write of one partition of a micro-batch. The write is awaited inside the
   // task, so this bounds how long a stuck KV store can hold a task before the batch fails.
   private val putTimeoutMillis: Long = getProp("put_timeout_millis", "30000").toLong
+
+  // Latency of one partition's write, emitted per partition alongside the per-batch
+  // Metrics.Name.WriteLatencyMillis that the driver aggregates from the partition summaries.
+  private val PartitionWriteLatencyMillis = "partition.write.latency.millis"
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
@@ -742,6 +758,54 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       }
     }
 
+    // Encode and write one partition of a micro-batch on its own executor. Returns what the
+    // driver needs to emit the batch-level metrics, so those keep the shape they had when the whole
+    // batch was written from the driver: per-row metrics are emitted here, where they are spread
+    // across executors, and per-batch metrics are aggregated by the caller.
+    def writePartition(rows: Iterator[Row], bytesCap: Int): PartitionWriteSummary = {
+      val kvStore = LocalIOCache.getOrSetKvStore { () => apiImpl.genKvStore }
+      val putRequests = rows.map(putRequestHelper.toPutRequest).toArray
+      if (debug) {
+        logger.info(s" Partition size to write to kv store: ${putRequests.length}")
+        PartitionWriteSummary.notAttempted
+      } else if (putRequests.isEmpty) {
+        PartitionWriteSummary.notAttempted
+      } else {
+        val egressCtx = context.withSuffix("egress")
+        val bytesRate = batchSampleRate(bytesCap, putRequests.length)
+        putRequests.foreach(request => emitRequestMetric(request, egressCtx, bytesRate))
+
+        // Report kvStore metrics
+        val kvContext = egressCtx.withSuffix("put")
+        val writeStartMillis = System.currentTimeMillis()
+        val writeFuture = notificationTopic match {
+          case Some(topic) =>
+            kvStore.multiPutWithNotification(putRequests, topic)
+          case None =>
+            kvStore.multiPut(putRequests)
+        }
+        // Await inside the task. The driver-side version never waited on the future, so batch
+        // duration ignored KV latency, a slow KV store accumulated unbounded in-flight writes on
+        // the driver, and a rejected write only showed up as a metric. Awaiting gives Structured
+        // Streaming real backpressure and lets a write failure fail its batch.
+        Try(Await.result(writeFuture, Duration(putTimeoutMillis, MILLISECONDS))) match {
+          case Success(results) =>
+            val writeLatencyMillis = System.currentTimeMillis() - writeStartMillis
+            // Per-write percentiles, which the per-batch WriteLatencyMillis emitted by the caller
+            // (a max over partitions) hides. This is the metric that names a straggler partition.
+            kvContext.distribution(PartitionWriteLatencyMillis, writeLatencyMillis)
+            val successCount = results.count(identity)
+            PartitionWriteSummary(rowCount = putRequests.count(_.tsMillis.isDefined),
+                                  resultCount = results.size,
+                                  successCount = successCount,
+                                  writeLatencyMillis = writeLatencyMillis)
+          case Failure(exception) =>
+            kvContext.incrementException(exception)
+            throw exception
+        }
+      }
+    }
+
     // Encode and write from the executors, one task per partition. Collecting the micro-batch to
     // the driver made this stage a single-threaded, single-JVM funnel: Avro encoding of every key
     // and value, every per-row metric, and the whole KV write ran in one foreachBatch thread, so
@@ -751,64 +815,46 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     writer.foreachBatch {
       new VoidFunction2[DataFrame, java.lang.Long] {
         override def call(df: DataFrame, l: lang.Long): Unit = {
-          // Dataset.rdd is a lazy val that foreachPartition reuses, so this neither submits a job
-          // nor re-plans the query. Sampling caps are per-batch budgets, so they are split across
-          // the partitions that now emit them independently.
-          val partitionCount = math.max(df.rdd.getNumPartitions, 1)
+          // Dataset.rdd is a lazy val, so deriving it here neither submits a job nor re-plans the
+          // query. Sampling caps are per-batch budgets, so they are split across the partitions
+          // that now emit them independently.
+          val rdd = df.rdd
+          val partitionCount = math.max(rdd.getNumPartitions, 1)
           val partitionBytesSampleCap = math.max(bytesSampleCap / partitionCount, 1)
 
-          df.foreachPartition(
-            new ForeachPartitionFunction[Row] {
-              override def call(rows: util.Iterator[Row]): Unit = {
-                val kvStore = LocalIOCache.getOrSetKvStore { () => apiImpl.genKvStore }
-                val putRequests = rows.toScala.map(putRequestHelper.toPutRequest).toArray
-                if (debug) {
-                  logger.info(s" Partition size to write to kv store: ${putRequests.length}")
-                } else if (putRequests.nonEmpty) {
-                  val egressCtx = context.withSuffix("egress")
-                  val bytesRate = batchSampleRate(partitionBytesSampleCap, putRequests.length)
-                  putRequests.foreach(request => emitRequestMetric(request, egressCtx, bytesRate))
-                  // RowCount is a plain sum, so emit it once per partition instead of once per row.
-                  // The StatsD client is a single JVM-wide instance draining one queue to one UDP
-                  // socket, and the version in use has no client-side aggregation, so per-row
-                  // emission puts thousands of messages per batch ahead of every other metric
-                  // sharing that client. Matches the pattern PushNotificationCount uses below.
-                  egressCtx.count(Metrics.Name.RowCount, putRequests.count(_.tsMillis.isDefined))
+          // One summary per partition - four longs each - so aggregating on the driver costs a
+          // negligible collect and no extra job, and lets the batch-level metrics below keep the
+          // shape they had before this stage was parallelized: exact per-batch counters, and one
+          // WriteLatencyMillis sample per batch rather than one per partition.
+          val summaries = rdd
+            .mapPartitions(rows => Iterator(writePartition(rows, partitionBytesSampleCap)))
+            .collect()
 
-                  // Report kvStore metrics
-                  val kvContext = egressCtx.withSuffix("put")
-                  val writeStartMillis = System.currentTimeMillis()
-                  val writeFuture = notificationTopic match {
-                    case Some(topic) =>
-                      kvStore.multiPutWithNotification(putRequests, topic)
-                    case None =>
-                      kvStore.multiPut(putRequests)
-                  }
-                  // Await inside the task. The driver-side version never waited on the future, so
-                  // batch duration ignored KV latency, a slow KV store accumulated unbounded
-                  // in-flight writes on the driver, and a rejected write only showed up as a
-                  // metric. Awaiting gives Structured Streaming real backpressure and lets a write
-                  // failure fail its batch.
-                  Try(Await.result(writeFuture, Duration(putTimeoutMillis, MILLISECONDS))) match {
-                    case Success(results) =>
-                      kvContext.distribution(Metrics.Name.WriteLatencyMillis,
-                                             System.currentTimeMillis() - writeStartMillis)
-                      if (notificationTopic.isDefined)
-                        kvContext.count(Metrics.Name.PushNotificationCount, results.size)
-                      // Aggregate per-partition for the same reason as RowCount above: the StatsD
-                      // client is a single JVM-wide instance, so per-row increments queue thousands
-                      // of messages ahead of every other metric sharing that client.
-                      val successCount = results.count(identity)
-                      if (successCount > 0) kvContext.count("success", successCount)
-                      if (successCount < results.size) kvContext.count("failure", results.size - successCount)
-                    case Failure(exception) =>
-                      kvContext.incrementException(exception)
-                      throw exception
-                  }
-                }
-              }
-            }
-          )
+          if (!debug) {
+            val egressCtx = context.withSuffix("egress")
+            val kvContext = egressCtx.withSuffix("put")
+
+            // RowCount is a plain sum, so emit it once per batch instead of once per row. The StatsD
+            // client is a single JVM-wide instance draining one queue to one UDP socket, and the
+            // version in use has no client-side aggregation, so per-row emission puts thousands of
+            // messages per batch ahead of every other metric sharing that client.
+            egressCtx.count(Metrics.Name.RowCount, summaries.map(_.rowCount).sum)
+
+            val resultCount = summaries.map(_.resultCount).sum
+            val successCount = summaries.map(_.successCount).sum
+            if (notificationTopic.isDefined && resultCount > 0)
+              kvContext.count(Metrics.Name.PushNotificationCount, resultCount)
+            if (successCount > 0) kvContext.count("success", successCount)
+            if (successCount < resultCount) kvContext.count("failure", resultCount - successCount)
+
+            // Max over the partitions that actually wrote: the closest analogue of the old
+            // whole-batch number, which timed the one multiPut that carried the entire batch. Note
+            // that it reads lower than that number, because each write now carries a fraction of
+            // the rows - see PartitionWriteLatencyMillis above for the per-write distribution.
+            val writeLatencies = summaries.map(_.writeLatencyMillis).filter(_ >= 0)
+            if (writeLatencies.nonEmpty)
+              kvContext.distribution(Metrics.Name.WriteLatencyMillis, writeLatencies.max)
+          }
         }
       }
     }
