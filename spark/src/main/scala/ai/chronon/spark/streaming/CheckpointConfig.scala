@@ -27,6 +27,6 @@ object CheckpointConfig {
   // to avoid changing behavior for callers that haven't opted in.
   def location(groupByConf: api.GroupBy, session: SparkSession): Option[String] =
     session.conf.getOption("spark.chronon.stream.checkpoint_base_dir").map { baseDir =>
-      s"$baseDir/${groupByConf.metaData.nameToFilePath}/"
+      s"$baseDir/${groupByConf.metaData.nameToFilePath}/${session.sparkContext.applicationId}/"
     }
 }
