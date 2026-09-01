@@ -25,7 +25,7 @@ import ai.chronon.online._
 import ai.chronon.spark.catalog.TableUtils
 import ai.chronon.spark.{EncoderUtil, GenericRowHandler}
 import com.google.gson.Gson
-import org.apache.spark.api.java.function.{MapPartitionsFunction, VoidFunction2}
+import org.apache.spark.api.java.function.{ForeachPartitionFunction, MapPartitionsFunction, VoidFunction2}
 import org.apache.spark.sql.catalyst.expressions.GenericRowWithSchema
 import org.apache.spark.sql.functions.col
 import org.apache.spark.sql.streaming.{DataStreamWriter, Trigger}
@@ -41,25 +41,38 @@ import java.{lang, util}
 import scala.concurrent.duration.{Duration, DurationInt, MILLISECONDS}
 import scala.concurrent.{Await, Future}
 import scala.util.ScalaJavaConversions.{IteratorOps, JIteratorOps, ListOps, MapOps}
-import scala.util.{Failure, Success}
+import scala.util.{Failure, Success, Try}
 
 // micro batching destroys and re-creates these objects repeatedly through ForeachBatchWriter and MapFunction
 // this allows for re-use
+//
+// Both builders are called from executor tasks, where several tasks of the same micro-batch run
+// concurrently in one JVM. Without the double-checked lock each of them can see a null and build
+// its own Fetcher / KVStore, which defeats the caching this object exists for and multiplies the
+// connection pools per executor. @volatile is what makes the unlocked fast path safe.
 object LocalIOCache {
-  private var fetcher: Fetcher = null
-  private var kvStore: KVStore = null
+  @volatile private var fetcher: Fetcher = null
+  @volatile private var kvStore: KVStore = null
   @volatile var fetcherWarmedUp: Boolean = false
 
   def getOrSetFetcher(builderFunc: () => Fetcher): Fetcher = {
     if (fetcher == null) {
-      fetcher = builderFunc()
+      synchronized {
+        if (fetcher == null) {
+          fetcher = builderFunc()
+        }
+      }
     }
     fetcher
   }
 
   def getOrSetKvStore(builderFunc: () => KVStore): KVStore = {
     if (kvStore == null) {
-      kvStore = builderFunc()
+      synchronized {
+        if (kvStore == null) {
+          kvStore = builderFunc()
+        }
+      }
     }
     kvStore
   }
@@ -134,6 +147,10 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
   // Timeout for async chain operations (KV fetch and model transforms). Can be tuned when
   // external inference services have higher latency (e.g. large model backends).
   private val chainTimeoutMillis: Long = getProp("timeout_millis", "5000").toLong
+
+  // Timeout for the KV write of one partition of a micro-batch. The write is awaited inside the
+  // task, so this bounds how long a stuck KV store can hold a task before the batch fails.
+  private val putTimeoutMillis: Long = getProp("put_timeout_millis", "30000").toLong
 
   private case class PutRequestHelper(inputSchema: StructType) extends Serializable {
     @transient implicit lazy val logger = LoggerFactory.getLogger(getClass)
@@ -699,11 +716,14 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       .trigger(Trigger.ProcessingTime(microBatchIntervalMillis))
     val putRequestHelper = PutRequestHelper(joinSourceDf.schema)
 
-    // Per-row metrics are emitted from the driver, where a whole micro-batch is collected, so the
-    // number of messages one batch hands to the JVM-wide StatsD client grows with traffic. Cap the
-    // messages per batch instead of the fraction of rows: pick the sample rate so that roughly
-    // `cap` rows are emitted regardless of batch size, and never sample more than the default rate.
-    // The rate is carried in each message, so the backend still reconstructs count and sum.
+    // Per-row metrics are emitted once per row of a micro-batch, so the number of messages one
+    // batch hands to the JVM-wide StatsD client grows with traffic. Cap the messages instead of the
+    // fraction of rows: pick the sample rate so that roughly `cap` rows are emitted regardless of
+    // batch size, and never sample more than the default rate. The rate is carried in each message,
+    // so the backend still reconstructs count and sum.
+    //
+    // The cap is a per-batch budget, and each partition emits on its own executor, so the caller
+    // divides it by the partition count before passing it in here.
     //
     // FreshnessMillis is left uncapped - its percentiles are actively alerted on, and reducing the
     // sample count for it would make those percentiles noisier during large batches. Key and value
@@ -722,49 +742,73 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
       }
     }
 
+    // Encode and write from the executors, one task per partition. Collecting the micro-batch to
+    // the driver made this stage a single-threaded, single-JVM funnel: Avro encoding of every key
+    // and value, every per-row metric, and the whole KV write ran in one foreachBatch thread, so
+    // adding executors sped up the fetch and derive stages and then queued all of their output
+    // behind that one thread. Per partition, encode CPU and write throughput now scale with the
+    // partition count of the incoming stream (see spark.chronon.stream.chain.batch_repartition).
     writer.foreachBatch {
       new VoidFunction2[DataFrame, java.lang.Long] {
         override def call(df: DataFrame, l: lang.Long): Unit = {
-          val kvStore = LocalIOCache.getOrSetKvStore { () => apiImpl.genKvStore }
-          val data = df.collect()
-          val putRequests = data.map(putRequestHelper.toPutRequest)
-          if (debug) {
-            logger.info(s" Final df size to write: ${data.length}")
-            logger.info(s" Size of putRequests to kv store- ${putRequests.length}")
-          } else {
-            val egressCtx = context.withSuffix("egress")
-            val bytesRate = batchSampleRate(bytesSampleCap, putRequests.length)
-            putRequests.foreach(request => emitRequestMetric(request, egressCtx, bytesRate))
-            // RowCount is a plain sum, so emit it once per batch instead of once per row. The StatsD
-            // client is a single JVM-wide instance draining one queue to one UDP socket, and the
-            // version in use has no client-side aggregation, so per-row emission puts thousands of
-            // messages per batch ahead of every other metric sharing that client. Matches the
-            // per-batch pattern PushNotificationCount already uses below.
-            egressCtx.count(Metrics.Name.RowCount, putRequests.count(_.tsMillis.isDefined))
+          // Dataset.rdd is a lazy val that foreachPartition reuses, so this neither submits a job
+          // nor re-plans the query. Sampling caps are per-batch budgets, so they are split across
+          // the partitions that now emit them independently.
+          val partitionCount = math.max(df.rdd.getNumPartitions, 1)
+          val partitionBytesSampleCap = math.max(bytesSampleCap / partitionCount, 1)
 
-            // Report kvStore metrics
-            val kvContext = egressCtx.withSuffix("put")
-            val writeStartMillis = System.currentTimeMillis()
-            val writeFuture = notificationTopic match {
-              case Some(topic) =>
-                kvStore.multiPutWithNotification(putRequests, topic)
-              case None =>
-                kvStore.multiPut(putRequests)
+          df.foreachPartition(
+            new ForeachPartitionFunction[Row] {
+              override def call(rows: util.Iterator[Row]): Unit = {
+                val kvStore = LocalIOCache.getOrSetKvStore { () => apiImpl.genKvStore }
+                val putRequests = rows.toScala.map(putRequestHelper.toPutRequest).toArray
+                if (debug) {
+                  logger.info(s" Partition size to write to kv store: ${putRequests.length}")
+                } else if (putRequests.nonEmpty) {
+                  val egressCtx = context.withSuffix("egress")
+                  val bytesRate = batchSampleRate(partitionBytesSampleCap, putRequests.length)
+                  putRequests.foreach(request => emitRequestMetric(request, egressCtx, bytesRate))
+                  // RowCount is a plain sum, so emit it once per partition instead of once per row.
+                  // The StatsD client is a single JVM-wide instance draining one queue to one UDP
+                  // socket, and the version in use has no client-side aggregation, so per-row
+                  // emission puts thousands of messages per batch ahead of every other metric
+                  // sharing that client. Matches the pattern PushNotificationCount uses below.
+                  egressCtx.count(Metrics.Name.RowCount, putRequests.count(_.tsMillis.isDefined))
+
+                  // Report kvStore metrics
+                  val kvContext = egressCtx.withSuffix("put")
+                  val writeStartMillis = System.currentTimeMillis()
+                  val writeFuture = notificationTopic match {
+                    case Some(topic) =>
+                      kvStore.multiPutWithNotification(putRequests, topic)
+                    case None =>
+                      kvStore.multiPut(putRequests)
+                  }
+                  // Await inside the task. The driver-side version never waited on the future, so
+                  // batch duration ignored KV latency, a slow KV store accumulated unbounded
+                  // in-flight writes on the driver, and a rejected write only showed up as a
+                  // metric. Awaiting gives Structured Streaming real backpressure and lets a write
+                  // failure fail its batch.
+                  Try(Await.result(writeFuture, Duration(putTimeoutMillis, MILLISECONDS))) match {
+                    case Success(results) =>
+                      kvContext.distribution(Metrics.Name.WriteLatencyMillis,
+                                             System.currentTimeMillis() - writeStartMillis)
+                      if (notificationTopic.isDefined)
+                        kvContext.count(Metrics.Name.PushNotificationCount, results.size)
+                      // Aggregate per-partition for the same reason as RowCount above: the StatsD
+                      // client is a single JVM-wide instance, so per-row increments queue thousands
+                      // of messages ahead of every other metric sharing that client.
+                      val successCount = results.count(identity)
+                      if (successCount > 0) kvContext.count("success", successCount)
+                      if (successCount < results.size) kvContext.count("failure", results.size - successCount)
+                    case Failure(exception) =>
+                      kvContext.incrementException(exception)
+                      throw exception
+                  }
+                }
+              }
             }
-            writeFuture
-              .andThen {
-                case Success(results) =>
-                  kvContext.distribution(Metrics.Name.WriteLatencyMillis, System.currentTimeMillis() - writeStartMillis)
-                  if (notificationTopic.isDefined) kvContext.count(Metrics.Name.PushNotificationCount, results.size)
-                  // Aggregate per-batch for the same reason as RowCount above: the StatsD client is a
-                  // single JVM-wide instance, so per-row increments from one batch queue thousands of
-                  // messages ahead of every other metric sharing that client.
-                  val successCount = results.count(identity)
-                  if (successCount > 0) kvContext.count("success", successCount)
-                  if (successCount < results.size) kvContext.count("failure", results.size - successCount)
-                case Failure(exception) => kvContext.incrementException(exception)
-              }(kvStore.executionContext)
-          }
+          )
         }
       }
     }
