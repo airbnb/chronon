@@ -307,17 +307,26 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     implicit val structTypeEncoder: Encoder[Mutation] = Encoders.kryo[Mutation]
     val deserialized: Dataset[Mutation] = df
       .as[Array[Byte]]
-      .map { arr =>
-        ingressContext.increment(Metrics.Name.RowCount)
-        ingressContext.count(Metrics.Name.Bytes, arr.length)
-        try {
-          streamDecoder.decode(arr)
-        } catch {
-          case ex: Throwable =>
-            logger.error(s"Error while decoding streaming events from stream: ${dataStream.topicInfo.name}", ex)
-            ingressContext.incrementException(ex)
-            null
-        }
+      .mapPartitions { arrs =>
+        // Aggregate per-partition: one increment() call per raw message multiplies the StatsD
+        // packet count with message volume, so the executor's own JVM-wide UDP client sees more
+        // loss the higher the load. The per-partition byte/row totals below go out as a single
+        // count() per batch instead.
+        var byteCount = 0L
+        val mutations = arrs.map { arr =>
+          byteCount += arr.length
+          try {
+            streamDecoder.decode(arr)
+          } catch {
+            case ex: Throwable =>
+              logger.error(s"Error while decoding streaming events from stream: ${dataStream.topicInfo.name}", ex)
+              ingressContext.incrementException(ex)
+              null
+          }
+        }.toArray
+        ingressContext.count(Metrics.Name.RowCount, mutations.length)
+        ingressContext.count(Metrics.Name.Bytes, byteCount)
+        mutations.iterator
       }
       .filter { mutation =>
         if (mutation == null) {
