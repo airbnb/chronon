@@ -129,9 +129,33 @@ The next step is to move the data from these tables into your KV store. For this
 
 You can fetch your uploaded conf by its name and with a json of keys. Json types needs to match the key types in hive. So a string should be quoted, an int/long shouldn't be quoted. Note that the json key cannot contain spaces - or it should be properly quoted. Similarly, when a join has multiple keys, there should be no space around the comma. For example, `-k '{"user_id":123,"merchant_id":456}'`. The fetch would return partial results if only some keys are provided. It would also output an error message indicating the missing keys, which is useful in case of typos.
 
+`-t` is the conf type — `join`, `group-by`, or `join-stats`:
+
 ```bash
-python3 ~/.local/bin/run.py --mode=fetch -k '{"user_or_visitor":"u_106386039"}' -n team/join.v1 -t join
+python3 ~/.local/bin/run.py --mode=fetch -k '{"user_or_visitor":"<key_value>"}' -n team/join.v1 -t join
+
+python3 ~/.local/bin/run.py --mode=fetch -k '{"user_or_visitor":"<key_value>"}' -n team/your_group_by.v1 -t group-by
 ```
+
+You can also point at a compiled conf file with `--conf-path` instead of naming it, which is handy while
+iterating on a conf you have not uploaded yet:
+
+```bash
+python3 ~/.local/bin/run.py --mode=fetch -k '{"user_or_visitor":"<key_value>"}' \
+    --conf-path=production/joins/team/your_join.v1 -t join
+
+python3 ~/.local/bin/run.py --mode=fetch -k '{"user_or_visitor":"<key_value>"}' \
+    --conf-path=production/group_bys/team/your_group_by.v1 -t group-by
+```
+
+How much of the file is used differs between the two:
+
+- A **join** is read out of the file, so you can fetch a join whose metadata has not been uploaded, and
+  test an added, removed or renamed `GroupBy`, derivation or external part. Its constituent `GroupBy`s
+  are still served from the KV store.
+- A **group_by** is read only for its name, because the schemas, aggregations and values a fetch needs
+  are the ones its upload wrote to the KV store. After changing a `GroupBy` conf, re-run its upload
+  before fetching again, or the fetch keeps returning the previously uploaded values.
 
 Note that this is simply the test workflow for fetching. For production serving, see the [Serving documentation](./Serve.md).
 

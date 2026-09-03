@@ -843,19 +843,18 @@ object Driver {
           if (args.`type`() == "join-stats") {
             fetchStats(args, objectMapper, keyMap, fetcher)
           } else {
-            val featureName = if (args.name.isDefined) {
-              args.name()
-            } else {
-              args.confPath().confPathToKey
-            }
-            lazy val joinConfOption: Option[api.Join] =
-              args.confPath.toOption.map(confPath => parseConf[api.Join](confPath))
+            def requestFor(name: String) = Seq(Fetcher.Request(name, keyMap, args.atMillis.toOption))
             val startNs = System.nanoTime
-            val requests = Seq(Fetcher.Request(featureName, keyMap, args.atMillis.toOption))
             val resultFuture = if (args.`type`() == "join") {
-              fetcher.fetchJoin(requests, joinConfOption)
+              // a join is served from the conf itself when one is passed, so its name is a label
+              val joinName = args.name.toOption.getOrElse(args.confPath().confPathToKey)
+              val joinConf = args.confPath.toOption.map(confPath => parseConf[api.Join](confPath))
+              fetcher.fetchJoin(requestFor(joinName), joinConf)
             } else {
-              fetcher.fetchGroupBys(requests)
+              // a groupBy is keyed by its name: the serving info it needs lives in the batch upload
+              // dataset that `metaData.name` derives, so read the name from the conf, not its path
+              val groupByName = args.name.toOption.getOrElse(parseConf[api.GroupBy](args.confPath()).metaData.name)
+              fetcher.fetchGroupBys(requestFor(groupByName))
             }
             val result = Await.result(resultFuture, 5.seconds)
             val awaitTimeMs = (System.nanoTime - startNs) / 1e6d
