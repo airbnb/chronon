@@ -85,6 +85,8 @@ class ChrononKryoRegistrator extends KryoRegistrator {
       "org.apache.spark.sql.types.Metadata",
       "ai.chronon.api.Row",
       "ai.chronon.spark.KeyWithHash",
+      // collected back to the driver, one per partition, by the chained-GroupBy streaming write
+      "ai.chronon.spark.streaming.PartitionWriteSummary",
       "ai.chronon.aggregator.base.MomentsIR",
       "ai.chronon.aggregator.windowing.BatchIr",
       "ai.chronon.aggregator.base.ApproxHistogramIr",
