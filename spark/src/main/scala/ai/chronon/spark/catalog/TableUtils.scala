@@ -337,6 +337,9 @@ case class TableUtils(sparkSession: SparkSession) {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
 
   private val ARCHIVE_TIMESTAMP_FORMAT = "yyyyMMddHHmmss"
+  // table properties are re-read and fully parsed on every table load, so bulk data written here degrades
+  // every reader of the table. warn well below the point where engines start timing out on metadata reads.
+  private val PropertiesSizeWarnBytes = 256 * 1024
   @transient private lazy val archiveTimestampFormatter = DateTimeFormatter
     .ofPattern(ARCHIVE_TIMESTAMP_FORMAT)
     .withZone(ZoneId.of("UTC"))
@@ -845,16 +848,51 @@ case class TableUtils(sparkSession: SparkSession) {
           s"'$key' = '$value'"
       }
       .mkString(", ")
-    val query = s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
-    sql(query)
+    if (properties.nonEmpty) {
+      warnOnOversizedProperties(tableName, properties)
+      val query = s"ALTER TABLE $tableName SET TBLPROPERTIES ($propertiesString)"
+      sql(query)
+    }
 
     // remove any properties that were set previously during archiving
     if (unsetProperties.nonEmpty) {
-      val unsetPropertiesString = unsetProperties.map(s => s"'$s'").mkString(", ")
+      unsetTableProperties(tableName, unsetProperties)
+    }
+
+  }
+
+  /**
+    * Table properties live in metadata that engines re-read and fully parse on every table load, so they are
+    * meant for a bounded set of small config values. Writing bulk data here inflates that metadata for every
+    * reader of the table. Warn rather than fail, since this is a shared utility and an existing pipeline
+    * tripping the threshold should not be broken by an upgrade.
+    */
+  private def warnOnOversizedProperties(tableName: String, properties: Map[String, String]): Unit = {
+    val totalBytes = properties.iterator.map { case (k, v) => k.length + Option(v).map(_.length).getOrElse(0) }.sum
+    if (totalBytes > PropertiesSizeWarnBytes) {
+      val largest = properties.toSeq
+        .sortBy { case (_, v) => -Option(v).map(_.length).getOrElse(0) }
+        .take(3)
+        .map { case (k, v) => s"$k (${Option(v).map(_.length).getOrElse(0)} bytes)" }
+        .mkString(", ")
+      logger.warn(
+        s"Setting ${properties.size} table properties totaling $totalBytes bytes on $tableName, above the " +
+          s"${PropertiesSizeWarnBytes} byte threshold. Table properties are read and parsed on every " +
+          s"table load by every engine, so bulk data does not belong here - store it in a table instead. " +
+          s"Largest: $largest")
+    }
+  }
+
+  /**
+    * Drops table properties by key. Chunked because callers may need to remove a large accumulated
+    * set at once, and a single ALTER statement listing thousands of keys risks tripping SQL length limits.
+    */
+  def unsetTableProperties(tableName: String, keys: Seq[String], chunkSize: Int = 100): Unit = {
+    keys.distinct.grouped(chunkSize).foreach { batch =>
+      val unsetPropertiesString = batch.map(s => s"'$s'").mkString(", ")
       val unsetQuery = s"ALTER TABLE $tableName UNSET TBLPROPERTIES IF EXISTS ($unsetPropertiesString)"
       sql(unsetQuery)
     }
-
   }
 
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
