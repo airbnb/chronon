@@ -195,12 +195,40 @@ class LogFlattenerJob(session: SparkSession,
       .toMap
   }
 
-  def buildTableProperties(schemaMap: Map[String, String]): Map[String, String] = {
-    def escape(str: String): String = str.replace("""\""", """\\""")
-    (LogFlattenerJob.readSchemaTableProperties(tableUtils, joinConf.metaData.loggedTable) ++ schemaMap)
-      .map {
-        case (key, value) => (escape(s"${Constants.SchemaHash}_$key"), escape(value))
-      }
+  /**
+    * Records where the schema_hash -> schema mapping for this log table can be read from, rather than
+    * inlining the mapping itself. Previously one schema_hash_* property was written per schema version,
+    * each holding a full serialized Avro schema and never pruned; on wide joins that grew metadata.json
+    * to hundreds of MB and broke metadata reads. The mapping already lives in the schema store table,
+    * so a single pointer is enough for readers to resolve it.
+    */
+  def buildTableProperties(): Map[String, String] = Map(Constants.LoggingSchemaTable -> schemaTable)
+
+  private def hasLoggingSchemaPointer: Boolean =
+    tableUtils
+      .getTableProperties(joinConf.metaData.loggedTable)
+      .getOrElse(Map.empty)
+      .get(Constants.LoggingSchemaTable)
+      .exists(_.nonEmpty)
+
+  /**
+    * Drops the schema_hash_* properties accumulated by earlier versions of this job. Runs on every
+    * flattener run so affected tables self-heal once this ships, with no separate migration.
+    * Always called after the partitions are written, so the pointer is in place before the inline
+    * copy of the mapping is removed.
+    */
+  private def pruneLegacySchemaProperties(): Unit = {
+    val table = joinConf.metaData.loggedTable
+    val legacyKeys = tableUtils
+      .getTableProperties(table)
+      .getOrElse(Map.empty)
+      .keys
+      .filter(_.startsWith(s"${Constants.SchemaHash}_"))
+      .toSeq
+    if (legacyKeys.nonEmpty) {
+      logger.info(s"Removing ${legacyKeys.size} legacy ${Constants.SchemaHash}_* table properties from $table")
+      tableUtils.unsetTableProperties(table, legacyKeys)
+    }
   }
 
   private def columnCount(): Int = {
@@ -213,7 +241,12 @@ class LogFlattenerJob(session: SparkSession,
       return
     }
     val unfilledRanges = getUnfilledRanges(logTable, joinConf.metaData.loggedTable)
-    if (unfilledRanges.isEmpty) return
+    if (unfilledRanges.isEmpty) {
+      // nothing to write, but a table that already has the pointer may still carry legacy properties to drop,
+      // so a caught-up table still gets cleaned up rather than keeping its accumulated blobs indefinitely
+      if (hasLoggingSchemaPointer) pruneLegacySchemaProperties()
+      return
+    }
     val joinName = joinConf.metaData.nameToFilePath
 
     val start = System.currentTimeMillis()
@@ -227,7 +260,7 @@ class LogFlattenerJob(session: SparkSession,
       val schemaMap = schemaStringsMap.mapValues(LoggingSchema.parseLoggingSchema).map(identity).toMap
       val flattenedDf = flattenKeyValueBytes(rawDf, schemaMap)
 
-      val schemaTblProps = buildTableProperties(schemaStringsMap)
+      val schemaTblProps = buildTableProperties()
       logger.info("======= Log table schema =======")
       logger.info(flattenedDf.schema.pretty)
       tableUtils.insertPartitions(
@@ -247,6 +280,9 @@ class LogFlattenerJob(session: SparkSession,
 
       (inputRowCount, outputRowCount)
     }
+
+    pruneLegacySchemaProperties()
+
     val totalInputRowCount = rowCounts.map(_._1).sum
     val totalOutputRowCount = rowCounts.map(_._2).sum
     val columnAfterCount = columnCount()
@@ -272,5 +308,78 @@ object LogFlattenerJob {
         case (key, value) => (key.substring(Constants.SchemaHash.length + 1), value)
       }
       .toMap
+  }
+
+  /**
+    * Resolves the schema_hash -> serialized schema mapping for a flattened log table, covering only the
+    * hashes that actually appear in `range`.
+    *
+    * Prefers the schema store table named by the table's [[Constants.LoggingSchemaTable]] property, and falls
+    * back to the legacy inline schema_hash_* properties for tables that have not been re-run by a version of
+    * LogFlattenerJob that writes the pointer. The fallback keeps this deployable ahead of the write-path
+    * change, and can be dropped once every log table has been re-run.
+    */
+  def readLoggingSchemas(tableUtils: TableUtils, logTable: String, range: PartitionRange): Map[String, String] = {
+    val schemaTableOpt = tableUtils
+      .getTableProperties(logTable)
+      .getOrElse(Map.empty)
+      .get(Constants.LoggingSchemaTable)
+      .filter(_.nonEmpty)
+
+    schemaTableOpt match {
+      case Some(schemaTable) if tableUtils.tableExists(schemaTable) =>
+        fetchSchemasForRange(tableUtils, logTable, schemaTable, range)
+      case Some(schemaTable) =>
+        throw new IllegalStateException(
+          s"$logTable declares ${Constants.LoggingSchemaTable}='$schemaTable' but that table does not exist. " +
+            s"Logging schemas cannot be resolved for range $range.")
+      case None =>
+        readSchemaTableProperties(tableUtils, logTable)
+    }
+  }
+
+  /**
+    * Reads the schemas for the distinct hashes present in the log table over `range`. The hash set is narrowed
+    * first so the driver only materializes the schema versions the backfill can actually encounter, instead of
+    * every version the schema store has ever recorded across all joins.
+    */
+  private def fetchSchemasForRange(tableUtils: TableUtils,
+                                   logTable: String,
+                                   schemaTable: String,
+                                   range: PartitionRange): Map[String, String] = {
+    val schemaTableDs = tableUtils.lastAvailablePartition(schemaTable)
+    if (schemaTableDs.isEmpty) {
+      throw new IllegalStateException(s"$schemaTable has no partitions available!")
+    }
+
+    val hashes = range
+      .scanQueryDf(query = null, logTable)
+      .select(col(Constants.SchemaHash))
+      .where(col(Constants.SchemaHash).isNotNull)
+      .distinct()
+      .collect()
+      .map(_.getString(0))
+      .toSeq
+
+    if (hashes.isEmpty) return Map.empty
+
+    val schemas = tableUtils.sparkSession
+      .table(schemaTable)
+      .where(col(tableUtils.partitionColumn) === schemaTableDs.get)
+      .where(col(Constants.SchemaHash).isin(hashes: _*))
+      .select(col(Constants.SchemaHash), col("schema_value_last").as("schema_value"))
+      .collect()
+      .map(row => (row.getString(0), row.getString(1)))
+      .toMap
+
+    // fail here rather than letting the gap surface downstream as an unrelated-looking covering-set error
+    val missing = hashes.filterNot(schemas.contains)
+    if (missing.nonEmpty) {
+      throw new IllegalStateException(
+        s"$schemaTable partition ${schemaTableDs.get} is missing ${missing.size} of ${hashes.size} schema " +
+          s"hashes present in $logTable over $range: ${missing.take(10).mkString(", ")}. " +
+          s"Logging schemas cannot be resolved for those rows.")
+    }
+    schemas
   }
 }
