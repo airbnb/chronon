@@ -106,7 +106,7 @@ class GroupBy(inputStream: DataFrame,
           streamDecoder.decode(arr)
         } catch {
           case ex: Throwable =>
-            logger.info(
+            logger.warn(
               s"Error while decoding streaming events for ${groupByConf.getMetaData.getName} with "
                 + s"schema ${streamDecoder.schema.catalogString}"
                 + s" \n${ex.traceString}")
