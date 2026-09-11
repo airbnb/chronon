@@ -479,28 +479,32 @@ class TableUtilsTest {
   @Test
   def testGrantPublicAccessDoesNotBlockTableCreation(): Unit = {
     // the local Hive metastore used in tests doesn't support GRANT, so this also exercises
-    // the non-critical failure path: a failed grant must not prevent the table from being created
-    val grantSpark = SparkSessionBuilder.build(
-      "TableUtilsGrantPublicAccessTest",
-      local = true,
-      additionalConfig = Some(Map("spark.chronon.table_write.grant_public_access" -> "true")))
-    val grantTableUtils = TableUtils(grantSpark)
-    val tableName = "db.test_grant_public_access"
-    val df = makeDf(
-      grantSpark,
-      StructType(
-        tableName,
-        Array(
-          StructField("long_field", LongType),
-          StructField("ds", StringType)
-        )
-      ),
-      List(Row(1L, "2022-10-01"))
-    )
+    // the non-critical failure path: a failed grant must not prevent the table from being created.
+    // Reuses the shared `spark` session (rather than building a second one) and resets the conf
+    // afterward, since Spark's session builder merges config into any already-active session in
+    // the JVM and would otherwise leak the flag into other tests in this suite.
+    spark.conf.set("spark.chronon.table_write.grant_public_access", "true")
+    try {
+      val grantTableUtils = TableUtils(spark)
+      val tableName = "db.test_grant_public_access"
+      val df = makeDf(
+        spark,
+        StructType(
+          tableName,
+          Array(
+            StructField("long_field", LongType),
+            StructField("ds", StringType)
+          )
+        ),
+        List(Row(1L, "2022-10-01"))
+      )
 
-    grantTableUtils.insertPartitions(df, tableName)
+      grantTableUtils.insertPartitions(df, tableName)
 
-    assertTrue(grantTableUtils.tableExists(tableName))
+      assertTrue(grantTableUtils.tableExists(tableName))
+    } finally {
+      spark.conf.set("spark.chronon.table_write.grant_public_access", "false")
+    }
   }
 
   @Test
