@@ -1,4 +1,5 @@
 from airflow.operators.bash_operator import BashOperator
+from airflow.operators.python_operator import ShortCircuitOperator
 from airflow.exceptions import AirflowSkipException
 from airflow.models import TaskInstance, DagRun
 from airflow.utils.db import provide_session
@@ -7,6 +8,7 @@ from airflow.sensors.base_sensor_operator import BaseSensorOperator
 from airflow.sensors.named_hive_partition_sensor import NamedHivePartitionSensor
 from airflow.utils.decorators import apply_defaults
 
+import constants
 import decorators
 
 from datetime import datetime, timedelta
@@ -277,6 +279,49 @@ def __check_tomorrow_empty_upstream(session, next_execution_date, dag_id, task_i
             TaskInstance.task_id == task_id
         )
     })
+
+
+def is_upload_day(schedule, ds):
+    """
+    Whether the partition date `ds` is an upload day for a given `uploadSchedule`.
+
+    The upload DAG stays daily (so `ds` is always the freshest available partition and the
+    partition sensors are unchanged); this decides which of those days actually run the job.
+    """
+    assert schedule in constants.UPLOAD_SCHEDULES, (
+        "Invalid uploadSchedule {}, must be one of {}".format(schedule, list(constants.UPLOAD_SCHEDULES)))
+    date = datetime.strptime(ds, "%Y-%m-%d").date()
+    if schedule == "@daily":
+        return True
+    if schedule == "@weekly":
+        # Sundays, matching airflow's own '@weekly' preset ('0 0 * * 0').
+        return date.weekday() == 6
+    if schedule == "@monthly":
+        return date.day == 1
+    if schedule == "@quarterly":
+        return date.day == 1 and date.month in (1, 4, 7, 10)
+    return True
+
+
+def __upload_cadence_check(schedule=None, ds=None, **other_ignored):
+    upload_day = is_upload_day(schedule, ds)
+    logging.info("Upload schedule {} on {}: {}".format(
+        schedule, ds, "running" if upload_day else "skipping, not an upload day"))
+    return upload_day
+
+
+def create_upload_cadence_operator(dag, task_id, schedule):
+    """
+    Short circuits the upload task (and its downstream KV store upload) on days that are not
+    upload days for the GroupBy's `uploadSchedule`.
+    """
+    return ShortCircuitOperator(
+        dag=dag,
+        task_id=task_id,
+        python_callable=__upload_cadence_check,
+        op_kwargs={"schedule": schedule},
+        provide_context=True,
+    )
 
 
 def create_skip_operator(dag, name, poke_interval=None, backward_days=1, forward_days=1):
