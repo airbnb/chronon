@@ -194,6 +194,29 @@ class ExtensionsTest {
   }
 
   @Test
+  def testUploadSchedule(): Unit = {
+    def buildGroupByWithCustomJson(customJson: String = null): GroupBy =
+      Builders.GroupBy(
+        metaData = Builders.MetaData(name = "featureGroupName", customJson = customJson)
+      )
+
+    // customJson not set defaults to a daily upload
+    assertEquals(Constants.DefaultUploadSchedule, buildGroupByWithCustomJson().uploadSchedule)
+    assertEquals(Constants.DefaultUploadSchedule, buildGroupByWithCustomJson("{}").uploadSchedule)
+    assertTrue(buildGroupByWithCustomJson().isDailyUpload)
+
+    assertEquals("@weekly", buildGroupByWithCustomJson("{\"uploadSchedule\": \"@weekly\"}").uploadSchedule)
+    assertEquals("@quarterly", buildGroupByWithCustomJson("{\"uploadSchedule\": \"@quarterly\"}").uploadSchedule)
+    assertFalse(buildGroupByWithCustomJson("{\"uploadSchedule\": \"@weekly\"}").isDailyUpload)
+
+    // Unusable values fall back to the default rather than failing the job
+    assertEquals(Constants.DefaultUploadSchedule,
+                 buildGroupByWithCustomJson("{\"uploadSchedule\": 7}").uploadSchedule)
+    assertEquals(Constants.DefaultUploadSchedule,
+                 buildGroupByWithCustomJson("{\"uploadSchedule\": \"\"}").uploadSchedule)
+  }
+
+  @Test
   def semanticHashWithoutChangesIsEqual(): Unit = {
     val metadata = Builders.MetaData(name = "test")
     val groupBy = Builders.GroupBy(

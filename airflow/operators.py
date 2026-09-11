@@ -315,9 +315,6 @@ def create_upload_cadence_operator(dag, task_id, schedule):
     Short circuits the upload task (and its downstream KV store upload) on days that are not
     upload days for the GroupBy's `uploadSchedule`.
     """
-    # Fail loudly at DAG parse time rather than at execution time on a bad schedule.
-    assert schedule in constants.UPLOAD_SCHEDULES, (
-        "Invalid uploadSchedule {}, must be one of {}".format(schedule, list(constants.UPLOAD_SCHEDULES)))
     return ShortCircuitOperator(
         dag=dag,
         task_id=task_id,

@@ -38,6 +38,10 @@ snapshot pushed to the KV store is a day old rather than a cadence old, and the 
 daily tasks as before. Upload days are Sundays for `@weekly`, the 1st of the month for `@monthly`, and the 1st of
 Jan/Apr/Jul/Oct for `@quarterly`.
 
+Only batch GroupBys can take a coarser cadence. `compile.py` rejects the combination for streaming GroupBys, and if one
+still reaches the DAG through a hand edited `customJson`, the cadence is logged and ignored in favour of a daily
+upload.
+
 
 ## Alternate Integrations
 
