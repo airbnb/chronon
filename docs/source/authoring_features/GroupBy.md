@@ -184,6 +184,29 @@ your_gb = GroupBy(
 > this behavior by deleting the older compiled output. Our recommendation is to create a new version `your_gb_v2` instead.
 
 
+## Upload Cadence
+
+Marking a GroupBy `online=True` schedules an upload job that refreshes its snapshot in the KV store every day. Static
+datasets, whose feature values rarely change (LLM-generated listing descriptions, for example), pay the full compute
+cost of that refresh to recompute the same values. `upload_schedule` lets you dial the cadence back:
+
+```python
+your_gb = GroupBy(
+  ...,
+  online=True,
+  upload_schedule="@monthly"  # '@daily' (default), '@weekly', '@monthly' or '@quarterly'
+)
+```
+
+On days that aren't upload days the job is skipped, and on upload days it still runs against the latest available
+partition, so what lands in the KV store is at most a day old rather than a cadence old.
+
+> Note: keep the cadence shorter than the TTL of your KV store. With a 90 day TTL, an `@quarterly` refresh can let the
+> served values expire before the next upload replaces them.
+
+Only the upload job is affected. Backfill frontfills stay on `offline_schedule`, and streaming keeps running as usual.
+
+
 ## Tuning
 
 If you look at the parameters column in the above table - you will see `k`.
