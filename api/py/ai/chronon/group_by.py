@@ -31,6 +31,11 @@ DEFAULT_ONLINE = None
 DEFAULT_PRODUCTION = None
 LOGGER = logging.getLogger()
 
+# Cadences supported for the GroupBy upload (KV store refresh) job. Feature values of static
+# datasets don't change daily, so their upload job doesn't need to run daily either.
+DEFAULT_UPLOAD_SCHEDULE = "@daily"
+UPLOAD_SCHEDULES = (DEFAULT_UPLOAD_SCHEDULE, "@weekly", "@monthly", "@quarterly")
+
 
 def collector(
     op: ttypes.Operation,
@@ -397,6 +402,7 @@ def GroupBy(
     accuracy: Optional[ttypes.Accuracy] = None,
     lag: int = 0,
     offline_schedule: str = "@daily",
+    upload_schedule: str = DEFAULT_UPLOAD_SCHEDULE,
     name: Optional[str] = None,
     tags: Optional[Dict[str, str]] = None,
     derivations: Optional[List[ttypes.Derivation]] = None,
@@ -507,6 +513,14 @@ def GroupBy(
             '@yearly': '0 0 1 1 *',
 
     :type offline_schedule: str
+    :param upload_schedule:
+        the schedule interval for the upload (KV store refresh) job of an `online=True` GroupBy.
+        Defaults to '@daily'. Coarser cadences ('@weekly', '@monthly', '@quarterly') are meant for
+        static datasets, whose feature values rarely change, and let you skip the compute cost of a
+        daily refresh. Goes into customJson at path "metaData.customJson.uploadSchedule", and is
+        only emitted when it differs from the default. Note that the cadence must stay shorter than
+        the TTL of your KV store, otherwise the served values expire before they get refreshed.
+    :type upload_schedule: str
     :param tags:
         Additional metadata that does not directly affect feature computation, but is useful to
         track for management purposes.
@@ -595,7 +609,15 @@ def GroupBy(
             if hasattr(agg, "tags") and agg.tags:
                 for output_col in get_output_col_names(agg):
                     column_tags[output_col] = agg.tags
+
+    assert upload_schedule in UPLOAD_SCHEDULES, (
+        f"Invalid upload_schedule '{upload_schedule}', must be one of {list(UPLOAD_SCHEDULES)}"
+    )
+
     metadata = {"groupby_tags": tags, "column_tags": column_tags}
+    if upload_schedule != DEFAULT_UPLOAD_SCHEDULE:
+        # Only emitted when non-default, so that existing compiled configs stay unchanged.
+        metadata["uploadSchedule"] = upload_schedule
     kwargs.update(metadata)
 
     metadata = ttypes.MetaData(
