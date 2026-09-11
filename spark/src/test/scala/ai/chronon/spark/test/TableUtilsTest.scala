@@ -472,6 +472,38 @@ class TableUtilsTest {
   }
 
   @Test
+  def testGrantPublicAccessDisabledByDefault(): Unit = {
+    assertTrue(!tableUtils.grantPublicAccessEnabled)
+  }
+
+  @Test
+  def testGrantPublicAccessDoesNotBlockTableCreation(): Unit = {
+    // the local Hive metastore used in tests doesn't support GRANT, so this also exercises
+    // the non-critical failure path: a failed grant must not prevent the table from being created
+    val grantSpark = SparkSessionBuilder.build(
+      "TableUtilsGrantPublicAccessTest",
+      local = true,
+      additionalConfig = Some(Map("spark.chronon.table_write.grant_public_access" -> "true")))
+    val grantTableUtils = TableUtils(grantSpark)
+    val tableName = "db.test_grant_public_access"
+    val df = makeDf(
+      grantSpark,
+      StructType(
+        tableName,
+        Array(
+          StructField("long_field", LongType),
+          StructField("ds", StringType)
+        )
+      ),
+      List(Row(1L, "2022-10-01"))
+    )
+
+    grantTableUtils.insertPartitions(df, tableName)
+
+    assertTrue(grantTableUtils.tableExists(tableName))
+  }
+
+  @Test
   def testSqlWithDefaultPartitionColumn(): Unit = {
     val tableName = "db.test_sql_with_partition_column_renamed"
     val partitionCol = "custom_partition_date"
