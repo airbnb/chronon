@@ -273,6 +273,25 @@ def validate_group_by(group_by: ttypes.GroupBy):
         )
         assert is_snapshot, "is_incremental is only supported for SNAPSHOT accuracy group bys"
 
+    # Validated off customJson rather than off the GroupBy() argument, so that setting the cadence
+    # directly as `uploadSchedule` in customJson is checked the same way as `upload_schedule=`.
+    upload_schedule = json.loads(group_by.metaData.customJson or "{}").get("uploadSchedule")
+    if upload_schedule:
+        assert upload_schedule in UPLOAD_SCHEDULES, (
+            f"Invalid upload_schedule '{upload_schedule}', must be one of {list(UPLOAD_SCHEDULES)}"
+        )
+    # A non-daily upload schedule only makes sense for batch group bys. Streaming fetches scan the
+    # streaming dataset for everything after the batch end date, so holding the batch snapshot back
+    # for a week or more would leave the fetcher replaying an ever growing streaming tail.
+    if upload_schedule and upload_schedule != DEFAULT_UPLOAD_SCHEDULE:
+        assert not any([utils.is_streaming(s) for s in sources]), (
+            f"upload_schedule '{upload_schedule}' is only supported for group bys without a streaming source, "
+            "since streaming fetches replay everything after the batch end date"
+        )
+        assert group_by.accuracy != Accuracy.TEMPORAL, (
+            f"upload_schedule '{upload_schedule}' is only supported for SNAPSHOT accuracy group bys"
+        )
+
     column_set = None
     # all sources should select the same columns
     for i, source in enumerate(sources[1:]):
@@ -518,8 +537,10 @@ def GroupBy(
         Defaults to '@daily'. Coarser cadences ('@weekly', '@monthly', '@quarterly') are meant for
         static datasets, whose feature values rarely change, and let you skip the compute cost of a
         daily refresh. Goes into customJson at path "metaData.customJson.uploadSchedule", and is
-        only emitted when it differs from the default. Note that the cadence must stay shorter than
-        the TTL of your KV store, otherwise the served values expire before they get refreshed.
+        only emitted when it differs from the default. Equivalent to passing `uploadSchedule` in
+        customJson directly, which takes effect when this argument is left at its default. Note
+        that the cadence must stay shorter than the TTL of your KV store, otherwise the served
+        values expire before they get refreshed.
     :type upload_schedule: str
     :param tags:
         Additional metadata that does not directly affect feature computation, but is useful to
@@ -609,10 +630,6 @@ def GroupBy(
             if hasattr(agg, "tags") and agg.tags:
                 for output_col in get_output_col_names(agg):
                     column_tags[output_col] = agg.tags
-
-    assert upload_schedule in UPLOAD_SCHEDULES, (
-        f"Invalid upload_schedule '{upload_schedule}', must be one of {list(UPLOAD_SCHEDULES)}"
-    )
 
     metadata = {"groupby_tags": tags, "column_tags": column_tags}
     if upload_schedule != DEFAULT_UPLOAD_SCHEDULE:

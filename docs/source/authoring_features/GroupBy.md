@@ -198,13 +198,31 @@ your_gb = GroupBy(
 )
 ```
 
+The cadence lives in customJson at `metaData.customJson.uploadSchedule`, which is what the orchestrator reads, so
+passing it as a customJson key directly is equivalent and takes effect when `upload_schedule` is left at its default:
+
+```python
+your_gb = GroupBy(
+  ...,
+  online=True,
+  uploadSchedule="@monthly"  # goes into customJson, same effect as upload_schedule
+)
+```
+
+Either way `compile.py` validates the value, so a typo fails at compile time rather than at DAG parse time. Edit the
+Python config rather than the compiled JSON under `production/`, since the latter is regenerated on the next compile.
+
 On days that aren't upload days the job is skipped, and on upload days it still runs against the latest available
 partition, so what lands in the KV store is at most a day old rather than a cadence old.
 
 > Note: keep the cadence shorter than the TTL of your KV store. With a 90 day TTL, an `@quarterly` refresh can let the
 > served values expire before the next upload replaces them.
 
-Only the upload job is affected. Backfill frontfills stay on `offline_schedule`, and streaming keeps running as usual.
+Only the upload job is affected: backfill frontfills stay on `offline_schedule`.
+
+A coarser cadence is restricted to batch GroupBys, so `compile.py` rejects it when the GroupBy has a streaming source
+or `TEMPORAL` accuracy. Streaming fetches replay everything after the batch end date, and holding the batch snapshot
+back by a week or more would leave the fetcher replaying an ever growing streaming tail.
 
 
 ## Tuning

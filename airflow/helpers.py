@@ -237,6 +237,24 @@ def get_cadence_gate(conf, mode, conf_type, dag):
     schedule = get_upload_schedule(conf)
     if schedule == constants.DEFAULT_UPLOAD_SCHEDULE:
         return None
+    if schedule not in constants.UPLOAD_SCHEDULES:
+        # compile.py rejects unsupported values, so this is a hand edited customJson. Uploading
+        # daily costs more than intended but is always correct, which beats failing DAG parse.
+        logging.warning(
+            f"[Chronon][Schedule] Ignoring unsupported uploadSchedule {schedule} for "
+            f"{conf['metaData']['name']}, must be one of {list(constants.UPLOAD_SCHEDULES)}. "
+            "Uploading daily instead.")
+        return None
+    # Accuracy sits at the top level of the conf (TEMPORAL = 0), not under metaData.
+    if requires_streaming_task(conf, conf_type) or conf.get("accuracy", 1) == 0:
+        # compile.py rejects this combination, so it only shows up on hand edited customJson.
+        # Fall back to the daily cadence rather than failing the whole team's DAG: streaming
+        # fetches replay everything after the batch end date, so holding the batch snapshot back
+        # would leave the fetcher replaying an ever growing streaming tail.
+        logging.warning(
+            f"[Chronon][Schedule] Ignoring uploadSchedule {schedule} for streaming group_by "
+            f"{conf['metaData']['name']}, uploading daily instead.")
+        return None
     task_id = f"upload_cadence__{normalize_name(conf['metaData']['name'])}"
     if task_id in dag.task_dict:
         return dag.task_dict[task_id]
