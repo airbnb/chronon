@@ -16,18 +16,19 @@ Run the flow for materialize.
 #     See the License for the specific language governing permissions and
 #     limitations under the License.
 
-from ai.chronon.repo.explore import (
-    load_team_data,
-    build_index,
-    enrich_with_joins,
-    display_entries,
-    find_in_index,
-    GB_INDEX_SPEC,
-    JOIN_INDEX_SPEC,
-)
+import os
 
 import pytest
-import os
+from ai.chronon.repo.explore import (
+    GB_INDEX_SPEC,
+    JOIN_INDEX_SPEC,
+    build_entry,
+    build_index,
+    display_entries,
+    enrich_with_joins,
+    find_in_index,
+    load_team_data,
+)
 
 
 @pytest.mark.parametrize("keyword", ["event", "entity"])
@@ -40,3 +41,25 @@ def test_basic_flow(teams_json, rootdir, keyword):
     group_bys = find_in_index(gb_index, keyword)
     display_entries(group_bys, keyword, root=root, trim_paths=True)
     assert len(group_bys) > 0
+
+
+@pytest.mark.parametrize("invalid_group_by", [{}, {"metaData": {"name": "invalid"}}])
+def test_enrich_with_joins_skips_invalid_nested_group_bys(tmp_path, invalid_group_by):
+    valid_group_by = {
+        "metaData": {"name": "sample_team.valid.v1", "outputNamespace": "test_namespace"},
+        "sources": [{"events": {"table": "source_events"}}],
+    }
+    join = {
+        "metaData": {"name": "sample_team.join.v1", "outputNamespace": "test_namespace"},
+        "left": {"events": {"table": "join_events"}},
+        "joinParts": [{"groupBy": invalid_group_by}, {"groupBy": valid_group_by}],
+    }
+    join_entry = build_entry(join, JOIN_INDEX_SPEC, "joins", root=str(tmp_path))
+    gb_index = {}
+
+    enrich_with_joins(gb_index, {"sample_team.join.v1": join_entry}, root=str(tmp_path))
+
+    assert list(gb_index) == ["sample_team.valid.v1"]
+    assert gb_index["sample_team.valid.v1"]["sources"] == ["source_events"]
+    assert gb_index["sample_team.valid.v1"]["joins"] == ["sample_team.join.v1"]
+    assert gb_index["sample_team.valid.v1"]["join_event_driver"] == ["join_events"]
