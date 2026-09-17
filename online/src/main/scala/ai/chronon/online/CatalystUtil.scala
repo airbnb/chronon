@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.{
   RDDScanExec,
   WholeStageCodegenExec
 }
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.sql.{SparkSession, types}
 
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
@@ -71,6 +71,32 @@ object CatalystUtil {
     spark.conf.set("spark.sql.legacy.timeParserPolicy", "LEGACY")
     assert(spark.sessionState.conf.wholeStageEnabled)
     spark
+  }
+
+  // Runs `block` with CatalystUtil.session as the current thread's active SparkSession, so that
+  // SQLConf.get - consulted by Catalyst during codegen and expression evaluation (e.g. when
+  // TimestampFormatter picks the LEGACY vs new parser) - resolves to this session's conf rather
+  // than Spark's default fallback conf. Without this, an evaluator constructed on a thread that
+  // never touched the session (a serving request thread refilling the pool) would be code-generated
+  // with default settings and behave differently from the initial evaluators.
+  // The previous active session is restored afterwards so a Spark driver that also hosts
+  // CatalystUtil (e.g. JoinSourceRunner) keeps its own session active. On executors TaskContext is
+  // set and SQLConf.get reads task-local properties instead, so the active session is irrelevant.
+  def withSession[T](block: => T): T = {
+    if (TaskContext.get() != null) {
+      block
+    } else {
+      val prev = SparkSession.getActiveSession
+      SparkSession.setActiveSession(session)
+      try {
+        block
+      } finally {
+        prev match {
+          case Some(s) => SparkSession.setActiveSession(s)
+          case None    => SparkSession.clearActiveSession()
+        }
+      }
+    }
   }
 
   case class PoolKey(expressions: collection.Seq[(String, String)], inputSchema: StructType)
@@ -173,19 +199,23 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
   def sqlTransform(values: Map[String, Any]): Option[Map[String, Any]] = sqlTransformRowToMap(toInternalRow(values))
 
   def sqlTransformRowToMap(row: InternalRow): Option[Map[String, Any]] = {
-    val resultRowMaybe = transformFunc(row)
+    val resultRowMaybe = CatalystUtil.withSession(transformFunc(row))
     val outputVal = resultRowMaybe.map(resultRow => outputDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Map[String, Any]])
   }
   private def sqlTransformInternalRowToArray(row: InternalRow): Option[Array[Any]] = {
-    val resultRowMaybe = transformFunc(row)
+    val resultRowMaybe = CatalystUtil.withSession(transformFunc(row))
     val outputVal = resultRowMaybe.map(resultRow => outputArrDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Array[Any]])
   }
 
   def getOutputSparkSchema: types.StructType = outputSparkSchema
 
-  private def initialize(): (InternalRow => Option[InternalRow], types.StructType) = {
+  private def initialize(): (InternalRow => Option[InternalRow], types.StructType) =
+    CatalystUtil.withSession(initializeWithActiveSession())
+
+  // Must run inside CatalystUtil.withSession: codegen below resolves SQLConf.get eagerly.
+  private def initializeWithActiveSession(): (InternalRow => Option[InternalRow], types.StructType) = {
     val session = CatalystUtil.session
 
     // create dummy df with sql query and schema
