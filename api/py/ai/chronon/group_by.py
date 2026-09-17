@@ -275,7 +275,8 @@ def validate_group_by(group_by: ttypes.GroupBy):
 
     # Validated off customJson rather than off the GroupBy() argument, so that setting the cadence
     # directly as `uploadSchedule` in customJson is checked the same way as `upload_schedule=`.
-    upload_schedule = json.loads(group_by.metaData.customJson or "{}").get("uploadSchedule")
+    custom_json = group_by.metaData.customJson if group_by.metaData else None
+    upload_schedule = json.loads(custom_json or "{}").get("uploadSchedule")
     if upload_schedule:
         assert upload_schedule in UPLOAD_SCHEDULES, (
             f"Invalid upload_schedule '{upload_schedule}', must be one of {list(UPLOAD_SCHEDULES)}"
