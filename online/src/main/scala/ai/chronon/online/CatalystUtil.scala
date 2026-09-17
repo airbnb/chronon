@@ -31,7 +31,7 @@ import org.apache.spark.sql.execution.{
   RDDScanExec,
   WholeStageCodegenExec
 }
-import org.apache.spark.SparkEnv
+import org.apache.spark.{SparkEnv, TaskContext}
 import org.apache.spark.sql.{SparkSession, types}
 
 import java.util.concurrent.{ArrayBlockingQueue, ConcurrentHashMap}
@@ -71,6 +71,25 @@ object CatalystUtil {
     spark.conf.set("spark.sql.legacy.timeParserPolicy", "LEGACY")
     assert(spark.sessionState.conf.wholeStageEnabled)
     spark
+  }
+
+  // Makes CatalystUtil.session the thread's active SparkSession so SQLConf.get resolves to its conf
+  // (e.g. timeParserPolicy=LEGACY) during codegen and evaluation, then restores the previous one.
+  def withSession[T](block: => T): T = {
+    if (TaskContext.get() != null) {
+      block
+    } else {
+      val prev = SparkSession.getActiveSession
+      SparkSession.setActiveSession(session)
+      try {
+        block
+      } finally {
+        prev match {
+          case Some(s) => SparkSession.setActiveSession(s)
+          case None    => SparkSession.clearActiveSession()
+        }
+      }
+    }
   }
 
   case class PoolKey(expressions: collection.Seq[(String, String)], inputSchema: StructType)
@@ -173,19 +192,22 @@ class CatalystUtil(expressions: collection.Seq[(String, String)],
   def sqlTransform(values: Map[String, Any]): Option[Map[String, Any]] = sqlTransformRowToMap(toInternalRow(values))
 
   def sqlTransformRowToMap(row: InternalRow): Option[Map[String, Any]] = {
-    val resultRowMaybe = transformFunc(row)
+    val resultRowMaybe = CatalystUtil.withSession(transformFunc(row))
     val outputVal = resultRowMaybe.map(resultRow => outputDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Map[String, Any]])
   }
   private def sqlTransformInternalRowToArray(row: InternalRow): Option[Array[Any]] = {
-    val resultRowMaybe = transformFunc(row)
+    val resultRowMaybe = CatalystUtil.withSession(transformFunc(row))
     val outputVal = resultRowMaybe.map(resultRow => outputArrDecoder(resultRow))
     outputVal.map(_.asInstanceOf[Array[Any]])
   }
 
   def getOutputSparkSchema: types.StructType = outputSparkSchema
 
-  private def initialize(): (InternalRow => Option[InternalRow], types.StructType) = {
+  private def initialize(): (InternalRow => Option[InternalRow], types.StructType) =
+    CatalystUtil.withSession(initializeWithActiveSession())
+
+  private def initializeWithActiveSession(): (InternalRow => Option[InternalRow], types.StructType) = {
     val session = CatalystUtil.session
 
     // create dummy df with sql query and schema
