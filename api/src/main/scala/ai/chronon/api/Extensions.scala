@@ -461,6 +461,15 @@ object Extensions {
         case _          => false
       }
 
+    // Cadence of the KV store upload job: daily unless 'uploadSchedule' opts into a coarser one.
+    def uploadSchedule: String =
+      groupBy.getMetaData.customJsonLookUp(Constants.UploadSchedule) match {
+        case s: String if s.nonEmpty => s
+        case _                       => Constants.DefaultUploadSchedule
+      }
+
+    def isDailyUpload: Boolean = uploadSchedule == Constants.DefaultUploadSchedule
+
     def semanticHash: String = {
       val newGroupBy = groupBy.deepCopy()
       newGroupBy.unsetMetaData()
