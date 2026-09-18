@@ -269,7 +269,8 @@ def enrich_with_joins(gb_index, join_index, root=CWD, teams=None):
     for _, join_entry in join_index.items():
         for gb in join_entry["_group_bys"]:
             entry = build_entry(gb, GB_INDEX_SPEC, "group_bys", root=root, teams=teams)
-            gb_index[entry["name"][0]] = entry
+            if entry is not None:
+                gb_index[entry["name"][0]] = entry
     # lineage -> reverse index from gb -> join
     for _, group_by in gb_index.items():
         group_by["joins"] = []
