@@ -368,14 +368,17 @@ class FetcherTest extends TestCase {
     // partition are exercised. DataFrameGen spreads ts uniformly over [now - partitions days, now],
     // which for a 4-day spread leaves today's share proportional to how far into the day the run
     // happens: shortly after midnight that is a fraction of a percent, and the partition comes back
-    // empty often enough to fail the run. Anchor the query timestamps inside today instead, and
-    // scale the count to what the 4-day spread used to yield mid-day so runtime stays comparable.
+    // empty often enough to fail the run. Anchor the query timestamps inside today instead.
+    // Runtime scales with the number of today-partition rows (each becomes ~22 fetches across the
+    // benchmark and debug passes), so keep the count small; 30 is still large enough that the
+    // consistencySamplePercent = 30 filter on the logged left side cannot empty it in practice.
     val queryCols = Seq(userCol, vendorCol)
     val queriesTable = s"$namespace.queries_table"
+    val queryCount = 30
     val todayStartMs = tableUtils.partitionSpec.epochMillis(today)
     val todaySpanMs = math.max(System.currentTimeMillis() - todayStartMs, 1L)
     val queriesDf = DataFrameGen
-      .events(spark, queryCols, math.max(rowCount / 8, 1), 4)
+      .events(spark, queryCols, queryCount, 4)
       .withColumnRenamed("user", "user_id")
       .withColumnRenamed("vendor", "vendor_id")
       .withColumn(Constants.TimeColumn, (lit(todayStartMs) + rand() * todaySpanMs).cast("long"))
