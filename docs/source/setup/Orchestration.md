@@ -31,16 +31,18 @@ GroupBy upload tasks run daily by default. A GroupBy over a static dataset can o
 `upload_schedule` (see [GroupBy](../authoring_features/GroupBy.md#upload-cadence)), which lands in the compiled config
 as `metaData.customJson.uploadSchedule` and accepts `@daily`, `@weekly`, `@monthly` or `@quarterly`.
 
-The batch DAG stays daily either way. A non-daily GroupBy gets an extra `upload_cadence__{group_by_name}`
-short-circuit task in front of its upload task, which skips the upload (and the KV store upload downstream of it) on
-days that are not upload days. Keeping the DAG daily means `ds` is always the freshest available partition, so the
-snapshot pushed to the KV store is a day old rather than a cadence old, and the partition sensors are shared with the
-daily tasks as before. Upload days are Sundays for `@weekly`, the 1st of the month for `@monthly`, and the 1st of
-Jan/Apr/Jul/Oct for `@quarterly`.
+Acting on the cadence is up to your orchestrator. `get_upload_schedule` in
+[helpers.py](https://github.com/airbnb/chronon/tree/main/airflow/helpers.py) reads it off the compiled config; what you
+do with it is the part you implement. The suggested shape is to keep the batch DAG daily and gate the upload task on
+its upload days instead (with a short-circuit task upstream of it, say), which skips the upload and the KV store upload
+downstream of it on other days. Keeping the DAG daily means `ds` is always the freshest available partition, so the
+snapshot pushed to the KV store is a day old rather than a cadence old, and the partition sensors stay shared with the
+daily tasks. A natural choice of upload days is Sundays for `@weekly` (matching Airflow's own `@weekly` preset), the
+1st of the month for `@monthly`, and the 1st of Jan/Apr/Jul/Oct for `@quarterly`.
 
-Only batch GroupBys can take a coarser cadence. `compile.py` rejects the combination for streaming GroupBys, and if one
-still reaches the DAG through a hand edited `customJson`, the cadence is logged and ignored in favour of a daily
-upload.
+Only batch GroupBys can take a coarser cadence: `compile.py` rejects the combination for streaming GroupBys. Since a
+hand edited `customJson` bypasses that check, it is worth ignoring the cadence for streaming GroupBys in your DAG code
+too, rather than failing the DAG.
 
 
 ## Alternate Integrations

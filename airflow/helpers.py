@@ -2,7 +2,7 @@
 Helper to walk files and build dags.
 """
 
-from operators import ChrononOperator, create_skip_operator, create_upload_cadence_operator, SensorWithEndDate
+from operators import ChrononOperator, create_skip_operator, SensorWithEndDate
 import constants
 
 from airflow.sensors.named_hive_partition_sensor import NamedHivePartitionSensor
@@ -96,8 +96,15 @@ def get_upload_schedule(conf):
     """
     Cadence of the GroupBy upload (KV store refresh) job, set via `uploadSchedule` in customJson.
 
-    Defaults to daily. A coarser cadence is meant for static datasets, whose feature values rarely
-    change, and saves the compute cost of refreshing them daily.
+    One of '@daily' (the default), '@weekly', '@monthly' or '@quarterly'; compile.py validates the
+    value. A coarser cadence is meant for static datasets, whose feature values rarely change, and
+    saves the compute cost of refreshing them daily.
+
+    TODO: Your internal implementation. Nothing here acts on the result yet. Keep the upload DAG
+    daily and gate the upload task on its upload days (e.g. a ShortCircuitOperator upstream of it),
+    so that `ds` stays the freshest available partition and the partition sensors are unchanged.
+    Only gate batch group_bys: streaming fetches replay everything after the batch end date, so
+    holding the batch snapshot back would leave the fetcher replaying an ever growing tail.
     """
     custom_json = json.loads(conf["metaData"].get("customJson") or "{}")
     return custom_json.get("uploadSchedule") or constants.DEFAULT_UPLOAD_SCHEDULE
@@ -221,44 +228,6 @@ def extract_dependencies(conf, mode, conf_type, common_env, dag):
     custom_skip_op = create_skip_operator(dag, normalize_name(conf["metaData"]["name"]))
     operators >> custom_skip_op
     return custom_skip_op
-
-
-def get_cadence_gate(conf, mode, conf_type, dag):
-    """
-    For GroupBy uploads with a non-daily `uploadSchedule`, gate the upload task (and the KV store
-    upload downstream of it) so it only runs on its upload days.
-
-    The DAG itself stays daily on purpose: `ds` remains the freshest available partition, so the
-    snapshot pushed to the KV store is a day old rather than a cadence old, and the partition
-    sensors are untouched.
-    """
-    if conf_type != "group_bys" or mode != "upload":
-        return None
-    schedule = get_upload_schedule(conf)
-    if schedule == constants.DEFAULT_UPLOAD_SCHEDULE:
-        return None
-    if schedule not in constants.UPLOAD_SCHEDULES:
-        # compile.py rejects unsupported values, so this is a hand edited customJson. Uploading
-        # daily costs more than intended but is always correct, which beats failing DAG parse.
-        logging.warning(
-            f"[Chronon][Schedule] Ignoring unsupported uploadSchedule {schedule} for "
-            f"{conf['metaData']['name']}, must be one of {list(constants.UPLOAD_SCHEDULES)}. "
-            "Uploading daily instead.")
-        return None
-    # Accuracy sits at the top level of the conf (TEMPORAL = 0), not under metaData.
-    if requires_streaming_task(conf, conf_type) or conf.get("accuracy", 1) == 0:
-        # compile.py rejects this combination, so it only shows up on hand edited customJson.
-        # Fall back to the daily cadence rather than failing the whole team's DAG: streaming
-        # fetches replay everything after the batch end date, so holding the batch snapshot back
-        # would leave the fetcher replaying an ever growing streaming tail.
-        logging.warning(
-            f"[Chronon][Schedule] Ignoring uploadSchedule {schedule} for streaming group_by "
-            f"{conf['metaData']['name']}, uploading daily instead.")
-        return None
-    task_id = f"upload_cadence__{normalize_name(conf['metaData']['name'])}"
-    if task_id in dag.task_dict:
-        return dag.task_dict[task_id]
-    return create_upload_cadence_operator(dag, task_id, schedule)
 
 
 def get_downstream(conf, mode, conf_type, team_conf, dag):
@@ -411,12 +380,7 @@ def walk_and_define_tasks(mode, conf_type, repo, dag_constructor, dags=None, sil
                         )
                         # Build Upstream dependencies (Hive)
                         dependencies = extract_dependencies(conf, mode, conf_type, common_env, dag)
-                        # Non-daily GroupBy uploads only run on their upload days.
-                        cadence_gate = get_cadence_gate(conf, mode, conf_type, dag)
-                        if cadence_gate:
-                            dependencies >> cadence_gate >> baseop
-                        else:
-                            dependencies >> baseop
+                        dependencies >> baseop
                         # Build Downstream dependencies.
                         downstream = get_downstream(conf, mode, conf_type, team_conf, dag)
                         if downstream:

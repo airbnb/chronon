@@ -212,8 +212,10 @@ your_gb = GroupBy(
 Either way `compile.py` validates the value, so a typo fails at compile time rather than at DAG parse time. Edit the
 Python config rather than the compiled JSON under `production/`, since the latter is regenerated on the next compile.
 
-On days that aren't upload days the job is skipped, and on upload days it still runs against the latest available
-partition, so what lands in the KV store is at most a day old rather than a cadence old.
+How the cadence is applied depends on your orchestrator (see
+[Orchestration](../setup/Orchestration.md#groupby-upload-cadence)). The intended behaviour is that the job is skipped
+on days that aren't upload days, and on upload days still runs against the latest available partition, so what lands
+in the KV store is at most a day old rather than a cadence old.
 
 > Note: keep the cadence shorter than the TTL of your KV store. With a 90 day TTL, an `@quarterly` refresh can let the
 > served values expire before the next upload replaces them.
