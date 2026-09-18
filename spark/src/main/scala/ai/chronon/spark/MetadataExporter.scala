@@ -33,6 +33,10 @@ import com.fasterxml.jackson.databind.ObjectMapper
 import com.fasterxml.jackson.module.scala.DefaultScalaModule
 import org.apache.commons.lang.exception.ExceptionUtils
 import ai.chronon.api.Extensions._
+
+import java.util.concurrent.Executors
+import scala.concurrent.duration.Duration
+import scala.concurrent.{Await, ExecutionContext, ExecutionContextExecutorService, Future}
 import scala.util.Try
 
 object MetadataExporter {
@@ -52,6 +56,27 @@ object MetadataExporter {
   private val yesterday = tableUtils.partitionSpec.before(today)
 
   private val partitionColumns = Seq("entityType", "ds")
+
+  // Each entity's analysis (enrichMetadata / enrichEmbeddedGroupBy) issues a handful of small,
+  // driver-bound Spark jobs that are dominated by metastore/catalog round-trip latency rather
+  // than executor compute -- see spark.chronon.metadata_export.parallelism. Concurrency (not
+  // more executors) is what shortens wall-clock time here, so entities are fanned out across a
+  // bounded thread pool instead of Spark tasks, mirroring the existing tableUtils.joinPartParallelism
+  // pattern used for join-part backfills (see Join.scala).
+  private def parMap[A, B](items: Seq[A])(f: A => B): Seq[B] = {
+    if (tableUtils.metadataExportParallelism <= 1 || items.length <= 1) {
+      items.map(f)
+    } else {
+      implicit val executionContext: ExecutionContextExecutorService =
+        ExecutionContext.fromExecutorService(Executors.newFixedThreadPool(tableUtils.metadataExportParallelism))
+      try {
+        val futures = items.map(item => Future(f(item)))
+        Await.result(Future.sequence(futures), Duration.Inf)
+      } finally {
+        executionContext.shutdown()
+      }
+    }
+  }
 
   def getFilePaths(inputPath: String): Seq[String] = {
     val rootDir = new File(inputPath)
@@ -226,7 +251,7 @@ object MetadataExporter {
   ): Seq[(String, Boolean, String)] = {
     if (!enabled) Seq.empty
     else
-      embeddedOnlyGroupBys(filePaths, standaloneGroupByNames(filePaths), inputPath).map {
+      parMap(embeddedOnlyGroupBys(filePaths, standaloneGroupByNames(filePaths), inputPath)) {
         case (syntheticPath, groupBy) =>
           try {
             (syntheticPath, true, enrichEmbeddedGroupBy(groupBy))
@@ -282,7 +307,7 @@ object MetadataExporter {
 
   def processEntities(inputPath: String, outputPath: String, processEmbeddedGroupBys: Boolean = false): Unit = {
     val filePaths = getFilePaths(inputPath)
-    val processSuccess = filePaths.map { path =>
+    val processSuccess = parMap(filePaths) { path =>
       try {
         val data = enrichMetadata(path)
         if (path.contains(GROUPBY_PATH_SUFFIX)) {
@@ -321,7 +346,7 @@ object MetadataExporter {
                       extraOutputTablePropertiesJson: Option[String],
                       processEmbeddedGroupBys: Boolean): Unit = {
     val filePaths = getFilePaths(inputPath)
-    val processedData = filePaths.map { path =>
+    val processedData = parMap(filePaths) { path =>
       try {
         val data = enrichMetadata(path)
         (path, true, data)

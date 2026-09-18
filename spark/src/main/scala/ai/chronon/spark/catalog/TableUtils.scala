@@ -402,6 +402,11 @@ case class TableUtils(sparkSession: SparkSession) {
   val materializeJoinParts: Boolean =
     sparkSession.conf.get("spark.chronon.join.part.materialize", "true").toBoolean
   val joinPartParallelism: Int = sparkSession.conf.get("spark.chronon.join.part.parallelism", "1").toInt
+  // number of entities (GroupBy/Join/StagingQuery configs) MetadataExporter analyzes concurrently.
+  // Each entity's analysis is a handful of small, driver-bound Spark jobs dominated by metastore/
+  // catalog round-trip latency rather than executor compute, so concurrency (not more executors)
+  // is what shortens wall-clock time here. Defaults to 1 (today's sequential behavior).
+  val metadataExportParallelism: Int = sparkSession.conf.get("spark.chronon.metadata_export.parallelism", "1").toInt
   val aggregationParallelism: Int = sparkSession.conf.get("spark.chronon.group_by.parallelism", "1000").toInt
   val maxWait: Int = sparkSession.conf.get("spark.chronon.wait.hours", "48").toInt
 
