@@ -21,6 +21,7 @@ import ai.chronon.online.{CatalystUtil, PoolMap, PooledCatalystUtil}
 import ai.chronon.online.CatalystUtil.PoolKey
 import junit.framework.TestCase
 import org.junit.Assert.{assertArrayEquals, assertEquals, assertTrue}
+import org.apache.spark.sql.SparkSession
 import org.junit.Test
 
 import java.util
@@ -670,6 +671,36 @@ class CatalystUtilTest extends TestCase with CatalystUtilTestSparkSQLStructs {
     // warmup below current size is a no-op
     poolMap.warmup(key, 3)
     assertEquals(5, poolMap.map.get(key).size())
+  }
+
+  // Regression test: evaluators built on a thread with no active SparkSession (e.g. a serving
+  // request thread that constructs a new pooled evaluator) must still pick up CatalystUtil's
+  // session conf (timeParserPolicy=LEGACY, timeZone=UTC). Without CatalystUtil.withSession,
+  // Spark 3 resolves the default EXCEPTION policy at codegen time and to_unix_timestamp throws
+  // SparkUpgradeException on timestamps carrying a millisecond suffix.
+  @Test
+  def testTimestampParsingIsConfSafeOnThreadWithoutActiveSession(): Unit = {
+    CatalystUtil.session // make sure the session already exists before the worker thread starts
+    val schema = StructType("ts_struct", Array(StructField("ts_str", StringType)))
+    val selects = Seq("ts" -> "to_unix_timestamp(ts_str)")
+    var result: Option[Map[String, Any]] = None
+    var failure: Throwable = null
+    val worker = new Thread(new Runnable {
+      override def run(): Unit = {
+        try {
+          SparkSession.clearActiveSession()
+          val cu = new CatalystUtil(selects, schema)
+          result = cu.sqlTransform(Map("ts_str" -> "2026-09-11 02:44:02.560"))
+        } catch {
+          case e: Throwable => failure = e
+        }
+      }
+    })
+    worker.start()
+    worker.join()
+    if (failure != null) throw failure
+    // 2026-09-11 02:44:02 UTC
+    assertEquals(1789094642L, result.get("ts"))
   }
 
   def testPooledCatalystUtil(): Unit = {
