@@ -361,6 +361,13 @@ case class TableUtils(sparkSession: SparkSession) {
   val blockingCacheEviction: Boolean =
     sparkSession.conf.get("spark.chronon.table_write.cache.blocking", "false").toBoolean
 
+  // whether or not to grant read access on Chronon-created tables to a configurable role right after creation,
+  // so that consumers (e.g. notebooks, dashboards, downstream jobs) can read them without manual grants
+  val grantPublicAccessEnabled: Boolean =
+    sparkSession.conf.get("spark.chronon.table_write.grant_public_access", "false").toBoolean
+  val grantPublicAccessRole: String =
+    sparkSession.conf.get("spark.chronon.table_write.grant_public_access.role", "PUBLIC")
+
   // whether or not to enable avro schema validation check in BootstrapInfo and Analyzer, default is true. Avro schema is needed for online serving, if you only have offline use case, feel free to set it to false
   val chrononAvroSchemaValidation: Boolean =
     sparkSession.conf.get("spark.chronon.avroSchemaValidation", "true").toBoolean
@@ -570,6 +577,7 @@ case class TableUtils(sparkSession: SparkSession) {
       val creationSql = createTableSql(tableName, dfRearranged.schema, partitionColumns, tableProperties, fileFormat)
       try {
         sql(creationSql)
+        grantPublicAccess(tableName)
       } catch {
         case _: TableAlreadyExistsException =>
           logger.info(s"Table $tableName already exists, skipping creation")
@@ -647,6 +655,7 @@ case class TableUtils(sparkSession: SparkSession) {
 
     if (!tableExists(tableName)) {
       sql(createTableSql(tableName, df.schema, Seq.empty[String], tableProperties, fileFormat))
+      grantPublicAccess(tableName)
     } else {
       if (tableProperties != null && tableProperties.nonEmpty) {
         alterTableProperties(tableName, tableProperties, unsetProperties = Seq(Constants.chrononArchiveFlag))
@@ -855,6 +864,19 @@ case class TableUtils(sparkSession: SparkSession) {
       sql(unsetQuery)
     }
 
+  }
+
+  def grantPublicAccess(tableName: String): Unit = {
+    if (grantPublicAccessEnabled) {
+      val grantQuery = s"GRANT SELECT ON TABLE $tableName TO $grantPublicAccessRole"
+      try {
+        sql(grantQuery)
+      } catch {
+        case e: Exception =>
+          // Non-critical: a failed grant should not block table creation or writes
+          logger.warn(s"Failed to grant $grantPublicAccessRole access to table $tableName: ${e.getMessage}")
+      }
+    }
   }
 
   def chunk(partitions: Set[String]): Seq[PartitionRange] = {
