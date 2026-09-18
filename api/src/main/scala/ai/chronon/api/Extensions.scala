@@ -461,9 +461,7 @@ object Extensions {
         case _          => false
       }
 
-    // Cadence of the batch upload job that refreshes this GroupBy in the KV store.
-    // Defaults to daily if the 'uploadSchedule' flag isn't set; static datasets can opt into a
-    // coarser cadence ('@weekly', '@monthly', '@quarterly') to skip redundant recomputation.
+    // Cadence of the KV store upload job: daily unless 'uploadSchedule' opts into a coarser one.
     def uploadSchedule: String =
       groupBy.getMetaData.customJsonLookUp(Constants.UploadSchedule) match {
         case s: String if s.nonEmpty => s

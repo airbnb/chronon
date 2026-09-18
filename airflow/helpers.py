@@ -93,19 +93,7 @@ def get_offline_schedule(conf):
 
 
 def get_upload_schedule(conf):
-    """
-    Cadence of the GroupBy upload (KV store refresh) job, set via `uploadSchedule` in customJson.
-
-    One of '@daily' (the default), '@weekly', '@monthly' or '@quarterly'; compile.py validates the
-    value. A coarser cadence is meant for static datasets, whose feature values rarely change, and
-    saves the compute cost of refreshing them daily.
-
-    TODO: Your internal implementation. Nothing here acts on the result yet. Keep the upload DAG
-    daily and gate the upload task on its upload days (e.g. a ShortCircuitOperator upstream of it),
-    so that `ds` stays the freshest available partition and the partition sensors are unchanged.
-    Only gate batch group_bys: streaming fetches replay everything after the batch end date, so
-    holding the batch snapshot back would leave the fetcher replaying an ever growing tail.
-    """
+    """Cadence of the GroupBy upload job, set via `uploadSchedule` in customJson."""
     custom_json = json.loads(conf["metaData"].get("customJson") or "{}")
     return custom_json.get("uploadSchedule") or constants.DEFAULT_UPLOAD_SCHEDULE
 

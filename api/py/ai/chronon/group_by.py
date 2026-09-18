@@ -273,17 +273,12 @@ def validate_group_by(group_by: ttypes.GroupBy):
         )
         assert is_snapshot, "is_incremental is only supported for SNAPSHOT accuracy group bys"
 
-    # Validated off customJson rather than off the GroupBy() argument, so that setting the cadence
-    # directly as `uploadSchedule` in customJson is checked the same way as `upload_schedule=`.
     custom_json = group_by.metaData.customJson if group_by.metaData else None
     upload_schedule = json.loads(custom_json or "{}").get("uploadSchedule")
     if upload_schedule:
         assert upload_schedule in UPLOAD_SCHEDULES, (
             f"Invalid upload_schedule '{upload_schedule}', must be one of {list(UPLOAD_SCHEDULES)}"
         )
-    # A non-daily upload schedule only makes sense for batch group bys. Streaming fetches scan the
-    # streaming dataset for everything after the batch end date, so holding the batch snapshot back
-    # for a week or more would leave the fetcher replaying an ever growing streaming tail.
     if upload_schedule and upload_schedule != DEFAULT_UPLOAD_SCHEDULE:
         assert not any([utils.is_streaming(s) for s in sources]), (
             f"upload_schedule '{upload_schedule}' is only supported for group bys without a streaming source, "
