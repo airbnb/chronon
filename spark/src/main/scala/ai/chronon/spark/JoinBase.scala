@@ -708,6 +708,7 @@ abstract class JoinBase(joinConf: api.Join,
     )
 
     logger.info(s"Join ranges to compute: ${stepRanges.map { _.toString }.pretty}")
+    var wroteAnyRange = false
     stepRanges.zipWithIndex.foreach {
       case (range, index) =>
         val startMillis = System.currentTimeMillis()
@@ -723,6 +724,7 @@ abstract class JoinBase(joinConf: api.Join,
             logger.info(s"Skipping writing to the output table for range: ${range.toString}  $progress")
           } else {
             finalDf.get.save(outputTable, tableProps, autoExpand = true)
+            wroteAnyRange = true
             val elapsedMins = (System.currentTimeMillis() - startMillis) / (60 * 1000)
             metrics.gauge(Metrics.Name.LatencyMinutes, elapsedMins)
             metrics.gauge(Metrics.Name.PartitionCount, range.partitions.length)
@@ -735,6 +737,15 @@ abstract class JoinBase(joinConf: api.Join,
       logger.info("Skipping final join because selectedJoinParts is defined.")
       None
     } else {
+      // `leftDf` returns None for a range whose left side has no rows, which skips the write
+      // silently. Without this check, reading the output table back below would surface that as a
+      // bare "Table or view not found", pointing at the output instead of the empty left side.
+      require(
+        wroteAnyRange || tableUtils.tableExists(outputTable),
+        s"Left side of join ${joinConf.metaData.name} produced 0 rows for every range in " +
+          s"${unfilledRanges.mkString(", ")}, so nothing was written and $outputTable does not exist. " +
+          s"Check that ${joinConf.left.table} has data in those partitions."
+      )
       logger.info(s"Wrote to table $outputTable, into partitions: $unfilledRanges")
       Some(finalResult)
     }

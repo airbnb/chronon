@@ -32,7 +32,7 @@ import ai.chronon.spark.{Join => _, _}
 import com.google.gson.GsonBuilder
 import junit.framework.TestCase
 import org.apache.spark.sql.catalyst.expressions.GenericRow
-import org.apache.spark.sql.functions.{avg, col, lit}
+import org.apache.spark.sql.functions.{avg, col, lit, rand}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
 import org.junit.Assert.{assertEquals, assertFalse, assertTrue}
 import org.mockito.ArgumentMatchers.{any, anyString}
@@ -364,12 +364,22 @@ class FetcherTest extends TestCase {
     )
 
     // queries
+    // The left side of the join below starts at `today`, so only query rows landing in today's
+    // partition are exercised. DataFrameGen spreads ts uniformly over [now - partitions days, now],
+    // which for a 4-day spread leaves today's share proportional to how far into the day the run
+    // happens: shortly after midnight that is a fraction of a percent, and the partition comes back
+    // empty often enough to fail the run. Anchor the query timestamps inside today instead, and
+    // scale the count to what the 4-day spread used to yield mid-day so runtime stays comparable.
     val queryCols = Seq(userCol, vendorCol)
     val queriesTable = s"$namespace.queries_table"
+    val todayStartMs = tableUtils.partitionSpec.epochMillis(today)
+    val todaySpanMs = math.max(System.currentTimeMillis() - todayStartMs, 1L)
     val queriesDf = DataFrameGen
-      .events(spark, queryCols, rowCount, 4)
+      .events(spark, queryCols, math.max(rowCount / 8, 1), 4)
       .withColumnRenamed("user", "user_id")
       .withColumnRenamed("vendor", "vendor_id")
+      .withColumn(Constants.TimeColumn, (lit(todayStartMs) + rand() * todaySpanMs).cast("long"))
+      .withColumn(tableUtils.partitionColumn, lit(today))
     queriesDf.show()
     queriesDf.save(queriesTable)
 

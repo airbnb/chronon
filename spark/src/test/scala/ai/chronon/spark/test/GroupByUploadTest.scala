@@ -132,22 +132,22 @@ class GroupByUploadTest {
     val normalConf = conf("upload_normal", incremental = false)
     val incConf = conf("upload_incremental", incremental = true)
 
-    // jsonPercent = 100: the key_json/value_json columns are sampled at 1% by default, so the
-    // comparison below would otherwise see NULL keys (dropped by the where clause) on both sides
-    // and pass vacuously - or, when the sampling hit one table and not the other, fail spuriously.
-    GroupByUpload.run(normalConf, endDs, jsonPercent = 100)
-    GroupByUpload.run(incConf, endDs, jsonPercent = 100) // ensure-then-read: builds _daily_inc, then serves the upload
+    GroupByUpload.run(normalConf, endDs)
+    GroupByUpload.run(incConf, endDs) // ensure-then-read: builds _daily_inc, then serves the upload
 
-    // Compare the KV upload rows (excluding the GroupByServingInfo metadata row).
+    // Compare the KV upload rows (excluding the GroupByServingInfo metadata row). Compare the
+    // key/value *bytes*, which are written for every row: key_json/value_json are populated for
+    // only `jsonPercent` of rows (1% by default, for debuggability), so comparing those would
+    // drop every unsampled row here and make the result depend on a coin flip per row.
     def uploadRows(c: GroupBy) =
       spark
         .table(c.metaData.uploadTable)
-        .where(s"key_json != '${Constants.GroupByServingInfoKey}'")
-        .selectExpr("key_json", "value_json")
+        .where(s"key_json is null or key_json != '${Constants.GroupByServingInfoKey}'")
+        .selectExpr("hex(key_bytes) as key_hex", "hex(value_bytes) as value_hex")
     // Guard against a vacuous pass: both sides must actually carry the 3 keys being compared.
     assertEquals(users.size.toLong, uploadRows(normalConf).count())
     assertEquals(users.size.toLong, uploadRows(incConf).count())
-    val diff = Comparison.sideBySide(uploadRows(normalConf), uploadRows(incConf), List("key_json"))
+    val diff = Comparison.sideBySide(uploadRows(normalConf), uploadRows(incConf), List("key_hex"))
     if (diff.count() > 0) {
       println("=== incremental vs normal upload diff ===")
       diff.show(50, truncate = false)
