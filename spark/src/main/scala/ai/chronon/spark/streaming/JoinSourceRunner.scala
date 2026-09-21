@@ -830,8 +830,6 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
             val resultCount = summaries.map(_.resultCount).sum
             val successCount = summaries.map(_.successCount).sum
-            if (notificationTopic.isDefined && resultCount > 0)
-              kvContext.count(Metrics.Name.PushNotificationCount, resultCount)
             if (successCount > 0) kvContext.count("success", successCount)
             if (successCount < resultCount) kvContext.count("failure", resultCount - successCount)
 

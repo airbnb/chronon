@@ -64,7 +64,6 @@ class DataWriter(onlineImpl: Api,
       future.andThen {
         case Success(result) =>
           kvContext.distribution(Metrics.Name.WriteLatencyMillis, System.currentTimeMillis() - writeStartMillis)
-          if (notificationTopic.isDefined) kvContext.increment(Metrics.Name.PushNotificationCount)
           if (result) {
             kvContext.increment("success")
           } else {
