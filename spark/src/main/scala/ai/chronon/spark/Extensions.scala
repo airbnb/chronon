@@ -30,6 +30,7 @@ import org.apache.spark.sql.types.{DataType, LongType, StructType}
 import org.apache.spark.util.sketch.BloomFilter
 
 import java.util
+import java.util.UUID
 import scala.collection.Seq
 import scala.reflect.ClassTag
 import scala.util.ScalaJavaConversions.IteratorOps
@@ -121,7 +122,9 @@ object Extensions {
     def withStats: DfWithStats = DfWithStats(df)
 
     def range[T](columnName: String): (T, T) = {
-      val viewName = s"${columnName}_range_input_${(math.random * 100000).toInt}"
+      // UUID (not a random int) so concurrent callers on the same SparkSession -- e.g. multiple
+      // threads analyzing different GroupBys in parallel -- can never collide on this view name.
+      val viewName = s"${columnName}_range_input_${UUID.randomUUID().toString.replace("-", "")}"
       df.createOrReplaceTempView(viewName)
       assert(df.schema.names.contains(columnName),
              s"$columnName is not a column of the dataframe. Pick one of [${df.schema.names.mkString(", ")}]")
