@@ -96,14 +96,14 @@ class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset:
 
   // Push mode: write, then record the notification in a JVM-wide log so tests can assert that the
   // executor-side publish actually happened. Local Spark executors share this JVM.
-  override def multiPutWithNotification(putRequests: Seq[KVStore.PutRequest],
-                                        notificationTopic: String): Future[Seq[Boolean]] = {
+  override def multiPutWithNotification(putRequests: collection.Seq[KVStore.PutRequest],
+                                        notificationTopic: String): Future[collection.Seq[Boolean]] = {
     multiPut(putRequests).map { results =>
       putRequests.zip(results).foreach {
         case (req, ok) =>
           InMemoryKvStore.notifications.add(InMemoryKvStore.Notification(req.dataset, notificationTopic, ok))
       }
-      results.toSeq
+      results
     }
   }
 
