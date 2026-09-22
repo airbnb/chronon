@@ -60,9 +60,6 @@ object Constants {
   val ContextualSourceKeys: String = "contextual_keys"
   val ContextualSourceValues: String = "contextual_values"
   val TeamOverride: String = "team_override"
-  // Group by upload cadence, in customJson; validated against UPLOAD_SCHEDULES in api/py/ai/chronon/group_by.py.
-  val UploadSchedule: String = "uploadSchedule"
-  val DefaultUploadSchedule: String = "@daily"
   val LabelColumnPrefix: String = "label"
   val LabelViewPropertyFeatureTable: String = "feature_table"
   val LabelViewPropertyKeyLabelTable: String = "label_table"
