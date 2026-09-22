@@ -95,7 +95,7 @@ def get_offline_schedule(conf):
 def get_upload_schedule(conf):
     """Cadence of the GroupBy upload job, set via `uploadSchedule` in customJson."""
     custom_json = json.loads(conf["metaData"].get("customJson") or "{}")
-    return custom_json.get("uploadSchedule") or constants.DEFAULT_UPLOAD_SCHEDULE
+    return custom_json.get(constants.UPLOAD_SCHEDULE_KEY) or constants.DEFAULT_UPLOAD_SCHEDULE
 
 
 def requires_frontfill(conf):

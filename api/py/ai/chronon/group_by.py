@@ -33,6 +33,7 @@ LOGGER = logging.getLogger()
 
 # Cadences supported for the GroupBy upload (KV store refresh) job. Feature values of static
 # datasets don't change daily, so their upload job doesn't need to run daily either.
+UPLOAD_SCHEDULE_KEY = "uploadSchedule"
 DEFAULT_UPLOAD_SCHEDULE = "@daily"
 UPLOAD_SCHEDULES = (DEFAULT_UPLOAD_SCHEDULE, "@weekly", "@monthly", "@quarterly")
 
@@ -274,7 +275,7 @@ def validate_group_by(group_by: ttypes.GroupBy):
         assert is_snapshot, "is_incremental is only supported for SNAPSHOT accuracy group bys"
 
     custom_json = group_by.metaData.customJson if group_by.metaData else None
-    upload_schedule = json.loads(custom_json or "{}").get("uploadSchedule")
+    upload_schedule = json.loads(custom_json or "{}").get(UPLOAD_SCHEDULE_KEY)
     if upload_schedule:
         assert upload_schedule in UPLOAD_SCHEDULES, (
             f"Invalid upload_schedule '{upload_schedule}', must be one of {list(UPLOAD_SCHEDULES)}"
@@ -630,7 +631,7 @@ def GroupBy(
     metadata = {"groupby_tags": tags, "column_tags": column_tags}
     if upload_schedule != DEFAULT_UPLOAD_SCHEDULE:
         # Only emitted when non-default, so that existing compiled configs stay unchanged.
-        metadata["uploadSchedule"] = upload_schedule
+        metadata[UPLOAD_SCHEDULE_KEY] = upload_schedule
     kwargs.update(metadata)
 
     metadata = ttypes.MetaData(
