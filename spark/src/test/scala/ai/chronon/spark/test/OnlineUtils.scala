@@ -108,7 +108,7 @@ object OnlineUtils {
     if (source.isSetEntities) {
       source.getEntities.setMutationTopic(s"${source.getEntities.mutationTable}/ds=$ds")
     } else if (source.isSetEvents) {
-      source.getEntities.setMutationTopic(s"${source.getEvents.table}/ds=$ds")
+      source.getEvents.setTopic(s"${source.getEvents.table}/ds=$ds")
     } else {
       val joinLeft = source.getJoinSource.getJoin.left
       mutateTopicWithDs(joinLeft, ds)

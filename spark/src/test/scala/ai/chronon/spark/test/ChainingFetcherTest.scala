@@ -20,7 +20,7 @@ import org.slf4j.LoggerFactory
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.Request
 import ai.chronon.online.MetadataStore
@@ -55,7 +55,7 @@ class ChainingFetcherTest extends TestCase {
     * Parent Join: lasted price a certain user viewed
     * Chained Join: latest rating of the listings the user viewed in the last 7 days
     */
-  def generateMutationData(namespace: String, accuracy: Accuracy): api.Join = {
+  def generateMutationData(namespace: String, accuracy: Accuracy, extraViewRows: Seq[Row] = Seq.empty): api.Join = {
     tableUtils.createDatabase(namespace)
     // left user views table
     // {listing, user, ts, ds}
@@ -75,7 +75,7 @@ class ChainingFetcherTest extends TestCase {
       Row(88L, 1L, toTs("2021-04-15 11:00:00"), "2021-04-15"),
       Row(88L, 59L, toTs("2021-04-15 01:10:00"), "2021-04-15"),
       Row(88L, 456L, toTs("2021-04-15 12:00:00"), "2021-04-15")
-    )
+    ) ++ extraViewRows
     // {listing, ts, rating, ds}
     val ratingSchema = StructType(
       "listing_ratings_fetcher",
@@ -151,7 +151,15 @@ class ChainingFetcherTest extends TestCase {
     joinConf
   }
 
-  def generateChainingJoinData(namespace: String, accuracy: Accuracy): api.Join = {
+  /**
+    * @param chainingGroupByCustomJson customJson for the chaining GroupBy (e.g. push-mode flags)
+    * @param streamParentLeft when true the parent join's left source gets a topic, which makes the
+    *                         chaining GroupBy a streaming GroupBy served through JoinSourceRunner
+    */
+  def generateChainingJoinData(namespace: String,
+                               accuracy: Accuracy,
+                               chainingGroupByCustomJson: String = null,
+                               streamParentLeft: Boolean = false): api.Join = {
     tableUtils.createDatabase(namespace)
     // User search listing event. Schema: user, listing, ts, ds
     val searchSchema = StructType(
@@ -178,7 +186,21 @@ class ChainingFetcherTest extends TestCase {
     val startPartition = "2021-04-14"
     val endPartition = "2021-04-18"
 
-    val joinSource = generateMutationData(namespace, accuracy)
+    // When streaming the parent left, add view events on the serving day so the chained stream has
+    // rows to enrich and write; the batch upload only covers days before it.
+    val servingDayViews =
+      if (streamParentLeft)
+        Seq(
+          Row(12L, 59L, toTs("2021-04-18 09:00:00"), "2021-04-18"),
+          Row(88L, 1L, toTs("2021-04-18 11:00:00"), "2021-04-18"),
+          Row(68L, 123L, toTs("2021-04-18 12:00:00"), "2021-04-18")
+        )
+      else Seq.empty[Row]
+    val joinSource = generateMutationData(namespace, accuracy, servingDayViews)
+    if (streamParentLeft) {
+      // MockStreamBuilder reads the topic name as a table, so the topic is the left table itself.
+      joinSource.getLeft.getEvents.setTopic(joinSource.getLeft.getEvents.getTable)
+    }
     val query = Builders.Query(startPartition = startPartition, endPartition = endPartition)
     val chainingGroupby = Builders.GroupBy(
       sources = Seq(Builders.Source.joinSource(joinSource, query)),
@@ -189,7 +211,7 @@ class ChainingFetcherTest extends TestCase {
                              inputColumn = "fetcher_parent_gb_rating_last",
                              windows = Seq(new Window(7, TimeUnit.DAYS)))
       ),
-      metaData = Builders.MetaData(name = "chaining_gb", namespace = namespace),
+      metaData = Builders.MetaData(name = "chaining_gb", namespace = namespace, customJson = chainingGroupByCustomJson),
       accuracy = accuracy
     )
 
@@ -327,5 +349,50 @@ class ChainingFetcherTest extends TestCase {
 
     val (expected, fetcherResponse) = executeFetch(chainingJoinConf, "2021-04-18", namespace)
     compareTemporalFetch(chainingJoinConf, "2021-04-18", expected, fetcherResponse, "listing")
+  }
+
+  /**
+    * Push mode end to end: the chained streaming query writes from executors via
+    * multiPutWithNotification, and every written row must produce exactly one notification on the
+    * configured topic. Local Spark still serializes the Api into the task closure, so an Api
+    * implementation whose transient state does not survive the hop fails this test.
+    */
+  def testChainingPushModePublishesOneNotificationPerWrite(): Unit = {
+    val namespace = "chaining_push_mode"
+    val endDs = "2021-04-18"
+    val topic = "chaining_push_mode_topic"
+    val customJson = s"""{"enable_write_notifications": true, "notification_topic_override": "$topic"}"""
+    val chainingJoinConf = generateChainingJoinData(namespace, Accuracy.TEMPORAL, customJson, streamParentLeft = true)
+    val chainingGroupBy = chainingJoinConf.joinParts.get(0).groupBy
+    assertTrue("chaining GroupBy must have a streaming join source", chainingGroupBy.streamingSource.isDefined)
+    val streamingDataset = chainingGroupBy.streamingDataset
+    InMemoryKvStore.notifications.clear()
+
+    // The chained stream fetches the parent join per event, so the parent GroupBy must be served first.
+    implicit val tableUtils: TableUtils = TableUtils(spark)
+    val kvStoreFunc = () => OnlineUtils.buildInMemoryKVStore("ChainingFetcherTest")
+    val store = kvStoreFunc()
+    val parentJoin = chainingGroupBy.streamingSource.get.getJoinSource.getJoin
+    parentJoin.joinParts.toScala.foreach(jp =>
+      OnlineUtils.serve(tableUtils, store, kvStoreFunc, namespace, endDs, jp.groupBy, dropDsOnWrite = true))
+
+    // executeFetch serves the chaining GroupBy, which runs the chained streaming query and writes the
+    // serving-day rows from executors. Offline parity of those streamed rows is not this test's concern;
+    // it checks that every executor-side write published a notification.
+    val (_, fetcherResponse) = executeFetch(chainingJoinConf, endDs, namespace)
+    assertTrue("fetch should return rows", fetcherResponse.nonEmpty)
+
+    val notifications = InMemoryKvStore.notificationsFor(streamingDataset)
+    val writtenRows = store.database
+      .get(streamingDataset)
+      .values()
+      .iterator()
+      .toScala
+      .map(_.size)
+      .sum
+    assertTrue(s"expected streaming writes for $streamingDataset", writtenRows > 0)
+    assertEquals(s"one notification per written row on $streamingDataset", writtenRows, notifications.size)
+    assertTrue("all notifications carry the configured topic", notifications.forall(_.topic == topic))
+    assertTrue("all notified writes succeeded", notifications.forall(_.writeSucceeded))
   }
 }
