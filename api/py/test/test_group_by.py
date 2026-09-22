@@ -343,3 +343,65 @@ def test_join_source_topic_validation():
     join_entity = make_join(ttypes.Source(entities=ttypes.EntitySource(
         snapshotTable='t', mutationTopic='topic', query=ttypes.Query(selects={'k': 'k'}, timeColumn='ts'))))
     group_by.validate_group_by(make_gb(join_entity, has_v=True))
+
+
+def test_upload_schedule():
+    """`upload_schedule` controls the cadence of the GroupBy upload job via customJson."""
+    def make_gb(**kwargs):
+        return group_by.GroupBy(
+            sources=[
+                ttypes.EventSource(
+                    table="event_table",
+                    query=query.Query(selects={"key1": "key1"}, time_column="ts")
+                )
+            ],
+            keys=["key1"],
+            aggregations=[group_by.Aggregation(input_column="key1", operation=ttypes.Operation.SUM)],
+            online=True,
+            **kwargs
+        )
+
+    # Default is daily and stays out of customJson, so compiled configs are unchanged.
+    assert "uploadSchedule" not in json.loads(make_gb().metaData.customJson)
+    assert "uploadSchedule" not in json.loads(make_gb(upload_schedule="@daily").metaData.customJson)
+
+    for schedule in ["@weekly", "@monthly", "@quarterly"]:
+        gb = make_gb(upload_schedule=schedule)
+        assert json.loads(gb.metaData.customJson)["uploadSchedule"] == schedule
+        # Setting it straight into customJson is equivalent, and validated the same way.
+        gb = make_gb(uploadSchedule=schedule)
+        assert json.loads(gb.metaData.customJson)["uploadSchedule"] == schedule
+
+    for kwargs in [{"upload_schedule": "@hourly"}, {"uploadSchedule": "@hourly"}]:
+        with pytest.raises(AssertionError, match="Invalid upload_schedule"):
+            make_gb(**kwargs)
+
+
+def test_upload_schedule_requires_batch_group_by():
+    """A non-daily upload schedule is rejected for streaming/temporal group bys."""
+    def make_gb(topic=None, **kwargs):
+        return group_by.GroupBy(
+            sources=[
+                ttypes.EventSource(
+                    table="event_table",
+                    topic=topic,
+                    query=query.Query(selects={"key1": "key1"}, time_column="ts")
+                )
+            ],
+            keys=["key1"],
+            aggregations=[group_by.Aggregation(input_column="key1", operation=ttypes.Operation.SUM)],
+            online=True,
+            **kwargs
+        )
+
+    with pytest.raises(AssertionError, match="without a streaming source"):
+        make_gb(topic="events_topic", upload_schedule="@weekly")
+
+    with pytest.raises(AssertionError, match="without a streaming source"):
+        make_gb(topic="events_topic", uploadSchedule="@weekly")
+
+    with pytest.raises(AssertionError, match="SNAPSHOT accuracy"):
+        make_gb(accuracy=ttypes.Accuracy.TEMPORAL, upload_schedule="@weekly")
+
+    # A streaming source on the default daily schedule stays valid.
+    make_gb(topic="events_topic")
