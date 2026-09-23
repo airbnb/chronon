@@ -36,7 +36,7 @@ import org.slf4j.LoggerFactory
 import java.io.{PrintWriter, Serializable, StringWriter}
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId}
-import scala.collection.{Seq, immutable, mutable}
+import scala.collection.{Seq, mutable}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -729,10 +729,10 @@ case class TableUtils(sparkSession: SparkSession) {
                                           stats: Option[DfStats],
                                           sortByCols: Seq[String] = Seq.empty,
                                           partitionCols: Seq[String] = Seq.empty): Unit = {
-    // get row count and table partition count statistics
-    // to determine shuffle parallelism, count only top-level/first partition column
-    // assumed to be the date partition. If not given, use default
-    val partitionCol = partitionCols.headOption.getOrElse(partitionColumn)
+    // Column used for row count / table partition count statistics that drive shuffle parallelism.
+    // Prefer the date partition column: in multi-column partitioned tables another leading column may
+    // have very low cardinality and would collapse the estimate.
+    val partitionCol = statsPartitionColumn(df.schema.fieldNames, partitionCols)
     val (rowCount: Long, tablePartitionCount: Int) =
       if (df.schema.fieldNames.contains(partitionCol)) {
         if (stats.isDefined && stats.get.partitionRange.wellDefined) {
@@ -795,10 +795,8 @@ case class TableUtils(sparkSession: SparkSession) {
 
       logger.info(
         s"repartitioning data for table $tableName by $shuffleParallelism spark tasks into $tablePartitionCount table partitions and $dailyFileCount files per partition")
-      val (repartitionCols: immutable.Seq[String], partitionSortCols: immutable.Seq[String]) =
-        if (df.schema.fieldNames.contains(partitionCol)) {
-          (Seq(partitionCol, saltCol), Seq(partitionCol) ++ sortByCols)
-        } else { (Seq(saltCol), sortByCols) }
+      val (repartitionCols: List[String], partitionSortCols: List[String]) =
+        writeRepartitionAndSortCols(df.schema.fieldNames, partitionCols, sortByCols, saltCol)
       logger.info(s"Sorting within partitions with cols: $partitionSortCols")
       saltedDf
         .repartition(shuffleParallelism, repartitionCols.map(saltedDf.col): _*)
@@ -809,6 +807,29 @@ case class TableUtils(sparkSession: SparkSession) {
         .insertInto(tableName)
       logger.info(s"Finished writing to $tableName")
     }
+  }
+
+  /** Partition column used for row / partition count estimates before a write. */
+  private[spark] def statsPartitionColumn(fieldNames: Seq[String], partitionCols: Seq[String]): String = {
+    if (fieldNames.contains(partitionColumn)) partitionColumn
+    else partitionCols.filter(fieldNames.contains).headOption.getOrElse(partitionColumn)
+  }
+
+  /** Columns to repartition by and to sort by within each spark partition before a write.
+    *
+    * Every partition column present in the df takes part in both, in declared order, so that each
+    * spark partition holds rows for a single table partition and they arrive at the writer grouped
+    * by the full partition tuple. Writers such as Iceberg's ClusteredWriter require this, and on
+    * Spark versions without RequiresDistributionAndOrdering (< 3.2) nothing else enforces it.
+    */
+  private[spark] def writeRepartitionAndSortCols(fieldNames: Seq[String],
+                                                 partitionCols: Seq[String],
+                                                 sortByCols: Seq[String],
+                                                 saltCol: String): (List[String], List[String]) = {
+    val presentPartitionCols = partitionCols.filter(fieldNames.contains).toList
+    if (presentPartitionCols.nonEmpty) {
+      (presentPartitionCols :+ saltCol, presentPartitionCols ++ sortByCols)
+    } else { (List(saltCol), sortByCols.toList) }
   }
 
   private def createTableSql(tableName: String,

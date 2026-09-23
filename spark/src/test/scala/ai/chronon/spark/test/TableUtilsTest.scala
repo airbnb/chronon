@@ -137,6 +137,37 @@ class TableUtilsTest {
   }
 
   @Test
+  def testWriteRepartitionAndSortColsUseAllPartitionColumns(): Unit = {
+    val fields = Seq("key", "value", "region", "ds")
+
+    // single (default) partition column: unchanged behaviour
+    assertEquals((Seq("ds", "salt"), Seq("ds")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("ds"), Seq.empty, "salt"))
+    assertEquals((Seq("ds", "salt"), Seq("ds", "key")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("ds"), Seq("key"), "salt"))
+
+    // multiple partition columns: all of them must cluster and sort, in declared order
+    assertEquals((Seq("region", "ds", "salt"), Seq("region", "ds")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("region", "ds"), Seq.empty, "salt"))
+    assertEquals((Seq("region", "ds", "salt"), Seq("region", "ds", "key")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("region", "ds"), Seq("key"), "salt"))
+
+    // partition columns absent from the df are ignored; none present => salt only
+    assertEquals((Seq("ds", "salt"), Seq("ds")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("missing", "ds"), Seq.empty, "salt"))
+    assertEquals((Seq("salt"), Seq("key")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("missing"), Seq("key"), "salt"))
+  }
+
+  @Test
+  def testStatsPartitionColumnPrefersDateColumn(): Unit = {
+    // with multiple partition columns the date column drives the estimate regardless of its position
+    assertEquals("ds", tableUtils.statsPartitionColumn(Seq("key", "region", "ds"), Seq("region", "ds")))
+    assertEquals("region", tableUtils.statsPartitionColumn(Seq("key", "region"), Seq("region")))
+    assertEquals("ds", tableUtils.statsPartitionColumn(Seq("key"), Seq("region")))
+  }
+
+  @Test
   def testInsertPartitionsAddColumns(): Unit = {
     val tableName = "db.test_table_1"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
