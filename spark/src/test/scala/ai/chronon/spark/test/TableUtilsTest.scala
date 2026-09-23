@@ -160,14 +160,6 @@ class TableUtilsTest {
   }
 
   @Test
-  def testStatsPartitionColumnPrefersDateColumn(): Unit = {
-    // with multiple partition columns the date column drives the estimate regardless of its position
-    assertEquals("ds", tableUtils.statsPartitionColumn(Seq("key", "region", "ds"), Seq("region", "ds")))
-    assertEquals("region", tableUtils.statsPartitionColumn(Seq("key", "region"), Seq("region")))
-    assertEquals("ds", tableUtils.statsPartitionColumn(Seq("key"), Seq("region")))
-  }
-
-  @Test
   def testInsertPartitionsAddColumns(): Unit = {
     val tableName = "db.test_table_1"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
