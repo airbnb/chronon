@@ -815,12 +815,8 @@ case class TableUtils(sparkSession: SparkSession) {
     else partitionCols.filter(fieldNames.contains).headOption.getOrElse(partitionColumn)
   }
 
-  /** Columns to repartition by and to sort by within each spark partition before a write.
-    *
-    * Every partition column present in the df takes part in both, in declared order, so that each
-    * spark partition holds rows for a single table partition and they arrive at the writer grouped
-    * by the full partition tuple. Writers such as Iceberg's ClusteredWriter require this, and on
-    * Spark versions without RequiresDistributionAndOrdering (< 3.2) nothing else enforces it.
+  /** Repartition and sort-within-partition columns for a write. All partition columns present in the df
+    * are included so rows reach the writer clustered by the full partition tuple (Iceberg requires this).
     */
   private[spark] def writeRepartitionAndSortCols(fieldNames: Seq[String],
                                                  partitionCols: Seq[String],
