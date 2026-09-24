@@ -23,7 +23,7 @@ import ai.chronon.online.KVStore.{PutRequest, TimedValue}
 import ai.chronon.spark.catalog.TableUtils
 import org.apache.spark.sql.Row
 
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.{ConcurrentHashMap, ConcurrentLinkedQueue}
 import java.util.{Base64, function}
 import scala.collection.mutable
 import scala.concurrent.Future
@@ -94,6 +94,19 @@ class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset:
     }
   }
 
+  // Push mode: write, then record the notification in a JVM-wide log so tests can assert that the
+  // executor-side publish actually happened. Local Spark executors share this JVM.
+  override def multiPutWithNotification(putRequests: collection.Seq[KVStore.PutRequest],
+                                        notificationTopic: String): Future[collection.Seq[Boolean]] = {
+    multiPut(putRequests).map { results =>
+      putRequests.zip(results).foreach {
+        case (req, ok) =>
+          InMemoryKvStore.notifications.add(InMemoryKvStore.Notification(req.dataset, notificationTopic, ok))
+      }
+      results
+    }
+  }
+
   // For the case of group by batch uploads.
   // the table is assumed to be encoded with two columns - `key` and `value` as Array[Bytes]
   // one of the keys should be "group_by_serving_info" as bytes with value as TSimpleJsonEncoded String
@@ -148,6 +161,14 @@ class InMemoryKvStore(tableUtils: () => TableUtils, hardFailureOnInvalidDataset:
 object InMemoryKvStore {
   @transient lazy val logger = LoggerFactory.getLogger(getClass)
   val stores: ConcurrentHashMap[String, InMemoryKvStore] = new ConcurrentHashMap[String, InMemoryKvStore]
+
+  case class Notification(dataset: String, topic: String, writeSucceeded: Boolean)
+
+  /** Every write notification any InMemoryKvStore in this JVM has published, in order. */
+  val notifications: ConcurrentLinkedQueue[Notification] = new ConcurrentLinkedQueue[Notification]
+
+  def notificationsFor(dataset: String): Seq[Notification] =
+    notifications.toArray(Array.empty[Notification]).filter(_.dataset == dataset).toSeq
 
   // We would like to create one instance of InMemoryKVStore per executors, but share SparkContext
   // across them. Since SparkContext is not serializable,  we wrap TableUtils that has SparkContext
