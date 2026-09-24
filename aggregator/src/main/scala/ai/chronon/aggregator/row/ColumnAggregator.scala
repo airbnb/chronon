@@ -355,6 +355,16 @@ object ColumnAggregator {
           case _          => mismatchException
         }
 
+      case Operation.RUNNING_AVERAGE =>
+        inputType match {
+          case IntType    => simple(new RunningAverage, toDouble[Int])
+          case LongType   => simple(new RunningAverage, toDouble[Long])
+          case ShortType  => simple(new RunningAverage, toDouble[Short])
+          case DoubleType => simple(new RunningAverage)
+          case FloatType  => simple(new RunningAverage, toDouble[Float])
+          case _          => mismatchException
+        }
+
       case Operation.VARIANCE =>
         inputType match {
           case IntType    => simple(new Variance, toDouble[Int])
