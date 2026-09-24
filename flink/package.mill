@@ -1,0 +1,73 @@
+package build.flink
+
+import mill._
+import mill.javalib._
+import mill.javalib.publish._
+import mill.scalalib.SbtModule
+
+object `package` extends SbtModule with PublishModule {
+
+  def scalaVersion = "2.12.12"
+
+  def mvnDeps = Seq(
+    mvn"org.apache.avro:avro:1.8.2",
+    mvn"org.apache.flink::flink-streaming-scala:1.16.1",
+    mvn"org.apache.flink:flink-clients:1.16.1",
+    mvn"org.apache.flink:flink-metrics-dropwizard:1.16.1",
+    mvn"org.apache.flink:flink-test-utils:1.16.1"
+  )
+
+  def moduleDeps = super.moduleDeps ++ Seq(build.aggregator, build.online)
+
+  def compileMvnDeps = Seq(
+    mvn"org.apache.spark::spark-core:3.1.1",
+    mvn"org.apache.spark::spark-hive:3.1.1",
+    mvn"org.apache.spark::spark-sql-kafka-0-10:3.1.1",
+    mvn"org.apache.spark::spark-sql:3.1.1",
+    mvn"org.apache.spark::spark-streaming:3.1.1"
+  )
+
+  def pomSettings = PomSettings(
+    "Chronon is a feature engineering platform",
+    "ai.chronon",
+    "https://github.com/airbnb/chronon",
+    Seq(License(
+      "Apache 2",
+      "Apache 2",
+      "http://www.apache.org/licenses/LICENSE-2.0.txt",
+      false,
+      false,
+      "repo"
+    )),
+    VersionControl(
+      Some("https://github.com/airbnb/chronon"),
+      Some("scm:git@github.com:airbnb/chronon.git"),
+      None,
+      None
+    ),
+    Seq(Developer(
+      "nikhilsimha",
+      "Nikhil Simha",
+      "http://nikhilsimha.com",
+      None,
+      None
+    ))
+  )
+
+  def publishVersion = "cb0ceedc95c0a4602315424f558e418f4c2628ef-SNAPSHOT"
+
+  object test extends SbtTests with TestModule.Junit4 {
+
+    def mvnDeps = Seq(
+      mvn"junit:junit:4.13.2",
+      mvn"com.novocode:junit-interface:0.11",
+      mvn"org.scalatest::scalatest:3.2.15"
+    )
+
+    def moduleDeps = super.moduleDeps ++ Seq(build.aggregator.test)
+
+    def testSandboxWorkingDir = false
+    def testParallelism = false
+
+  }
+}

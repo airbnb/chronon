@@ -1,0 +1,116 @@
+//| mill-version: 1.0.6
+package build
+
+import mill._
+import mill.javalib._
+import mill.javalib.publish._
+import mill.scalalib.SbtModule
+
+// Compute project root - use environment variable override for CI, otherwise detect from git
+val PROJECT_ROOT = os.Path(sys.env.getOrElse("CHRONON_ROOT",
+  os.proc("git", "rev-parse", "--show-toplevel").call().out.text().trim()
+))
+
+object `package` extends SbtModule with PublishModule {
+
+  def artifactName = "chronon"
+
+  def scalaVersion = "2.12.12"
+
+  def pomSettings = PomSettings(
+    "Chronon is a feature engineering platform",
+    "ai.chronon",
+    "https://github.com/airbnb/chronon",
+    Seq(License(
+      "Apache 2",
+      "Apache 2",
+      "http://www.apache.org/licenses/LICENSE-2.0.txt",
+      false,
+      false,
+      "repo"
+    )),
+    VersionControl(
+      Some("https://github.com/airbnb/chronon"),
+      Some("scm:git@github.com:airbnb/chronon.git"),
+      None,
+      None
+    ),
+    Seq(Developer(
+      "nikhilsimha",
+      "Nikhil Simha",
+      "http://nikhilsimha.com",
+      None,
+      None
+    ))
+  )
+
+  def publishVersion = "0.0.110-SNAPSHOT"
+
+  /**
+   * Generate Python Thrift sources from api.thrift
+   * Usage: ./mill generatePythonThrift
+   */
+  def generatePythonThrift() = Task.Command {
+    // Use captured project root directory
+    val root = PROJECT_ROOT
+    val thriftFile = root / "api" / "thrift" / "api.thrift"
+    val outDir = root / "api" / "py" / "ai" / "chronon"
+
+    println(s"Generating Python Thrift files from: $thriftFile")
+    println(s"Output directory: $outDir")
+
+    // Remove old generated files
+    if (os.exists(outDir / "api")) {
+      os.remove.all(outDir / "api")
+    }
+
+    // Generate Python Thrift files
+    os.proc("thrift", "--gen", "py", "-out", outDir, thriftFile)
+      .call(cwd = root, stdout = os.Inherit, stderr = os.Inherit)
+
+    println("Python Thrift generation completed!")
+    ()
+  }
+
+  /**
+   * Build Python API wheel
+   * Usage: ./mill buildPythonApi
+   * Usage: ./mill buildPythonApi --action release
+   */
+  def buildPythonApi(action: String = "build") = Task.Command {
+    println(s"Building Python API with action: $action")
+
+    // Generate Python Thrift first
+    generatePythonThrift()()
+
+    // Use captured project root directory
+    val root = PROJECT_ROOT
+
+    // Get version and branch for Python API (mirroring sbt's git.versionProperty)
+    val branchStr = os.proc("git", "rev-parse", "--abbrev-ref", "HEAD")
+      .call(cwd = root)
+      .out
+      .text()
+      .trim()
+      .replace("/", "-")
+
+    // Read version from version.sbt
+    val baseVersion = "0.0.110-SNAPSHOT"
+    val versionStr = if (branchStr == "main" || branchStr == "master") {
+      baseVersion
+    } else {
+      s"${branchStr}-${baseVersion}"
+    }
+
+    println(s"Version: $versionStr, Branch: $branchStr")
+
+    // Run the Python API build script
+    val script = root / "api" / "py" / "python-api-build.sh"
+    os.proc(script, versionStr, branchStr, action)
+      .call(cwd = root, stdout = os.Inherit, stderr = os.Inherit)
+
+    println(s"Python API $action completed!")
+    ()
+  }
+
+}
