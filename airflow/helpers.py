@@ -40,13 +40,15 @@ def task_default_args(team_conf, team_name, **kwargs):
 
 
 def dag_default_args(**kwargs):
-    return {
+    args = {
         'start_date': datetime.strptime("2023-02-01", "%Y-%m-%d"),
         'dagrun_timeout': timedelta(days=4),
         'schedule_interval': '@daily',
-        'concurrency': BATCH_CONCURRENCY,
+        'concurrency': constants.GROUP_BY_BATCH_CONCURRENCY,
         'catchup': False,
-    }.update(kwargs)
+    }
+    args.update(kwargs)
+    return args
 
 def get_kv_store_upload_operator(dag, conf, team_conf):
     """TODO: Your internal implementation"""
@@ -88,6 +90,12 @@ def get_offline_schedule(conf):
     if schedule_interval == "@never":
         return None
     return schedule_interval
+
+
+def get_upload_schedule(conf):
+    """Cadence of the GroupBy upload job, set via `uploadSchedule` in customJson."""
+    custom_json = json.loads(conf["metaData"].get("customJson") or "{}")
+    return custom_json.get(constants.UPLOAD_SCHEDULE_KEY) or constants.DEFAULT_UPLOAD_SCHEDULE
 
 
 def requires_frontfill(conf):

@@ -25,6 +25,25 @@ To deploy this to your airflow environment, first copy everything in this direct
 1. Set your configuration variables in [constants.py](https://github.com/airbnb/chronon/tree/main/airflow/constants.py).
 2. Implement the `get_kv_store_upload_operator` function in [helpers.py](https://github.com/airbnb/chronon/tree/main/airflow/helpers.py). **This is only required if you want to use Chronon online serving**.
 
+### GroupBy upload cadence
+
+GroupBy upload tasks run daily by default. A GroupBy over a static dataset can opt into a coarser cadence with
+`upload_schedule` (see [GroupBy](../authoring_features/GroupBy.md#upload-cadence)), which lands in the compiled config
+as `metaData.customJson.uploadSchedule` and accepts `@daily`, `@weekly`, `@monthly` or `@quarterly`.
+
+Acting on the cadence is up to your orchestrator. `get_upload_schedule` in
+[helpers.py](https://github.com/airbnb/chronon/tree/main/airflow/helpers.py) reads it off the compiled config; what you
+do with it is the part you implement. The suggested shape is to keep the batch DAG daily and gate the upload task on
+its upload days instead (with a short-circuit task upstream of it, say), which skips the upload and the KV store upload
+downstream of it on other days. Keeping the DAG daily means `ds` is always the freshest available partition, so the
+snapshot pushed to the KV store is a day old rather than a cadence old, and the partition sensors stay shared with the
+daily tasks. A natural choice of upload days is Sundays for `@weekly` (matching Airflow's own `@weekly` preset), the
+1st of the month for `@monthly`, and the 1st of Jan/Apr/Jul/Oct for `@quarterly`.
+
+Only batch GroupBys can take a coarser cadence: `compile.py` rejects the combination for streaming GroupBys. Since a
+hand edited `customJson` bypasses that check, it is worth ignoring the cadence for streaming GroupBys in your DAG code
+too, rather than failing the DAG.
+
 
 ## Alternate Integrations
 
