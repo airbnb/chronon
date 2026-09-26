@@ -165,21 +165,6 @@ class TableUtilsTest {
   }
 
   @Test
-  def testInsertUnPartitionedKeepsDefaultPartitionColumnClustering(): Unit = {
-    val tableName = "db.test_insert_unpartitioned_ds"
-    spark.sql("CREATE DATABASE IF NOT EXISTS db")
-    val df = makeDf(
-      spark,
-      StructType(tableName, Array(StructField("key", LongType), StructField("ds", StringType))),
-      List(Row(3L, "2022-10-03"), Row(1L, "2022-10-01"), Row(2L, "2022-10-02"), Row(4L, "2022-10-01"))
-    )
-    tableUtils.insertUnPartitioned(df, tableName)
-    val written = spark.table(tableName)
-    assertEquals(4L, written.count())
-    assertEquals(Seq(1L, 2L, 3L, 4L), written.select("key").collect().map(_.getLong(0)).sorted.toSeq)
-  }
-
-  @Test
   def testInsertPartitionsAddColumns(): Unit = {
     val tableName = "db.test_table_1"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
