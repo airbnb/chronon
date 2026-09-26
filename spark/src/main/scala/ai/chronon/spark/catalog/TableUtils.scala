@@ -708,7 +708,7 @@ case class TableUtils(sparkSession: SparkSession) {
                                   saveMode: SaveMode,
                                   stats: Option[DfStats],
                                   sortByCols: Seq[String] = Seq.empty,
-                                  partitionCols: Seq[String] = Seq.empty): Unit = {
+                                  partitionCols: Seq[String] = Seq(partitionColumn)): Unit = {
     wrapWithCache(s"repartition & write to $tableName", df) {
       logger.info(s"Repartitioning before writing...")
       repartitionAndWriteInternal(df, tableName, saveMode, stats, sortByCols, partitionCols)
@@ -728,7 +728,7 @@ case class TableUtils(sparkSession: SparkSession) {
                                           saveMode: SaveMode,
                                           stats: Option[DfStats],
                                           sortByCols: Seq[String] = Seq.empty,
-                                          partitionCols: Seq[String] = Seq.empty): Unit = {
+                                          partitionCols: Seq[String] = Seq(partitionColumn)): Unit = {
     // Column used for row count / table partition count statistics that drive shuffle parallelism.
     // Prefer the date partition column: in multi-column partitioned tables another leading column may
     // have very low cardinality and would collapse the estimate.
@@ -809,7 +809,9 @@ case class TableUtils(sparkSession: SparkSession) {
     }
   }
 
-  /** Partition column used for row / partition count estimates before a write. */
+  /** Partition column used for row / partition count estimates before a write. Callers always pass at
+    * least one partition column (the write methods default to `partitionColumn`).
+    */
   private[spark] def statsPartitionColumn(fieldNames: Seq[String], partitionCols: Seq[String]): String = {
     if (fieldNames.contains(partitionColumn)) partitionColumn
     else partitionCols.filter(fieldNames.contains).headOption.getOrElse(partitionColumn)

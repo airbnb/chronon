@@ -157,6 +157,28 @@ class TableUtilsTest {
                  tableUtils.writeRepartitionAndSortCols(fields, Seq("missing", "ds"), Seq.empty, "salt"))
     assertEquals((Seq("salt"), Seq("key")),
                  tableUtils.writeRepartitionAndSortCols(fields, Seq("missing"), Seq("key"), "salt"))
+
+    // callers that pass no partition columns (insertUnPartitioned) default to the table partition column,
+    // so a df carrying it is still clustered and sorted by it
+    assertEquals((Seq(tableUtils.partitionColumn, "salt"), Seq(tableUtils.partitionColumn)),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq(tableUtils.partitionColumn), Seq.empty, "salt"))
+  }
+
+  @Test
+  def testInsertUnPartitionedKeepsDefaultPartitionColumnClustering(): Unit = {
+    val tableName = "db.test_insert_unpartitioned_ds"
+    spark.sql("CREATE DATABASE IF NOT EXISTS db")
+    val df = makeDf(
+      spark,
+      StructType(tableName, Array(StructField("key", LongType), StructField("ds", StringType))),
+      List(Row(3L, "2022-10-03"), Row(1L, "2022-10-01"), Row(2L, "2022-10-02"), Row(4L, "2022-10-01"))
+    )
+    tableUtils.insertUnPartitioned(df, tableName)
+    val written = spark.table(tableName)
+    assertEquals(4L, written.count())
+    assertEquals(Seq(1L, 2L, 3L, 4L), written.select("key").collect().map(_.getLong(0)).sorted.toSeq)
+    // unpartitioned table: no partition spec, but the write still went through the ds-default path
+    assertTrue(spark.sql(s"DESCRIBE TABLE $tableName").collect().forall(r => !r.getString(0).startsWith("# Partition")))
   }
 
   @Test
