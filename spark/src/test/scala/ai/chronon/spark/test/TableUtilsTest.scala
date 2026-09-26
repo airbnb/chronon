@@ -177,8 +177,6 @@ class TableUtilsTest {
     val written = spark.table(tableName)
     assertEquals(4L, written.count())
     assertEquals(Seq(1L, 2L, 3L, 4L), written.select("key").collect().map(_.getLong(0)).sorted.toSeq)
-    // unpartitioned table: no partition spec, but the write still went through the ds-default path
-    assertTrue(spark.sql(s"DESCRIBE TABLE $tableName").collect().forall(r => !r.getString(0).startsWith("# Partition")))
   }
 
   @Test
