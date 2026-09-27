@@ -89,15 +89,27 @@ object FastHashing {
             case (hasher: Hasher, row: Row) =>
               hasher.putDouble(row.getAs[Double](index))
           }
+          // Rows from DataFrame.rdd hold java.sql.Date and java.sql.Timestamp, or java.time.LocalDate and
+          // java.time.Instant if spark.sql.datetime.java8API.enabled was set when the DataFrame was created.
           case DateType => {
             case (hasher: Hasher, row: Row) =>
-              // Date is internally represented in spark as a integer representing the
-              // number of days since 1970-01-01
-              hasher.putInt(row.getAs[Int](index))
+              // The calendar date, since java.sql.Date.getTime depends on the JVM time zone.
+              val epochDay = row.get(index) match {
+                case date: java.sql.Date       => date.toLocalDate.toEpochDay
+                case date: java.time.LocalDate => date.toEpochDay
+              }
+              hasher.putLong(epochDay)
           }
           case TimestampType => {
             case (hasher: Hasher, row: Row) =>
-              hasher.putLong(row.getAs[Long](index))
+              row.get(index) match {
+                case timestamp: java.sql.Timestamp =>
+                  hasher.putLong(Math.floorDiv(timestamp.getTime, 1000L))
+                  hasher.putInt(timestamp.getNanos)
+                case instant: java.time.Instant =>
+                  hasher.putLong(instant.getEpochSecond)
+                  hasher.putInt(instant.getNano)
+              }
           }
           case _ =>
             throw new UnsupportedOperationException(
