@@ -1131,4 +1131,89 @@ class GroupByTest {
       partitions.contains(tenDaysAgo)
     )
   }
+
+  @Test
+  def testKeysWithSameConcatenatedBytesStayDistinct(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val day = "2023-06-01"
+    val nextDay = tableUtils.partitionSpec.after(day)
+    val dayStart = tableUtils.partitionSpec.epochMillis(day)
+    val hour = 3600L * 1000
+
+    // ("1", "23") and ("12", "3"), ("7", "8") and ("78", ""), and (null, "a"), ("a", null) and ("", "a") each
+    // concatenate to the same key bytes.
+    val eventSchema = StructType(
+      Seq(
+        StructField("k1", SparkStringType),
+        StructField("k2", SparkStringType),
+        StructField("amount", SparkLongType),
+        StructField(Constants.TimeColumn, SparkLongType),
+        StructField(tableUtils.partitionColumn, SparkStringType)
+      ))
+    val events = Seq(
+      Row("1", "23", 10L, dayStart + hour, day),
+      Row("1", "23", 20L, dayStart + 2 * hour, day),
+      Row("12", "3", 1000L, dayStart + 3 * hour, day),
+      Row("7", "8", 5L, dayStart + 4 * hour, day),
+      Row(null, "a", 100L, dayStart + 5 * hour, day),
+      Row("a", null, 200L, dayStart + 6 * hour, day)
+    )
+    val eventDf = spark.createDataFrame(spark.sparkContext.parallelize(events, 2), eventSchema)
+    val aggregations = Seq(
+      Builders.Aggregation(Operation.SUM, "amount", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "amount", Seq(new Window(7, TimeUnit.DAYS)))
+    )
+    val groupBy = new GroupBy(aggregations, Seq("k1", "k2"), eventDf)
+    def features(row: Row): (Option[Long], Option[Long]) =
+      (Option(row.getAs[Any]("amount_sum_7d")).map(_.asInstanceOf[Long]),
+       Option(row.getAs[Any]("amount_count_7d")).map(_.asInstanceOf[Long]))
+
+    val snapshot = groupBy
+      .snapshotEvents(PartitionRange(day, day))
+      .collect()
+      .map(row => (row.getAs[String]("k1"), row.getAs[String]("k2")) -> features(row))
+      .toMap
+    val expectedSnapshot: Map[(String, String), (Option[Long], Option[Long])] = Map(
+      ("1", "23") -> (Some(30L), Some(2L)),
+      ("12", "3") -> (Some(1000L), Some(1L)),
+      ("7", "8") -> (Some(5L), Some(1L)),
+      (null, "a") -> (Some(100L), Some(1L)),
+      ("a", null) -> (Some(200L), Some(1L))
+    )
+    assertEquals(expectedSnapshot, snapshot)
+
+    // ("1", "23") and ("12", "3") query at the same timestamp, the others at distinct ones.
+    val queryTs = dayStart + 36 * hour
+    val querySchema = StructType(
+      Seq(
+        StructField("k1", SparkStringType),
+        StructField("k2", SparkStringType),
+        StructField(Constants.TimeColumn, SparkLongType),
+        StructField(tableUtils.partitionColumn, SparkStringType)
+      ))
+    val queries = Seq(
+      Row("1", "23", queryTs, nextDay),
+      Row("12", "3", queryTs, nextDay),
+      Row("7", "8", queryTs + 60000L, nextDay),
+      Row("78", "", queryTs + 120000L, nextDay),
+      Row("", "a", queryTs + 180000L, nextDay)
+    )
+    val queryDf = spark.createDataFrame(spark.sparkContext.parallelize(queries, 2), querySchema)
+    val temporal = groupBy
+      .temporalEvents(queryDf)
+      .collect()
+      .map(row =>
+        (row.getAs[String]("k1"), row.getAs[String]("k2"), row.getAs[Long](Constants.TimeColumn)) -> features(row))
+      .toMap
+    val expectedTemporal: Map[(String, String, Long), (Option[Long], Option[Long])] = Map(
+      ("1", "23", queryTs) -> (Some(30L), Some(2L)),
+      ("12", "3", queryTs) -> (Some(1000L), Some(1L)),
+      ("7", "8", queryTs + 60000L) -> (Some(5L), Some(1L)),
+      ("78", "", queryTs + 120000L) -> (None, None),
+      ("", "a", queryTs + 180000L) -> (None, None)
+    )
+    assertEquals(expectedTemporal, temporal)
+  }
 }
