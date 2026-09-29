@@ -332,9 +332,13 @@ If you see a `Py4JJavaError` mentioning `ClassNotFoundException`, the Chronon JA
 
 ### Python Dependencies
 
-In addition to the JARs, you need the following Python packages:
+In addition to the JARs, you need the following Python packages, which are installed by the `pyspark` extra:
 
 - `pyspark` (tested on 3.1.x and 3.3.x)
+
+```bash
+pip install "chronon-ai[pyspark]"
+```
 
 ### Log Configuration
 
