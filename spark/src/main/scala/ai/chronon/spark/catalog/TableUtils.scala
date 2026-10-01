@@ -181,8 +181,8 @@ case class DefaultFormatProvider(sparkSession: SparkSession) extends FormatProvi
       case (true, _) => Iceberg
       // else if there is a write format we pick that
       case (false, Some(format)) => format
-      // fallback to hive (parquet)
-      case (false, None) => Hive
+      // fallback to iceberg
+      case (false, None) => Iceberg
     }
   }
 }
