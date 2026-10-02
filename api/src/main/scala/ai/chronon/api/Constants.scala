@@ -40,6 +40,9 @@ object Constants {
   val ChrononDynamicTable = "chronon_dynamic_table"
   val ChrononOOCTable: String = "chronon_ooc_table"
   val ChrononLogTable: String = "chronon_log_table"
+  // points a flattened log table at the schema store table holding its schema_hash -> schema mapping.
+  // supersedes the unbounded, per-version schema_hash_* table properties that used to be written here.
+  val LoggingSchemaTable: String = "chronon_logging_schema_table"
   val ChrononMetadataKey = "ZIPLINE_METADATA"
   val SchemaPublishEvent = "SCHEMA_PUBLISH_EVENT"
   val StatsBatchDataset = "CHRONON_STATS_BATCH"
