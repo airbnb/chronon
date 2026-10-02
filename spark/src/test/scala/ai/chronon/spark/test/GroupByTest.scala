@@ -40,8 +40,15 @@ import ai.chronon.spark._
 import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
-import org.apache.spark.sql.{Encoders, Row, SparkSession}
+import org.apache.spark.sql.types.{
+  StructField,
+  StructType,
+  DateType => SparkDateType,
+  LongType => SparkLongType,
+  StringType => SparkStringType,
+  TimestampType => SparkTimestampType
+}
+import org.apache.spark.sql.{DataFrame, Encoders, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
 
@@ -141,6 +148,82 @@ class GroupByTest {
       println("diff result rows")
     }
     assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testDateAndTimestampKeys(): Unit = {
+    lazy val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val day = "2023-06-01"
+    val nextDay = tableUtils.partitionSpec.after(day)
+    val dayStart = tableUtils.partitionSpec.epochMillis(day)
+    val hour = 3600L * 1000
+    val aggregations = Seq(
+      Builders.Aggregation(Operation.SUM, "amount", Seq(new Window(7, TimeUnit.DAYS))),
+      Builders.Aggregation(Operation.COUNT, "amount", Seq(new Window(7, TimeUnit.DAYS)))
+    )
+    val firstMillis = dayStart - 48 * hour
+    val secondMillis = dayStart - 24 * hour
+    // (key date, key timestamp in epoch millis) -> amounts
+    val events = Seq(
+      ("2023-05-30", firstMillis) -> Seq(10L, 20L),
+      ("2023-05-30", secondMillis) -> Seq(1000L),
+      ("2023-05-31", firstMillis) -> Seq(5L)
+    )
+    val expected: Map[(String, Long), (Option[Long], Option[Long])] =
+      events.map { case (key, amounts) => key -> (Some(amounts.sum), Some(amounts.size.toLong)) }.toMap
+    val java8ApiKey = "spark.sql.datetime.java8API.enabled"
+    val previous = spark.conf.getOption(java8ApiKey)
+
+    // DataFrame.rdd yields java.sql.Date and java.sql.Timestamp by default, java.time.LocalDate and Instant otherwise.
+    Seq(false, true).foreach { java8Api =>
+      spark.conf.set(java8ApiKey, java8Api)
+      try {
+        def date(value: String): Any =
+          if (java8Api) java.time.LocalDate.parse(value) else java.sql.Date.valueOf(value)
+        def timestamp(millis: Long): Any =
+          if (java8Api) java.time.Instant.ofEpochMilli(millis) else new java.sql.Timestamp(millis)
+        def features(df: DataFrame): Map[(String, Long), (Option[Long], Option[Long])] =
+          df.selectExpr("CAST(d AS STRING)", "CAST(t AS LONG) * 1000", "amount_sum_7d", "amount_count_7d")
+            .collect()
+            .map(row =>
+              (row.getString(0), row.getLong(1)) ->
+                (Option(row.get(2)).map(_.asInstanceOf[Long]), Option(row.get(3)).map(_.asInstanceOf[Long])))
+            .toMap
+
+        val eventSchema = StructType(
+          Seq(
+            StructField("d", SparkDateType),
+            StructField("t", SparkTimestampType),
+            StructField("amount", SparkLongType),
+            StructField(Constants.TimeColumn, SparkLongType),
+            StructField(tableUtils.partitionColumn, SparkStringType)
+          ))
+        val eventRows = events.zipWithIndex.flatMap {
+          case (((d, t), amounts), i) =>
+            amounts.map(amount => Row(date(d), timestamp(t), amount, dayStart + (i + 1) * hour, day))
+        }
+        val eventDf = spark.createDataFrame(spark.sparkContext.parallelize(eventRows, 2), eventSchema)
+        val groupBy = new GroupBy(aggregations, Seq("d", "t"), eventDf)
+        assertEquals(s"snapshotEvents with $java8ApiKey=$java8Api",
+                     expected,
+                     features(groupBy.snapshotEvents(PartitionRange(day, day))))
+
+        val querySchema = StructType(
+          Seq(
+            StructField("d", SparkDateType),
+            StructField("t", SparkTimestampType),
+            StructField(Constants.TimeColumn, SparkLongType),
+            StructField(tableUtils.partitionColumn, SparkStringType)
+          ))
+        val queryRows = events.map { case ((d, t), _) => Row(date(d), timestamp(t), dayStart + 36 * hour, nextDay) }
+        val queryDf = spark.createDataFrame(spark.sparkContext.parallelize(queryRows, 2), querySchema)
+        assertEquals(s"temporalEvents with $java8ApiKey=$java8Api", expected, features(groupBy.temporalEvents(queryDf)))
+      } finally {
+        previous.fold(spark.conf.unset(java8ApiKey))(spark.conf.set(java8ApiKey, _))
+      }
+    }
   }
 
   @Test
