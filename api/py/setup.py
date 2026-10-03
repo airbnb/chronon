@@ -60,7 +60,9 @@ setup(
     packages=find_packages(),
     extras_require={
         # Extra requirement to have access to cli commands in python2 environments.
-        "pip2compat": ["click<8"]
+        "pip2compat": ["click<8"],
+        # Required only by the ai.chronon.pyspark notebook module (Py4J bridge to the Chronon JVM).
+        "pyspark": ["pyspark>=3.1"],
     },
     python_requires=">=3.7",
     url=None,
