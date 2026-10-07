@@ -137,6 +137,34 @@ class TableUtilsTest {
   }
 
   @Test
+  def testWriteRepartitionAndSortColsUseAllPartitionColumns(): Unit = {
+    val fields = Seq("key", "value", "region", "ds")
+
+    // single (default) partition column: unchanged behaviour
+    assertEquals((Seq("ds", "salt"), Seq("ds")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("ds"), Seq.empty, "salt"))
+    assertEquals((Seq("ds", "salt"), Seq("ds", "key")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("ds"), Seq("key"), "salt"))
+
+    // multiple partition columns: all of them must cluster and sort, in declared order
+    assertEquals((Seq("region", "ds", "salt"), Seq("region", "ds")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("region", "ds"), Seq.empty, "salt"))
+    assertEquals((Seq("region", "ds", "salt"), Seq("region", "ds", "key")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("region", "ds"), Seq("key"), "salt"))
+
+    // partition columns absent from the df are ignored; none present => salt only
+    assertEquals((Seq("ds", "salt"), Seq("ds")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("missing", "ds"), Seq.empty, "salt"))
+    assertEquals((Seq("salt"), Seq("key")),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq("missing"), Seq("key"), "salt"))
+
+    // callers that pass no partition columns (insertUnPartitioned) default to the table partition column,
+    // so a df carrying it is still clustered and sorted by it
+    assertEquals((Seq(tableUtils.partitionColumn, "salt"), Seq(tableUtils.partitionColumn)),
+                 tableUtils.writeRepartitionAndSortCols(fields, Seq(tableUtils.partitionColumn), Seq.empty, "salt"))
+  }
+
+  @Test
   def testInsertPartitionsAddColumns(): Unit = {
     val tableName = "db.test_table_1"
     spark.sql("CREATE DATABASE IF NOT EXISTS db")
