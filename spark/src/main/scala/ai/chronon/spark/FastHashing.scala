@@ -71,11 +71,15 @@ object FastHashing {
             case (hasher: Hasher, row: Row) =>
               // putString has changed between guava versions and makes Chronon less friendly when
               // dealing with build conflicts, so we instead use putBytes
-              hasher.putBytes(row.getAs[String](index).getBytes(Utf8))
+              val bytes = row.getAs[String](index).getBytes(Utf8)
+              hasher.putInt(bytes.length)
+              hasher.putBytes(bytes)
           }
           case BinaryType => {
             case (hasher: Hasher, row: Row) =>
-              hasher.putBytes(row.getAs[Array[Byte]](index))
+              val bytes = row.getAs[Array[Byte]](index)
+              hasher.putInt(bytes.length)
+              hasher.putBytes(bytes)
           }
           case BooleanType => {
             case (hasher: Hasher, row: Row) =>
@@ -121,8 +125,13 @@ object FastHashing {
 
     { row: Row =>
       val hasher = Hashing.murmur3_128().newHasher()
+      // A null marker per key, and a length before every string and byte array, keep distinct keys from feeding the
+      // hasher the same bytes: ("1", "23") and ("12", "3"), or (null, "a") and ("a", null).
       for (i <- hashFunctions.indices) {
-        if (!row.isNullAt(keyIndices(i))) {
+        if (row.isNullAt(keyIndices(i))) {
+          hasher.putByte(0)
+        } else {
+          hasher.putByte(1)
           hashFunctions(i)(hasher, row)
         }
       }

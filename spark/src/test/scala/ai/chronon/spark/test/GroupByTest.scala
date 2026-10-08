@@ -1192,4 +1192,39 @@ class GroupByTest {
       partitions.contains(tenDaysAgo)
     )
   }
+
+  @Test
+  def testKeysWithSameConcatenatedBytesStayDistinct(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val day = "2023-06-01"
+    val ts = tableUtils.partitionSpec.epochMillis(day) + 3600L * 1000
+    val schema = StructType(
+      Seq(
+        StructField("k1", SparkStringType),
+        StructField("k2", SparkStringType),
+        StructField("amount", SparkLongType),
+        StructField(Constants.TimeColumn, SparkLongType),
+        StructField(tableUtils.partitionColumn, SparkStringType)
+      ))
+    // ("1", "23") and ("12", "3"), and (null, "a") and ("a", null), concatenate to the same key bytes.
+    val rows = Seq(
+      Row("1", "23", 10L, ts, day),
+      Row("12", "3", 1000L, ts, day),
+      Row(null, "a", 100L, ts, day),
+      Row("a", null, 200L, ts, day)
+    )
+    val df = spark.createDataFrame(spark.sparkContext.parallelize(rows, 2), schema)
+    val aggregations = Seq(Builders.Aggregation(Operation.SUM, "amount", Seq(new Window(7, TimeUnit.DAYS))))
+
+    val result = new GroupBy(aggregations, Seq("k1", "k2"), df)
+      .snapshotEvents(PartitionRange(day, day))
+      .collect()
+      .map(row => (row.getAs[String]("k1"), row.getAs[String]("k2")) -> row.getAs[Long]("amount_sum_7d"))
+      .toMap
+    val expected: Map[(String, String), Long] =
+      Map(("1", "23") -> 10L, ("12", "3") -> 1000L, (null, "a") -> 100L, ("a", null) -> 200L)
+    assertEquals(expected, result)
+  }
 }
