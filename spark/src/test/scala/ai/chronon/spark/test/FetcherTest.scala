@@ -374,7 +374,7 @@ class FetcherTest extends TestCase {
     queriesDf.save(queriesTable)
 
     val joinConf = Builders.Join(
-      left = Builders.Source.events(Builders.Query(startPartition = today), table = queriesTable),
+      left = Builders.Source.events(Builders.Query(startPartition = yesterday), table = queriesTable),
       joinParts = Seq(
         Builders.JoinPart(groupBy = vendorRatingsGroupBy, keyMapping = Map("vendor_id" -> "vendor")),
         Builders.JoinPart(groupBy = userPaymentsGroupBy, keyMapping = Map("user_id" -> "user")),
@@ -862,11 +862,10 @@ class FetcherTest extends TestCase {
   def testTemporalFetchJoinGenerated(): Unit = {
     val namespace = "generated_fetch"
     val joinConf = generateRandomData(namespace)
-    compareTemporalFetch(joinConf,
-                         dummyTableUtils.partitionSpec.at(System.currentTimeMillis()),
-                         namespace,
-                         consistencyCheck = true,
-                         dropDsOnWrite = false)
+    // Compute the join for yesterday, not today: generated event timestamps run up to "now", so
+    // right after UTC midnight the `today` partition of the left table can be empty, the join
+    // writes nothing and the expected table is never created.
+    compareTemporalFetch(joinConf, yesterday, namespace, consistencyCheck = true, dropDsOnWrite = false)
   }
 
   def testTemporalTiledFetchJoinDeterministic(): Unit = {
