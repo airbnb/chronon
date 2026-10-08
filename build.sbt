@@ -418,6 +418,8 @@ val sparkBaseSettings: Seq[Setting[_]] = Seq(
   mainClass in (Compile, run) := Some("ai.chronon.spark.Driver"),
   cleanFiles ++= Seq(file(tmp_warehouse)),
   Test / testOptions += Tests.Setup(() => cleanSparkMeta()),
+  // Test classes share one local SparkSession; running them concurrently in the same JVM is unsafe.
+  Test / parallelExecution := false,
   // compatibility for m1 chip laptop
   libraryDependencies += "org.xerial.snappy" % "snappy-java" % "1.1.8.4" % Test
 ) ++ addArtifact(assembly / artifact, assembly) ++ publishSettings
