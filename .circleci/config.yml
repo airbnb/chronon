@@ -46,32 +46,12 @@ jobs:
                   shell: /bin/bash -leuxo pipefail
                   command: |
                       conda activate chronon_py
-                      # Increase if we see OOM.
-                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:-UseContainerSupport -XX:MaxPermSize=4G -Xmx4G -Xms2G"
-
-                      # Split tests across parallel containers, excluding Fetcher tests
-                      TESTFILES=$(find spark/src/test/scala aggregator/src/test/scala -name "*Test.scala" | \
-                        grep -v "FetcherTest" | \
-                        sort | \
-                        circleci tests split --split-by=timings --timings-type=filename)
-
-                      # Convert file paths to fully qualified class names and run tests
-                      for filepath in $TESTFILES; do
-                        if [[ $filepath == spark/* ]]; then
-                          module="spark_uber"
-                        elif [[ $filepath == aggregator/* ]]; then
-                          module="aggregator"
-                        else
-                          continue
-                        fi
-
-                        classname=$(echo "$filepath" | \
-                          sed 's|spark/src/test/scala/||; s|aggregator/src/test/scala/||' | \
-                          sed 's|/|.|g' | \
-                          sed 's|\.scala$||')
-                        echo "Running test: $module / $classname"
-                        sbt "++ 2.12.12; $module/testOnly $classname"
-                      done
+                      # One sbt JVM now runs several Spark test classes back to back, so give it the
+                      # same heap as the Scala 13 job (the 2xlarge executor has 32G).
+                      export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:-UseContainerSupport -XX:MaxPermSize=8G -Xmx8G -Xms4G"
+                      # Test classes are split across containers by timing and run in one sbt
+                      # invocation per container. See .circleci/run_split_tests.sh.
+                      .circleci/run_split_tests.sh 2.12.12
             - store_test_results:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
@@ -109,30 +89,9 @@ jobs:
                       conda activate chronon_py
                       # Increase if we see OOM.
                       export SBT_OPTS="-XX:+CMSClassUnloadingEnabled -XX:-UseContainerSupport -XX:MaxPermSize=8G -Xmx8G -Xms4G"
-
-                      # Split tests across parallel containers, excluding Fetcher tests
-                      TESTFILES=$(find spark/src/test/scala aggregator/src/test/scala -name "*Test.scala" | \
-                        grep -v "FetcherTest" | \
-                        sort | \
-                        circleci tests split --split-by=timings --timings-type=filename)
-
-                      # Convert file paths to fully qualified class names and run tests
-                      for filepath in $TESTFILES; do
-                        if [[ $filepath == spark/* ]]; then
-                          module="spark_uber"
-                        elif [[ $filepath == aggregator/* ]]; then
-                          module="aggregator"
-                        else
-                          continue
-                        fi
-
-                        classname=$(echo "$filepath" | \
-                          sed 's|spark/src/test/scala/||; s|aggregator/src/test/scala/||' | \
-                          sed 's|/|.|g' | \
-                          sed 's|\.scala$||')
-                        echo "Running test: $module / $classname"
-                        sbt "++ 2.13.6; $module/testOnly $classname"
-                      done
+                      # Test classes are split across containers by timing and run in one sbt
+                      # invocation per container. See .circleci/run_split_tests.sh.
+                      .circleci/run_split_tests.sh 2.13.6
             - store_test_results:
                   path: /chronon/spark/target/test-reports
             - store_test_results:
