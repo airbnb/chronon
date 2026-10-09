@@ -27,7 +27,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{col, lit, to_json}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
-import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.{any, eq => meq}
 import org.mockito.Mockito.{never, spy, verify, when}
 import org.slf4j.LoggerFactory
 
@@ -491,6 +491,28 @@ class AnalyzerTest {
     val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
     val analyzerResult = analyzer.analyzeGroupBy(tableGroupBy)
     assertEquals(1, analyzerResult.noAccessTables.size)
+  }
+
+  @Test
+  def testTablePermissionValidationRespectsEndDate(): Unit = {
+    // regression test for https://github.com/airbnb/chronon/issues/709 -
+    // the permission check's fallback partition should be derived from the analyzer's
+    // configured end date, not from wall-clock "today", so that a historical backfill
+    // (end date far in the past) doesn't get checked against a partition that hasn't landed yet.
+    val spark: SparkSession =
+      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = spy(TableUtils(spark))
+    when(tableUtils.checkTablePermission(any(), any(), any())).thenReturn(true)
+    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val table = s"$namespace.some_table"
+
+    val expectedPartitionFilter = tableUtils.partitionSpec.minus(oneYearAgo, new Window(2, TimeUnit.DAYS))
+
+    val analyzer = new Analyzer(tableUtils, conf = null, startDate = oneYearAgo, endDate = oneYearAgo)
+    analyzer.runTablePermissionValidation(Set(table))
+
+    verify(tableUtils).checkTablePermission(meq(table), meq(expectedPartitionFilter), any())
   }
 
   @Test(expected = classOf[java.lang.AssertionError])
