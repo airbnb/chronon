@@ -955,16 +955,30 @@ object Driver {
 
   object GroupByStreaming {
     @transient lazy val logger = LoggerFactory.getLogger(getClass)
+
+    // Thrown by runWithRetries when an active query has not reported progress within the timeout.
+    // Retried like ContinuousTaskRetryException.
+    class StreamingQueryStalledException(msg: String) extends RuntimeException(msg)
+
+    // Millis of the last query start or progress event. Continuous triggers commit an epoch every
+    // interval even without input, so a healthy query on a quiet topic keeps this fresh.
+    @volatile private[spark] var lastProgressMillis: Long = System.currentTimeMillis()
+
     def dataStream(session: SparkSession, host: String, topic: String): DataFrame = {
       TopicChecker.topicShouldExist(topic, host)
       session.streams.addListener(new StreamingQueryListener() {
         override def onQueryStarted(queryStarted: QueryStartedEvent): Unit = {
+          lastProgressMillis = System.currentTimeMillis()
           logger.info("Query started: " + queryStarted.id)
         }
         override def onQueryTerminated(queryTerminated: QueryTerminatedEvent): Unit = {
-          logger.info("Query terminated: " + queryTerminated.id)
+          queryTerminated.exception match {
+            case Some(e) => logger.error(s"Query terminated with exception: ${queryTerminated.id}: $e")
+            case None    => logger.info("Query terminated: " + queryTerminated.id)
+          }
         }
         override def onQueryProgress(queryProgress: QueryProgressEvent): Unit = {
+          lastProgressMillis = System.currentTimeMillis()
           logger.info("Query made progress: " + queryProgress.progress)
         }
       })
@@ -1034,8 +1048,19 @@ object Driver {
     // ContinuousTaskRetryException on any task-level retry, since continuous mode doesn't support
     // task retries itself - see org.apache.spark.sql.execution.streaming.continuous.ContinuousTaskRetryException.
     // We treat that as a query-level failure and restart the whole query, up to maxRetries times.
-    // package-private so it can be exercised directly (with a fake startQuery) in tests, without a real SparkSession.
-    private[spark] def runWithRetries(maxRetries: Int)(startQuery: () => StreamingQuery): Unit = {
+    //
+    // A query can also hang without terminating, e.g. after the cluster manager restarts and its
+    // executors are lost; awaitTermination() would then block forever with the app still alive.
+    // So we poll, and stop a query that has not progressed within progressTimeoutMs. That counts as a
+    // retryable failure; once retries are exhausted the exception propagates and the app exits non-zero.
+    //
+    // package-private so tests can drive it with a fake startQuery, clock and progress source.
+    private[spark] def runWithRetries(maxRetries: Int,
+                                      progressTimeoutMs: Long = Long.MaxValue,
+                                      pollIntervalMs: Long = 10000,
+                                      lastProgress: () => Long = () => lastProgressMillis,
+                                      now: () => Long = () => System.currentTimeMillis())(
+        startQuery: () => StreamingQuery): Unit = {
       var attempt = 0
       var succeeded = false
       while (!succeeded) {
@@ -1043,7 +1068,7 @@ object Driver {
           logger.info(s"Restarting streaming query, attempt $attempt/$maxRetries")
         val query = startQuery()
         try {
-          query.awaitTermination()
+          awaitProgressOrTermination(query, progressTimeoutMs, pollIntervalMs, lastProgress, now)
           succeeded = true
         } catch {
           case e: StreamingQueryException if attempt < maxRetries && isCausedBy[ContinuousTaskRetryException](e) =>
@@ -1051,6 +1076,31 @@ object Driver {
             logger.warn(
               s"Streaming query failed with ContinuousTaskRetryException, restarting (attempt $attempt/$maxRetries)",
               e)
+          case e: StreamingQueryStalledException if attempt < maxRetries =>
+            attempt += 1
+            logger.warn(s"Streaming query stalled, restarting (attempt $attempt/$maxRetries)", e)
+        }
+      }
+    }
+
+    // Blocks until `query` terminates, or stops it and throws StreamingQueryStalledException once it
+    // has gone progressTimeoutMs without progress.
+    private def awaitProgressOrTermination(query: StreamingQuery,
+                                           progressTimeoutMs: Long,
+                                           pollIntervalMs: Long,
+                                           lastProgress: () => Long,
+                                           now: () => Long): Unit = {
+      while (!query.awaitTermination(pollIntervalMs)) {
+        val sinceProgress = now() - lastProgress()
+        if (sinceProgress > progressTimeoutMs) {
+          val msg =
+            s"Streaming query ${query.id} made no progress for ${sinceProgress}ms (timeout ${progressTimeoutMs}ms), stopping it"
+          logger.error(msg)
+          try query.stop()
+          catch {
+            case e: Exception => logger.warn(s"Failed to stop stalled streaming query ${query.id}", e)
+          }
+          throw new StreamingQueryStalledException(msg)
         }
       }
     }
@@ -1093,7 +1143,10 @@ object Driver {
             .run()
         }
         val maxRetries: Int = session.conf.get("spark.chronon.stream.max_retries", "0").toInt
-        runWithRetries(maxRetries)(startQuery)
+        // 15 minutes by default: several 2-minute continuous epochs plus slack for a slow commit.
+        val progressTimeoutMs: Long =
+          session.conf.get("spark.chronon.stream.progress_timeout_ms", (15 * 60 * 1000L).toString).toLong
+        runWithRetries(maxRetries, progressTimeoutMs)(startQuery)
       }
     }
   }
