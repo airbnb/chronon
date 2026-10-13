@@ -488,31 +488,15 @@ class AnalyzerTest {
       accuracy = Accuracy.SNAPSHOT
     )
 
-    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+    // use a historical range (end date in the past) to regression-test
+    // https://github.com/airbnb/chronon/issues/709 - the permission check's fallback
+    // partition should be derived from the analyzer's end date, not wall-clock "today"
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneYearAgo, oneMonthAgo)
     val analyzerResult = analyzer.analyzeGroupBy(tableGroupBy)
     assertEquals(1, analyzerResult.noAccessTables.size)
-  }
 
-  @Test
-  def testTablePermissionValidationRespectsEndDate(): Unit = {
-    // regression test for https://github.com/airbnb/chronon/issues/709 -
-    // the permission check's fallback partition should be derived from the analyzer's
-    // configured end date, not from wall-clock "today", so that a historical backfill
-    // (end date far in the past) doesn't get checked against a partition that hasn't landed yet.
-    val spark: SparkSession =
-      SparkSessionBuilder.build("AnalyzerTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
-    val tableUtils = spy(TableUtils(spark))
-    when(tableUtils.checkTablePermission(any(), any(), any())).thenReturn(true)
-    val namespace = "analyzer_test_ns" + "_" + Random.alphanumeric.take(6).mkString
-    tableUtils.createDatabase(namespace)
-    val table = s"$namespace.some_table"
-
-    val expectedPartitionFilter = tableUtils.partitionSpec.minus(oneYearAgo, new Window(2, TimeUnit.DAYS))
-
-    val analyzer = new Analyzer(tableUtils, conf = null, startDate = oneYearAgo, endDate = oneYearAgo)
-    analyzer.runTablePermissionValidation(Set(table))
-
-    verify(tableUtils).checkTablePermission(meq(table), meq(expectedPartitionFilter), any())
+    val expectedPartitionFilter = tableUtils.partitionSpec.minus(oneMonthAgo, new Window(2, TimeUnit.DAYS))
+    verify(tableUtils).checkTablePermission(any(), meq(expectedPartitionFilter), any())
   }
 
   @Test(expected = classOf[java.lang.AssertionError])
