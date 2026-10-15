@@ -72,6 +72,8 @@ object Metrics {
     val LatencyMinutes = "latency.minutes"
     val ChainRequestBatchSize = "chain.request_batch_size"
     val RequestBatchSize = "request_batch_size"
+    // Inputs carried by one model inference call, after dedupe and chunking.
+    val InferenceInputCount = "inference.input_count"
 
     val PartitionCount = "partition.count"
     val RowCount = "row.count"

@@ -17,22 +17,128 @@
 package ai.chronon.online
 
 import ai.chronon.api.Extensions.ModelTransformOps
-import ai.chronon.api.ModelTransform
+import ai.chronon.api.{Model, ModelTransform}
 import ai.chronon.online.Fetcher.ResponseWithContext
 import org.slf4j.{Logger, LoggerFactory}
 
+import java.util.concurrent.{ScheduledThreadPoolExecutor, ThreadFactory, TimeUnit}
 import scala.collection.{Seq, mutable}
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.{ExecutionContext, Future, Promise}
+import scala.util.{Random, Try}
 
 object FetcherModelUtils {
 
   @transient implicit lazy val logger: Logger = LoggerFactory.getLogger(getClass)
 
-  private def withRetry[T](maxRetries: Int)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
+  /** Keys read from `model.inferenceSpec.modelBackendParams`. All default to the historical behavior. */
+  object InferenceParams {
+    // Retries after the first failed attempt. Historical value: 2 immediate retries.
+    val MaxRetries = "chronon_inference_max_retries"
+    // Delay before the first retry; doubles per retry up to MaxBackoffMs. 0 keeps retries immediate.
+    val BackoffMs = "chronon_inference_retry_backoff_ms"
+    val MaxBackoffMs = "chronon_inference_retry_max_backoff_ms"
+    // Comma-separated substrings; a failure whose cause chain has a class name or message containing
+    // one of them is not retried. Meant for back-pressure and rate-limit responses, where a retry
+    // only adds load to a backend that has just asked for less of it.
+    val NonRetryableExceptions = "chronon_inference_non_retryable_exceptions"
+    // Inputs per backend call. 0 sends every deduped input for a model in one merged request, so
+    // one failure nulls the model outputs of every row in the partition; a positive value isolates
+    // failures to the chunk they happened in.
+    val ChunkSize = "chronon_inference_chunk_size"
+  }
+
+  private[online] case class RetryPolicy(maxRetries: Int,
+                                         backoffMs: Long,
+                                         maxBackoffMs: Long,
+                                         nonRetryablePatterns: Seq[String]) {
+    def isRetryable(e: Throwable): Boolean = {
+      if (nonRetryablePatterns.isEmpty) return true
+      val causes = Iterator.iterate(e)(_.getCause).takeWhile(_ != null).take(16)
+      !causes.exists { t =>
+        val name = t.getClass.getName
+        val message = Option(t.getMessage).getOrElse("")
+        nonRetryablePatterns.exists(p => name.contains(p) || message.contains(p))
+      }
+    }
+
+    /** Exponential backoff with up to 20% jitter, so retries from many partitions do not align. */
+    def delayMsFor(attempt: Int): Long = {
+      if (backoffMs <= 0) return 0L
+      val base = math.min(maxBackoffMs, backoffMs * (1L << math.min(attempt, 30)))
+      base + (Random.nextDouble() * math.max(1L, base / 5)).toLong
+    }
+  }
+
+  private[online] object RetryPolicy {
+    val default: RetryPolicy =
+      RetryPolicy(maxRetries = 2, backoffMs = 0, maxBackoffMs = 0, nonRetryablePatterns = Seq.empty)
+
+    def fromParams(params: Map[String, String]): RetryPolicy = {
+      def long(key: String, fallback: Long): Long =
+        params.get(key).flatMap(v => Try(v.trim.toLong).toOption).getOrElse(fallback)
+      val backoff = long(InferenceParams.BackoffMs, default.backoffMs)
+      RetryPolicy(
+        maxRetries = long(InferenceParams.MaxRetries, default.maxRetries).toInt,
+        backoffMs = backoff,
+        maxBackoffMs = long(InferenceParams.MaxBackoffMs, backoff * 10),
+        nonRetryablePatterns = params
+          .get(InferenceParams.NonRetryableExceptions)
+          .toSeq
+          .flatMap(_.split(","))
+          .map(_.trim)
+          .filter(_.nonEmpty)
+      )
+    }
+
+    def fromModel(model: Model): RetryPolicy = fromParams(backendParams(model))
+  }
+
+  private[online] def backendParams(model: Model): Map[String, String] = {
+    import scala.util.ScalaJavaConversions.MapOps
+    Option(model.inferenceSpec).flatMap(s => Option(s.modelBackendParams)).map(_.toScala).getOrElse(Map.empty)
+  }
+
+  private[online] def inferenceChunkSize(model: Model): Int =
+    backendParams(model).get(InferenceParams.ChunkSize).flatMap(v => Try(v.trim.toInt).toOption).getOrElse(0)
+
+  /** One daemon thread that only fires delayed retries; the retried call itself runs on the caller's context. */
+  private object RetryScheduler {
+    lazy val executor: ScheduledThreadPoolExecutor = {
+      val factory = new ThreadFactory {
+        override def newThread(r: Runnable): Thread = {
+          val t = new Thread(r, "chronon-inference-retry")
+          t.setDaemon(true)
+          t
+        }
+      }
+      new ScheduledThreadPoolExecutor(1, factory)
+    }
+
+    def after[T](delayMs: Long)(f: => Future[T])(implicit ec: ExecutionContext): Future[T] = {
+      if (delayMs <= 0) f
+      else {
+        val promise = Promise[T]()
+        executor.schedule(new Runnable {
+                            override def run(): Unit = promise.completeWith(Future(f).flatMap(identity))
+                          },
+                          delayMs,
+                          TimeUnit.MILLISECONDS)
+        promise.future
+      }
+    }
+  }
+
+  private[online] def withRetry[T](policy: RetryPolicy, attempt: Int = 0)(f: => Future[T])(implicit
+      ec: ExecutionContext): Future[T] = {
     f.recoverWith {
-      case e: Throwable if maxRetries > 0 =>
-        logger.warn(s"Model inference failed, retrying ($maxRetries retries left): ${e.getMessage}")
-        withRetry(maxRetries - 1)(f)
+      case e: Throwable if attempt < policy.maxRetries && policy.isRetryable(e) =>
+        val delayMs = policy.delayMsFor(attempt)
+        logger.warn(
+          s"Model inference failed, retrying in ${delayMs}ms (${policy.maxRetries - attempt - 1} retries left after this): ${e.getMessage}")
+        RetryScheduler.after(delayMs)(withRetry(policy, attempt + 1)(f))
+      case e: Throwable if attempt < policy.maxRetries =>
+        logger.warn(s"Model inference failed with a non-retryable error, not retrying: ${e.getMessage}")
+        Future.failed(e)
     }
   }
 
@@ -104,53 +210,71 @@ object FetcherModelUtils {
 
     // First, group by model because each model inference call can handle only 1 model
     val requestsByModel = runModelInferenceRequestsWithResultMap.groupBy(_._1.model)
-    val futures = requestsByModel.map {
+    val futures = requestsByModel.flatMap {
       case (model, requests) =>
-        val mergedRequest = requests.map(_._1).reduce(_ merge _)
-        val modelTransformContexts: Seq[Seq[ModelTransformContext]] = requests.map(_._2)
-
-        val modelName = model.metaData.name
-        // Build the metric tag for join by simply concatenating all join names
-        val joins = modelTransformContexts.flatten.map(_.joinName).distinct.sorted.mkString(",")
-        val ctx = Metrics.Context(environment = Metrics.Environment.ModelTransform, join = joins, model = modelName)
-        val startTs = System.currentTimeMillis()
-        ctx.increment(Metrics.Name.RequestCount)
-        ctx.increment(Metrics.Name.RequestBatchSize)
-
-        withRetry(maxRetries = 2)(modelBackend.runModelInference(mergedRequest))
-          .map { response =>
-            assert(
-              response.outputs.size == modelTransformContexts.size,
-              s"Model $modelName returned ${response.outputs.size} outputs, but expected ${modelTransformContexts.size} outputs for joins: $joins"
-            )
-            ctx.increment(Metrics.Name.ResponseCount)
-            response.outputs.zip(modelTransformContexts)
-          }
-          .recover {
-            case e: Throwable =>
-              ctx.incrementException(e)
-              val exceptionMap = Map(model.metaData.name + "_exception" -> e)
-              modelTransformContexts.map { modelTransformContext =>
-                // For each model transform context, we return an exception in the result map
-                (exceptionMap, modelTransformContext)
-              }
-          }
-          .map { zippedOutputs =>
-            zippedOutputs.iterator.foreach {
-              case (outputs, modelTransformContexts) =>
-                outputs.foreach {
-                  case (key, value) =>
-                    // For each output, update all result maps
-                    modelTransformContexts.foreach(_.resultMap.put(key, value))
-                }
-            }
-
-            // Instrument model transform latency
-            ctx.distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTs)
-          }
+        val policy = RetryPolicy.fromModel(model)
+        val chunkSize = inferenceChunkSize(model)
+        // Each entry carries one deduped input, so chunking here bounds the inputs per backend call
+        // and the rows that share one failure. chunkSize <= 0 keeps the single merged request.
+        val chunks: Seq[Seq[(RunModelInferenceRequest, Seq[ModelTransformContext])]] =
+          if (chunkSize > 0) requests.grouped(chunkSize).toList else Seq(requests)
+        chunks.map { chunk =>
+          runChunkAndCollectResults(model, chunk, policy, modelBackend)
+        }
     }
 
     Future.sequence(futures)
+  }
+
+  private def runChunkAndCollectResults(
+      model: Model,
+      requests: Seq[(RunModelInferenceRequest, Seq[ModelTransformContext])],
+      policy: RetryPolicy,
+      modelBackend: ModelBackend
+  )(implicit executionContext: ExecutionContext): Future[Unit] = {
+    val mergedRequest = requests.map(_._1).reduce(_ merge _)
+    val modelTransformContexts: Seq[Seq[ModelTransformContext]] = requests.map(_._2)
+
+    val modelName = model.metaData.name
+    // Build the metric tag for join by simply concatenating all join names
+    val joins = modelTransformContexts.flatten.map(_.joinName).distinct.sorted.mkString(",")
+    val ctx = Metrics.Context(environment = Metrics.Environment.ModelTransform, join = joins, model = modelName)
+    val startTs = System.currentTimeMillis()
+    ctx.increment(Metrics.Name.RequestCount)
+    ctx.increment(Metrics.Name.RequestBatchSize)
+    ctx.distribution(Metrics.Name.InferenceInputCount, mergedRequest.inputs.size)
+
+    withRetry(policy)(modelBackend.runModelInference(mergedRequest))
+      .map { response =>
+        assert(
+          response.outputs.size == modelTransformContexts.size,
+          s"Model $modelName returned ${response.outputs.size} outputs, but expected ${modelTransformContexts.size} outputs for joins: $joins"
+        )
+        ctx.increment(Metrics.Name.ResponseCount)
+        response.outputs.zip(modelTransformContexts)
+      }
+      .recover {
+        case e: Throwable =>
+          ctx.incrementException(e)
+          val exceptionMap = Map(model.metaData.name + "_exception" -> e)
+          modelTransformContexts.map { modelTransformContext =>
+            // For each model transform context, we return an exception in the result map
+            (exceptionMap, modelTransformContext)
+          }
+      }
+      .map { zippedOutputs =>
+        zippedOutputs.iterator.foreach {
+          case (outputs, modelTransformContexts) =>
+            outputs.foreach {
+              case (key, value) =>
+                // For each output, update all result maps
+                modelTransformContexts.foreach(_.resultMap.put(key, value))
+            }
+        }
+
+        // Instrument model transform latency
+        ctx.distribution(Metrics.Name.LatencyMillis, System.currentTimeMillis() - startTs)
+      }
   }
 
   /*
