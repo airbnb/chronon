@@ -627,8 +627,12 @@ class Analyzer(tableUtils: TableUtils,
   def runTablePermissionValidation(sources: Set[String], partitionColOpt: Option[String] = None): Set[String] = {
     logger.info(s"Validating ${sources.size} tables permissions ...")
     val today = tableUtils.partitionSpec.at(System.currentTimeMillis())
+    // Respect the analysis range's end date instead of always checking against wall-clock "today" -
+    // otherwise a run whose end date is in the past (e.g. a historical backfill) can spuriously fail
+    // permission checks against a partition that simply hasn't landed yet.
+    val checkDate = Seq(range.end, today).min
     //todo: handle offset-by-1 depending on temporal vs snapshot accuracy
-    val partitionFilter = tableUtils.partitionSpec.minus(today, new Window(2, TimeUnit.DAYS))
+    val partitionFilter = tableUtils.partitionSpec.minus(checkDate, new Window(2, TimeUnit.DAYS))
     sources.filter { sourceTable =>
       !tableUtils.checkTablePermission(sourceTable, partitionFilter, partitionColOpt)
     }
