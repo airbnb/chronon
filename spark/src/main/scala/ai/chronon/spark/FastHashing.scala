@@ -71,11 +71,15 @@ object FastHashing {
             case (hasher: Hasher, row: Row) =>
               // putString has changed between guava versions and makes Chronon less friendly when
               // dealing with build conflicts, so we instead use putBytes
-              hasher.putBytes(row.getAs[String](index).getBytes(Utf8))
+              val bytes = row.getAs[String](index).getBytes(Utf8)
+              hasher.putInt(bytes.length)
+              hasher.putBytes(bytes)
           }
           case BinaryType => {
             case (hasher: Hasher, row: Row) =>
-              hasher.putBytes(row.getAs[Array[Byte]](index))
+              val bytes = row.getAs[Array[Byte]](index)
+              hasher.putInt(bytes.length)
+              hasher.putBytes(bytes)
           }
           case BooleanType => {
             case (hasher: Hasher, row: Row) =>
@@ -89,15 +93,27 @@ object FastHashing {
             case (hasher: Hasher, row: Row) =>
               hasher.putDouble(row.getAs[Double](index))
           }
+          // Rows from DataFrame.rdd hold java.sql.Date and java.sql.Timestamp, or java.time.LocalDate and
+          // java.time.Instant if spark.sql.datetime.java8API.enabled was set when the DataFrame was created.
           case DateType => {
             case (hasher: Hasher, row: Row) =>
-              // Date is internally represented in spark as a integer representing the
-              // number of days since 1970-01-01
-              hasher.putInt(row.getAs[Int](index))
+              // The calendar date, since java.sql.Date.getTime depends on the JVM time zone.
+              val epochDay = row.get(index) match {
+                case date: java.sql.Date       => date.toLocalDate.toEpochDay
+                case date: java.time.LocalDate => date.toEpochDay
+              }
+              hasher.putLong(epochDay)
           }
           case TimestampType => {
             case (hasher: Hasher, row: Row) =>
-              hasher.putLong(row.getAs[Long](index))
+              row.get(index) match {
+                case timestamp: java.sql.Timestamp =>
+                  hasher.putLong(Math.floorDiv(timestamp.getTime, 1000L))
+                  hasher.putInt(timestamp.getNanos)
+                case instant: java.time.Instant =>
+                  hasher.putLong(instant.getEpochSecond)
+                  hasher.putInt(instant.getNano)
+              }
           }
           case _ =>
             throw new UnsupportedOperationException(
@@ -109,8 +125,13 @@ object FastHashing {
 
     { row: Row =>
       val hasher = Hashing.murmur3_128().newHasher()
+      // A null marker per key, and a length before every string and byte array, keep distinct keys from feeding the
+      // hasher the same bytes: ("1", "23") and ("12", "3"), or (null, "a") and ("a", null).
       for (i <- hashFunctions.indices) {
-        if (!row.isNullAt(keyIndices(i))) {
+        if (row.isNullAt(keyIndices(i))) {
+          hasher.putByte(0)
+        } else {
+          hasher.putByte(1)
           hashFunctions(i)(hasher, row)
         }
       }

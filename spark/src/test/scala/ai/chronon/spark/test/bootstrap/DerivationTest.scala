@@ -640,14 +640,17 @@ class DerivationTest {
     val namespace = "test_group_by_derivations"
     tableUtils.createDatabase(namespace)
     val groupBy = BootstrapUtils.buildGroupBy(namespace, spark)
-    groupBy.setBackfillStartDate(today)
+    // Backfill yesterday, not today: generated timestamps run up to "now", so right after UTC
+    // midnight the `today` source partition can be empty and computeBackfill writes nothing.
+    val endPartition = tableUtils.partitionSpec.before(today)
+    groupBy.setBackfillStartDate(endPartition)
     groupBy.setDerivations(
       Seq(Builders.Derivation.star(),
           Builders.Derivation(
             name = "amount_dollars_avg_15d",
             expression = "amount_dollars_sum_15d / 15"
           )).toJava)
-    ai.chronon.spark.GroupBy.computeBackfill(groupBy, today, tableUtils)
+    ai.chronon.spark.GroupBy.computeBackfill(groupBy, endPartition, tableUtils)
     val actualDf = tableUtils.sql(s"""
          |select * from $namespace.${groupBy.metaData.cleanName}
          |""".stripMargin)

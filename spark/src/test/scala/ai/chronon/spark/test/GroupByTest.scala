@@ -40,7 +40,14 @@ import ai.chronon.spark._
 import ai.chronon.spark.catalog.TableUtils
 import com.google.gson.Gson
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.types.{StructField, StructType, LongType => SparkLongType, StringType => SparkStringType}
+import org.apache.spark.sql.types.{
+  StructField,
+  StructType,
+  DateType => SparkDateType,
+  LongType => SparkLongType,
+  StringType => SparkStringType,
+  TimestampType => SparkTimestampType
+}
 import org.apache.spark.sql.{Encoders, Row, SparkSession}
 import org.junit.Assert._
 import org.junit.Test
@@ -141,6 +148,60 @@ class GroupByTest {
       println("diff result rows")
     }
     assertEquals(0, diff.count())
+  }
+
+  @Test
+  def testDateAndTimestampKeys(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val day = "2023-06-01"
+    val ts = tableUtils.partitionSpec.epochMillis(day) + 3600L * 1000
+    val keyMillis = ts - 48 * 3600L * 1000
+    val schema = StructType(
+      Seq(
+        StructField("d", SparkDateType),
+        StructField("t", SparkTimestampType),
+        StructField("amount", SparkLongType),
+        StructField(Constants.TimeColumn, SparkLongType),
+        StructField(tableUtils.partitionColumn, SparkStringType)
+      ))
+
+    // DataFrame.rdd rows hold java.sql.Date / Timestamp by default and java.time.LocalDate / Instant with
+    // spark.sql.datetime.java8API.enabled. Both representations of a value must hash the same.
+    val keyBuilder = FastHashing.generateKeyBuilder(Array("d", "t"), schema)
+    val sqlRow = Row(java.sql.Date.valueOf("2023-05-30"), new java.sql.Timestamp(keyMillis), 0L, ts, day)
+    val java8Row = Row(java.time.LocalDate.parse("2023-05-30"), java.time.Instant.ofEpochMilli(keyMillis), 0L, ts, day)
+    assertEquals(keyBuilder(sqlRow), keyBuilder(java8Row))
+    assertNotEquals(
+      keyBuilder(sqlRow),
+      keyBuilder(Row(java.sql.Date.valueOf("2023-05-31"), new java.sql.Timestamp(keyMillis), 0L, ts, day)))
+    assertNotEquals(
+      keyBuilder(sqlRow),
+      keyBuilder(Row(java.sql.Date.valueOf("2023-05-30"), new java.sql.Timestamp(keyMillis + 1), 0L, ts, day)))
+
+    // End to end with the java8 API on, which also needs LocalDate and Instant registered with Kryo for the shuffle.
+    val java8ApiKey = "spark.sql.datetime.java8API.enabled"
+    val previous = spark.conf.getOption(java8ApiKey)
+    spark.conf.set(java8ApiKey, "true")
+    try {
+      val rows = Seq(
+        Row(java.time.LocalDate.parse("2023-05-30"), java.time.Instant.ofEpochMilli(keyMillis), 10L, ts, day),
+        Row(java.time.LocalDate.parse("2023-05-30"), java.time.Instant.ofEpochMilli(keyMillis), 20L, ts, day),
+        Row(java.time.LocalDate.parse("2023-05-31"), java.time.Instant.ofEpochMilli(keyMillis), 5L, ts, day)
+      )
+      val df = spark.createDataFrame(spark.sparkContext.parallelize(rows, 2), schema)
+      val aggregations = Seq(Builders.Aggregation(Operation.SUM, "amount", Seq(new Window(7, TimeUnit.DAYS))))
+      val result = new GroupBy(aggregations, Seq("d", "t"), df)
+        .snapshotEvents(PartitionRange(day, day))
+        .selectExpr("CAST(d AS STRING)", "CAST(t AS LONG) * 1000", "amount_sum_7d")
+        .collect()
+        .map(row => (row.getString(0), row.getLong(1)) -> row.getLong(2))
+        .toMap
+      assertEquals(Map(("2023-05-30", keyMillis) -> 30L, ("2023-05-31", keyMillis) -> 5L), result)
+    } finally {
+      previous.fold(spark.conf.unset(java8ApiKey))(spark.conf.set(java8ApiKey, _))
+    }
   }
 
   @Test
@@ -1130,5 +1191,40 @@ class GroupByTest {
       s"Expected $tenDaysAgo in partitions when historicalBackfill is unset, got: $partitions",
       partitions.contains(tenDaysAgo)
     )
+  }
+
+  @Test
+  def testKeysWithSameConcatenatedBytesStayDistinct(): Unit = {
+    val spark: SparkSession =
+      SparkSessionBuilder.build("GroupByTest" + "_" + Random.alphanumeric.take(6).mkString, local = true)
+    implicit val tableUtils = TableUtils(spark)
+    val day = "2023-06-01"
+    val ts = tableUtils.partitionSpec.epochMillis(day) + 3600L * 1000
+    val schema = StructType(
+      Seq(
+        StructField("k1", SparkStringType),
+        StructField("k2", SparkStringType),
+        StructField("amount", SparkLongType),
+        StructField(Constants.TimeColumn, SparkLongType),
+        StructField(tableUtils.partitionColumn, SparkStringType)
+      ))
+    // ("1", "23") and ("12", "3"), and (null, "a") and ("a", null), concatenate to the same key bytes.
+    val rows = Seq(
+      Row("1", "23", 10L, ts, day),
+      Row("12", "3", 1000L, ts, day),
+      Row(null, "a", 100L, ts, day),
+      Row("a", null, 200L, ts, day)
+    )
+    val df = spark.createDataFrame(spark.sparkContext.parallelize(rows, 2), schema)
+    val aggregations = Seq(Builders.Aggregation(Operation.SUM, "amount", Seq(new Window(7, TimeUnit.DAYS))))
+
+    val result = new GroupBy(aggregations, Seq("k1", "k2"), df)
+      .snapshotEvents(PartitionRange(day, day))
+      .collect()
+      .map(row => (row.getAs[String]("k1"), row.getAs[String]("k2")) -> row.getAs[Long]("amount_sum_7d"))
+      .toMap
+    val expected: Map[(String, String), Long] =
+      Map(("1", "23") -> 10L, ("12", "3") -> 1000L, (null, "a") -> 100L, ("a", null) -> 200L)
+    assertEquals(expected, result)
   }
 }

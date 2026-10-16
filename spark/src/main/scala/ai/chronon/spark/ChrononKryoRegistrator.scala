@@ -158,6 +158,10 @@ class ChrononKryoRegistrator extends KryoRegistrator {
     kryo.register(classOf[CpcSketch], new CpcSketchKryoSerializer())
     kryo.register(classOf[Array[ItemSketchSerializable]])
     kryo.register(classOf[ItemsSketchIR[AnyRef]], new ItemsSketchKryoSerializer[AnyRef])
+    // Date and timestamp values, e.g. GroupBy keys, with spark.sql.datetime.java8API.enabled. Registered last to keep the
+    // ids of the classes above.
+    kryo.register(classOf[java.time.Instant])
+    kryo.register(classOf[java.time.LocalDate])
   }
 
   def doRegister(name: String, kryo: Kryo): Unit = {
