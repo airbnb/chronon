@@ -26,6 +26,23 @@ SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 echo "Removing old distributions..."
 rm -f $SCRIPT_DIR/dist/*
 
+# Create and activate venv if it doesn't exist
+VENV_DIR="$SCRIPT_DIR/../../venv"
+if [[ ! -d "$VENV_DIR" ]]; then
+  echo "Creating Python virtual environment..."
+  python3 -m venv "$VENV_DIR"
+fi
+
+# Activate venv
+echo "Activating Python virtual environment..."
+source "$VENV_DIR/bin/activate"
+
+# Install build dependencies in venv if needed
+if ! python3 -c "import build" 2>/dev/null; then
+  echo "Installing Python build dependencies..."
+  pip install --quiet build twine
+fi
+
 # The default action is "build"
 if [[ -z "${ACTION}" ]] || [[ "${ACTION}" == "build" ]]; then
   PYPI_REPOSITORY="internal"
