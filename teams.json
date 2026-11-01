@@ -1,0 +1,39 @@
+{
+    "default": {
+        "description": "Default team configuration",
+        "namespace": "default",
+        "user": "default_user",
+        "table_properties": {},
+        "production": {
+            "backfill": {
+                "EXECUTOR_CORES": "2",
+                "DRIVER_MEMORY": "1G",
+                "EXECUTOR_MEMORY": "2G",
+                "PARALLELISM": "4"
+            },
+            "upload": {
+                "EXECUTOR_CORES": "2",
+                "EXECUTOR_MEMORY": "2G",
+                "PARALLELISM": "4"
+            }
+        }
+    },
+    "bootcamp": {
+        "description": "Bootcamp team for learning Chronon",
+        "namespace": "default",
+        "user": "bootcamp_user",
+        "production": {
+            "backfill": {
+                "EXECUTOR_CORES": "2",
+                "DRIVER_MEMORY": "1G",
+                "EXECUTOR_MEMORY": "2G",
+                "PARALLELISM": "4"
+            },
+            "upload": {
+                "EXECUTOR_CORES": "2",
+                "EXECUTOR_MEMORY": "2G",
+                "PARALLELISM": "4"
+            }
+        }
+    }
+}

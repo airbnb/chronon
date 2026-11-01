@@ -1,0 +1,135 @@
+services:
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: admin
+    volumes:
+      - mongodb_data:/opt/mongo/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  spark-master:
+    image: apache/spark:3.5.2
+    ports:
+      - "8080:8080"   # Master UI
+      - "7077:7077"   # Master RPC
+    environment:
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: "7077"
+      SPARK_MASTER_WEBUI_PORT: "8080"
+      SPARK_DAEMON_JAVA_OPTS: -Dspark.deploy.recoveryMode=FILESYSTEM -Dspark.deploy.recoveryDirectory=/tmp/spark-recovery
+    command:
+      [
+        "/opt/spark/bin/spark-class","org.apache.spark.deploy.master.Master",
+        "--host","spark-master","--port","7077","--webui-port","8080"
+      ]
+    volumes:
+      - spark_events:/opt/spark/spark-events
+    healthcheck:
+      test: ["CMD-SHELL", "ps -ef | grep -q '[o]rg.apache.spark.deploy.master.Master' || exit 1; command -v wget >/dev/null 2>&1 && wget -qO- http://127.0.0.1:8080 >/dev/null || true"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 5s
+    restart: unless-stopped
+
+  spark-worker:
+    image: apache/spark:3.5.2
+    depends_on:
+      spark-master:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    command:
+      [
+        "/opt/spark/bin/spark-class","org.apache.spark.deploy.worker.Worker",
+        "spark://spark-master:7077",
+        "--cores","2","--memory","2G",
+        "--webui-port","8081"
+      ]
+    environment:
+      SPARK_WORKER_DIR: /opt/spark/work-dir
+    volumes:
+      - spark_events:/opt/spark/spark-events
+    restart: unless-stopped
+
+  chronon-main:
+    image: ezvz/chronon
+    command: bash -c "spark-shell -i scripts/data-loader.scala && tail -f /dev/null"
+    ports:
+      - "4040:4040"
+      - "4041:4041"
+    environment:
+      USER: root
+      SPARK_SUBMIT_PATH: spark-submit
+      PYTHONPATH: /srv/chronon
+      SPARK_VERSION: "3.5.2"
+      JOB_MODE: spark://spark-master:7077
+      PARALLELISM: "4"
+      EXECUTOR_MEMORY: 2G
+      EXECUTOR_CORES: "2"
+      DRIVER_MEMORY: 1G
+      CHRONON_LOG_TABLE: default.chronon_log_table
+      CHRONON_ONLINE_CLASS: ai.chronon.quickstart.online.ChrononMongoOnlineImpl
+      CHRONON_ONLINE_ARGS: -Zuser=admin -Zpassword=admin -Zhost=mongodb -Zport=27017 -Zdatabase=admin
+      SPARK_SQL_EXTENSIONS: org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions
+      SPARK_SQL_CATALOG_SPARK_CATALOG: org.apache.iceberg.spark.SparkSessionCatalog
+      SPARK_SQL_CATALOG_SPARK_CATALOG_TYPE: hive
+      SPARK_SQL_CATALOG_SPARK_CATALOG_WAREHOUSE: s3a://chronon/warehouse
+      SPARK_CHRONON_TABLE_WRITE_FORMAT: iceberg
+      SPARK_CHRONON_TABLE_READ_FORMAT: iceberg
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_ENDPOINT: http://minio:9000
+      S3_PATH_STYLE_ACCESS: "true"
+    volumes:
+      - ../api/py/test/sample:/srv/chronon
+      - ./scripts:/srv/scripts
+      - spark_events:/opt/spark/spark-events
+    depends_on:
+      - spark-master
+      - minio
+      - mongodb
+
+  jupyter:
+    image: jupyter/pyspark-notebook:latest
+    ports:
+      - "8888:8888"
+    environment:
+      JUPYTER_ENABLE_LAB: "yes"
+      SPARK_MASTER: spark://spark-master:7077
+      JUPYTER_TOKEN: chronon-dev
+    volumes:
+      - ../api/py:/home/jovyan/work/chronon-api
+      - ../api/py/test/sample:/home/jovyan/work/sample-data
+    depends_on:
+      - spark-master
+      - chronon-main
+
+volumes:
+  minio_data:
+  mongodb_data:
+  spark_events:
