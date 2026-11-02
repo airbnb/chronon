@@ -320,7 +320,6 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     result.keySet shouldBe Set("prefix_exception")
   }
 
-  private val OlderBatchRefreshFlag = "enable_serving_info_refresh_on_older_batch"
   private val NewerBatchEndDate = "2026-11-02"
   private val OlderBatchEndDate = "2026-10-31"
 
@@ -331,19 +330,13 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     new GroupByServingInfoParsed(servingInfo, PartitionSpec(format = "yyyy-MM-dd", spanMillis = 24 * 60 * 60 * 1000L))
   }
 
-  private def fetcherWithOlderBatchRefreshFlag(enabled: Boolean): FetcherBase = {
-    val flagStore: FlagStore = (flagName: String, _: java.util.Map[String, String]) =>
-      flagName == OlderBatchRefreshFlag && enabled
-    spy(new FetcherBase(kvStore, flagStore = flagStore))
-  }
-
   private def batchResponseAt(millis: Long): BatchResponses =
     BatchResponses(Success(Seq(TimedValue(Array(1.toByte), millis))))
 
   // Reproduces INC-4125: an older batch upload replaced a newer one, but the fetcher kept the newer batchEndTs
   // cached and filtered out every batch row until the 2h serving info TTL expired.
   @Test
-  def testOlderBatchUploadRefreshesServingInfoWhenFlagEnabled(): Unit = {
+  def testOlderBatchUploadRefreshesServingInfo(): Unit = {
     val newerServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
     val olderServingInfo = servingInfoWithBatchEnd(OlderBatchEndDate)
     val servingInfoInKvStore = new AtomicReference[GroupByServingInfoParsed](newerServingInfo)
@@ -353,8 +346,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
       name => Metrics.Context(environment = "test", groupBy = name),
       nowFunc = () => nowMillis.get()
     )
-    val fetcher = fetcherWithOlderBatchRefreshFlag(enabled = true)
-    doReturn(servingInfoCache).when(fetcher).getGroupByServingInfo
+    doReturn(servingInfoCache).when(fetcherBase).getGroupByServingInfo
 
     val cachedServingInfo = servingInfoCache(GroupBy).get
     servingInfoInKvStore.set(olderServingInfo)
@@ -362,7 +354,7 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     val olderBatchResponse = batchResponseAt(olderServingInfo.batchEndTsMillis)
     olderBatchResponse.getBatchBytes(cachedServingInfo.batchEndTsMillis) shouldBe null
 
-    fetcher.getServingInfo(cachedServingInfo, olderBatchResponse)
+    fetcherBase.getServingInfo(cachedServingInfo, olderBatchResponse)
 
     val deadline = System.currentTimeMillis() + 5000L
     var currentServingInfo = servingInfoCache(GroupBy).get
@@ -378,29 +370,25 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   }
 
   @Test
-  def testOlderBatchUploadDoesNotRefreshServingInfoWhenFlagDisabled(): Unit = {
-    Seq(fetcherBase, fetcherWithOlderBatchRefreshFlag(enabled = false)).foreach { fetcher =>
-      val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
-      doReturn(ttlCache).when(fetcher).getGroupByServingInfo
-      val cachedServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
+  def testNewerBatchUploadRefreshesServingInfo(): Unit = {
+    val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
+    doReturn(ttlCache).when(fetcherBase).getGroupByServingInfo
+    val cachedServingInfo = servingInfoWithBatchEnd(OlderBatchEndDate)
+    doReturn(Success(cachedServingInfo)).when(ttlCache).refresh(any[String])
 
-      val (result, _) =
-        fetcher.getServingInfo(cachedServingInfo,
-                               batchResponseAt(servingInfoWithBatchEnd(OlderBatchEndDate).batchEndTsMillis))
+    fetcherBase.getServingInfo(cachedServingInfo,
+                               batchResponseAt(servingInfoWithBatchEnd(NewerBatchEndDate).batchEndTsMillis))
 
-      result shouldBe cachedServingInfo
-      verify(ttlCache, never()).refresh(any())
-    }
+    verify(ttlCache).refresh(GroupBy)
   }
 
   @Test
   def testSameBatchEndTsDoesNotRefreshServingInfo(): Unit = {
-    val fetcher = fetcherWithOlderBatchRefreshFlag(enabled = true)
     val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
-    doReturn(ttlCache).when(fetcher).getGroupByServingInfo
+    doReturn(ttlCache).when(fetcherBase).getGroupByServingInfo
     val cachedServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
 
-    val (result, _) = fetcher.getServingInfo(cachedServingInfo, batchResponseAt(cachedServingInfo.batchEndTsMillis))
+    val (result, _) = fetcherBase.getServingInfo(cachedServingInfo, batchResponseAt(cachedServingInfo.batchEndTsMillis))
 
     result shouldBe cachedServingInfo
     verify(ttlCache, never()).refresh(any())

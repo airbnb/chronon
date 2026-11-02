@@ -296,9 +296,9 @@ class FetcherBase(kvStore: KVStore,
   }
 
   /**
-    * If `batchEndTs` is ahead of `groupByServingInfo.batchEndTsMillis`, update the MetadataStore with the new
-    * timestamp. In practice, this means that new batch data has landed, so future kvstore requests should fetch
-    * streaming data after the new batchEndTsMillis.
+    * If `batchEndTs` differs from `groupByServingInfo.batchEndTsMillis`, update the MetadataStore with the new
+    * timestamp. In practice, this means that new batch data has landed (or an older batch replaced it, e.g. a
+    * rollback), so future kvstore requests should fetch streaming data after the new batchEndTsMillis.
     *
     * @param batchEndTs the new batchEndTs from the latest batch data
     * @param groupByServingInfo the current GroupByServingInfo
@@ -306,9 +306,9 @@ class FetcherBase(kvStore: KVStore,
   private[online] def updateServingInfo(batchEndTs: Long,
                                         groupByServingInfo: GroupByServingInfoParsed): GroupByServingInfoParsed = {
     val name = groupByServingInfo.groupBy.metaData.name
-    if (batchEndTs > groupByServingInfo.batchEndTsMillis) {
-      logger.info(s"""$name's value's batch timestamp of $batchEndTs is
-                     |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
+    if (batchEndTs != groupByServingInfo.batchEndTsMillis) {
+      logger.info(s"""$name's value's batch timestamp of $batchEndTs differs from
+                     |schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
                      |Forcing an update of schema.""".stripMargin)
       getGroupByServingInfo
         .refresh(name)
@@ -319,27 +319,9 @@ class FetcherBase(kvStore: KVStore,
             groupByServingInfo
         }
         .get
-    } else if (
-      batchEndTs < groupByServingInfo.batchEndTsMillis &&
-      isServingInfoRefreshOnOlderBatchEnabled(groupByServingInfo.groupBy)
-    ) {
-      // An older batch replaced the cached one (e.g. a rollback); without a refresh its rows stay filtered until TTL.
-      logger.info(s"""$name's value's batch timestamp of $batchEndTs is
-                     |behind schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
-                     |Refreshing schema.""".stripMargin)
-      getGroupByServingInfo.refresh(name)
-      groupByServingInfo
     } else {
       groupByServingInfo
     }
-  }
-
-  def isServingInfoRefreshOnOlderBatchEnabled(groupBy: GroupBy): Boolean = {
-    if (groupBy.getMetaData == null || groupBy.getMetaData.getName == null) return false
-    Option(flagStore)
-      .exists(
-        _.isSet("enable_serving_info_refresh_on_older_batch",
-                Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).toJava))
   }
 
   override def isCachingEnabled(groupBy: GroupBy): Boolean = {
