@@ -18,7 +18,7 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.windowing.FinalBatchIr
 import ai.chronon.api.Extensions.{GroupByOps, WindowOps}
-import ai.chronon.api.{Builders, GroupBy, MetaData, TimeUnit, Window}
+import ai.chronon.api.{Builders, GroupBy, GroupByServingInfo, MetaData, PartitionSpec, TimeUnit, Window}
 import ai.chronon.online.Fetcher.{ColumnSpec, Request, Response}
 import ai.chronon.online.FetcherCache.BatchResponses
 import ai.chronon.online.KVStore.TimedValue
@@ -32,6 +32,7 @@ import org.mockito.{Answers, ArgumentCaptor}
 import org.scalatest.matchers.should.Matchers
 import org.scalatestplus.mockito.MockitoSugar
 
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -317,5 +318,91 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
 
     val result = baseFetcher.parseGroupByResponse("prefix", request, response)
     result.keySet shouldBe Set("prefix_exception")
+  }
+
+  private val OlderBatchRefreshFlag = "enable_serving_info_refresh_on_older_batch"
+  private val NewerBatchEndDate = "2026-11-02"
+  private val OlderBatchEndDate = "2026-10-31"
+
+  private def servingInfoWithBatchEnd(batchEndDate: String): GroupByServingInfoParsed = {
+    val servingInfo = new GroupByServingInfo()
+    servingInfo.setGroupBy(Builders.GroupBy(metaData = Builders.MetaData(name = GroupBy)))
+    servingInfo.setBatchEndDate(batchEndDate)
+    new GroupByServingInfoParsed(servingInfo, PartitionSpec(format = "yyyy-MM-dd", spanMillis = 24 * 60 * 60 * 1000L))
+  }
+
+  private def fetcherWithOlderBatchRefreshFlag(enabled: Boolean): FetcherBase = {
+    val flagStore: FlagStore = (flagName: String, _: java.util.Map[String, String]) =>
+      flagName == OlderBatchRefreshFlag && enabled
+    spy(new FetcherBase(kvStore, flagStore = flagStore))
+  }
+
+  private def batchResponseAt(millis: Long): BatchResponses =
+    BatchResponses(Success(Seq(TimedValue(Array(1.toByte), millis))))
+
+  // Reproduces INC-4125: an older batch upload replaced a newer one, but the fetcher kept the newer batchEndTs
+  // cached and filtered out every batch row until the 2h serving info TTL expired.
+  @Test
+  def testOlderBatchUploadRefreshesServingInfoWhenFlagEnabled(): Unit = {
+    val newerServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
+    val olderServingInfo = servingInfoWithBatchEnd(OlderBatchEndDate)
+    val servingInfoInKvStore = new AtomicReference[GroupByServingInfoParsed](newerServingInfo)
+    val nowMillis = new AtomicLong(0L)
+    val servingInfoCache = new TTLCache[String, Try[GroupByServingInfoParsed]](
+      _ => Success(servingInfoInKvStore.get()),
+      name => Metrics.Context(environment = "test", groupBy = name),
+      nowFunc = () => nowMillis.get()
+    )
+    val fetcher = fetcherWithOlderBatchRefreshFlag(enabled = true)
+    doReturn(servingInfoCache).when(fetcher).getGroupByServingInfo
+
+    val cachedServingInfo = servingInfoCache(GroupBy).get
+    servingInfoInKvStore.set(olderServingInfo)
+    nowMillis.addAndGet(10 * 1000L)
+    val olderBatchResponse = batchResponseAt(olderServingInfo.batchEndTsMillis)
+    olderBatchResponse.getBatchBytes(cachedServingInfo.batchEndTsMillis) shouldBe null
+
+    fetcher.getServingInfo(cachedServingInfo, olderBatchResponse)
+
+    val deadline = System.currentTimeMillis() + 5000L
+    var currentServingInfo = servingInfoCache(GroupBy).get
+    while (
+      currentServingInfo.batchEndTsMillis != olderServingInfo.batchEndTsMillis &&
+      System.currentTimeMillis() < deadline
+    ) {
+      Thread.sleep(50)
+      currentServingInfo = servingInfoCache(GroupBy).get
+    }
+    currentServingInfo.batchEndTsMillis shouldBe olderServingInfo.batchEndTsMillis
+    olderBatchResponse.getBatchBytes(currentServingInfo.batchEndTsMillis) should not be null
+  }
+
+  @Test
+  def testOlderBatchUploadDoesNotRefreshServingInfoWhenFlagDisabled(): Unit = {
+    Seq(fetcherBase, fetcherWithOlderBatchRefreshFlag(enabled = false)).foreach { fetcher =>
+      val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
+      doReturn(ttlCache).when(fetcher).getGroupByServingInfo
+      val cachedServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
+
+      val (result, _) =
+        fetcher.getServingInfo(cachedServingInfo,
+                               batchResponseAt(servingInfoWithBatchEnd(OlderBatchEndDate).batchEndTsMillis))
+
+      result shouldBe cachedServingInfo
+      verify(ttlCache, never()).refresh(any())
+    }
+  }
+
+  @Test
+  def testSameBatchEndTsDoesNotRefreshServingInfo(): Unit = {
+    val fetcher = fetcherWithOlderBatchRefreshFlag(enabled = true)
+    val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
+    doReturn(ttlCache).when(fetcher).getGroupByServingInfo
+    val cachedServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
+
+    val (result, _) = fetcher.getServingInfo(cachedServingInfo, batchResponseAt(cachedServingInfo.batchEndTsMillis))
+
+    result shouldBe cachedServingInfo
+    verify(ttlCache, never()).refresh(any())
   }
 }

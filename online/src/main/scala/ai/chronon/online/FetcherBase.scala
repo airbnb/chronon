@@ -319,9 +319,27 @@ class FetcherBase(kvStore: KVStore,
             groupByServingInfo
         }
         .get
+    } else if (
+      batchEndTs < groupByServingInfo.batchEndTsMillis &&
+      isServingInfoRefreshOnOlderBatchEnabled(groupByServingInfo.groupBy)
+    ) {
+      // An older batch replaced the cached one (e.g. a rollback); without a refresh its rows stay filtered until TTL.
+      logger.info(s"""$name's value's batch timestamp of $batchEndTs is
+                     |behind schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
+                     |Refreshing schema.""".stripMargin)
+      getGroupByServingInfo.refresh(name)
+      groupByServingInfo
     } else {
       groupByServingInfo
     }
+  }
+
+  def isServingInfoRefreshOnOlderBatchEnabled(groupBy: GroupBy): Boolean = {
+    if (groupBy.getMetaData == null || groupBy.getMetaData.getName == null) return false
+    Option(flagStore)
+      .exists(
+        _.isSet("enable_serving_info_refresh_on_older_batch",
+                Map("groupby_streaming_dataset" -> groupBy.getMetaData.getName).toJava))
   }
 
   override def isCachingEnabled(groupBy: GroupBy): Boolean = {
