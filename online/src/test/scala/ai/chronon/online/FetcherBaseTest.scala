@@ -333,8 +333,8 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   private def batchResponseAt(millis: Long): BatchResponses =
     BatchResponses(Success(Seq(TimedValue(Array(1.toByte), millis))))
 
-  // Reproduces INC-4125: an older batch upload replaced a newer one, but the fetcher kept the newer batchEndTs
-  // cached and filtered out every batch row until the 2h serving info TTL expired.
+  // An older batch upload replaced a newer one; without a refresh the fetcher kept the newer batchEndTs cached
+  // and filtered out every batch row until the serving info TTL expired.
   @Test
   def testOlderBatchUploadRefreshesServingInfo(): Unit = {
     val newerServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
