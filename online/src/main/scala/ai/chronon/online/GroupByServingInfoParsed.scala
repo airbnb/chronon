@@ -25,6 +25,8 @@ import org.apache.avro.Schema
 
 import ai.chronon.online.DerivationUtils.{DerivationFunc, buildDerivationFunction, buildDerivedFields, timeFields}
 
+import java.util.concurrent.ConcurrentHashMap
+import java.util.function.{Function => JFunction}
 import scala.util.ScalaJavaConversions.ListOps
 
 // mixin class - with schema
@@ -39,11 +41,29 @@ class GroupByServingInfoParsed(val groupByServingInfo: GroupByServingInfo, parti
   val MutationAvroFields: Seq[StructField] = Seq(TimeField, ReversalField)
   val MutationAvroColumns: Seq[String] = MutationAvroFields.map(_.name)
 
-  lazy val aggregator: SawtoothOnlineAggregator = {
-    new SawtoothOnlineAggregator(batchEndTsMillis,
+  lazy val aggregator: SawtoothOnlineAggregator = buildAggregator(batchEndTsMillis)
+
+  private def buildAggregator(batchEndTs: Long): SawtoothOnlineAggregator =
+    new SawtoothOnlineAggregator(batchEndTs,
                                  groupByServingInfo.groupBy.aggregations.toScala.toSeq,
                                  valueChrononSchema.fields.map(sf => (sf.name, sf.fieldType)))
-  }
+
+  // Aggregators for batch IRs whose batch end differs from this serving info's batchEndDate. That happens while a
+  // batch upload (a newer one, or an older one re-uploaded as a rollback) has landed in the KV store but this host
+  // still serves with the previously cached GroupByServingInfo. The map stays tiny: one entry per distinct batch end
+  // seen during such a transition.
+  @transient private lazy val aggregatorsByBatchEnd = new ConcurrentHashMap[java.lang.Long, SawtoothOnlineAggregator]()
+
+  /** The aggregator to use for a batch IR that ends at `batchEndTs`. Same as `aggregator` when it matches. */
+  def aggregatorAt(batchEndTs: Long): SawtoothOnlineAggregator =
+    if (batchEndTs == batchEndTsMillis) aggregator
+    else
+      aggregatorsByBatchEnd.computeIfAbsent(
+        batchEndTs,
+        new JFunction[java.lang.Long, SawtoothOnlineAggregator] {
+          override def apply(ts: java.lang.Long): SawtoothOnlineAggregator = buildAggregator(ts)
+        }
+      )
 
   // caching groupBy helper to avoid re-computing batchDataSet,streamingDataset & inferred accuracy
   lazy val groupByOps = new GroupByOps(groupByServingInfo.groupBy)

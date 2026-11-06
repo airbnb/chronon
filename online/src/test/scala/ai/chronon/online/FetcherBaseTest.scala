@@ -183,11 +183,13 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     groupByOpsMock.metaData = metaDataMock
     doReturn(groupByOpsMock).when(oldServingInfo).groupByOps
 
-    val cachedBatchResponses = BatchResponses(mock[FinalBatchIr])
-    val (result, _) = fetcherBase.getServingInfo(oldServingInfo, cachedBatchResponses)
+    val cachedBatchResponses = BatchResponses(mock[FinalBatchIr], 1000L)
+    val (result, batchEndTs) = fetcherBase.getServingInfo(oldServingInfo, cachedBatchResponses)
 
     // FetcherBase.updateServingInfo is not called, but getGroupByServingInfo.refresh() is.
     result shouldEqual oldServingInfo
+    // The batch end of the cached IR is what the response is served as of.
+    batchEndTs shouldBe Some(1000L)
     verify(ttlCache).refresh(any())
     verify(fetcherBase, never()).updateServingInfo(any(), any())
   }
@@ -333,10 +335,10 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
   private def batchResponseAt(millis: Long): BatchResponses =
     BatchResponses(Success(Seq(TimedValue(Array(1.toByte), millis))))
 
-  // An older batch upload replaced a newer one; without a refresh the fetcher kept the newer batchEndTs cached
-  // and filtered out every batch row until the serving info TTL expired.
+  // An older batch upload replaced a newer one. The response is served as of the older batch end right away, and
+  // the serving info is refreshed so the streaming scan start moves back too (without waiting for the TTL).
   @Test
-  def testOlderBatchUploadRefreshesServingInfo(): Unit = {
+  def testOlderBatchUploadIsServedAsOfItsOwnBatchEndAndRefreshesServingInfo(): Unit = {
     val newerServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
     val olderServingInfo = servingInfoWithBatchEnd(OlderBatchEndDate)
     val servingInfoInKvStore = new AtomicReference[GroupByServingInfoParsed](newerServingInfo)
@@ -352,9 +354,10 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     servingInfoInKvStore.set(olderServingInfo)
     nowMillis.addAndGet(10 * 1000L)
     val olderBatchResponse = batchResponseAt(olderServingInfo.batchEndTsMillis)
-    olderBatchResponse.getBatchBytes(cachedServingInfo.batchEndTsMillis) shouldBe null
+    olderBatchResponse.getBatchBytes should not be null
 
-    fetcherBase.getServingInfo(cachedServingInfo, olderBatchResponse)
+    val (_, effectiveBatchEndTs) = fetcherBase.getServingInfo(cachedServingInfo, olderBatchResponse)
+    effectiveBatchEndTs shouldBe Some(olderServingInfo.batchEndTsMillis)
 
     val deadline = System.currentTimeMillis() + 5000L
     var currentServingInfo = servingInfoCache(GroupBy).get
@@ -366,7 +369,19 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
       currentServingInfo = servingInfoCache(GroupBy).get
     }
     currentServingInfo.batchEndTsMillis shouldBe olderServingInfo.batchEndTsMillis
-    olderBatchResponse.getBatchBytes(currentServingInfo.batchEndTsMillis) should not be null
+  }
+
+  @Test
+  def testStreamingRequestIsRealignedOnlyWhenBatchEndsBeforeTheScanStart(): Unit = {
+    val streamingRequest = KVStore.GetRequest(Array(1.toByte), "GB_STREAMING", Some(2000L))
+    // older batch end: scan has to start earlier
+    fetcherBase.streamingRequestFrom(streamingRequest, 1000L) shouldBe Some(
+      streamingRequest.copy(afterTsMillis = Some(1000L)))
+    // same or newer batch end: the rows already fetched cover it
+    fetcherBase.streamingRequestFrom(streamingRequest, 2000L) shouldBe None
+    fetcherBase.streamingRequestFrom(streamingRequest, 3000L) shouldBe None
+    // no scan start at all
+    fetcherBase.streamingRequestFrom(streamingRequest.copy(afterTsMillis = None), 1000L) shouldBe None
   }
 
   @Test
