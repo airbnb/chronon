@@ -57,12 +57,14 @@ trait FetcherCache {
     * @param batchBytes the batch bytes corresponding to the batchResponses. Can be `null`.
     * @param servingInfo the GroupByServingInfoParsed that contains the info to decode the bytes
     * @param decodingFunction the function to decode bytes into Map[String, AnyRef]
+    * @param batchEndTsMillis the batch end of the data in `batchBytes`, stored alongside the cached value
     * @param keys the keys used to fetch this particular batch response, for caching purposes
     */
   private[online] def getMapResponseFromBatchResponse(batchResponses: BatchResponses,
                                                       batchBytes: Array[Byte],
                                                       decodingFunction: Array[Byte] => Map[String, AnyRef],
                                                       servingInfo: GroupByServingInfoParsed,
+                                                      batchEndTsMillis: Long,
                                                       keys: Map[String, Any]): Map[String, AnyRef] = {
     if (!isCachingEnabled(servingInfo.groupBy)) return decodingFunction(batchBytes)
 
@@ -72,12 +74,12 @@ trait FetcherCache {
           BatchIrCache.Key(servingInfo.groupByOps.batchDataset, keys, servingInfo.batchEndTsMillis)
         val decodedBytes = decodingFunction(batchBytes)
         if (decodedBytes != null)
-          maybeBatchIrCache.get.cache.put(batchRequestCacheKey, CachedMapBatchResponse(decodedBytes))
+          maybeBatchIrCache.get.cache.put(batchRequestCacheKey, CachedMapBatchResponse(decodedBytes, batchEndTsMillis))
         decodedBytes
       case cachedResponse: CachedBatchResponse =>
         cachedResponse match {
-          case CachedFinalIrBatchResponse(_: FinalBatchIr)              => decodingFunction(batchBytes)
-          case CachedMapBatchResponse(mapResponse: Map[String, AnyRef]) => mapResponse
+          case CachedFinalIrBatchResponse(_: FinalBatchIr, _)              => decodingFunction(batchBytes)
+          case CachedMapBatchResponse(mapResponse: Map[String, AnyRef], _) => mapResponse
         }
     }
   }
@@ -92,12 +94,14 @@ trait FetcherCache {
     * @param batchBytes the batch bytes corresponding to the batchResponses. Can be `null`.
     * @param servingInfo the GroupByServingInfoParsed that contains the info to decode the bytes
     * @param decodingFunction the function to decode bytes into FinalBatchIr
+    * @param batchEndTsMillis the batch end of the data in `batchBytes`, stored alongside the cached value
     * @param keys the keys used to fetch this particular batch response, for caching purposes
     */
   private[online] def getBatchIrFromBatchResponse(
       batchResponses: BatchResponses,
       batchBytes: Array[Byte],
       servingInfo: GroupByServingInfoParsed,
+      batchEndTsMillis: Long,
       decodingFunction: (Array[Byte], GroupByServingInfoParsed) => FinalBatchIr,
       keys: Map[String, Any]): FinalBatchIr = {
     if (!isCachingEnabled(servingInfo.groupBy)) return decodingFunction(batchBytes, servingInfo)
@@ -108,12 +112,13 @@ trait FetcherCache {
           BatchIrCache.Key(servingInfo.groupByOps.batchDataset, keys, servingInfo.batchEndTsMillis)
         val decodedBytes = decodingFunction(batchBytes, servingInfo)
         if (decodedBytes != null)
-          maybeBatchIrCache.get.cache.put(batchRequestCacheKey, CachedFinalIrBatchResponse(decodedBytes))
+          maybeBatchIrCache.get.cache
+            .put(batchRequestCacheKey, CachedFinalIrBatchResponse(decodedBytes, batchEndTsMillis))
         decodedBytes
       case cachedResponse: CachedBatchResponse =>
         cachedResponse match {
-          case CachedFinalIrBatchResponse(finalBatchIr: FinalBatchIr) => finalBatchIr
-          case CachedMapBatchResponse(_: Map[String, AnyRef])         => decodingFunction(batchBytes, servingInfo)
+          case CachedFinalIrBatchResponse(finalBatchIr: FinalBatchIr, _) => finalBatchIr
+          case CachedMapBatchResponse(_: Map[String, AnyRef], _)         => decodingFunction(batchBytes, servingInfo)
         }
     }
   }
@@ -164,7 +169,9 @@ object FetcherCache {
   }
 
   private[online] object BatchIrCache {
-    // We use the dataset, keys, and batchEndTsMillis to identify a batch request.
+    // We use the dataset, keys, and the batchEndTsMillis of the GroupByServingInfo cached on this host to identify a
+    // batch request. The cached value carries the batch end of the IR it actually holds, which can differ from the
+    // key's while a newer or older upload has landed in the KV store but the serving info hasn't been refreshed yet.
     // There's one edge case to be aware of: if a batch job is re-run in the same day, the batchEndTsMillis will
     // be the same but the underlying data may have have changed. If that new batch data is needed immediately, the
     // Fetcher service should be restarted.
@@ -182,33 +189,37 @@ object FetcherCache {
     * (The fetcher uses these batch values to construct the response for a request for feature values.)
     * */
   sealed abstract class BatchResponses {
-    def getBatchBytes(batchEndTsMillis: Long): Array[Byte]
+    def getBatchBytes: Array[Byte]
   }
   object BatchResponses {
     def apply(kvStoreResponse: Try[Seq[TimedValue]]): KvStoreBatchResponse = KvStoreBatchResponse(kvStoreResponse)
-    def apply(cachedResponse: FinalBatchIr): CachedFinalIrBatchResponse = CachedFinalIrBatchResponse(cachedResponse)
-    def apply(cachedResponse: Map[String, AnyRef]): CachedMapBatchResponse = CachedMapBatchResponse(cachedResponse)
+    def apply(cachedResponse: FinalBatchIr, batchEndTsMillis: Long): CachedFinalIrBatchResponse =
+      CachedFinalIrBatchResponse(cachedResponse, batchEndTsMillis)
+    def apply(cachedResponse: Map[String, AnyRef], batchEndTsMillis: Long): CachedMapBatchResponse =
+      CachedMapBatchResponse(cachedResponse, batchEndTsMillis)
   }
 
   /** Encapsulates batch response values received from a KV Store request.  */
   case class KvStoreBatchResponse(response: Try[Seq[TimedValue]]) extends BatchResponses {
-    def getBatchBytes(batchEndTsMillis: Long): Array[Byte] =
-      response
-        .map(_.maxBy(_.millis))
-        .filter(_.millis >= batchEndTsMillis)
-        .map(_.bytes)
-        .getOrElse(null)
+    // A bulk upload may leave more than one batch value behind on KV stores with merge semantics; the latest one
+    // is the one to serve. Its timestamp, not the cached GroupByServingInfo's, says where batch data ends: an
+    // older value is a valid answer (the batch upload was rolled back) and is served as of its own batch end.
+    private lazy val latest: Option[TimedValue] = response.toOption.filter(_.nonEmpty).map(_.maxBy(_.millis))
+    lazy val maxTsMillis: Option[Long] = latest.map(_.millis)
+    def getBatchBytes: Array[Byte] = latest.map(_.bytes).orNull
   }
 
   /** Encapsulates a batch response that was found in the Fetcher's internal IR cache.  */
   sealed abstract class CachedBatchResponse extends BatchResponses {
     // This is the case where we don't have bytes because the decoded IR was cached so we didn't hit the KV store again.
-    def getBatchBytes(batchEndTsMillis: Long): Null = null
+    def getBatchBytes: Null = null
+    // The batch end of the cached data. Can differ from the batchEndTsMillis in the cache key, see BatchIrCache.Key.
+    def batchEndTsMillis: Long
   }
 
   /** Encapsulates a decoded batch response that was found in the Fetcher's internal IR cache.  */
-  case class CachedFinalIrBatchResponse(response: FinalBatchIr) extends CachedBatchResponse
+  case class CachedFinalIrBatchResponse(response: FinalBatchIr, batchEndTsMillis: Long) extends CachedBatchResponse
 
   /** Encapsulates a decoded batch response that was found in the Fetcher's internal IR cache  */
-  case class CachedMapBatchResponse(response: Map[String, AnyRef]) extends CachedBatchResponse
+  case class CachedMapBatchResponse(response: Map[String, AnyRef], batchEndTsMillis: Long) extends CachedBatchResponse
 }
