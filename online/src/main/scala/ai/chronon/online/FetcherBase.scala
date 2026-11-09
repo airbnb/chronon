@@ -513,7 +513,15 @@ class FetcherBase(kvStore: KVStore,
             val refetchedValues = refetched.map(response => response.request -> response.values).toMap
             // keyed by the original streaming request, which is what the response construction below looks up
             val realigned: Map[GetRequest, Try[Seq[TimedValue]]] = streamingRefetches.flatMap {
-              case (original, earlier, _) => refetchedValues.get(earlier).map(original -> _)
+              case (original, earlier, context) =>
+                refetchedValues.get(earlier) match {
+                  case Some(success @ Success(_)) => Some(original -> success)
+                  case Some(Failure(e))           =>
+                    // per-key failure: keep the first-phase rows, same degradation as a failed re-read future
+                    context.withSuffix("multi_get_refetch").incrementException(e)
+                    None
+                  case None => None
+                }
             }.toMap
             kvResponses.filterNot(response => realigned.contains(response.request)) ++
               realigned.map { case (request, values) => GetResponse(request, values) }

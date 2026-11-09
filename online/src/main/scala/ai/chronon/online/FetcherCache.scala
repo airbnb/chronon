@@ -70,8 +70,9 @@ trait FetcherCache {
 
     batchResponses match {
       case _: KvStoreBatchResponse =>
-        val batchRequestCacheKey =
-          BatchIrCache.Key(servingInfo.groupByOps.batchDataset, keys, servingInfo.batchEndTsMillis)
+        // Keyed by the batch end of the data itself, not of the (possibly stale) serving info, so an entry can only
+        // be hit once the serving info has caught up with the upload it came from. See BatchIrCache.Key.
+        val batchRequestCacheKey = BatchIrCache.Key(servingInfo.groupByOps.batchDataset, keys, batchEndTsMillis)
         val decodedBytes = decodingFunction(batchBytes)
         if (decodedBytes != null)
           maybeBatchIrCache.get.cache.put(batchRequestCacheKey, CachedMapBatchResponse(decodedBytes, batchEndTsMillis))
@@ -108,8 +109,9 @@ trait FetcherCache {
 
     batchResponses match {
       case _: KvStoreBatchResponse =>
-        val batchRequestCacheKey =
-          BatchIrCache.Key(servingInfo.groupByOps.batchDataset, keys, servingInfo.batchEndTsMillis)
+        // Keyed by the batch end of the data itself, not of the (possibly stale) serving info, so an entry can only
+        // be hit once the serving info has caught up with the upload it came from. See BatchIrCache.Key.
+        val batchRequestCacheKey = BatchIrCache.Key(servingInfo.groupByOps.batchDataset, keys, batchEndTsMillis)
         val decodedBytes = decodingFunction(batchBytes, servingInfo)
         if (decodedBytes != null)
           maybeBatchIrCache.get.cache
@@ -169,9 +171,11 @@ object FetcherCache {
   }
 
   private[online] object BatchIrCache {
-    // We use the dataset, keys, and the batchEndTsMillis of the GroupByServingInfo cached on this host to identify a
-    // batch request. The cached value carries the batch end of the IR it actually holds, which can differ from the
-    // key's while a newer or older upload has landed in the KV store but the serving info hasn't been refreshed yet.
+    // We use the dataset, keys, and batchEndTsMillis to identify a batch request. Entries are stored under the batch
+    // end of the data they hold and looked up with the batch end of the GroupByServingInfo cached on this host, so
+    // while an upload (newer, or an older one as a rollback) has landed but the serving info hasn't been refreshed
+    // yet, lookups miss rather than serve an IR that doesn't match the serving info; once it has, a rolled back
+    // upload is read from the KV store instead of reactivating the cached newer IR.
     // There's one edge case to be aware of: if a batch job is re-run in the same day, the batchEndTsMillis will
     // be the same but the underlying data may have have changed. If that new batch data is needed immediately, the
     // Fetcher service should be restarted.

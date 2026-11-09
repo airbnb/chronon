@@ -264,10 +264,11 @@ class FetcherCacheTest extends MockitoHelper {
     verify(toBatchIr, times(1))(any(), any()) // decoding did happen
   }
 
-  // The cache key carries the cached serving info's batch end, the value carries the batch end of the data it
-  // holds. They differ while a batch upload has landed but the serving info hasn't been refreshed on this host.
+  // Entries are stored under the batch end of the data they hold, and looked up with the cached serving info's
+  // batch end, so while a batch upload has landed but the serving info hasn't been refreshed, lookups miss rather
+  // than hit an IR that doesn't match the serving info (and a later rollback can't reactivate a newer IR).
   @Test
-  def testGetBatchIrFromBatchResponseStoresBatchEndOfTheDataNotOfTheServingInfo(): Unit = {
+  def testGetBatchIrFromBatchResponseStoresUnderTheBatchEndOfTheDataNotOfTheServingInfo(): Unit = {
     val batchIrCache = new BatchIrCache("test_cache", batchIrCacheMaximumSize)
     val servingInfo = mock[GroupByServingInfoParsed]
     val groupByOps = mock[GroupByOps]
@@ -291,8 +292,10 @@ class FetcherCacheTest extends MockitoHelper {
                                                   toBatchIr,
                                                   keys)
 
-    val cacheKey = BatchIrCache.Key("test_dataset", keys, 1000L)
-    assertEquals(CachedFinalIrBatchResponse(finalBatchIr, 3000L), batchIrCache.cache.getIfPresent(cacheKey))
+    // stored under the data's batch end (3000), so a lookup with the stale serving info's batch end (1000) misses
+    assertNull(batchIrCache.cache.getIfPresent(BatchIrCache.Key("test_dataset", keys, 1000L)))
+    assertEquals(CachedFinalIrBatchResponse(finalBatchIr, 3000L),
+                 batchIrCache.cache.getIfPresent(BatchIrCache.Key("test_dataset", keys, 3000L)))
   }
 
   @Test

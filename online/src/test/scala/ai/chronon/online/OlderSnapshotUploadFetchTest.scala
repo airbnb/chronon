@@ -32,7 +32,7 @@ import java.util.function.BiFunction
 import scala.collection.Seq
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, Future}
-import scala.util.Try
+import scala.util.{Failure, Try}
 
 /**
   * End to end online fetch of a temporally accurate (batch + streaming) GroupBy across batch uploads that land while
@@ -145,37 +145,95 @@ class OlderSnapshotUploadFetchTest {
     uploadSnapshot(OlderBatchEndDate)
     assertEquals(ExpectedFeatures(ListingWithStreamingTail), fetchFeatures(fetcher, ListingWithStreamingTail))
     assertEquals(OlderBatchEndTs, cachedBatchEndTs(fetcher))
-    assertEquals(OlderBatchEndTs, cachedIrBatchEndTs(fetcher, batchIrCache, ListingWithStreamingTail))
+    assertEquals(Some(OlderBatchEndTs), cachedIrBatchEndTs(batchIrCache, ListingWithStreamingTail, OlderBatchEndTs))
 
     // Forward upload while the older serving info is still cached. The other listing's IR is a cache miss: the newer
-    // IR gets cached under the older serving info's key, carrying its own (newer) batch end. The following cache hit
-    // must serve as of that newer batch end, otherwise the streaming rows between the two batch ends count twice.
+    // IR is cached under its own (newer) batch end, not under the stale serving info's, so lookups keep missing and
+    // reading the KV store until the serving info catches up. Fetches stay correct either way.
     uploadSnapshot(NewerBatchEndDate)
     assertEquals(ExpectedFeatures(ListingWithoutStreamingTail), fetchFeatures(fetcher, ListingWithoutStreamingTail))
     assertEquals(OlderBatchEndTs, cachedBatchEndTs(fetcher))
-    assertEquals(NewerBatchEndTs, cachedIrBatchEndTs(fetcher, batchIrCache, ListingWithoutStreamingTail))
+    assertEquals(None, cachedIrBatchEndTs(batchIrCache, ListingWithoutStreamingTail, OlderBatchEndTs))
+    assertEquals(Some(NewerBatchEndTs), cachedIrBatchEndTs(batchIrCache, ListingWithoutStreamingTail, NewerBatchEndTs))
     assertEquals(ExpectedFeatures(ListingWithoutStreamingTail), fetchFeatures(fetcher, ListingWithoutStreamingTail))
     // A cache hit on the older IR is still served correctly, as of the older batch end.
     assertEquals(ExpectedFeatures(ListingWithStreamingTail), fetchFeatures(fetcher, ListingWithStreamingTail))
 
-    // Let the serving info catch up with the newer snapshot; the cache keys move with it.
+    // Let the serving info catch up with the newer snapshot; lookups now find the newer entries.
     clock.addAndGet(ServingInfoRefreshIntervalMillis + 1)
     assertAllListingsCorrect(fetcher)
     awaitCachedBatchEndTs(fetcher, NewerBatchEndTs)
     assertAllListingsCorrect(fetcher)
-    assertEquals(NewerBatchEndTs, cachedIrBatchEndTs(fetcher, batchIrCache, ListingWithStreamingTail))
+    assertEquals(Some(NewerBatchEndTs), cachedIrBatchEndTs(batchIrCache, ListingWithStreamingTail, NewerBatchEndTs))
 
-    // Rollback while the newer serving info is cached. Cache hits keep serving the newer IR (correct, since it is
-    // consistent with the streaming data), until the serving info refresh moves the key to the older batch end and
-    // the older IR is read from the KV store and served as of its own batch end.
+    // Rollback while the newer serving info is cached. Until the refresh, lookups hit the newer IR (consistent with
+    // the streaming data); once the serving info moves back, lookups use the older key and the rolled back IR is read
+    // from the KV store (or from an older entry holding the same older data), never the newer one.
     uploadSnapshot(OlderBatchEndDate)
     assertAllListingsCorrect(fetcher)
     clock.addAndGet(ServingInfoRefreshIntervalMillis + 1)
     assertAllListingsCorrect(fetcher)
     awaitCachedBatchEndTs(fetcher, OlderBatchEndTs)
     assertAllListingsCorrect(fetcher)
-    assertEquals(OlderBatchEndTs, cachedIrBatchEndTs(fetcher, batchIrCache, ListingWithStreamingTail))
-    assertAllListingsCorrect(fetcher) // cache hits on the older IR
+    assertEquals(Some(OlderBatchEndTs), cachedIrBatchEndTs(batchIrCache, ListingWithStreamingTail, OlderBatchEndTs))
+    assertEquals(Some(OlderBatchEndTs), cachedIrBatchEndTs(batchIrCache, ListingWithoutStreamingTail, OlderBatchEndTs))
+    assertAllListingsCorrect(fetcher) // cache hits on the older IRs
+  }
+
+  // A forward upload under stale (older) serving info used to cache the newer data under the older key; a later
+  // rollback to the older snapshot then kept reactivating that newer entry, indefinitely (the IR cache has no TTL).
+  @Test
+  def testBatchIrCacheDoesNotReactivateNewerSnapshotAfterRollback(): Unit = {
+    val batchIrCache = new BatchIrCache("test_batch_ir_cache", 100)
+    val fetcher = newFetcher(Some(batchIrCache))
+    val listing = ListingWithoutStreamingTail
+
+    // Warm the serving info on the older snapshot with another key; `listing` itself stays cold in the IR cache.
+    uploadSnapshotGroupBy(OlderBatchEndDate)
+    fetchFeatures(fetcher, ListingWithStreamingTail, SnapshotGroupByName)
+    assertEquals(OlderBatchEndTs, cachedBatchEndTs(fetcher, SnapshotGroupByName))
+
+    // Forward upload, fetched while the older serving info is still cached: the newer values enter the cache.
+    uploadSnapshotGroupBy(NewerBatchEndDate)
+    assertEquals(ExpectedSnapshotFeatures(listing, NewerBatchEndTs),
+                 fetchFeatures(fetcher, listing, SnapshotGroupByName))
+    clock.addAndGet(ServingInfoRefreshIntervalMillis + 1)
+    fetchFeatures(fetcher, listing, SnapshotGroupByName)
+    awaitCachedBatchEndTs(fetcher, NewerBatchEndTs, SnapshotGroupByName)
+
+    // Rollback. Once the serving info is back on the older batch end, the older values must be served on every
+    // fetch, not the newer ones that were cached while the older serving info was live.
+    uploadSnapshotGroupBy(OlderBatchEndDate)
+    clock.addAndGet(ServingInfoRefreshIntervalMillis + 1)
+    fetchFeatures(fetcher, listing, SnapshotGroupByName)
+    awaitCachedBatchEndTs(fetcher, OlderBatchEndTs, SnapshotGroupByName)
+    (1 to 3).foreach { _ =>
+      assertEquals(ExpectedSnapshotFeatures(listing, OlderBatchEndTs),
+                   fetchFeatures(fetcher, listing, SnapshotGroupByName))
+    }
+  }
+
+  // The KV store reports the re-read failure per key (a GetResponse holding a Failure) rather than failing the call.
+  @Test
+  def testPerKeyStreamingReReadFailureKeepsTheFirstPhaseRows(): Unit = {
+    val fetcher = newFetcher()
+    assertAllListingsCorrect(fetcher)
+
+    uploadSnapshot(OlderBatchEndDate)
+    kvStore.failKeysScanningBefore = Some(NewerBatchEndTs)
+
+    // Same degradation as a failed re-read call: older batch IR plus the streaming rows already fetched.
+    val degraded = fetchFeatures(fetcher, ListingWithStreamingTail)
+    val reviews = AllReviews.filter(_.listingId == ListingWithStreamingTail)
+    val servedCount =
+      reviews.count(r => r.tsMillis < OlderBatchEndTs || (r.tsMillis >= NewerBatchEndTs && r.tsMillis < QueryTs))
+    assertEquals(Long.box(servedCount.toLong), degraded(s"${RatingColumn}_count"))
+
+    kvStore.failKeysScanningBefore = None
+    clock.addAndGet(ServingInfoRefreshIntervalMillis + 1)
+    fetchFeatures(fetcher, ListingWithStreamingTail)
+    awaitCachedBatchEndTs(fetcher, OlderBatchEndTs)
+    assertAllListingsCorrect(fetcher)
   }
 
   @Test
@@ -348,29 +406,22 @@ class OlderSnapshotUploadFetchTest {
                    fetchFeatures(fetcher, listingId))
     }
 
-  private def cachedBatchEndTs(fetcher: FetcherBase): Long =
-    fetcher.getGroupByServingInfo(GroupByName).get.batchEndTsMillis
+  private def cachedBatchEndTs(fetcher: FetcherBase, groupByName: String = GroupByName): Long =
+    fetcher.getGroupByServingInfo(groupByName).get.batchEndTsMillis
 
-  /**
-    * The batch end carried by the IR cached for `listingId` under the key the fetcher is currently using, i.e. the
-    * one with the cached serving info's batch end. (Entries under previous keys stay in the LRU until evicted.)
-    */
-  private def cachedIrBatchEndTs(fetcher: FetcherBase, batchIrCache: BatchIrCache, listingId: Long): Long = {
-    val key =
-      BatchIrCache.Key(groupByOps.batchDataset, Map(ListingIdColumn -> Long.box(listingId)), cachedBatchEndTs(fetcher))
-    batchIrCache.cache.getIfPresent(key) match {
-      case cached: CachedBatchResponse => cached.batchEndTsMillis
-      case other                       => throw new AssertionError(s"no cached IR for listing $listingId under $key: $other")
-    }
+  /** The batch end carried by the IR cached for `listingId` under the key with batch end `keyBatchEndTs`, if any. */
+  private def cachedIrBatchEndTs(batchIrCache: BatchIrCache, listingId: Long, keyBatchEndTs: Long): Option[Long] = {
+    val key = BatchIrCache.Key(groupByOps.batchDataset, Map(ListingIdColumn -> Long.box(listingId)), keyBatchEndTs)
+    Option(batchIrCache.cache.getIfPresent(key)).map { case cached: CachedBatchResponse => cached.batchEndTsMillis }
   }
 
   /** Serving info refreshes are asynchronous; wait (briefly) for one that a fetch has already triggered to land. */
-  private def awaitCachedBatchEndTs(fetcher: FetcherBase, expected: Long): Unit = {
+  private def awaitCachedBatchEndTs(fetcher: FetcherBase, expected: Long, groupByName: String = GroupByName): Unit = {
     val deadline = System.currentTimeMillis() + ConvergenceTimeoutMillis
-    while (cachedBatchEndTs(fetcher) != expected && System.currentTimeMillis() < deadline) {
+    while (cachedBatchEndTs(fetcher, groupByName) != expected && System.currentTimeMillis() < deadline) {
       Thread.sleep(10)
     }
-    assertEquals("cached serving info batchEndTs", expected, cachedBatchEndTs(fetcher))
+    assertEquals("cached serving info batchEndTs", expected, cachedBatchEndTs(fetcher, groupByName))
   }
 }
 
@@ -521,6 +572,8 @@ object OlderSnapshotUploadFetchTest {
     private val datasets = new ConcurrentHashMap[String, ConcurrentHashMap[String, Seq[TimedValue]]]()
     // When set, any multiGet that scans from before this ts fails: simulates the streaming re-read failing.
     @volatile var failReadsScanningBefore: Option[Long] = None
+    // When set, any request scanning from before this ts gets a per-key Failure while the call itself succeeds.
+    @volatile var failKeysScanningBefore: Option[Long] = None
     private def encode(bytes: Array[Byte]): String = Base64.getEncoder.encodeToString(bytes)
 
     override def create(dataset: String): Unit =
@@ -538,7 +591,10 @@ object OlderSnapshotUploadFetchTest {
                 .getOrElse(throw new NoSuchElementException(s"No value for key in ${request.dataset}"))
               stored.filter(value => request.afterTsMillis.forall(value.millis >= _)).sortBy(_.millis)
             }
-            GetResponse(request, values)
+            val perKeyFailure = failKeysScanningBefore
+              .filter(ts => request.afterTsMillis.exists(_ < ts))
+              .map(_ => Failure(new RuntimeException("simulated per-key KV store failure on streaming re-read")))
+            GetResponse(request, perKeyFailure.getOrElse(values))
           }
         }
 
