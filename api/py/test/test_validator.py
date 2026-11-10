@@ -17,13 +17,17 @@ Forcing validator to fail some tests
 #     limitations under the License.
 
 import pytest
-from ai.chronon.api.ttypes import StagingQuery, MetaData
+from ai.chronon.api.ttypes import MetaData, StagingQuery
 from ai.chronon.repo import validator
 
 
 @pytest.fixture
-def zvalidator():
-    return validator.ChrononRepoValidator(chronon_root_path="api/py/test/sample", output_root="production")
+def zvalidator(request):
+    return validator.ChrononRepoValidator(
+        chronon_root_path="api/py/test/sample",
+        output_root="production",
+        skip_production_dependency_check=getattr(request, "param", False),
+    )
 
 
 @pytest.fixture
@@ -54,6 +58,7 @@ def valid_events_group_by(zvalidator):
     )[0]
 
 
+@pytest.mark.parametrize("zvalidator", [False, True], indirect=True)
 def test_validate_group_by_online(zvalidator, valid_online_group_by):
     # No errors on regular run.
     assert not zvalidator._validate_group_by(valid_online_group_by)
@@ -61,13 +66,17 @@ def test_validate_group_by_online(zvalidator, valid_online_group_by):
     assert zvalidator._validate_group_by(valid_online_group_by)
 
 
+@pytest.mark.parametrize("zvalidator", [False, True], indirect=True)
 def test_validate_group_by_prod_on_prod_join(zvalidator, valid_online_group_by, valid_online_join):
     assert not zvalidator._validate_group_by(valid_online_group_by)
     valid_online_join.metaData.production = True
     valid_online_group_by.metaData.production = False
-    assert zvalidator._validate_group_by(valid_online_group_by)
+    errors = zvalidator._validate_group_by(valid_online_group_by)
+    assert bool(errors) == (not zvalidator.skip_production_dependency_check)
+    assert valid_online_group_by.metaData.production is False
 
 
+@pytest.mark.parametrize("zvalidator", [False, True], indirect=True)
 def test_validate_group_by_prod_promotes_on_prod_join(zvalidator, valid_online_group_by, valid_online_join):
     assert not zvalidator._validate_group_by(valid_online_group_by)
     valid_online_join.metaData.production = True
@@ -76,13 +85,17 @@ def test_validate_group_by_prod_promotes_on_prod_join(zvalidator, valid_online_g
     assert valid_online_group_by.metaData.production is True
 
 
+@pytest.mark.parametrize("zvalidator", [False, True], indirect=True)
 def test_validate_join_prod_join_non_prod_group_by(zvalidator, valid_online_join, valid_online_group_by):
     assert not zvalidator._validate_join(valid_online_join)
     valid_online_join.metaData.production = True
     valid_online_group_by.metaData.production = False
-    assert zvalidator._validate_join(valid_online_join)
+    errors = zvalidator._validate_join(valid_online_join)
+    assert bool(errors) == (not zvalidator.skip_production_dependency_check)
+    assert valid_online_group_by.metaData.production is False
 
 
+@pytest.mark.parametrize("zvalidator", [False, True], indirect=True)
 def test_validate_join_online_join_offline_group_by(zvalidator, valid_online_join, valid_online_group_by):
     assert not zvalidator._validate_join(valid_online_join)
     valid_online_group_by.metaData.online = False
@@ -172,9 +185,9 @@ def test_get_join_key_columns():
     """Test the get_join_key_columns function"""
     from ai.chronon.repo.validator import get_join_key_columns
     from sample.joins.sample_team.sample_join_derivation_key_mapping import v1
-    
+
     # Expected keys
-    expected_keys = { "subject" }
+    expected_keys = {"subject"}
 
     # Test with a valid online join
     key_columns = get_join_key_columns(v1)
@@ -184,12 +197,12 @@ def test_get_join_key_columns():
 
 def test_get_join_output_columns():
     """Test the get_join_key_columns function"""
-    from ai.chronon.repo.validator import get_join_output_columns
-    from sample.joins.sample_team.sample_join_derivation_key_mapping import v1
-    
     # Expected columns
     from typing import Dict, List
+
+    from ai.chronon.repo.validator import get_join_output_columns
     from ai.chronon.utils import FeatureDisplayKeys
+    from sample.joins.sample_team.sample_join_derivation_key_mapping import v1
 
     # Assuming FeatureDisplayKeys enum is already imported
     expected_output_columns: Dict[FeatureDisplayKeys, List[str]] = {
@@ -225,21 +238,23 @@ def test_get_join_output_columns():
     output_columns = get_join_output_columns(v1)
     assert output_columns == expected_output_columns
     return
+
+
 def test_validate_staging_query_with_createview_false(zvalidator):
     """Test that staging query with createView=False allows date templates"""
     staging_query = StagingQuery(
         query="SELECT * FROM table WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
         createView=False,
-        metaData=MetaData(name="test_staging_query")
+        metaData=MetaData(name="test_staging_query"),
     )
-    
+
     errors = zvalidator._validate_staging_query(staging_query)
     assert len(errors) == 0, f"Should not have errors when createView=False: {errors}"
 
 
 def test_validate_staging_query_with_createview_true(zvalidator):
     """Test staging query validation when createView=True"""
-    
+
     # Test cases that should be rejected (contain date templates)
     invalid_queries = [
         "SELECT * FROM table WHERE ds BETWEEN '{{ start_date }}' AND '{{ end_date }}'",
@@ -249,24 +264,15 @@ def test_validate_staging_query_with_createview_true(zvalidator):
         "SELECT * FROM table WHERE ds = '{{  start_date  }}'",  # multiple spaces
         "SELECT * FROM table WHERE ds = '{{ END_DATE }}'",  # uppercase
     ]
-    
+
     for query in invalid_queries:
-        staging_query = StagingQuery(
-            query=query,
-            createView=True,
-            metaData=MetaData(name="test_staging_query")
-        )
+        staging_query = StagingQuery(query=query, createView=True, metaData=MetaData(name="test_staging_query"))
         errors = zvalidator._validate_staging_query(staging_query)
         assert len(errors) == 1, f"Should reject date template in query: {query}"
         assert "createView=True cannot contain" in errors[0]
-    
+
     # Test case that should be allowed (other templates)
     valid_query = "SELECT * FROM table WHERE ds <= '{{ latest_date }}' AND id = '{{ max_date(table=other_table) }}'"
-    staging_query = StagingQuery(
-        query=valid_query,
-        createView=True,
-        metaData=MetaData(name="test_staging_query")
-    )
+    staging_query = StagingQuery(query=valid_query, createView=True, metaData=MetaData(name="test_staging_query"))
     errors = zvalidator._validate_staging_query(staging_query)
     assert len(errors) == 0, f"Should allow other templates when createView=True: {errors}"
-
