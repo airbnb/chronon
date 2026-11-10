@@ -292,6 +292,10 @@ class FetcherBase(kvStore: KVStore,
     batchResponses match {
       case kvStoreResponse: KvStoreBatchResponse => {
         val batchResponseMaxTs = kvStoreResponse.maxTsMillis
+        // No batch value (a key without batch data, or a failed batch read) deliberately does not refresh the serving
+        // info: such a response looks the same whether or not an upload has landed, so refreshing on it would poll
+        // the metadata every refresh interval for every GroupBy that serves new entities. A host that only sees such
+        // keys picks up a new or rolled back upload on the TTL instead; any key with a batch value refreshes at once.
         val servingInfo = batchResponseMaxTs.map(ts => updateServingInfo(ts, oldServingInfo)).getOrElse(oldServingInfo)
         (servingInfo, batchResponseMaxTs)
       }
