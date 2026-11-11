@@ -27,7 +27,7 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.functions.{col, lit, to_json}
 import org.junit.Assert.{assertEquals, assertTrue}
 import org.junit.Test
-import org.mockito.ArgumentMatchers.any
+import org.mockito.ArgumentMatchers.{any, eq => meq}
 import org.mockito.Mockito.{never, spy, verify, when}
 import org.slf4j.LoggerFactory
 
@@ -488,9 +488,15 @@ class AnalyzerTest {
       accuracy = Accuracy.SNAPSHOT
     )
 
-    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneMonthAgo, today)
+    // use a historical range (end date in the past) to regression-test
+    // https://github.com/airbnb/chronon/issues/709 - the permission check's fallback
+    // partition should be derived from the analyzer's end date, not wall-clock "today"
+    val analyzer = new Analyzer(tableUtils, tableGroupBy, oneYearAgo, oneMonthAgo)
     val analyzerResult = analyzer.analyzeGroupBy(tableGroupBy)
     assertEquals(1, analyzerResult.noAccessTables.size)
+
+    val expectedPartitionFilter = tableUtils.partitionSpec.minus(oneMonthAgo, new Window(2, TimeUnit.DAYS))
+    verify(tableUtils).checkTablePermission(any(), meq(expectedPartitionFilter), any())
   }
 
   @Test(expected = classOf[java.lang.AssertionError])
