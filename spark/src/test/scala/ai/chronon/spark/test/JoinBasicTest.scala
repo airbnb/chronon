@@ -38,6 +38,65 @@ import scala.util.Random
 import scala.util.ScalaJavaConversions.ListOps
 import scala.util.Try
 
+class SnapshotPartBoundaryTest {
+  @Test
+  def testSnapshotPartWritesOnlyUnfilledPartitions(): Unit = {
+    val spark = SparkSessionBuilder.build("SnapshotPartBoundary_" + Random.alphanumeric.take(6).mkString, local = true)
+    val tableUtils = TableUtils(spark)
+    val namespace = "test_snapshot_boundary_" + Random.alphanumeric.take(6).mkString
+    tableUtils.createDatabase(namespace)
+    val leftTable = s"$namespace.left_events"
+    val rightTable = s"$namespace.right_entities"
+
+    // The same storage partition contains an on-time, an early, and a late event.
+    spark.sql("""SELECT 'a' AS item, unix_timestamp('2024-01-11 12:00:00') * 1000 AS ts, '2024-01-11' AS ds
+                |UNION ALL
+                |SELECT 'b', unix_timestamp('2024-01-12 12:00:00') * 1000, '2024-01-11'
+                |UNION ALL
+                |SELECT 'c', unix_timestamp('2024-01-10 12:00:00') * 1000, '2024-01-11'""".stripMargin)
+      .save(leftTable)
+    spark.sql("""SELECT 'a' AS item, 1L AS value, '2024-01-10' AS ds
+                |UNION ALL SELECT 'b', 2L, '2024-01-11'
+                |UNION ALL SELECT 'c', 3L, '2024-01-09'""".stripMargin).save(rightTable)
+
+    val groupBy = Builders.GroupBy(
+      sources = Seq(Builders.Source.entities(Builders.Query(startPartition = "2024-01-09"), snapshotTable = rightTable)),
+      keyColumns = Seq("item"),
+      aggregations = Seq(Builders.Aggregation(operation = Operation.SUM, inputColumn = "value")),
+      metaData = Builders.MetaData(name = "unit_test.boundary_features", namespace = namespace),
+      accuracy = Accuracy.SNAPSHOT
+    )
+    val conf = Builders.Join(
+      left = Builders.Source.events(Builders.Query(startPartition = "2024-01-11"), table = leftTable),
+      joinParts = Seq(Builders.JoinPart(groupBy = groupBy)),
+      metaData = Builders.MetaData(name = "unit_test.boundary_join", namespace = namespace, team = "chronon")
+    )
+    val part = conf.joinParts.toScala.head
+    val partTable = conf.partOutputTable(part)
+    val runner = new Join(conf, "2024-01-12", tableUtils)
+    val left = tableUtils.sql(s"SELECT * FROM $leftTable").withStats
+    val leftRange = PartitionRange("2024-01-11", "2024-01-11")(tableUtils)
+    val timeRange = PartitionRange("2024-01-10", "2024-01-12")(tableUtils)
+
+    def fill(): Unit = runner.computeRightTable(Some(left), part, leftRange, Some(timeRange), None)
+
+    fill()
+    assertEquals(Set("2024-01-10"), tableUtils.partitions(partTable).toSet)
+
+    // Seed both adjacent days with a recognizable key, then recompute the missing day.
+    val adjacent = runner.computeJoinPart(Some(left), part, None).get
+      .filter(col("ds").isin("2024-01-09", "2024-01-11"))
+      .withColumn("item", lit("preserved"))
+    assertEquals("the fixture must produce both adjacent snapshots", 2L, adjacent.count())
+    adjacent.save(partTable)
+    tableUtils.dropPartitionRange(partTable, "2024-01-10", "2024-01-10")
+    fill()
+    assertEquals(2L, tableUtils.sql(s"SELECT * FROM $partTable WHERE ds IN ('2024-01-09', '2024-01-11') AND item = 'preserved'").count())
+    assertEquals(Set("2024-01-09", "2024-01-10", "2024-01-11"), tableUtils.partitions(partTable).toSet)
+  }
+
+}
+
 //These are join tests that are easy to parallelize
 //And don't require a lot of orchestration
 class JoinBasicTests {
