@@ -18,7 +18,7 @@ package ai.chronon.online
 
 import ai.chronon.aggregator.windowing.FinalBatchIr
 import ai.chronon.api.Extensions.{GroupByOps, WindowOps}
-import ai.chronon.api.{Builders, GroupBy, MetaData, TimeUnit, Window}
+import ai.chronon.api.{Builders, GroupBy, GroupByServingInfo, MetaData, PartitionSpec, TimeUnit, Window}
 import ai.chronon.online.Fetcher.{ColumnSpec, Request, Response}
 import ai.chronon.online.FetcherCache.BatchResponses
 import ai.chronon.online.KVStore.TimedValue
@@ -32,6 +32,7 @@ import org.mockito.{Answers, ArgumentCaptor}
 import org.scalatest.matchers.should.Matchers
 import org.scalatestplus.mockito.MockitoSugar
 
+import java.util.concurrent.atomic.{AtomicLong, AtomicReference}
 import scala.concurrent.duration.DurationInt
 import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.util.{Failure, Success}
@@ -182,11 +183,13 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
     groupByOpsMock.metaData = metaDataMock
     doReturn(groupByOpsMock).when(oldServingInfo).groupByOps
 
-    val cachedBatchResponses = BatchResponses(mock[FinalBatchIr])
-    val (result, _) = fetcherBase.getServingInfo(oldServingInfo, cachedBatchResponses)
+    val cachedBatchResponses = BatchResponses(mock[FinalBatchIr], 1000L)
+    val (result, batchEndTs) = fetcherBase.getServingInfo(oldServingInfo, cachedBatchResponses)
 
     // FetcherBase.updateServingInfo is not called, but getGroupByServingInfo.refresh() is.
     result shouldEqual oldServingInfo
+    // The batch end of the cached IR is what the response is served as of.
+    batchEndTs shouldBe Some(1000L)
     verify(ttlCache).refresh(any())
     verify(fetcherBase, never()).updateServingInfo(any(), any())
   }
@@ -317,5 +320,92 @@ class FetcherBaseTest extends MockitoSugar with Matchers with MockitoHelper {
 
     val result = baseFetcher.parseGroupByResponse("prefix", request, response)
     result.keySet shouldBe Set("prefix_exception")
+  }
+
+  private val NewerBatchEndDate = "2026-11-02"
+  private val OlderBatchEndDate = "2026-10-31"
+
+  private def servingInfoWithBatchEnd(batchEndDate: String): GroupByServingInfoParsed = {
+    val servingInfo = new GroupByServingInfo()
+    servingInfo.setGroupBy(Builders.GroupBy(metaData = Builders.MetaData(name = GroupBy)))
+    servingInfo.setBatchEndDate(batchEndDate)
+    new GroupByServingInfoParsed(servingInfo, PartitionSpec(format = "yyyy-MM-dd", spanMillis = 24 * 60 * 60 * 1000L))
+  }
+
+  private def batchResponseAt(millis: Long): BatchResponses =
+    BatchResponses(Success(Seq(TimedValue(Array(1.toByte), millis))))
+
+  // An older batch upload replaced a newer one. The response is served as of the older batch end right away, and
+  // the serving info is refreshed so the streaming scan start moves back too (without waiting for the TTL).
+  @Test
+  def testOlderBatchUploadIsServedAsOfItsOwnBatchEndAndRefreshesServingInfo(): Unit = {
+    val newerServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
+    val olderServingInfo = servingInfoWithBatchEnd(OlderBatchEndDate)
+    val servingInfoInKvStore = new AtomicReference[GroupByServingInfoParsed](newerServingInfo)
+    val nowMillis = new AtomicLong(0L)
+    val servingInfoCache = new TTLCache[String, Try[GroupByServingInfoParsed]](
+      _ => Success(servingInfoInKvStore.get()),
+      name => Metrics.Context(environment = "test", groupBy = name),
+      nowFunc = () => nowMillis.get()
+    )
+    doReturn(servingInfoCache).when(fetcherBase).getGroupByServingInfo
+
+    val cachedServingInfo = servingInfoCache(GroupBy).get
+    servingInfoInKvStore.set(olderServingInfo)
+    nowMillis.addAndGet(10 * 1000L)
+    val olderBatchResponse = batchResponseAt(olderServingInfo.batchEndTsMillis)
+    olderBatchResponse.getBatchBytes should not be null
+
+    val (_, effectiveBatchEndTs) = fetcherBase.getServingInfo(cachedServingInfo, olderBatchResponse)
+    effectiveBatchEndTs shouldBe Some(olderServingInfo.batchEndTsMillis)
+
+    val deadline = System.currentTimeMillis() + 5000L
+    var currentServingInfo = servingInfoCache(GroupBy).get
+    while (
+      currentServingInfo.batchEndTsMillis != olderServingInfo.batchEndTsMillis &&
+      System.currentTimeMillis() < deadline
+    ) {
+      Thread.sleep(50)
+      currentServingInfo = servingInfoCache(GroupBy).get
+    }
+    currentServingInfo.batchEndTsMillis shouldBe olderServingInfo.batchEndTsMillis
+  }
+
+  @Test
+  def testStreamingRequestIsRealignedOnlyWhenBatchEndsBeforeTheScanStart(): Unit = {
+    val streamingRequest = KVStore.GetRequest(Array(1.toByte), "GB_STREAMING", Some(2000L))
+    // older batch end: scan has to start earlier
+    fetcherBase.streamingRequestFrom(streamingRequest, 1000L) shouldBe Some(
+      streamingRequest.copy(afterTsMillis = Some(1000L)))
+    // same or newer batch end: the rows already fetched cover it
+    fetcherBase.streamingRequestFrom(streamingRequest, 2000L) shouldBe None
+    fetcherBase.streamingRequestFrom(streamingRequest, 3000L) shouldBe None
+    // no scan start at all
+    fetcherBase.streamingRequestFrom(streamingRequest.copy(afterTsMillis = None), 1000L) shouldBe None
+  }
+
+  @Test
+  def testNewerBatchUploadRefreshesServingInfo(): Unit = {
+    val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
+    doReturn(ttlCache).when(fetcherBase).getGroupByServingInfo
+    val cachedServingInfo = servingInfoWithBatchEnd(OlderBatchEndDate)
+    doReturn(Success(cachedServingInfo)).when(ttlCache).refresh(any[String])
+
+    fetcherBase.getServingInfo(cachedServingInfo,
+                               batchResponseAt(servingInfoWithBatchEnd(NewerBatchEndDate).batchEndTsMillis))
+
+    verify(ttlCache).refresh(GroupBy)
+  }
+
+  @Test
+  def testSameBatchEndTsDoesNotRefreshServingInfo(): Unit = {
+    val ttlCache = mock[TTLCache[String, Try[GroupByServingInfoParsed]]]
+    doReturn(ttlCache).when(fetcherBase).getGroupByServingInfo
+    val cachedServingInfo = servingInfoWithBatchEnd(NewerBatchEndDate)
+
+    val (result, _) = fetcherBase.getServingInfo(cachedServingInfo, batchResponseAt(cachedServingInfo.batchEndTsMillis))
+
+    result shouldBe cachedServingInfo
+    verify(ttlCache, never()).refresh(any())
   }
 }

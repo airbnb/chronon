@@ -20,10 +20,10 @@ import ai.chronon.aggregator.test.Column
 import ai.chronon.aggregator.windowing.TsUtils
 import ai.chronon.api
 import ai.chronon.api.Constants.ChrononMetadataKey
-import ai.chronon.api.Extensions.{JoinOps, MetadataOps}
+import ai.chronon.api.Extensions.{GroupByOps, JoinOps, MetadataOps}
 import ai.chronon.api._
 import ai.chronon.online.Fetcher.{Request, Response, StatsRequest}
-import ai.chronon.online.{JavaRequest, KVStore, LoggableResponseBase64, MetadataStore}
+import ai.chronon.online.{Fetcher, JavaRequest, KVStore, LoggableResponseBase64, MetadataStore}
 import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions._
 import ai.chronon.spark.catalog.TableUtils
@@ -399,7 +399,12 @@ class FetcherTest extends TestCase {
     joinConf
   }
 
-  def generateEventOnlyData(namespace: String, groupByCustomJson: Option[String] = None): api.Join = {
+  def generateEventOnlyData(namespace: String,
+                            groupByCustomJson: Option[String] = None,
+                            // Late events: ts in an earlier day than the partition they land in. Online, a late
+                            // event is only visible once a batch upload has read its partition, so a test that rolls
+                            // the batch upload back cannot expect them.
+                            includeLateEvents: Boolean = true): api.Join = {
     val spark: SparkSession = createSparkSession()
     val tableUtils = TableUtils(spark)
     tableUtils.createDatabase(namespace)
@@ -412,7 +417,7 @@ class FetcherTest extends TestCase {
       Row(2L, toTs("2021-04-10 03:10:00"), "2021-04-10"),
       Row(null, toTs("2021-04-10 03:10:00"), "2021-04-10")
     )
-    val ratingEventData = Seq(
+    val allRatingEventData = Seq(
       // 1L listing id event data
       Row(1L, toTs("2021-04-08 00:30:00"), 2, "2021-04-08"),
       Row(1L, toTs("2021-04-09 05:35:00"), 4, "2021-04-09"),
@@ -435,6 +440,9 @@ class FetcherTest extends TestCase {
       Row(2L, toTs("2021-04-07 00:30:00"), 10, "2021-04-10"), // dated 4/10 but excluded from avg agg based on ts
       Row(null, toTs("2021-04-10 02:30:00"), 8, "2021-04-10")
     )
+    val ratingEventData = allRatingEventData.filter { row =>
+      includeLateEvents || tableUtils.partitionSpec.at(row.getLong(1)) == row.getString(3)
+    }
     // Schemas
     // {..., event (generic event column), ...}
     val listingsSchema = StructType("listing_events_fetcher",
@@ -536,7 +544,11 @@ class FetcherTest extends TestCase {
                            endDs: String,
                            namespace: String,
                            consistencyCheck: Boolean,
-                           dropDsOnWrite: Boolean): Unit = {
+                           dropDsOnWrite: Boolean,
+                           // After the regular comparison, roll the temporal event GroupBys' batch upload back to
+                           // the previous ds while the fetcher still caches the newer GroupByServingInfo, and
+                           // compare again: the online values must still match the offline join.
+                           rollbackToPrevDs: Boolean = false): Unit = {
     implicit val executionContext: ExecutionContext = ExecutionContext.fromExecutor(Executors.newFixedThreadPool(1))
     val spark: SparkSession = createSparkSession()
     val tableUtils = TableUtils(spark)
@@ -622,10 +634,53 @@ class FetcherTest extends TestCase {
     FetcherTestUtil.joinResponses(spark, requests, mockApi, runCount = 10, useJavaFetcher = true)
     FetcherTestUtil.joinResponses(spark, requests, mockApi, runCount = 10)
 
+    // Rollback: with the fetcher's GroupByServingInfo cache warmed on the newer upload, roll the batch upload back
+    // one day and let the comparison below run against that state with the same fetcher.
+    val rollbackFetcher: Option[Fetcher] =
+      if (!rollbackToPrevDs) None
+      else {
+        val prevDs = tableUtils.partitionSpec.before(endDs)
+        val fetcher = mockApi.buildFetcher(debug = true)
+        FetcherTestUtil.joinResponses(spark, requests, mockApi, fetcherOpt = Some(fetcher))
+
+        // Bulk-load replace semantics (InMemoryKvStore.bulkPut recreates the dataset). The streaming dataset is
+        // re-served from prevDs onwards, as a streaming job whose retention covers the rollback would have it. Entity
+        // (mutation) GroupBys are left alone: the harness only serves one ds of mutations, so rolling them back would
+        // also drop the mutations the offline join saw.
+        val rolledBack = joinConf.joinParts.toScala
+          .map(_.groupBy)
+          .filter(gb => gb.inferredAccuracy == Accuracy.TEMPORAL && gb.dataModel == DataModel.Events)
+        assertTrue("rollback test needs at least one temporal event GroupBy", rolledBack.nonEmpty)
+        rolledBack.foreach(gb =>
+          OnlineUtils.serve(tableUtils,
+                            inMemoryKvStore,
+                            kvStoreFunc,
+                            namespace,
+                            prevDs,
+                            gb,
+                            dropDsOnWrite = dropDsOnWrite))
+        rolledBack.foreach { gb =>
+          assertEquals(
+            s"${gb.metaData.name} should still have the newer batch end cached before the first fetch",
+            tableUtils.partitionSpec.epochMillis(endDs),
+            fetcher.getGroupByServingInfo(gb.metaData.name).get.batchEndTsMillis
+          )
+        }
+        Some(fetcher)
+      }
+
     // comparison
     val columns = endDsExpected.schema.fields.map(_.name)
+    val responses = FetcherTestUtil
+      .joinResponses(spark,
+                     requests,
+                     mockApi,
+                     useJavaFetcher = rollbackFetcher.isEmpty,
+                     fetcherOpt = rollbackFetcher,
+                     debug = true)
+      ._1
     val responseRows: Seq[Row] =
-      FetcherTestUtil.joinResponses(spark, requests, mockApi, useJavaFetcher = true, debug = true)._1.map { res =>
+      responses.map { res =>
         val all: Map[String, AnyRef] =
           res.request.keys ++
             res.values.get ++
@@ -874,6 +929,30 @@ class FetcherTest extends TestCase {
     compareTemporalFetch(joinConf, "2021-04-10", namespace, consistencyCheck = false, dropDsOnWrite = true)
   }
 
+  // An older batch upload replaces the newer one while the fetcher still caches the newer serving info.
+  def testTemporalFetchJoinRollbackToPreviousDs(): Unit = {
+    val namespace = "rollback_fetch"
+    val joinConf = generateEventOnlyData(namespace, includeLateEvents = false)
+    compareTemporalFetch(joinConf,
+                         "2021-04-10",
+                         namespace,
+                         consistencyCheck = false,
+                         dropDsOnWrite = true,
+                         rollbackToPrevDs = true)
+  }
+
+  def testTemporalTiledFetchJoinRollbackToPreviousDs(): Unit = {
+    val namespace = "rollback_tiled_fetch"
+    val joinConf =
+      generateEventOnlyData(namespace, groupByCustomJson = Some("{\"enable_tiling\": true}"), includeLateEvents = false)
+    compareTemporalFetch(joinConf,
+                         "2021-04-10",
+                         namespace,
+                         consistencyCheck = false,
+                         dropDsOnWrite = true,
+                         rollbackToPrevDs = true)
+  }
+
   // test soft-fail on missing keys
   def testEmptyRequest(): Unit = {
     val spark: SparkSession = createSparkSession()
@@ -1084,9 +1163,11 @@ object FetcherTestUtil {
                     runCount: Int = 1,
                     samplePercent: Double = -1,
                     logToHive: Boolean = false,
-                    debug: Boolean = false)(implicit ec: ExecutionContext): (List[Response], DataFrame) = {
+                    debug: Boolean = false,
+                    // Reuse one fetcher across calls, e.g. to keep its GroupByServingInfo cache between them.
+                    fetcherOpt: Option[Fetcher] = None)(implicit ec: ExecutionContext): (List[Response], DataFrame) = {
     val chunkSize = 100
-    @transient lazy val fetcher = mockApi.buildFetcher(debug)
+    @transient lazy val fetcher = fetcherOpt.getOrElse(mockApi.buildFetcher(debug))
     @transient lazy val javaFetcher = mockApi.buildJavaFetcher()
 
     def fetchOnce = {
