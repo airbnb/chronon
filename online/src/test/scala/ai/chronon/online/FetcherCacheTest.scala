@@ -5,7 +5,7 @@ import ai.chronon.api.Extensions.GroupByOps
 import ai.chronon.api.GroupBy
 import ai.chronon.online.FetcherBase._
 import ai.chronon.online.Fetcher.Request
-import ai.chronon.online.FetcherCache.{BatchIrCache, BatchResponses, CachedMapBatchResponse}
+import ai.chronon.online.FetcherCache.{BatchIrCache, BatchResponses, CachedFinalIrBatchResponse, CachedMapBatchResponse}
 import ai.chronon.online.KVStore.TimedValue
 import ai.chronon.online.Metrics.Context
 import ai.chronon.online.serde.AvroCodec
@@ -42,7 +42,8 @@ class FetcherCacheTest extends MockitoHelper {
     val batchEndTsMillis = 1000L
 
     def createBatchir(i: Int) =
-      BatchResponses(FinalBatchIr(collapsed = Array(i), tailHops = Array(Array(Array(i)), Array(Array(i)))))
+      BatchResponses(FinalBatchIr(collapsed = Array(i), tailHops = Array(Array(Array(i)), Array(Array(i)))),
+                     batchEndTsMillis)
     def createCacheKey(i: Int) = BatchIrCache.Key(dataset, Map("key" -> i), batchEndTsMillis)
 
     // Create a bunch of test batchIrs and store them in cache
@@ -65,7 +66,7 @@ class FetcherCacheTest extends MockitoHelper {
     val batchEndTsMillis = 1000L
 
     def createMapResponse(i: Int) =
-      BatchResponses(Map("group_by_key" -> i.asInstanceOf[AnyRef]))
+      BatchResponses(Map("group_by_key" -> i.asInstanceOf[AnyRef]), batchEndTsMillis)
     def createCacheKey(i: Int) = BatchIrCache.Key(dataset, Map("key" -> i), batchEndTsMillis)
 
     // Create a bunch of test mapResponses and store them in cache
@@ -91,7 +92,8 @@ class FetcherCacheTest extends MockitoHelper {
     val batchEndTsMillis = 1000L
 
     def createCacheValue(i: Int) =
-      BatchResponses(FinalBatchIr(collapsed = Array(i), tailHops = Array(Array(Array(i)), Array(Array(i)))))
+      BatchResponses(FinalBatchIr(collapsed = Array(i), tailHops = Array(Array(Array(i)), Array(Array(i)))),
+                     batchEndTsMillis)
     def createCacheKey(i: Int) = BatchIrCache.Key(dataset, Map("key" -> i), batchEndTsMillis)
 
     assert(batchIrCache.cache.estimatedSize() == 0)
@@ -129,7 +131,7 @@ class FetcherCacheTest extends MockitoHelper {
 
     // Add a GetRequest and a FinalBatchIr
     val key = BatchIrCache.Key(getRequest.dataset, keys, batchEndTsMillis)
-    val finalBatchIr = BatchResponses(FinalBatchIr(Array(1), Array(Array(Array(1)), Array(Array(1)))))
+    val finalBatchIr = BatchResponses(FinalBatchIr(Array(1), Array(Array(Array(1)), Array(Array(1)))), batchEndTsMillis)
     testCache.get.cache.put(key, finalBatchIr)
 
     // getCachedRequests should return the GetRequest and FinalBatchIr we cached
@@ -166,39 +168,48 @@ class FetcherCacheTest extends MockitoHelper {
   }
 
   @Test
-  def testGetBatchBytesReturnsLatestTimedValueBytesIfGreaterThanBatchEnd(): Unit = {
+  def testGetBatchBytesReturnsLatestTimedValueBytes(): Unit = {
     val kvStoreResponse = Success(
       Seq(TimedValue(Array(1.toByte), 1000L), TimedValue(Array(2.toByte), 2000L))
     )
     val batchResponses = BatchResponses(kvStoreResponse)
-    val batchBytes = batchResponses.getBatchBytes(1500L)
-    assertArrayEquals(Array(2.toByte), batchBytes)
+    assertArrayEquals(Array(2.toByte), batchResponses.getBatchBytes)
+    assertEquals(Some(2000L), batchResponses.maxTsMillis)
   }
 
+  // An older batch upload replacing a newer one is served as of its own batch end rather than dropped, so the
+  // batch value is returned regardless of what the (possibly stale) cached serving info says the batch end is.
   @Test
-  def testGetBatchBytesReturnsNullIfLatestTimedValueTimestampIsLessThanBatchEnd(): Unit = {
+  def testGetBatchBytesReturnsLatestTimedValueBytesEvenIfOlderThanServingInfoBatchEnd(): Unit = {
     val kvStoreResponse = Success(
       Seq(TimedValue(Array(1.toByte), 1000L), TimedValue(Array(2.toByte), 1500L))
     )
     val batchResponses = BatchResponses(kvStoreResponse)
-    val batchBytes = batchResponses.getBatchBytes(2000L)
-    assertNull(batchBytes)
+    assertArrayEquals(Array(2.toByte), batchResponses.getBatchBytes)
+    assertEquals(Some(1500L), batchResponses.maxTsMillis)
+  }
+
+  @Test
+  def testGetBatchBytesReturnsNullWhenKvStoreBatchResponseIsEmpty(): Unit = {
+    val batchResponses = BatchResponses(Success(Seq.empty[TimedValue]))
+    assertNull(batchResponses.getBatchBytes)
+    assertEquals(None, batchResponses.maxTsMillis)
   }
 
   @Test
   def testGetBatchBytesReturnsNullWhenCachedBatchResponse(): Unit = {
     val finalBatchIr = mock[FinalBatchIr]
-    val batchResponses = BatchResponses(finalBatchIr)
-    val batchBytes = batchResponses.getBatchBytes(1000L)
-    assertNull(batchBytes)
+    val batchResponses = BatchResponses(finalBatchIr, 1000L)
+    assertNull(batchResponses.getBatchBytes)
+    assertEquals(1000L, batchResponses.batchEndTsMillis)
   }
 
   @Test
   def testGetBatchBytesReturnsNullWhenKvStoreBatchResponseFails(): Unit = {
     val kvStoreResponse = Failure(new RuntimeException("KV Store error"))
     val batchResponses = BatchResponses(kvStoreResponse)
-    val batchBytes = batchResponses.getBatchBytes(1000L)
-    assertNull(batchBytes)
+    assertNull(batchResponses.getBatchBytes)
+    assertEquals(None, batchResponses.maxTsMillis)
   }
 
   @Test
@@ -226,9 +237,14 @@ class FetcherCacheTest extends MockitoHelper {
 
     // 1. Cached BatchResponse returns the same IRs passed in
     val finalBatchIr1 = mock[FinalBatchIr]
-    val cachedBatchResponse = BatchResponses(finalBatchIr1)
+    val cachedBatchResponse = BatchResponses(finalBatchIr1, 1000L)
     val cachedIr =
-      spiedFetcherCache.getBatchIrFromBatchResponse(cachedBatchResponse, batchBytes, servingInfo, toBatchIr, keys)
+      spiedFetcherCache.getBatchIrFromBatchResponse(cachedBatchResponse,
+                                                    batchBytes,
+                                                    servingInfo,
+                                                    1000L,
+                                                    toBatchIr,
+                                                    keys)
     assertEquals(finalBatchIr1, cachedIr)
     verify(toBatchIr, never())(any(classOf[Array[Byte]]), any()) // no decoding needed
 
@@ -237,10 +253,49 @@ class FetcherCacheTest extends MockitoHelper {
     val kvStoreBatchResponses = BatchResponses(Success(Seq(TimedValue(batchBytes, 1000L))))
     when(toBatchIr(any(), any())).thenReturn(finalBatchIr2)
     val uncachedIr =
-      spiedFetcherCache.getBatchIrFromBatchResponse(kvStoreBatchResponses, batchBytes, servingInfo, toBatchIr, keys)
+      spiedFetcherCache.getBatchIrFromBatchResponse(kvStoreBatchResponses,
+                                                    batchBytes,
+                                                    servingInfo,
+                                                    1000L,
+                                                    toBatchIr,
+                                                    keys)
     assertEquals(finalBatchIr2, uncachedIr)
-    assertEquals(batchIrCache.cache.getIfPresent(cacheKey), BatchResponses(finalBatchIr2)) // key was added
+    assertEquals(batchIrCache.cache.getIfPresent(cacheKey), BatchResponses(finalBatchIr2, 1000L)) // key was added
     verify(toBatchIr, times(1))(any(), any()) // decoding did happen
+  }
+
+  // Entries are stored under the batch end of the data they hold, and looked up with the cached serving info's
+  // batch end, so while a batch upload has landed but the serving info hasn't been refreshed, lookups miss rather
+  // than hit an IR that doesn't match the serving info (and a later rollback can't reactivate a newer IR).
+  @Test
+  def testGetBatchIrFromBatchResponseStoresUnderTheBatchEndOfTheDataNotOfTheServingInfo(): Unit = {
+    val batchIrCache = new BatchIrCache("test_cache", batchIrCacheMaximumSize)
+    val servingInfo = mock[GroupByServingInfoParsed]
+    val groupByOps = mock[GroupByOps]
+    val toBatchIr = mock[(Array[Byte], GroupByServingInfoParsed) => FinalBatchIr]
+    when(servingInfo.groupByOps).thenReturn(groupByOps)
+    when(groupByOps.batchDataset).thenReturn("test_dataset")
+    when(servingInfo.batchEndTsMillis).thenReturn(1000L)
+    val keys = Map("key" -> "value")
+    val finalBatchIr = mock[FinalBatchIr]
+    when(toBatchIr(any(), any())).thenReturn(finalBatchIr)
+    val spiedFetcherCache = Mockito.spy(new TestableFetcherCache(Some(batchIrCache)))
+    doReturn(true).when(spiedFetcherCache).isCachingEnabled(any())
+
+    // the KV store returned a batch value that ends at 3000, newer than the cached serving info's 1000
+    val batchBytes = Array[Byte](1, 1)
+    val kvStoreBatchResponses = BatchResponses(Success(Seq(TimedValue(batchBytes, 3000L))))
+    spiedFetcherCache.getBatchIrFromBatchResponse(kvStoreBatchResponses,
+                                                  batchBytes,
+                                                  servingInfo,
+                                                  3000L,
+                                                  toBatchIr,
+                                                  keys)
+
+    // stored under the data's batch end (3000), so a lookup with the stale serving info's batch end (1000) misses
+    assertNull(batchIrCache.cache.getIfPresent(BatchIrCache.Key("test_dataset", keys, 1000L)))
+    assertEquals(CachedFinalIrBatchResponse(finalBatchIr, 3000L),
+                 batchIrCache.cache.getIfPresent(BatchIrCache.Key("test_dataset", keys, 3000L)))
   }
 
   @Test
@@ -258,7 +313,12 @@ class FetcherCacheTest extends MockitoHelper {
 
     // When getBatchIrFromBatchResponse is called, it decodes the bytes and doesn't hit the cache
     val ir =
-      spiedFetcherCache.getBatchIrFromBatchResponse(kvStoreBatchResponses, batchBytes, servingInfo, toBatchIr, keys)
+      spiedFetcherCache.getBatchIrFromBatchResponse(kvStoreBatchResponses,
+                                                    batchBytes,
+                                                    servingInfo,
+                                                    1000L,
+                                                    toBatchIr,
+                                                    keys)
     verify(toBatchIr, times(1))(batchBytes, servingInfo) // decoding did happen
     assertEquals(finalBatchIr, ir)
   }
@@ -284,7 +344,7 @@ class FetcherCacheTest extends MockitoHelper {
 
     // 1. Cached BatchResponse returns the same Map responses passed in
     val mapResponse1 = mock[Map[String, AnyRef]]
-    val cachedBatchResponse = BatchResponses(mapResponse1)
+    val cachedBatchResponse = BatchResponses(mapResponse1, 1000L)
     val decodingFunction1 = (bytes: Array[Byte]) => {
       fail("Decoding function should not be called when batch response is cached")
       mapResponse1
@@ -293,6 +353,7 @@ class FetcherCacheTest extends MockitoHelper {
                                                                               batchBytes,
                                                                               decodingFunction1,
                                                                               servingInfo,
+                                                                              1000L,
                                                                               keys)
     assertEquals(mapResponse1, cachedMapResponse)
 
@@ -304,9 +365,12 @@ class FetcherCacheTest extends MockitoHelper {
                                                                                batchBytes,
                                                                                decodingFunction2,
                                                                                servingInfo,
+                                                                               1000L,
                                                                                keys)
     assertEquals(mapResponse2, decodedMapResponse)
-    assertEquals(batchIrCache.cache.getIfPresent(cacheKey), CachedMapBatchResponse(mapResponse2)) // key was added
+    assertEquals(batchIrCache.cache.getIfPresent(cacheKey),
+                 CachedMapBatchResponse(mapResponse2, 1000L)
+    ) // key was added
   }
 
   @Test
@@ -328,6 +392,7 @@ class FetcherCacheTest extends MockitoHelper {
                                                                                batchBytes,
                                                                                servingInfo.outputCodec.decodeMap,
                                                                                servingInfo,
+                                                                               1000L,
                                                                                keys)
     verify(servingInfo.outputCodec.decodeMap(any()), times(1)) // decoding did happen
     assertEquals(mapResponse, decodedMapResponse)

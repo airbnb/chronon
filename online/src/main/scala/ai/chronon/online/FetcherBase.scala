@@ -68,6 +68,16 @@ class FetcherBase(kvStore: KVStore,
   ): Option[Map[String, AnyRef]] = {
     val (servingInfo, batchResponseMaxTs) = getServingInfo(oldServingInfo, batchResponses)
 
+    // The batch data's own timestamp says where batch data ends. The cached serving info only says where this host
+    // started scanning streaming data. The two differ while a batch upload (newer, or an older one re-uploaded as a
+    // rollback) has landed in the KV store but this host's GroupByServingInfo hasn't been refreshed yet. We serve as
+    // of the batch data we actually have, so features stay correct through that window.
+    val effectiveBatchEndTs: Long = batchResponseMaxTs.getOrElse(servingInfo.batchEndTsMillis)
+    if (effectiveBatchEndTs != servingInfo.batchEndTsMillis) {
+      context.increment("group_by.batch_end_mismatch.count")
+      if (effectiveBatchEndTs < servingInfo.batchEndTsMillis) context.increment("group_by.batch_end_rollback.count")
+    }
+
     // Batch metrics
     batchResponses match {
       case kvStoreResponse: KvStoreBatchResponse =>
@@ -77,14 +87,15 @@ class FetcherBase(kvStore: KVStore,
       case _: CachedBatchResponse => // no-op;
     }
 
-    // The bulk upload may not have removed an older batch values. We manually discard all but the latest one.
-    val batchBytes: Array[Byte] = batchResponses.getBatchBytes(servingInfo.batchEndTsMillis)
+    // The bulk upload may not have removed older batch values. We use the latest one, whatever its batch end.
+    val batchBytes: Array[Byte] = batchResponses.getBatchBytes
 
     val responseMap: Map[String, AnyRef] = if (servingInfo.groupBy.aggregations == null) { // no-agg
       getMapResponseFromBatchResponse(batchResponses,
                                       batchBytes,
                                       servingInfo.selectedCodec.decodeMap,
                                       servingInfo,
+                                      effectiveBatchEndTs,
                                       keys)
     } else if (streamingResponsesOpt.isEmpty) { // snapshot accurate
       val batchResponseDecodeStartTime = System.currentTimeMillis()
@@ -92,6 +103,7 @@ class FetcherBase(kvStore: KVStore,
                                                      batchBytes,
                                                      servingInfo.outputCodec.decodeMap,
                                                      servingInfo,
+                                                     effectiveBatchEndTs,
                                                      keys)
       context.distribution("group_by.batchir_decode.latency.millis",
                            System.currentTimeMillis() - batchResponseDecodeStartTime)
@@ -99,7 +111,7 @@ class FetcherBase(kvStore: KVStore,
     } else { // temporal accurate
       val streamingResponses = streamingResponsesOpt.get
       val mutations: Boolean = servingInfo.groupByOps.dataModel == DataModel.Entities
-      val aggregator: SawtoothOnlineAggregator = servingInfo.aggregator
+      val aggregator: SawtoothOnlineAggregator = servingInfo.aggregatorAt(effectiveBatchEndTs)
       if (aggregator.batchEndTs > queryTimeMs) {
         context.incrementException(
           new IllegalArgumentException(
@@ -129,14 +141,14 @@ class FetcherBase(kvStore: KVStore,
       // If caching is enabled, we try to fetch the batch IR from the cache so we avoid the work of decoding it.
       val batchIrDecodeStartTime = System.currentTimeMillis()
       val batchIr: FinalBatchIr =
-        getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, toBatchIr, keys)
+        getBatchIrFromBatchResponse(batchResponses, batchBytes, servingInfo, effectiveBatchEndTs, toBatchIr, keys)
       context.distribution("group_by.batchir_decode.latency.millis",
                            System.currentTimeMillis() - batchIrDecodeStartTime)
 
       // check if we have late batch data for this GroupBy resulting in degraded counters
       val degradedCount = checkLateBatchData(queryTimeMs,
                                              servingInfo.groupBy.metaData.name,
-                                             servingInfo.batchEndTsMillis,
+                                             effectiveBatchEndTs,
                                              aggregator.tailBufferMillis,
                                              aggregator.perWindowAggs.map(_.window))
       context.count("group_by.degraded_counter.count", degradedCount)
@@ -144,7 +156,7 @@ class FetcherBase(kvStore: KVStore,
       val allStreamingIrDecodeStartTime = System.currentTimeMillis()
       val output: Array[Any] = if (servingInfo.isTilingEnabled) {
         val streamingIrs: Iterator[TiledIr] = streamingResponses.iterator
-          .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
+          .filter(tVal => tVal.millis >= effectiveBatchEndTs)
           .flatMap { tVal =>
             Try(servingInfo.tiledCodec.decodeTileIr(tVal.bytes)) match {
               case Success((tile, _)) => Array(TiledIr(tVal.millis, tile))
@@ -176,7 +188,7 @@ class FetcherBase(kvStore: KVStore,
           logger.info(s"""
                          |batch ir: ${gson.toJson(batchIr)}
                          |streamingIrs: ${gson.toJson(streamingIrs)}
-                         |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                         |batchEnd in millis: $effectiveBatchEndTs (serving info: ${servingInfo.batchEndTsMillis})
                          |queryTime in millis: $queryTimeMs
                          |""".stripMargin)
         }
@@ -192,7 +204,7 @@ class FetcherBase(kvStore: KVStore,
         }
 
         val streamingRows: Array[Row] = streamingResponses.iterator
-          .filter(tVal => tVal.millis >= servingInfo.batchEndTsMillis)
+          .filter(tVal => tVal.millis >= effectiveBatchEndTs)
           .flatMap(tVal =>
             Try(selectedCodec.decodeRow(tVal.bytes, tVal.millis, mutations)) match {
               case Success(row) => Seq(row)
@@ -223,7 +235,7 @@ class FetcherBase(kvStore: KVStore,
                          |batch ir: ${gson.toJson(batchIr)}
                          |streamingRows: ${gson.toJson(streamingRows)}
                          |streamingRowsCount: ${Try(streamingRows.length).getOrElse(0)}
-                         |batchEnd in millis: ${servingInfo.batchEndTsMillis}
+                         |batchEnd in millis: $effectiveBatchEndTs (serving info: ${servingInfo.batchEndTsMillis})
                          |queryTime in millis: $queryTimeMs
                          |""".stripMargin)
         }
@@ -271,18 +283,23 @@ class FetcherBase(kvStore: KVStore,
     * @param batchResponses the latest batch responses (either a fresh KV store response or a cached batch ir).
     * @return A tuple that contains:
     *  - the GroupByServingInfoParsed containing the latest serving information.
-    *  - the maximum ts from the batch IR responses. It will be later used for filtering the streaming rows after
-    *    this ts to avoid any potential duplicate records between the batch IR and streaming rows.
+    *  - the batch end of the batch data we are about to serve: the max ts of the KV store batch values, or the ts
+    *    stored with the cached batch IR. None only when there is no batch data at all. The caller serves as of this
+    *    ts (aggregator, streaming row filter and dedupe) rather than the cached serving info's batchEndTsMillis.
     */
   private[online] def getServingInfo(oldServingInfo: GroupByServingInfoParsed,
                                      batchResponses: BatchResponses): (GroupByServingInfoParsed, Option[Long]) = {
     batchResponses match {
-      case batchTimedValuesTry: KvStoreBatchResponse => {
-        val batchResponseMaxTs = batchTimedValuesTry.response.map(_.maxBy(_.millis)).toOption.map(_.millis)
+      case kvStoreResponse: KvStoreBatchResponse => {
+        val batchResponseMaxTs = kvStoreResponse.maxTsMillis
+        // No batch value (a key without batch data, or a failed batch read) deliberately does not refresh the serving
+        // info: such a response looks the same whether or not an upload has landed, so refreshing on it would poll
+        // the metadata every refresh interval for every GroupBy that serves new entities. A host that only sees such
+        // keys picks up a new or rolled back upload on the TTL instead; any key with a batch value refreshes at once.
         val servingInfo = batchResponseMaxTs.map(ts => updateServingInfo(ts, oldServingInfo)).getOrElse(oldServingInfo)
         (servingInfo, batchResponseMaxTs)
       }
-      case _: CachedBatchResponse => {
+      case cachedResponse: CachedBatchResponse => {
         // If there was cached batch data, there's no point try to update the serving info; it would be the same.
         // However, there's one edge case to be handled. If all batch requests are cached and we never hit the kv store,
         // we will never try to update the serving info. In that case, if new batch data were to land, we would never
@@ -290,15 +307,15 @@ class FetcherBase(kvStore: KVStore,
         // KV store to update the serving info. (See CHIP-1)
         getGroupByServingInfo.refresh(oldServingInfo.groupByOps.metaData.name)
 
-        (oldServingInfo, None)
+        (oldServingInfo, Some(cachedResponse.batchEndTsMillis))
       }
     }
   }
 
   /**
-    * If `batchEndTs` is ahead of `groupByServingInfo.batchEndTsMillis`, update the MetadataStore with the new
-    * timestamp. In practice, this means that new batch data has landed, so future kvstore requests should fetch
-    * streaming data after the new batchEndTsMillis.
+    * If `batchEndTs` differs from `groupByServingInfo.batchEndTsMillis`, update the MetadataStore with the new
+    * timestamp. In practice, this means that new batch data has landed (or an older batch replaced it, e.g. a
+    * rollback), so future kvstore requests should fetch streaming data after the new batchEndTsMillis.
     *
     * @param batchEndTs the new batchEndTs from the latest batch data
     * @param groupByServingInfo the current GroupByServingInfo
@@ -306,10 +323,13 @@ class FetcherBase(kvStore: KVStore,
   private[online] def updateServingInfo(batchEndTs: Long,
                                         groupByServingInfo: GroupByServingInfoParsed): GroupByServingInfoParsed = {
     val name = groupByServingInfo.groupBy.metaData.name
-    if (batchEndTs > groupByServingInfo.batchEndTsMillis) {
-      logger.info(s"""$name's value's batch timestamp of $batchEndTs is
-                     |ahead of schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
-                     |Forcing an update of schema.""".stripMargin)
+    if (batchEndTs != groupByServingInfo.batchEndTsMillis) {
+      // Every request for this GroupBy hits this branch until the refresh lands, so sample the log.
+      if (debug || Math.random() < 0.001) {
+        logger.info(s"""$name's value's batch timestamp of $batchEndTs differs from
+                       |schema timestamp of ${groupByServingInfo.batchEndTsMillis}.
+                       |Forcing an update of schema.""".stripMargin)
+      }
       getGroupByServingInfo
         .refresh(name)
         .recover {
@@ -355,7 +375,7 @@ class FetcherBase(kvStore: KVStore,
     // don't send to KV store if ANY of key's value is null
     val validRequests =
       requests.filter(r => r.keys == null || r.keys.values == null || !r.keys.values.exists(_ == null))
-    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
+    val rawGroupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = validRequests.iterator.map { request =>
       request.context
         .getOrElse(Metrics.Context(Metrics.Environment.GroupByFetching, groupBy = request.name))
         .increment("group_by_request.count")
@@ -427,10 +447,23 @@ class FetcherBase(kvStore: KVStore,
 
     // If caching is enabled, we check if any of the GetRequests are already cached. If so, we store them in a Map
     // and avoid the work of re-fetching them. It is mainly for batch data requests.
-    val cachedRequests: Map[GetRequest, CachedBatchResponse] = getCachedRequests(groupByRequestToKvRequest)
+    val cachedRequests: Map[GetRequest, CachedBatchResponse] = getCachedRequests(rawGroupByRequestToKvRequest)
     // Collect cache metrics once per fetchGroupBys call; Caffeine metrics aren't tagged by groupBy
     maybeBatchIrCache.foreach(cache =>
       LRUCache.collectCaffeineCacheMetrics(caffeineMetricsContext, cache.cache, cache.cacheName))
+
+    // A cached batch IR tells us its batch end before we hit the KV store, so its streaming scan can start at the
+    // right place up front (see streamingRequestFrom).
+    val groupByRequestToKvRequest: Seq[(Request, Try[GroupByRequestMeta])] = rawGroupByRequestToKvRequest.map {
+      case (request, Success(meta)) =>
+        val aligned = for {
+          cached <- cachedRequests.get(meta.batchRequest)
+          streamingRequest <- meta.streamingRequestOpt
+          earlier <- streamingRequestFrom(streamingRequest, cached.batchEndTsMillis)
+        } yield meta.copy(streamingRequestOpt = Some(earlier))
+        request -> Success(aligned.getOrElse(meta))
+      case other => other
+    }
 
     val allRequestsToFetch: Seq[GetRequest] = groupByRequestToKvRequest.flatMap {
       case (_, Success(GroupByRequestMeta(_, batchRequest, streamingRequestOpt, _, _))) => {
@@ -456,7 +489,60 @@ class FetcherBase(kvStore: KVStore,
         throw e
     }
 
-    kvResponseFuture
+    // Second phase, only when a batch value turned out to end before the streaming scan started (an older batch
+    // upload replaced a newer one and this host still has the newer GroupByServingInfo cached): re-read streaming
+    // data from the batch value's own batch end so the rows in between aren't lost, and substitute those responses.
+    // Nothing is sent otherwise.
+    val alignedResponseFuture: Future[Seq[GetResponse]] = kvResponseFuture.flatMap { kvResponses: Seq[GetResponse] =>
+      val batchValues: Map[GetRequest, Try[Seq[TimedValue]]] =
+        kvResponses.map(response => response.request -> response.values).toMap
+      // (original streaming request, re-aligned streaming request, context)
+      val streamingRefetches: Seq[(GetRequest, GetRequest, Metrics.Context)] = groupByRequestToKvRequest.flatMap {
+        case (_, Success(GroupByRequestMeta(_, batchRequest, Some(streamingRequest), _, context)))
+            if !cachedRequests.contains(batchRequest) =>
+          for {
+            values <- batchValues.get(batchRequest)
+            batchEndTs <- KvStoreBatchResponse(values).maxTsMillis
+            earlier <- streamingRequestFrom(streamingRequest, batchEndTs)
+          } yield (streamingRequest, earlier, context)
+        case _ => None
+      }
+      if (streamingRefetches.isEmpty) {
+        Future.successful(kvResponses)
+      } else {
+        streamingRefetches.foreach(_._3.increment("group_by.streaming_refetch.count"))
+        kvStore
+          .multiGet(streamingRefetches.map(_._2))
+          .map { refetched =>
+            val refetchedValues = refetched.map(response => response.request -> response.values).toMap
+            // keyed by the original streaming request, which is what the response construction below looks up
+            val realigned: Map[GetRequest, Try[Seq[TimedValue]]] = streamingRefetches.flatMap {
+              case (original, earlier, context) =>
+                refetchedValues.get(earlier) match {
+                  case Some(success @ Success(_)) => Some(original -> success)
+                  case Some(Failure(e))           =>
+                    // per-key failure: keep the first-phase rows, same degradation as a failed re-read future
+                    context.withSuffix("multi_get_refetch").incrementException(e)
+                    None
+                  case None => None
+                }
+            }.toMap
+            kvResponses.filterNot(response => realigned.contains(response.request)) ++
+              realigned.map { case (request, values) => GetResponse(request, values) }
+          }
+          .recover {
+            // Like a failed streaming read in the first phase (served as "no streaming data" below), a failed
+            // re-read degrades only the affected requests rather than failing the whole batch: they are served
+            // from the rows already fetched, i.e. batch IR + streaming after the stale cutoff, and the exception
+            // is counted so the gap is visible.
+            case e: Throwable =>
+              streamingRefetches.foreach(_._3.withSuffix("multi_get_refetch").incrementException(e))
+              kvResponses
+          }
+      }
+    }
+
+    alignedResponseFuture
       .map { kvResponses: Seq[GetResponse] =>
         val multiGetMillis = System.currentTimeMillis() - startTimeMs
         val responsesMap: Map[GetRequest, Try[Seq[TimedValue]]] = kvResponses.map { response =>
@@ -811,6 +897,18 @@ class FetcherBase(kvStore: KVStore,
       responseByQuery
     }
   }
+
+  /**
+    * Streaming scans start at the batch end the cached GroupByServingInfo knows about (`afterTsMillis`). When the
+    * batch data we are going to serve ends earlier than that, the scan must start at that earlier batch end or the
+    * rows in between are lost. Returns the re-aligned request, or None when the scan already starts early enough
+    * (a later batch end is handled by filtering rows in constructGroupByResponse, no extra read needed).
+    */
+  private[online] def streamingRequestFrom(streamingRequest: GetRequest, batchEndTs: Long): Option[GetRequest] =
+    streamingRequest.afterTsMillis match {
+      case Some(afterTs) if batchEndTs < afterTs => Some(streamingRequest.copy(afterTsMillis = Some(batchEndTs)))
+      case _                                     => None
+    }
 
   // This method checks if there's a longer gap between the batch end and the query time than the tail buffer duration
   // This indicates we're missing batch data for too long and if there are groupBy aggregations that include a longer
