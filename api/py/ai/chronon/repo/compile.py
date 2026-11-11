@@ -75,6 +75,11 @@ def get_folder_name_from_class_name(class_name):
 )
 @click.option("--debug", help="debug mode", is_flag=True)
 @click.option("--force-overwrite", help="Force overwriting existing materialized conf.", is_flag=True)
+@click.option(
+    "--skip-production-dependency-check",
+    help="Allow production Joins to depend on explicitly non-production GroupBys. Other validations still apply.",
+    is_flag=True,
+)
 @click.option("--feature-display", help="Print out the features list created by the conf.", is_flag=True)
 @click.option(
     "--table-display",
@@ -88,7 +93,15 @@ def get_folder_name_from_class_name(class_name):
     help="Skip confirmation prompts (for non-interactive use).",
 )
 def extract_and_convert(
-    chronon_root, input_path, output_root, debug, force_overwrite, feature_display, table_display, yes
+    chronon_root,
+    input_path,
+    output_root,
+    debug,
+    force_overwrite,
+    feature_display,
+    table_display,
+    yes,
+    skip_production_dependency_check=False,
 ):
     """
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
@@ -114,7 +127,12 @@ def extract_and_convert(
         results = eo.from_file(chronon_root_path, full_input_path, obj_class, log_level=log_level)
     else:
         raise Exception(f"Input Path: {full_input_path}, isn't a file or a folder")
-    validator = ChrononRepoValidator(chronon_root_path, output_root, log_level=log_level)
+    validator = ChrononRepoValidator(
+        chronon_root_path,
+        output_root,
+        log_level=log_level,
+        skip_production_dependency_check=skip_production_dependency_check,
+    )
     extra_online_or_gb_backfill_enabled_group_bys = {}
     extra_dependent_group_bys_to_materialize = {}
     extra_dependent_joins_to_materialize = {}

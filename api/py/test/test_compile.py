@@ -19,6 +19,7 @@ Run the flow for materialize.
 import json
 import os
 import re
+
 import pytest
 from ai.chronon.api.ttypes import GroupBy, Join
 from ai.chronon.repo.compile import extract_and_convert
@@ -96,10 +97,13 @@ def test_basic_compile():
         extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/", "-y"]
     )
     assert result.exit_code == 0
-    result = runner.invoke(extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team", "-y"])
+    result = runner.invoke(
+        extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team", "-y"]
+    )
     assert result.exit_code == 0
     result = runner.invoke(
-        extract_and_convert, ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/sample_join.py", "-y"]
+        extract_and_convert,
+        ["--chronon_root=api/py/test/sample", "--input_path=joins/sample_team/sample_join.py", "-y"],
     )
     assert result.exit_code == 0
 
@@ -155,9 +159,7 @@ def test_failed_compile():
     runner = CliRunner()
     result = runner.invoke(
         extract_and_convert,
-        [
-            "--input_path=joins/sample_team/", "-y"
-        ],
+        ["--input_path=joins/sample_team/", "-y"],
     )
     assert result.exit_code != 0
 
@@ -189,6 +191,49 @@ def test_compiling_online_join_compiles_all_online_gb(specific_setup):
 
     full_file_path = _get_full_file_path("sample/production/group_bys/unit_test/event_sample_group_by.v1")
     _assert_file_exists(full_file_path, "Expected the group_by to be materialized, but it was not.")
+
+
+def test_compile_skip_production_dependency_check(tmp_path, monkeypatch):
+    from joins.unit_test.sample_online_join import v1
+
+    monkeypatch.setattr(v1.metaData, "production", True)
+    group_by = v1.joinParts[0].groupBy
+    monkeypatch.setattr(group_by.metaData, "production", False)
+    runner = CliRunner()
+    flags = [f"--output_root={tmp_path}", "--force-overwrite"]
+    group_by_input = "group_bys/unit_test/event_sample_group_by.py"
+    join_input = "joins/unit_test/sample_online_join.py"
+    group_by_output = tmp_path / "group_bys/unit_test/event_sample_group_by.v1"
+    join_output = tmp_path / "joins/unit_test/sample_online_join.v1"
+
+    # Materialize the non-production GroupBy before compiling its production Join.
+    result = _invoke_cli_with_params(runner, group_by_input, flags)
+    assert result.exit_code == 0, result.output
+    assert group_by_output.exists()
+
+    result = _invoke_cli_with_params(runner, join_input, flags)
+    assert result.exit_code == 0, result.output
+    assert "non production group_bys" in result.output
+    assert not join_output.exists()
+
+    override_flags = flags + ["--skip-production-dependency-check"]
+    result = _invoke_cli_with_params(runner, join_input, override_flags)
+    assert result.exit_code == 0, result.output
+    assert "Could not write" not in result.output
+    compiled_join = json2thrift(join_output.read_text(), Join)
+    assert compiled_join.metaData.production is True
+    assert compiled_join.joinParts[0].groupBy.metaData.production is False
+    assert json2thrift(group_by_output.read_text(), GroupBy).metaData.production is False
+
+    # Recompiling the GroupBy checks its existing production Join as well.
+    result = _invoke_cli_with_params(runner, group_by_input, flags)
+    assert result.exit_code == 0, result.output
+    assert "explicitly marked as non-production" in result.output
+
+    result = _invoke_cli_with_params(runner, group_by_input, override_flags)
+    assert result.exit_code == 0, result.output
+    assert "Could not write" not in result.output
+    assert json2thrift(group_by_output.read_text(), GroupBy).metaData.production is False
 
 
 def test_compiling_join_compiles_online_bsd_gb(specific_setup):
@@ -437,14 +482,16 @@ def test_compile_external_source_with_offline_group_by():
         assert external_source_with_offline_gb is not None, "Expected to find test_external_source"
 
         # Verify the offlineGroupBy is present and has the expected properties
-        assert external_source_with_offline_gb.offlineGroupBy is not None, (
-            "Expected offlineGroupBy to be present in test_external_source"
-        )
+        assert (
+            external_source_with_offline_gb.offlineGroupBy is not None
+        ), "Expected offlineGroupBy to be present in test_external_source"
 
         offline_gb = external_source_with_offline_gb.offlineGroupBy
-        assert offline_gb.keyColumns == ["group_by_subject"], f"Expected key columns to be ['group_by_subject'], got {offline_gb.keyColumns}"
+        assert offline_gb.keyColumns == [
+            "group_by_subject"
+        ], f"Expected key columns to be ['group_by_subject'], got {offline_gb.keyColumns}"
         assert offline_gb.aggregations is not None, "Expected aggregations to be present"
         assert len(offline_gb.aggregations) == 3, f"Expected 3 aggregations, got {len(offline_gb.aggregations)}"
-        assert offline_gb.metaData.outputNamespace == "sample_namespace", (
-            f"Expected output namespace to be 'sample_namespace', got {offline_gb.metaData.outputNamespace}"
-        )
+        assert (
+            offline_gb.metaData.outputNamespace == "sample_namespace"
+        ), f"Expected output namespace to be 'sample_namespace', got {offline_gb.metaData.outputNamespace}"

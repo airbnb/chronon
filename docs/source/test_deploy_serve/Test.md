@@ -26,6 +26,14 @@ This will produce JSON configs for each config in the given paths under the `pro
 
 There are also options to display generated features `--feature-display` or the `--table-display` to show related modes and tables that might be generated.
 
+By default, production Joins cannot depend on explicitly non-production GroupBys. To bypass only this validation for a compilation, pass `--skip-production-dependency-check`:
+
+```bash
+compile.py --conf=joins/team/my_join.py --skip-production-dependency-check
+```
+
+Explicitly non-production GroupBys keep `production=False`; GroupBys with an unset production flag retain the usual inheritance behavior. Other validations still run. The override applies only to that command invocation, so subsequent compilations (including CI) must also pass the flag to bypass the check.
+
 ## Analyze
 
 The analyzer will compute the following information by simply taking a Chronon config path.

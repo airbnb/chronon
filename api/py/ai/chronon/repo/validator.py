@@ -22,7 +22,14 @@ import re
 from collections import defaultdict
 from typing import Dict, List
 
-from ai.chronon.api.ttypes import Derivation, ExternalPart, GroupBy, Join, Source, StagingQuery
+from ai.chronon.api.ttypes import (
+    Derivation,
+    ExternalPart,
+    GroupBy,
+    Join,
+    Source,
+    StagingQuery,
+)
 from ai.chronon.group_by import get_output_col_names
 from ai.chronon.logger import get_logger
 from ai.chronon.repo import GROUP_BY_FOLDER_NAME, JOIN_FOLDER_NAME
@@ -256,13 +263,20 @@ def get_join_output_columns(join: Join) -> Dict[FeatureDisplayKeys, List[str]]:
 
 
 class ChrononRepoValidator(object):
-    def __init__(self, chronon_root_path: str, output_root: str, log_level=logging.INFO):
+    def __init__(
+        self,
+        chronon_root_path: str,
+        output_root: str,
+        log_level=logging.INFO,
+        skip_production_dependency_check: bool = False,
+    ):
         self.logger = get_logger(log_level)
         self.old_objs = defaultdict(dict)
         # returned key has "group_by." prefix in the name so we remove the prefix.
         self.chronon_root_path = chronon_root_path
         self.output_root = output_root
         self.log_level = log_level
+        self.skip_production_dependency_check = skip_production_dependency_check
         self.logger = get_logger(log_level)
         self.load_objs()
 
@@ -407,7 +421,7 @@ class ChrononRepoValidator(object):
         group_by_errors = [self._validate_group_by(group_by) for group_by in included_group_bys]
         errors += [f"join {join.metaData.name}'s underlying {error}" for errors in group_by_errors for error in errors]
         # Check if the production join is using non production groupBy
-        if join.metaData.production and non_prod_old_group_bys:
+        if not self.skip_production_dependency_check and join.metaData.production and non_prod_old_group_bys:
             errors.append(
                 "join {} is production but includes the following non production group_bys: {}".format(
                     join.metaData.name, ", ".join(non_prod_old_group_bys)
@@ -495,10 +509,11 @@ class ChrononRepoValidator(object):
         # present in materialized production joins.
         if prod_joins:
             if group_by.metaData.production is False:
-                errors.append(
-                    "group_by {} is explicitly marked as non-production but included in the following production "
-                    "joins: {}".format(group_by.metaData.name, ", ".join(prod_joins))
-                )
+                if not self.skip_production_dependency_check:
+                    errors.append(
+                        "group_by {} is explicitly marked as non-production but included in the following production "
+                        "joins: {}".format(group_by.metaData.name, ", ".join(prod_joins))
+                    )
             # if the group by is included in any of materialized production join,
             # set it to production in the materialized output.
             else:
