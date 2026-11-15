@@ -174,6 +174,69 @@ class SawtoothAggregatorTest extends TestCase {
     timer.publish("comparison")
   }
 
+  private val minute = 60 * 1000L
+  private val hour = 60 * minute
+  private val histogramDay = 1699920000000L // 2023-11-14 00:00 UTC
+
+  // APPROX_HISTOGRAM_K with k = 3 over five-minute hops. The 10:00 hop holds "a" ten times, so its IR stays an exact
+  // histogram. The 10:05 hop holds four distinct items, more than k, so its IR is a sketch. Five distinct items in
+  // total never fill the sketch, so every count is exact.
+  private val histogramEvents: Array[TestRow] =
+    (Seq.fill(10)(TestRow(histogramDay + 10 * hour, "a")) ++
+      Seq("b" -> 5, "c" -> 4, "d" -> 3, "e" -> 2).flatMap {
+        case (item, n) => Seq.fill(n)(TestRow(histogramDay + 10 * hour + 5 * minute, item))
+      }).toArray
+
+  // finalized windows per query, from NaiveAggregator and from computeWindows
+  private def approxHistogramKWindows(windows: Seq[Window], queries: Array[Long]): (Seq[Seq[Any]], Seq[Seq[Any]]) = {
+    val schema = Seq("ts" -> LongType, "item" -> StringType)
+    val aggregations =
+      Seq(Builders.Aggregation(Operation.APPROX_HISTOGRAM_K, "item", windows, argMap = Map("k" -> "3")))
+
+    val hopsAggregator = new HopsAggregator(queries.min, aggregations, schema, FiveMinuteResolution)
+    var hopMaps = hopsAggregator.init()
+    histogramEvents.foreach(row => hopMaps = hopsAggregator.update(hopMaps, row))
+    val sawtoothAggregator = new SawtoothAggregator(aggregations, schema, FiveMinuteResolution)
+    val sawtoothIrs = sawtoothAggregator.computeWindows(hopsAggregator.toTimeSortedArray(hopMaps), queries)
+
+    val rowAgg = sawtoothAggregator.windowedAggregator
+    val unpackedWindows = aggregations.flatMap(_.unpack.map(_.window)).toArray
+    val naiveIrs =
+      new NaiveAggregator(rowAgg, unpackedWindows, unpackedWindows.map(FiveMinuteResolution.calculateTailHop))
+        .aggregate(histogramEvents, queries)
+
+    def finalized(irs: Array[Array[Any]]): Seq[Seq[Any]] = irs.toSeq.map(ir => rowAgg.finalize(ir).toSeq)
+    (finalized(naiveIrs), finalized(sawtoothIrs))
+  }
+
+  private def histogram(counts: (String, Long)*): util.HashMap[String, Long] = {
+    val result = new util.HashMap[String, Long]()
+    counts.foreach { case (item, count) => result.put(item, count) }
+    result
+  }
+
+  // Both windows read the same hops. Merging into the 10:05 hop must not write "a" into it, or the second window
+  // counts "a" twice.
+  def testApproxHistogramKWindowsSharingHops(): Unit = {
+    val queries = Array(histogramDay + 10 * hour + 10 * minute)
+    val (naive, sawtooth) =
+      approxHistogramKWindows(Seq(new Window(1, TimeUnit.HOURS), new Window(2, TimeUnit.HOURS)), queries)
+
+    val expected = histogram("a" -> 10L, "b" -> 5L, "c" -> 4L)
+    assertEquals(Seq(Seq(expected, expected)), naive)
+    assertEquals(naive, sawtooth)
+  }
+
+  // The 11:05 window is [10:05, 11:05), so it excludes the 10:00 events even though the 10:10 window merged them with
+  // the 10:05 hop.
+  def testApproxHistogramKWindowSlidingPastAHop(): Unit = {
+    val queries = Array(histogramDay + 10 * hour + 10 * minute, histogramDay + 11 * hour + 5 * minute)
+    val (naive, sawtooth) = approxHistogramKWindows(Seq(new Window(1, TimeUnit.HOURS)), queries)
+
+    assertEquals(Seq(Seq(histogram("a" -> 10L, "b" -> 5L, "c" -> 4L)), Seq(histogram("b" -> 5L, "c" -> 4L, "d" -> 3L))),
+                 naive)
+    assertEquals(naive, sawtooth)
+  }
 }
 
 object SawtoothAggregatorTest {
