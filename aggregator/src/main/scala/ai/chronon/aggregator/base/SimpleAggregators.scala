@@ -450,7 +450,9 @@ class FrequentItems[T: FrequentItemsFriendly](val mapSize: Int, val errorType: E
     val sketch = new ItemsSketch[T](sketchSize)
     val sketchType = implicitly[FrequentItemsFriendly[T]].sketchType
 
-    values.toScala.foreach({ case (k, v) => sketch.update(k, v) })
+    // Iterate the Java map itself: converting it to a Scala Map merges keys that Scala's == treats as equal, such as
+    // -0.0 and 0.0, which the Java map (and the sketch) keep apart.
+    values.entrySet().iterator().toScala.foreach(e => sketch.update(e.getKey, e.getValue))
 
     ItemsSketchIR(sketch, sketchType)
   }
@@ -568,8 +570,9 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
   private def combine(hist1: util.Map[T, Long], hist2: util.Map[T, Long]): ApproxHistogramIr[T] = {
     val hist = new util.HashMap[T, Long]()
 
-    hist1.toScala.foreach({ case (k, v) => increment(k, v, hist) })
-    hist2.toScala.foreach({ case (k, v) => increment(k, v, hist) })
+    // Iterate the Java maps themselves, as in FrequentItems.toSketch, so -0.0 and 0.0 stay separate keys.
+    hist1.entrySet().iterator().toScala.foreach(e => increment(e.getKey, e.getValue, hist))
+    hist2.entrySet().iterator().toScala.foreach(e => increment(e.getKey, e.getValue, hist))
 
     toIr(hist)
   }
@@ -578,7 +581,7 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
     ApproxHistogramIr(isApprox = true, sketch = Some(sketch), histogram = None)
   }
   private def combine(hist: util.Map[T, Long], sketch: ItemsSketchIR[T]): ApproxHistogramIr[T] = {
-    hist.toScala.foreach({ case (k, v) => sketch.sketch.update(k, v) })
+    hist.entrySet().iterator().toScala.foreach(e => sketch.sketch.update(e.getKey, e.getValue))
     ApproxHistogramIr(isApprox = true, sketch = Some(sketch), histogram = None)
   }
 
@@ -595,7 +598,7 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
 
   private def toOutputMap(map: util.Map[T, Long]): util.Map[String, Long] = {
     val result = new util.HashMap[String, Long](map.size())
-    map.toScala.foreach({ case (k, v) => result.put(String.valueOf(k), v) })
+    map.entrySet().iterator().toScala.foreach(e => result.put(String.valueOf(e.getKey), e.getValue))
     result
   }
 }

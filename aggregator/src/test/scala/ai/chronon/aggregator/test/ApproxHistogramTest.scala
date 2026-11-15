@@ -146,6 +146,24 @@ class ApproxHistogramTest extends TestCase {
     assertEquals(expected, approxHistogram.finalize(normalized).toScala)
   }
 
+  // -0.0 and 0.0 are distinct keys in the exact histogram's Java map and in the sketch, so every path keeps their counts.
+  def testSignedZerosStayDistinct(): Unit = {
+    def histogram(approxHistogram: ApproxHistogram[java.lang.Double], values: Double*) =
+      values.tail.foldLeft(approxHistogram.prepare(values.head))((ir, v) => approxHistogram.update(ir, v))
+    val zeros = Seq(0.0, -0.0, 0.0, -0.0, 0.0)
+
+    val exact = new ApproxHistogram[java.lang.Double](3)
+    assertEquals(toHashMap(Map("0.0" -> 3L, "-0.0" -> 2L)), exact.finalize(histogram(exact, zeros: _*)))
+    assertEquals(toHashMap(Map("0.0" -> 3L, "-0.0" -> 2L, "1.0" -> 1L)),
+                 exact.finalize(exact.merge(histogram(exact, zeros: _*), histogram(exact, 1.0))))
+
+    // three distinct values exceed k = 2, so the histogram becomes a sketch
+    val sketched = new ApproxHistogram[java.lang.Double](2)
+    val ir = histogram(sketched, zeros :+ 1.0: _*)
+    assertTrue(ir.isApprox)
+    assertEquals(toHashMap(Map("0.0" -> 3L, "-0.0" -> 2L)), sketched.finalize(ir))
+  }
+
   def toHashMap[T](map: Map[T, Long]): util.HashMap[T, Long] = new util.HashMap[T, Long](map.toJava)
 
   def makeIr[T](agg: ApproxHistogram[T], counts: Map[T, Long]): ApproxHistogramIr[T] = {
