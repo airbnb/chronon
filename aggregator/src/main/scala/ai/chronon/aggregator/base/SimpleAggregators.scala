@@ -496,11 +496,13 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
   override def outputType: DataType = MapType(StringType, LongType)
   override def irType: DataType = BinaryType
 
+  // Only ir1 may be mutated: callers such as SawtoothAggregator pass stored IRs as ir2 and merge them again later.
+  // So a histogram merging into a sketch becomes a new sketch that sketch2 merges into, rather than updating sketch2.
   override def merge(ir1: ApproxHistogramIr[T], ir2: ApproxHistogramIr[T]): ApproxHistogramIr[T] = {
     (ir1.histogram, ir1.sketch, ir2.histogram, ir2.sketch) match {
       case (Some(hist1), None, Some(hist2), None)     => combine(hist1, hist2)
       case (None, Some(sketch1), None, Some(sketch2)) => combine(sketch1, sketch2)
-      case (Some(hist1), None, None, Some(sketch2))   => combine(hist1, sketch2)
+      case (Some(hist1), None, None, Some(sketch2))   => combine(frequentItemsAggregator.toSketch(hist1), sketch2)
       case (None, Some(sketch1), Some(hist2), None)   => combine(hist2, sketch1)
       case _                                          => throw new IllegalStateException("Histogram state is missing")
     }

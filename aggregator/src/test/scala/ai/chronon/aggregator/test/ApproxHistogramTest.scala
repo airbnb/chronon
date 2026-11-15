@@ -125,6 +125,33 @@ class ApproxHistogramTest extends TestCase {
     assert(ir.histogram.isEmpty)
   }
 
+  def testMergeHistogramAndSketch(): Unit = {
+    val approxHistogram = new ApproxHistogram[String](3)
+    val counts1: Map[String, Long] = Map("2" -> 2L)
+    val counts2: Map[String, Long] = Map("5" -> 5L, "3" -> 3, "2" -> 2, "1" -> 1)
+
+    val ir1 = makeIr(approxHistogram, counts1)
+    val ir2 = makeIr(approxHistogram, counts2)
+    val ir2Before = approxHistogram.finalize(approxHistogram.clone(ir2))
+
+    assertTrue(!ir1.isApprox)
+    assertTrue(ir2.isApprox)
+
+    val ir = approxHistogram.merge(ir1, ir2)
+
+    assertEquals(toHashMap(
+                   Map(
+                     "5" -> 5,
+                     "2" -> 4,
+                     "3" -> 3
+                   )),
+                 approxHistogram.finalize(ir))
+    assertTrue(ir.isApprox)
+    assert(ir.histogram.isEmpty)
+    // merge may only mutate ir1
+    assertEquals(ir2Before, approxHistogram.finalize(ir2))
+  }
+
   def testNormalizeHistogram(): Unit = {
     val approxHistogram = new ApproxHistogram[String](3)
     val counts = (1L to 3).map(i => i.toString -> i).toMap
