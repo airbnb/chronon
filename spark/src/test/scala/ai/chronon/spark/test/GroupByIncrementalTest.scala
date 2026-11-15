@@ -141,7 +141,7 @@ class GroupByIncrementalTest {
   /**
     * Tests basic aggregations in incremental mode by comparing Chronon's output against SQL.
     *
-    * Operations: SUM, COUNT, AVERAGE, MIN, MAX, VARIANCE, UNIQUE_COUNT, HISTOGRAM, BOUNDED_UNIQUE_COUNT
+    * Operations: SUM, COUNT, AVERAGE, MIN, MAX, VARIANCE, UNIQUE_COUNT, HISTOGRAM, BOUNDED_UNIQUE_COUNT (string and numeric)
     *
     * Actual:   Chronon computes daily IRs using computeIncrementalDf, storing intermediate results
     * Expected: SQL query computes the same aggregations directly on the input data for the same date
@@ -187,7 +187,12 @@ class GroupByIncrementalTest {
       Builders.Aggregation(Operation.BOUNDED_UNIQUE_COUNT,
                            "product_id",
                            Seq(new Window(7, TimeUnit.DAYS)),
-                           argMap = Map("k" -> "100"))
+                           argMap = Map("k" -> "100")),
+      // BOUNDED_UNIQUE_COUNT over a numeric column that reaches k: IR = array<int> holding k distinct values
+      Builders.Aggregation(Operation.BOUNDED_UNIQUE_COUNT,
+                           "quantity",
+                           Seq(new Window(7, TimeUnit.DAYS)),
+                           argMap = Map("k" -> "5"))
     )
 
     val tableProps: Map[String, String] = Map("source" -> "chronon")
@@ -221,7 +226,8 @@ class GroupByIncrementalTest {
          |      sum(price * price) - count(price) * avg(price) * avg(price) as m2
          |    ) as price_variance,
          |    count(distinct price) as price_unique_count,
-         |    least(count(distinct product_id), 100) as product_id_bounded_unique_count
+         |    least(count(distinct product_id), 100) as product_id_bounded_unique_count,
+         |    least(count(distinct quantity), 5) as quantity_bounded_unique_count
          |  FROM test_basic_aggs_input
          |  WHERE ds='$today_minus_7_date'
          |  GROUP BY user, ds
@@ -250,6 +256,7 @@ class GroupByIncrementalTest {
     val actualForComparison = actualIncrementalDf
       .withColumn("price_unique_count", size(col("price_unique_count")).cast("long"))
       .withColumn("product_id_bounded_unique_count", size(col("product_id_bounded_unique_count")).cast("long"))
+      .withColumn("quantity_bounded_unique_count", size(col("quantity_bounded_unique_count")).cast("long"))
 
     val diff = Comparison.sideBySide(actualForComparison, expectedDf, List("user", tableUtils.partitionColumn))
 

@@ -1,12 +1,12 @@
 package ai.chronon.aggregator.test
 
 import ai.chronon.aggregator.base.BoundedUniqueCount
-import ai.chronon.api.{BinaryType, DoubleType, FloatType, IntType, LongType, StringType}
+import ai.chronon.api.{BinaryType, DataType, DoubleType, FloatType, IntType, LongType, ShortType, StringType}
 import junit.framework.TestCase
 import org.junit.Assert._
 
 import java.util
-import scala.util.ScalaJavaConversions.JListOps
+import scala.util.ScalaJavaConversions.{JListOps, ListOps}
 
 class BoundedUniqueCountTest extends TestCase {
   def testHappyCase(): Unit = {
@@ -203,5 +203,44 @@ class BoundedUniqueCountTest extends TestCase {
 
     // For non-numeric types, irType should be ListType(StringType)
     assertEquals(ai.chronon.api.ListType(StringType), stringBoundedDistinctCount.irType)
+  }
+
+  private def assertSaturatedIrKeepsInputType[T](inputType: DataType, inputs: Seq[T], elementClass: Class[_]): Unit = {
+    val boundedDistinctCount = new BoundedUniqueCount[T](inputType, 3)
+    val ir = inputs.tail.foldLeft(boundedDistinctCount.prepare(inputs.head))(boundedDistinctCount.update)
+    val normalized = boundedDistinctCount.normalize(ir).asInstanceOf[util.ArrayList[Any]]
+
+    normalized.toScala.foreach(v => assertTrue(s"$inputType IR holds $v", elementClass.isInstance(v)))
+    assertEquals(3, normalized.size())
+    assertEquals(3, boundedDistinctCount.finalize(boundedDistinctCount.denormalize(normalized)))
+  }
+
+  // IR writers store each element as irType's element type, so a saturated numeric or binary IR must hold
+  // values of that type, not a string marker.
+  def testSaturatedIrKeepsInputType(): Unit = {
+    assertSaturatedIrKeepsInputType[Int](IntType, Seq(1, 2, 3, 4, 5), classOf[java.lang.Integer])
+    assertSaturatedIrKeepsInputType[Long](LongType, Seq(1L, 2L, 3L, 4L, 5L), classOf[java.lang.Long])
+    assertSaturatedIrKeepsInputType[Short](ShortType, Seq[Short](1, 2, 3, 4, 5), classOf[java.lang.Short])
+    assertSaturatedIrKeepsInputType[Double](DoubleType, Seq(1.0, 2.0, 3.0, 4.0, 5.0), classOf[java.lang.Double])
+    assertSaturatedIrKeepsInputType[Float](FloatType, Seq(1.0f, 2.0f, 3.0f, 4.0f, 5.0f), classOf[java.lang.Float])
+    assertSaturatedIrKeepsInputType[Array[Byte]](BinaryType,
+                                                 (1 to 5).map(i => Array[Byte](i.toByte)),
+                                                 classOf[Array[Byte]])
+    assertSaturatedIrKeepsInputType[String](StringType, Seq("1", "2", "3", "4", "5"), classOf[String])
+  }
+
+  // IRs written before saturated IRs kept their values hold the "__SENTINEL__" marker, and still read as saturated.
+  def testSentinelIrStillSaturated(): Unit = {
+    val boundedDistinctCount = new BoundedUniqueCount[String](StringType, 5)
+    def sentinelIr = boundedDistinctCount.denormalize(new util.ArrayList[Any](Seq[Any]("__SENTINEL__").toJava))
+
+    assertEquals(5, boundedDistinctCount.finalize(sentinelIr))
+    assertEquals(5, boundedDistinctCount.finalize(boundedDistinctCount.update(sentinelIr, "1")))
+    assertEquals(
+      5,
+      boundedDistinctCount.finalize(boundedDistinctCount.merge(sentinelIr, boundedDistinctCount.prepare("1"))))
+    assertEquals(
+      5,
+      boundedDistinctCount.finalize(boundedDistinctCount.merge(boundedDistinctCount.prepare("1"), sentinelIr)))
   }
 }
