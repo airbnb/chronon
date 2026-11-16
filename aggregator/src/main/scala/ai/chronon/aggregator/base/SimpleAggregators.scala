@@ -24,7 +24,14 @@ import com.yahoo.sketches.frequencies.{ErrorType, ItemsSketch}
 import com.yahoo.sketches.kll.KllFloatsSketch
 import com.yahoo.sketches.{ArrayOfDoublesSerDe, ArrayOfItemsSerDe, ArrayOfLongsSerDe, ArrayOfStringsSerDe}
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, ObjectInputStream, ObjectOutputStream}
+import java.io.{
+  ByteArrayInputStream,
+  ByteArrayOutputStream,
+  InputStream,
+  ObjectInputStream,
+  ObjectOutputStream,
+  ObjectStreamClass
+}
 import java.security.MessageDigest
 import java.util
 import scala.collection.mutable
@@ -462,12 +469,57 @@ case class ApproxHistogramIr[T: FrequentItemsFriendly](
     histogram: Option[util.Map[T, Long]]
 )
 
+// The IR is written with Java serialization. Without a pinned serialVersionUID the JVM derives one from the
+// compiler-generated members, which differ between Scala 2.12 and 2.13, so bytes written by one could not be
+// read by the other (e.g. a 2.12 batch upload fetched by a 2.13 service). The pinned value is the one 2.12 derived,
+// which keeps existing 2.12-written data readable as is. Bytes written by 2.13 before the pin carry the other UID;
+// ApproxHistogramIrInputStream accepts those.
+@SerialVersionUID(7215275005709798062L)
 case class ApproxHistogramIrSerializable[T: FrequentItemsFriendly](
     isApprox: Boolean,
     // The ItemsSketch isn't directly serializable
     sketch: Option[Array[Byte]],
     histogram: Option[util.Map[T, Long]]
 )
+
+// Reads bytes written by ApproxHistogram.normalize under any Scala version. Three things differ between 2.12 and 2.13:
+//  1. The derived serialVersionUID of ApproxHistogramIrSerializable. Its field layout is the same, so the local
+//     class descriptor is used whatever UID the stream carries.
+//  2. 2.13 writes `None` (and other case objects) as a scala.runtime.ModuleSerializationProxy, which 2.12 does not
+//     have. It is read through ModuleSerializationProxyShim, which resolves to the same module singleton.
+//  3. 2.12 writes `None` as a plain None$ object and relies on readResolve, which 2.13's None$ does not define, so
+//     2.13 would get a second None$ instance (`isEmpty` is `this eq None` in 2.13, so `.map` on it throws). Such an
+//     instance is replaced by the `None` singleton.
+private[base] class ApproxHistogramIrInputStream(in: InputStream) extends ObjectInputStream(in) {
+  import ApproxHistogramIrInputStream._
+
+  enableResolveObject(true)
+
+  override protected def readClassDescriptor(): ObjectStreamClass = {
+    val streamDesc = super.readClassDescriptor()
+    streamDesc.getName match {
+      case IrClassName    => ObjectStreamClass.lookup(IrClass)
+      case ProxyClassName => ObjectStreamClass.lookup(classOf[ModuleSerializationProxyShim])
+      case _              => streamDesc
+    }
+  }
+
+  override protected def resolveObject(obj: AnyRef): AnyRef =
+    if (obj != null && (obj.getClass eq NoneClass) && !(obj eq None)) None else obj
+}
+
+private[base] object ApproxHistogramIrInputStream {
+  private val IrClass: Class[_] = classOf[ApproxHistogramIrSerializable[_]]
+  private val IrClassName: String = IrClass.getName
+  private val ProxyClassName = "scala.runtime.ModuleSerializationProxy"
+  private val NoneClass: Class[_] = None.getClass
+}
+
+// Same serialized form as 2.13's scala.runtime.ModuleSerializationProxy (a single `moduleClass` field). Used only for
+// reading, see ApproxHistogramIrInputStream.
+private[base] final class ModuleSerializationProxyShim(private val moduleClass: Class[_]) extends Serializable {
+  protected def readResolve(): AnyRef = moduleClass.getField("MODULE$").get(null)
+}
 
 // The ItemsSketch uses approximations and estimates for both values below and above k.
 // This keeps an exact aggregation for entries where the number of keys is < k, and switches over to the sketch
@@ -550,7 +602,7 @@ class ApproxHistogram[T: FrequentItemsFriendly](mapSize: Int, errorType: ErrorTy
     val bytes = ir.asInstanceOf[Array[Byte]]
 
     val byteStream = new ByteArrayInputStream(bytes)
-    val objectStream = new ObjectInputStream(byteStream)
+    val objectStream = new ApproxHistogramIrInputStream(byteStream)
 
     try {
       val serializable = objectStream.readObject().asInstanceOf[ApproxHistogramIrSerializable[T]]
