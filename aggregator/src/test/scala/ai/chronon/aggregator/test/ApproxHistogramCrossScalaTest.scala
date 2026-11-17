@@ -7,10 +7,9 @@ import org.junit.Assert._
 import java.util
 
 // APPROX_HISTOGRAM_K IRs are written with Java serialization, by Spark/Flink jobs on one Scala version and read by
-// fetchers that may run on another. The fixtures below are hex dumps of ApproxHistogram.normalize output, written by
-// the code before ApproxHistogramIrSerializable had a pinned serialVersionUID, once on Scala 2.12.12 and once on
-// 2.13.6. They have to be recorded bytes: a test JVM runs one Scala version, so it cannot produce the other
-// version's encoding, and a same-version round trip passes even without the fix.
+// fetchers that may run on another. The fixtures below are hex dumps of ApproxHistogram.normalize output, written
+// once on Scala 2.12.12 and once on 2.13.6. They have to be recorded bytes: a test JVM runs one Scala version, so it
+// cannot produce the other version's encoding, and a same-version round trip passes even without the fix.
 //
 // Each fixture is one of these two IRs (ApproxHistogram[String](8)):
 //   map:    over "FR", "FR", an exact histogram
@@ -102,11 +101,23 @@ class ApproxHistogramCrossScalaTest extends TestCase {
   def testReadsMapWrittenByScala213(): Unit = assertReadsMap(map213)
   def testReadsSketchWrittenByScala213(): Unit = assertReadsSketch(sketch213)
 
-  // New bytes carry the pinned UID, which is the one 2.12 always derived, so readers without this fix on 2.12 still
-  // read them.
-  def testWritesTheScala212SerialVersionUid(): Unit = {
-    val written = agg.normalize(agg.update(agg.prepare("FR"), "FR")).asInstanceOf[Array[Byte]]
-    assertTrue(written.map("%02x".format(_)).mkString.contains("6421ce63b8164aae"))
+  // Writers must keep producing the bytes they always have, so readers on the same version that do not have
+  // ApproxHistogramIrInputStream yet keep working during a rollout. Pinning the serialVersionUID would break this on
+  // one of the versions.
+  def testWritesTheSameBytesAsBefore(): Unit = {
+    val fixtures = scala.util.Properties.versionNumberString match {
+      case v if v.startsWith("2.12.") => Some((map212, sketch212))
+      case v if v.startsWith("2.13.") => Some((map213, sketch213))
+      case _                          => None // no fixtures recorded for other versions
+    }
+    fixtures.foreach {
+      case (mapHex, sketchHex) =>
+        def hex(ir: Any): String = ir.asInstanceOf[Array[Byte]].map("%02x".format(_)).mkString
+        assertEquals(mapHex, hex(agg.normalize(agg.update(agg.prepare("FR"), "FR"))))
+        val sketchInput = Seq("a") ++ (1 to 20).map(i => s"v$i") ++ Seq.fill(50)("a") ++ Seq.fill(30)("b")
+        assertEquals(sketchHex,
+                     hex(agg.normalize(sketchInput.tail.foldLeft(agg.prepare(sketchInput.head))(agg.update))))
+    }
   }
 
   def testRoundTrip(): Unit = {

@@ -469,12 +469,12 @@ case class ApproxHistogramIr[T: FrequentItemsFriendly](
     histogram: Option[util.Map[T, Long]]
 )
 
-// The IR is written with Java serialization. Without a pinned serialVersionUID the JVM derives one from the
-// compiler-generated members, which differ between Scala 2.12 and 2.13, so bytes written by one could not be
-// read by the other (e.g. a 2.12 batch upload fetched by a 2.13 service). The pinned value is the one 2.12 derived,
-// which keeps existing 2.12-written data readable as is. Bytes written by 2.13 before the pin carry the other UID;
-// ApproxHistogramIrInputStream accepts those.
-@SerialVersionUID(7215275005709798062L)
+// The IR is written with Java serialization. The class has no pinned serialVersionUID, so the JVM derives one from
+// the compiler-generated members, which differ between Scala 2.12 and 2.13, and bytes written by one could not be
+// read by the other (e.g. a 2.12 batch upload fetched by a 2.13 service). ApproxHistogramIrInputStream reads both.
+// The UID is deliberately left unpinned: pinning it would change what one of the versions writes, and readers on
+// that version without ApproxHistogramIrInputStream would then fail on the new bytes. Unpinned, writers keep
+// producing exactly the bytes they always have, and only readers need this change.
 case class ApproxHistogramIrSerializable[T: FrequentItemsFriendly](
     isApprox: Boolean,
     // The ItemsSketch isn't directly serializable
