@@ -37,6 +37,7 @@ import ai.chronon.online.serde.{AvroConversions, SparkConversions}
 import java.time.format.DateTimeFormatter
 import java.time.{Instant, ZoneId, ZoneOffset}
 import java.util.Base64
+import java.util.concurrent.Semaphore
 import java.{lang, util}
 import scala.concurrent.duration.{Duration, DurationInt, MILLISECONDS}
 import scala.concurrent.{Await, Future}
@@ -52,6 +53,7 @@ import scala.util.{Failure, Success, Try}
 object LocalIOCache {
   @volatile private var fetcher: Fetcher = null
   @volatile private var kvStore: KVStore = null
+  @volatile private var inflightFetches: Semaphore = null
   @volatile var fetcherWarmedUp: Boolean = false
 
   def getOrSetFetcher(builderFunc: () => Fetcher): Fetcher = {
@@ -74,6 +76,19 @@ object LocalIOCache {
       }
     }
     kvStore
+  }
+
+  // One permit pool per executor JVM, shared by every concurrent task of every micro-batch, so the
+  // bound is on what this executor has outstanding against the fetch backends, not per task.
+  def getOrSetInflightFetches(permits: Int): Semaphore = {
+    if (inflightFetches == null) {
+      synchronized {
+        if (inflightFetches == null) {
+          inflightFetches = new Semaphore(permits)
+        }
+      }
+    }
+    inflightFetches
   }
 }
 
@@ -145,6 +160,15 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
 
   // Micro batch repartition size - when set to 0, we won't do the repartition
   private val microBatchRepartition: Int = getProp("batch_repartition", "0").toInt
+
+  // Rows per chained fetch (base join and model transforms). 0 fetches each partition in one call,
+  // so rows per fetch grow with lag; a positive value fixes them. See ChunkedFetch.
+  private val fetchChunkSize: Int = getProp("fetch_chunk_size", "0").toInt
+
+  // Chunk fetches outstanding per executor JVM across all its tasks. 0 leaves it unbounded. Only
+  // applies when fetch_chunk_size is set. Sizing guide: executor cores * chunks a healthy backend
+  // absorbs per task, then lower it until backend latency stays flat as the job catches up.
+  private val maxInflightPerExecutor: Int = getProp("max_inflight_per_executor", "0").toInt
 
   // Warm-up: pre-initialize lazy components and JIT warm-up using real requests before real processing
   private val warmupEnabled: Boolean = getProp("warmup.enabled", "true").toBoolean
@@ -434,6 +458,17 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
     }
   }
 
+  @transient private lazy implicit val chunkExecutionContext: scala.concurrent.ExecutionContext =
+    FlexibleExecutionContext.buildExecutionContext
+
+  private def inflightFetches: Option[Semaphore] =
+    if (fetchChunkSize > 0 && maxInflightPerExecutor > 0)
+      Some(LocalIOCache.getOrSetInflightFetches(maxInflightPerExecutor))
+    else None
+
+  private def fetchChunked[T, R](items: Seq[T])(fetch: Seq[T] => Future[Seq[R]]): Seq[R] =
+    ChunkedFetch.run(items, fetchChunkSize, inflightFetches, chainTimeoutMillis)(fetch)
+
   private def warmupDriver(schemas: Schemas, joinSource: JoinSource): Unit = {
     if (!warmupEnabled) return
     val startMs = System.currentTimeMillis()
@@ -577,10 +612,11 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
             logger.info(logMessage)
           }
 
-          val responsesFuture = fetcher.fetchBaseJoin(requests, Option(joinSource.join))
           // this might be potentially slower, but spark doesn't work when the internal derivation functionality triggers
           // its own spark session, or when it passes around objects
-          val responses = Await.result(responsesFuture, Duration(chainTimeoutMillis, MILLISECONDS))
+          val responses = fetchChunked(requests.toSeq) { chunk =>
+            fetcher.fetchBaseJoin(chunk, Option(joinSource.join))
+          }
 
           // debug print payload for requests and responses
           if (debug && shouldSample) {
@@ -651,10 +687,14 @@ class JoinSourceRunner(groupByConf: api.GroupBy, conf: Map[String, String] = Map
                                   joinCodec = Some(schemas.joinCodec))
           }
 
+          if (derivedValues.nonEmpty) {
+            ctx.distribution(Metrics.Name.ChainRequestBatchSize, derivedValues.length)
+          }
+
           // Apply model transforms if necessary and then logging
-          val modelTransformsF = fetcher.fetchModelTransforms(Future.successful(derivedValues.toSeq))
-          val responsesF = fetcher.instrumentAndLog(modelTransformsF)
-          val responses = Await.result(responsesF, Duration(chainTimeoutMillis, MILLISECONDS))
+          val responses = fetchChunked(derivedValues.toSeq) { chunk =>
+            fetcher.instrumentAndLog(fetcher.fetchModelTransforms(Future.successful(chunk)))
+          }
 
           // debug print payload for requests and responses
           if (debug && shouldSample) {
