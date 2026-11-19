@@ -195,10 +195,12 @@ object BootstrapInfo {
           ))
       })
 
-    // Retrieve schema_hash mapping info from Hive table properties
+    // Retrieve the schema_hash mapping from the schema store table that the log table points at, falling back
+    // to the legacy inline table properties. Log bootstrap parts are read over the fill range (see
+    // Join.computeBootstrapTable), so `range` bounds the hashes that can appear in matched_hashes.
     val logHashes = logBootstrapParts.flatMap { part =>
       LogFlattenerJob
-        .readSchemaTableProperties(tableUtils, part.table)
+        .readLoggingSchemas(tableUtils, part.table, range)
         .mapValues(LoggingSchema.parseLoggingSchema(_).valueFields.fields)
         .toSeq
     }.toMap

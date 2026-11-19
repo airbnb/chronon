@@ -24,7 +24,7 @@ import ai.chronon.online._
 import ai.chronon.online.serde.SparkConversions
 import ai.chronon.spark.Extensions.DataframeOps
 import ai.chronon.spark.catalog.TableUtils
-import ai.chronon.spark.{LogFlattenerJob, LoggingSchema, SparkSessionBuilder}
+import ai.chronon.spark.{LogFlattenerJob, LoggingSchema, PartitionRange, SparkSessionBuilder}
 import junit.framework.TestCase
 import org.apache.spark.sql.functions.{col, lit}
 import org.apache.spark.sql.{DataFrame, Row, SparkSession}
@@ -370,12 +370,26 @@ class SchemaEvolutionTest extends TestCase {
       .table(joinConf.metaData.loggedTable)
       .where(col(tableUtils.partitionColumn) === offlineDs)
     assertEquals(2, flattenedDf.count())
+
+    // schemas resolve through the schema store table that the log table points at
+    val range = PartitionRange(offlineDs, offlineDs)(tableUtils)
     assertTrue(
       LogFlattenerJob
-        .readSchemaTableProperties(tableUtils, joinConf.metaData.loggedTable)
+        .readLoggingSchemas(tableUtils, joinConf.metaData.loggedTable, range)
         .mapValues(LoggingSchema.parseLoggingSchema)
         .values
         .nonEmpty)
+
+    // and the log table carries a bounded pointer rather than one property per schema version
+    val tblProps = tableUtils.getTableProperties(joinConf.metaData.loggedTable).getOrElse(Map.empty)
+    assertEquals(Some(mockApi.schemaTable), tblProps.get(Constants.LoggingSchemaTable))
+    assertTrue(
+      s"Expected no inline ${Constants.SchemaHash}_* properties, found: ${tblProps.keys
+        .filter(_.startsWith(s"${Constants.SchemaHash}_"))
+        .mkString(", ")}",
+      tblProps.keys.count(_.startsWith(s"${Constants.SchemaHash}_")) == 0
+    )
+
     flattenedDf
   }
 
@@ -504,6 +518,23 @@ class SchemaEvolutionTest extends TestCase {
     /* removed features are never removed from the table */
     assertTrue(removedFeatures.forall(flattenedDf12.schema.fieldNames.contains(_)))
     assertTrue(removedFeatures.forall(flattenedDf34.schema.fieldNames.contains(_)))
+
+    /*
+     * legacy inline schema_hash_* properties written by older versions of the job are pruned on the next
+     * run, so already-bloated tables recover without a separate migration
+     */
+    val loggedTable = joinSuiteV2.joinConf.metaData.loggedTable
+    val legacyKey = s"${Constants.SchemaHash}_legacyhash"
+    tableUtils.alterTableProperties(loggedTable, Map(legacyKey -> """{"key_schema":"x"}"""))
+    assertTrue(tableUtils.getTableProperties(loggedTable).getOrElse(Map.empty).contains(legacyKey))
+
+    // the table is caught up at this point, so this exercises the no-unfilled-ranges prune path
+    new LogFlattenerJob(spark, joinSuiteV2.joinConf, "2022-10-05", mockApi.logTable, mockApi.schemaTable)
+      .buildLogTable()
+
+    val prunedProps = tableUtils.getTableProperties(loggedTable).getOrElse(Map.empty)
+    assertFalse(prunedProps.contains(legacyKey))
+    assertEquals(Some(mockApi.schemaTable), prunedProps.get(Constants.LoggingSchemaTable))
   }
 
   def testAddFeatures(): Unit = {
