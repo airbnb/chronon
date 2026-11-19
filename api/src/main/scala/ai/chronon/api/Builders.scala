@@ -90,7 +90,8 @@ object Builders {
               inputColumn: String,
               windows: Seq[Window] = null,
               argMap: Map[String, String] = null,
-              buckets: Seq[String] = null): Aggregation = {
+              buckets: Seq[String] = null,
+              elementWise: Option[Boolean] = None): Aggregation = {
       val result = new Aggregation()
       result.setOperation(operation)
       result.setInputColumn(inputColumn)
@@ -100,6 +101,7 @@ object Builders {
         result.setWindows(windows.toJava)
       if (buckets != null)
         result.setBuckets(buckets.toJava)
+      elementWise.foreach(result.setElementWise)
       result
     }
   }

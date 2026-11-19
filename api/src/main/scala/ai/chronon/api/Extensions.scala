@@ -263,7 +263,8 @@ object Extensions {
                 _.toScala.toMap
               )
               .orNull,
-            bucket
+            bucket,
+            Option(agg.elementWise).getOrElse(false)
           )
           for (window <- windows) {
             perWindow += WindowMapping(
@@ -275,7 +276,8 @@ object Extensions {
                                            _.toScala.toMap
                                          )
                                          .orNull,
-                                       bucket),
+                                       bucket,
+                                       Option(agg.elementWise).getOrElse(false)),
               counter
             )
           }
