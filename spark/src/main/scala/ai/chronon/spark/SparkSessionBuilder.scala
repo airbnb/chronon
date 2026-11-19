@@ -95,6 +95,10 @@ object SparkSessionBuilder {
         .config("spark.kryo.registrator", kryoRegistrator)
         .config("spark.kryoserializer.buffer.max", "2000m")
         .config("spark.kryo.referenceTracking", "false")
+
+      if (!mergedConfigs.contains("spark.kryoserializer.buffer.max")) {
+        baseBuilder.config("spark.kryoserializer.buffer.max", "2000m")
+      }
     }
 
     mergedConfigs.foreach { config => baseBuilder = baseBuilder.config(config._1, config._2) }
