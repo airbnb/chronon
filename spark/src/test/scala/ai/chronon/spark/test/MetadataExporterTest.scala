@@ -79,10 +79,13 @@ class MetadataExporterTest extends TestCase {
     val sampleDf = DataFrameGen
       .events(spark, sampleData, 10000, partitions = 30)
     sampleDf.save(sampleTable)
-    val confResource = getClass.getResource("/")
+
+    // Use the actual file system path to test resources instead of getResource
+    // which can return a JAR path in Mill
+    val testResourcesPath = new File("spark/src/test/resources").getAbsolutePath
     val tmpDir: File = Files.createTempDir()
-    MetadataExporter.run(confResource.getPath, Some(tmpDir.getAbsolutePath))
-    printFilesInDirectory(s"${confResource.getPath}/joins/team")
+    MetadataExporter.run(testResourcesPath, Some(tmpDir.getAbsolutePath))
+    printFilesInDirectory(s"$testResourcesPath/joins/team")
     printFilesInDirectory(s"${tmpDir.getAbsolutePath}/joins")
     // Read the files.
     val file = Source.fromFile(s"${tmpDir.getAbsolutePath}/joins/example_join.v1")

@@ -394,7 +394,7 @@ class FetcherCacheTest extends MockitoHelper {
                                                                                servingInfo,
                                                                                1000L,
                                                                                keys)
-    verify(servingInfo.outputCodec.decodeMap(any()), times(1)) // decoding did happen
+    verify(outputCodec, times(1)).decodeMap(any()) // decoding did happen
     assertEquals(mapResponse, decodedMapResponse)
   }
 }
