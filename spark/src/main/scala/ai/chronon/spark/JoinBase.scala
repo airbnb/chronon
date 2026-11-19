@@ -242,9 +242,19 @@ abstract class JoinBase(joinConf: api.Join,
             // Cache join part data into intermediate table
             if (filledDf.isDefined) {
               logger.info(s"Writing to join part table: $partTable for partition range $unfilledRange")
-              filledDf.get.save(partTable,
-                                tableProps + (Constants.ChrononTableType -> Constants.TableType.JoinPart),
-                                sortByCols = joinPart.groupBy.keyColumns.toScala)
+              // Snapshot dates come from left event timestamps, which can fall outside their
+              // partition. Do not overwrite adjacent, already filled part partitions.
+              val output = if (shiftDays == -1) {
+                val withinChunk = filledDf.get.prunePartition(unfilledRange)
+                // Small mode can combine missing ranges across already-filled partitions.
+                if (smallMode) {
+                  val missingDays = unfilledRanges.map(r => s"(${r.whereClauses().mkString(" AND ")})").mkString(" OR ")
+                  withinChunk.filter(missingDays)
+                } else withinChunk
+              } else filledDf.get
+              output.save(partTable,
+                          tableProps + (Constants.ChrononTableType -> Constants.TableType.JoinPart),
+                          sortByCols = joinPart.groupBy.keyColumns.toScala)
             } else {
               logger.info(s"Skipping $partTable because no data in computed joinPart.")
             }
