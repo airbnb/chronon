@@ -70,6 +70,20 @@ docker-compose up
 
 Once you see some data printed with a `only showing top 20 rows` notice, you're ready to proceed with the tutorial.
 
+### Linux Instructions
+
+If you run docker-compose on a amd64 machine, you may see the error:
+
+```chronon-main-1       | exec /bin/bash: exec format error```
+
+This can occur is you don't have QEMU installed. This can be easily resolved by installing QEMU:
+
+```bash
+sudo apt-get update; sudo apt-get install -y qemu-system qemu-user-static
+```
+
+Run docker-compose up again, and you should be able to proceed with the tutorial.
+
 ## Introduction
 
 In this example, let's assume that we're a large online retailer, and we've detected a fraud vector based on users making purchases and later returning items. We want to train a model that will be called when the **checkout** flow commences and predicts whether this transaction is likely to result in a fraudulent return.
