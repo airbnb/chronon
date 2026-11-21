@@ -684,12 +684,14 @@ class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggre
     result
   }
 
+  // The IR holds at most k distinct values; once it holds k the count is saturated and new values are dropped.
+  // A saturated IR keeps its k values rather than becoming SentinelSet, because SentinelSet normalizes to the string
+  // SentinelMarker, which a numeric or binary IR (ListType(inputType)) can't hold. SentinelSet now only comes from
+  // denormalizing IRs written before this change.
   override def update(ir: util.Set[Any], input: T): util.Set[Any] = {
-    if (ir == BoundedUniqueCount.SentinelSet || ir.size() >= k) {
-      return BoundedUniqueCount.SentinelSet
+    if (ir != BoundedUniqueCount.SentinelSet && ir.size() < k) {
+      ir.add(processInput(input))
     }
-
-    ir.add(processInput(input))
     ir
   }
 
@@ -716,11 +718,7 @@ class BoundedUniqueCount[T](inputType: DataType, k: Int = 8) extends SimpleAggre
           ir1.add(v)
         })
 
-    if (ir1.size() >= k) {
-      BoundedUniqueCount.SentinelSet
-    } else {
-      ir1
-    }
+    ir1
   }
 
   override def finalize(ir: util.Set[Any]): Long = {
