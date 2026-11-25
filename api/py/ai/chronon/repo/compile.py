@@ -77,7 +77,10 @@ def get_folder_name_from_class_name(class_name):
 @click.option("--force-overwrite", help="Force overwriting existing materialized conf.", is_flag=True)
 @click.option(
     "--skip-production-dependency-check",
-    help="Allow production Joins to depend on explicitly non-production GroupBys. Other validations still apply.",
+    help=(
+        "Exceptional use only: allow production Joins to depend on explicitly non-production GroupBys. "
+        "Requires confirmation unless --yes is set. Other validations still apply."
+    ),
     is_flag=True,
 )
 @click.option("--feature-display", help="Print out the features list created by the conf.", is_flag=True)
@@ -107,6 +110,18 @@ def extract_and_convert(
     CLI tool to convert Python chronon GroupBy's, Joins and Staging queries into their thrift representation.
     The materialized objects are what will be submitted to spark jobs - driven by airflow, or by manual user testing.
     """
+    if skip_production_dependency_check:
+        _print_warning(
+            "WARNING: --skip-production-dependency-check bypasses a production safety check.\n"
+            "Production Joins should normally depend only on production GroupBys.\n"
+            "Use this flag only for exceptional cases when you are 100% confident that the non-production "
+            "dependencies are intentional and you have reviewed the risks to production consumers.\n"
+            "The override applies to every config validated by this command, including dependent configs. "
+            "Other validations still apply."
+        )
+        if not yes:
+            click.confirm("Are you sure you want to skip the production dependency check?", default=False, abort=True)
+
     if debug:
         log_level = logging.DEBUG
     else:
