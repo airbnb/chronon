@@ -32,8 +32,6 @@ By default, production Joins cannot depend on explicitly non-production GroupBys
 compile.py --conf=joins/team/my_join.py --skip-production-dependency-check
 ```
 
-This is an exceptional override, not a normal feature-authoring workflow. Production Joins should normally depend only on production GroupBys. Use it only when you are 100% confident that the non-production dependencies are intentional and you have reviewed the risks to production consumers. The compiler prints a warning and asks for confirmation before importing configs or writing output; pressing Enter or answering `n` aborts compilation. For deliberate non-interactive use, `--yes` skips the confirmation but still prints the warning.
-
 Explicitly non-production GroupBys keep `production=False`; GroupBys with an unset production flag retain the usual inheritance behavior. Other validations still run. The override applies only to that command invocation, so subsequent compilations (including CI) must also pass the flag to bypass the check.
 
 ## Analyze

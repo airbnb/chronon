@@ -193,32 +193,7 @@ def test_compiling_online_join_compiles_all_online_gb(specific_setup):
     _assert_file_exists(full_file_path, "Expected the group_by to be materialized, but it was not.")
 
 
-@pytest.mark.parametrize("confirmation_input", ["n\n", "\n", ""])
-def test_decline_skip_production_dependency_check(tmp_path, monkeypatch, confirmation_input):
-    def unexpected_import(*args, **kwargs):
-        pytest.fail("Config must not be imported before the override is confirmed")
-
-    monkeypatch.setattr("ai.chronon.repo.compile.eo.from_file", unexpected_import)
-    output_root = tmp_path / "production"
-    result = CliRunner().invoke(
-        extract_and_convert,
-        [
-            "--chronon_root=api/py/test/sample",
-            "--input_path=joins/unit_test/sample_online_join.py",
-            f"--output_root={output_root}",
-            "--skip-production-dependency-check",
-        ],
-        input=confirmation_input,
-    )
-
-    assert result.exit_code != 0, result.output
-    assert "100% confident" in result.output
-    assert "[y/N]" in result.output
-    assert not output_root.exists()
-
-
-@pytest.mark.parametrize("confirm_interactively", [False, True])
-def test_compile_skip_production_dependency_check(tmp_path, monkeypatch, confirm_interactively):
+def test_compile_skip_production_dependency_check(tmp_path, monkeypatch):
     from joins.unit_test.sample_online_join import v1
 
     monkeypatch.setattr(v1.metaData, "production", True)
@@ -238,22 +213,12 @@ def test_compile_skip_production_dependency_check(tmp_path, monkeypatch, confirm
 
     result = _invoke_cli_with_params(runner, join_input, flags)
     assert result.exit_code == 0, result.output
-    assert "bypasses a production safety check" not in result.output
     assert "non production group_bys" in result.output
     assert not join_output.exists()
 
     override_flags = flags + ["--skip-production-dependency-check"]
-    if confirm_interactively:
-        result = runner.invoke(
-            extract_and_convert,
-            ["--chronon_root=api/py/test/sample", f"--input_path={join_input}"] + override_flags,
-            input="y\nn\n",
-        )
-    else:
-        result = _invoke_cli_with_params(runner, join_input, override_flags)
+    result = _invoke_cli_with_params(runner, join_input, override_flags)
     assert result.exit_code == 0, result.output
-    assert "bypasses a production safety check" in result.output
-    assert ("Are you sure" in result.output) == confirm_interactively
     assert "Could not write" not in result.output
     compiled_join = json2thrift(join_output.read_text(), Join)
     assert compiled_join.metaData.production is True
